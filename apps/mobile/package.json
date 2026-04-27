@@ -17,7 +17,6 @@
     "docs": "echo \"docs checked via root product specs\""
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "^3.0.2",
     "@react-navigation/bottom-tabs": "^7.15.5",
     "@react-navigation/elements": "^2.9.10",
     "@react-navigation/native": "^7.1.33",
