@@ -1,0 +1,31 @@
+.DS_Store
+node_modules/
+.turbo/
+coverage/
+dist/
+build/
+.output/
+.expo/
+.eas/
+.wrangler/
+.convex/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Provisioning credentials and generated private material
+scratchpad/credentials/
+*.p8
+*.p12
+*.jks
+*.mobileprovision
+*.cer
+*.key
+*.pem
+*.csr
+
+# Local screenshots / scratch captures
+SCR-*.png

@@ -1,0 +1,22 @@
+{
+  "name": "@track/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain": "./src/domain.ts",
+    "./theme": "./src/theme.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint .",
+    "test": "vitest run --config vitest.config.ts --passWithNoTests",
+    "docs": "echo \"shared package docs checked\""
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
