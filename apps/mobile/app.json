@@ -10,7 +10,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "ai.q9labs.track",
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "ai.q9labs.track",
