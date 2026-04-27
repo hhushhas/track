@@ -14,8 +14,11 @@ import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
 import type * as exports from "../exports.js";
 import type * as groups from "../groups.js";
+import type * as http from "../http.js";
 import type * as lib_audit from "../lib/audit.js";
+import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_rateLimit from "../lib/rateLimit.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
 import type * as projects from "../projects.js";
@@ -34,8 +37,11 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   exports: typeof exports;
   groups: typeof groups;
+  http: typeof http;
   "lib/audit": typeof lib_audit;
+  "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;
+  "lib/rateLimit": typeof lib_rateLimit;
   messages: typeof messages;
   notifications: typeof notifications;
   projects: typeof projects;
@@ -68,4 +74,7 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+};

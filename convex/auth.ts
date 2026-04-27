@@ -1,6 +1,43 @@
 import { v } from 'convex/values'
+import { createClient, type GenericCtx } from '@convex-dev/better-auth'
+import { convex, crossDomain } from '@convex-dev/better-auth/plugins'
+import { betterAuth } from 'better-auth/minimal'
+import { twoFactor } from 'better-auth/plugins'
 
+import { components } from './_generated/api'
+import type { DataModel } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
+import authConfig from './auth.config'
+
+const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+
+export const authComponent = createClient<DataModel>(components.betterAuth)
+
+export const createAuth = (ctx: GenericCtx<DataModel>) =>
+  betterAuth({
+    appName: 'Track',
+    baseURL: siteUrl,
+    trustedOrigins: [siteUrl, 'http://localhost:3000', 'https://track.q9labs.ai'],
+    database: authComponent.adapter(ctx),
+    socialProviders: {
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID_WEB ?? '',
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET_WEB ?? '',
+      },
+    },
+    plugins: [
+      crossDomain({ siteUrl }),
+      convex({ authConfig }),
+      twoFactor({ issuer: 'Track' }),
+    ],
+  })
+
+export const getAuthUser = query({
+  args: {},
+  handler: async (ctx) => {
+    return await authComponent.getAuthUser(ctx)
+  },
+})
 
 export const syncGoogleUser = mutation({
   args: {

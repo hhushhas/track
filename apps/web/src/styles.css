@@ -61,6 +61,9 @@ select {
 }
 
 .track-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   min-height: 30px;
   border: 1px solid var(--hairline-strong);
   border-radius: 6px;
@@ -69,6 +72,35 @@ select {
   padding: 6px 11px;
   font-size: 13px;
   font-weight: 600;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  min-width: 30px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.group-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--paper);
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.group-button-active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
 }
 
 .track-button-primary {

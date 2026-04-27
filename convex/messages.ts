@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
+import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember } from './lib/permissions'
 
 export const list = query({
@@ -30,6 +31,10 @@ export const send = mutation({
   },
   handler: async (ctx, args) => {
     await requireGroupMember(ctx, args.groupId, args.authorId)
+    await rateLimiter.limit(ctx, 'sendMessage', {
+      key: args.authorId,
+      throws: true,
+    })
     const messageId = await ctx.db.insert('messages', {
       projectId: args.projectId,
       groupId: args.groupId,

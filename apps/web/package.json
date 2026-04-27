@@ -15,6 +15,7 @@
     "docs": "echo \"docs checked via root product specs\""
   },
   "dependencies": {
+    "@convex-dev/better-auth": "^0.12.0",
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/react-devtools": "^0.10.2",
     "@tanstack/react-form": "^1.29.1",
@@ -28,6 +29,7 @@
     "@tanstack/router-plugin": "^1.167.27",
     "@track/shared": "workspace:*",
     "better-auth": "^1.6.9",
+    "convex": "^1.36.1",
     "lucide-react": "^1.11.0",
     "nitro": "npm:nitro-nightly@3.0.1-20260426-013439-feebdc1e",
     "otplib": "^13.4.0",

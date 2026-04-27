@@ -2,6 +2,8 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
+import { emitOperationalEvent } from './lib/observability'
+import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember } from './lib/permissions'
 
 function normalize(value: string) {
@@ -54,6 +56,10 @@ export const ask = mutation({
   },
   handler: async (ctx, args) => {
     await requireGroupMember(ctx, args.groupId, args.requesterId)
+    await rateLimiter.limit(ctx, 'askTrack', {
+      key: args.requesterId,
+      throws: true,
+    })
     const messages = await ctx.db
       .query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
@@ -88,6 +94,17 @@ export const ask = mutation({
       action: 'track_assistant.answered',
       after: {
         questionPreview: args.question.slice(0, 180),
+        evidenceCount: evidenceSource.length,
+      },
+    })
+
+    await emitOperationalEvent(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      actorId: args.requesterId,
+      name: 'track_assistant_answered',
+      fields: {
+        streamId,
         evidenceCount: evidenceSource.length,
       },
     })

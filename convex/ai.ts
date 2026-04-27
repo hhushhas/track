@@ -2,6 +2,8 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
+import { emitOperationalEvent } from './lib/observability'
+import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember, requireReviewer } from './lib/permissions'
 
 function inferDraftType(body: string) {
@@ -45,6 +47,10 @@ export const runReviewNow = mutation({
   handler: async (ctx, args) => {
     await requireReviewer(ctx, args.projectId, args.reviewerId)
     await requireGroupMember(ctx, args.groupId, args.reviewerId)
+    await rateLimiter.limit(ctx, 'runAiReview', {
+      key: args.groupId,
+      throws: true,
+    })
 
     const now = Date.now()
     const reviewId = await ctx.db.insert('aiReviews', {
@@ -124,6 +130,18 @@ export const runReviewNow = mutation({
       entityId: reviewId,
       action: 'ai_review.completed',
       after: {
+        draftCount: candidateMessages.length,
+        model: 'anthropic/claude-sonnet-4.6',
+      },
+    })
+
+    await emitOperationalEvent(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      actorId: args.reviewerId,
+      name: 'ai_review_completed',
+      fields: {
+        reviewId,
         draftCount: candidateMessages.length,
         model: 'anthropic/claude-sonnet-4.6',
       },

@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
+import { rateLimiter } from './lib/rateLimit'
 import { requireProjectMember } from './lib/permissions'
 
 export const list = query({
@@ -29,6 +30,10 @@ export const request = mutation({
   },
   handler: async (ctx, args) => {
     await requireProjectMember(ctx, args.projectId, args.userId)
+    await rateLimiter.limit(ctx, 'requestExport', {
+      key: args.userId,
+      throws: true,
+    })
     const exportId = await ctx.db.insert('exports', {
       projectId: args.projectId,
       requestedBy: args.userId,
