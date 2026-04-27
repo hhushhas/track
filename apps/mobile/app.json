@@ -2,7 +2,7 @@
   "expo": {
     "name": "Q9 Track",
     "slug": "track",
-    "owner": "q9labs",
+    "owner": "q9labsai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -42,6 +42,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "fa6a7ca9-7e23-437b-a641-ae3ced55270e"
+      }
     }
   }
 }
