@@ -1384,26 +1384,125 @@ Backend/shared contracts lead each wave. Web and mobile then implement the same 
 
 No wave is accepted if only web or only mobile is usable, unless this file explicitly grants a platform exception.
 
-### 12.2 Parallelization Rule
+Every phase, wave, and task MUST be tracked with:
 
-Parallel work is allowed only when write scopes are disjoint.
+- `id`
+- `depends_on`
+- `unlocks`
+- `write_scope`
+- `parallel_clearance`
 
-Good split:
+### 12.2 Parallelization Vocabulary
+
+Use these exact clearance labels:
+
+| Label | Meaning |
+| --- | --- |
+| `serial` | Must run alone because it owns shared contracts, schema, auth, routing, or release state. |
+| `contract-first` | One worker stabilizes the shared contract first; web, mobile, tests, and docs may parallelize after that contract is accepted. |
+| `parallel` | May run alongside other tasks if write scopes do not overlap. |
+| `parallel-after` | May run in parallel only after the listed dependency task is merged or explicitly handed off. |
+| `read-only` | May run any time because it only inspects, audits, or drafts. |
+| `blocked` | Must not start until a missing external dependency is resolved. |
+| `deferred-external` | Not required for core product completion; complete when external credentials or services are ready. |
+| `deferred-release` | Not required for core product completion; complete when release assets, review inputs, or store permissions are ready. |
+| `ship-gated` | Implementation may be completed, but push, production deploy, or public submission requires explicit `ship it` approval. |
+
+### 12.3 Write-Scope Locks
+
+Parallel workers MUST NOT write to the same lock at the same time.
+
+| Lock | Owns |
+| --- | --- |
+| `root-config` | `package.json`, `pnpm-workspace.yaml`, `turbo.json`, root tsconfigs, repo scripts. |
+| `ci-deploy` | GitHub Actions, Wrangler config, EAS config, deployment scripts. |
+| `design-system` | theme tokens, shadcn config, shared UI primitives, app visual shell foundations. |
+| `shared-contracts` | `packages/shared`, shared validators, shared constants, shared types inferred from schemas. |
+| `convex-schema` | Convex schema, indexes, table contracts, cross-table invariants. |
+| `convex-auth` | auth adapter, auth/session functions, TOTP state, user sync. |
+| `convex-projects` | Project, Project Member, role, permission helpers. |
+| `convex-groups` | Group, Group Member, invite, group visibility helpers. |
+| `convex-messages` | Message, attachment metadata, presence, conversation queries/mutations. |
+| `convex-records` | Draft Record, Record, audit events, Project Record queries. |
+| `convex-ai` | AI Review, Track Assistant, RAG/retrieval, streaming persistence. |
+| `convex-notifications` | push subscriptions, notification preferences, delivery jobs. |
+| `convex-exports` | export jobs, CSV/PDF generation, export files. |
+| `convex-observability` | Axiom client, event emitters, redaction, rate limit wrappers. |
+| `web-shell` | web routing shell, layout, auth boundary, providers. |
+| `web-feature` | feature screens/components inside `apps/web`. |
+| `mobile-shell` | Expo app shell, navigation, auth boundary, providers. |
+| `mobile-feature` | feature screens/components inside `apps/mobile`. |
+| `docs-spec` | product specs, design docs, execution docs, session logs. |
+
+Rules:
+
+- A wave has exactly one contract owner when it touches `convex-schema`, `shared-contracts`, or auth/session boundaries.
+- UI workers may start only after the relevant Convex/shared contract task is accepted or explicitly handed off.
+- Tests may run in parallel with UI only when tests do not rewrite the same source files.
+- Docs may run in parallel unless the doc is the deliverable being edited.
+- If a worker discovers that it must touch another worker's lock, it must stop and report the new dependency.
+
+### 12.4 Dependency DAG
+
+The product dependency graph is:
 
 ```text
-Worker A: Convex/domain backend
-Worker B: web UI for already-stable contract
-Worker C: mobile UI for already-stable contract
-Worker D: tests/docs/observability for same wave
+P0 Foundation
+  -> P1 Identity And Security
+    -> P2 Projects, Groups, Membership
+      -> P3 Conversation Core
+        -> P4 Audit And Records Backbone
+          -> P5 AI Review
+          -> P6 Track Assistant
+          -> P8 Export
+        -> P7 Notifications
+  -> P9 Observability, Rate Limits, Production
 ```
 
-Bad split:
+Important exceptions:
 
-```text
-Worker A and Worker B both editing same schema/function surface without coordination.
-```
+- `W7.1 Push Subscription Infrastructure` may start after `W1.1 Auth Kernel`.
+- `W9.1 Observability Foundation` may start after `W0.2 CI And Environment Wiring`.
+- `W9.2 Rate Limit Foundation` may start after `W1.1 Auth Kernel`, but feature-specific limits must be added inside their feature waves.
+- `W8.1 Export Contract` may start after `W4.2 Draft Records And Records`.
 
-### 12.3 Phase 0: Foundation
+### 12.5 Wave Index
+
+| Wave | Depends On | Unlocks | Parallel Clearance |
+| --- | --- | --- | --- |
+| `W0.1 Repo Baseline` | none | `W0.2`, `W0.3` | `serial` |
+| `W0.2 CI And Environment Wiring` | `W0.1` | `W0.4`, `W9.1` | `parallel` with `W0.3` |
+| `W0.3 Track Shell Baseline` | `W0.1` | `W0.4` | `parallel` with `W0.2` |
+| `W0.4 Smoke Gates` | `W0.2`, `W0.3` | `W1.1` | `serial` |
+| `W1.1 Auth Kernel` | `W0.4` | `W1.2`, `W1.3`, `W2.1`, `W7.1`, `W9.2` | `contract-first` |
+| `W1.2 TOTP Enforcement` | `W1.1` | stronger app access gate | `contract-first` |
+| `W1.3 Profile And Avatar` | `W1.1` | message identity surfaces | `parallel-after W1.1` |
+| `W2.1 Project Create/List` | `W1.1` | `W2.2` | `contract-first` |
+| `W2.2 Group Management` | `W2.1` | `W2.3`, `W3.1` | `contract-first` |
+| `W2.3 Invites` | `W2.2` | complete membership lifecycle | `parallel-after W2.2` |
+| `W3.1 Realtime Messages` | `W2.2` | `W3.2`, `W3.3`, `W4.1`, `W7.2` | `contract-first` |
+| `W3.2 Mentions And Presence` | `W3.1` | mention notifications | `parallel` with `W3.3` |
+| `W3.3 Attachments` | `W3.1` | attachment evidence | `parallel` with `W3.2` |
+| `W4.1 Audit Events` | `W3.1` | `W4.2` | `contract-first` |
+| `W4.2 Draft Records And Records` | `W4.1` | `W5.1`, `W6.1`, `W8.1` | `contract-first` |
+| `W5.1 Manual AI Review` | `W4.2`, `W3.3` | `W5.2` | `contract-first` |
+| `W5.2 Scheduled Incremental Review` | `W5.1` | AI review automation | `parallel-after W5.1` |
+| `W6.1 Invocation And Streaming` | `W4.2`, `W3.1` | `W6.2` | `contract-first` |
+| `W6.2 Evidence Retrieval` | `W6.1`, `W3.3` | `W6.3` | `contract-first` |
+| `W6.3 Draft Creation Offer` | `W6.2`, `W4.2` | assistant-to-record loop | `parallel-after W6.2` |
+| `W7.1 Push Subscription Infrastructure` | `W1.1` | `W7.2` | `parallel` with `W2.x`/`W3.x` if locks are disjoint |
+| `W7.2 Notification Preferences And Rules` | `W3.2`, `W7.1` | `W7.3` | `contract-first` |
+| `W7.3 Notification Delivery QA` | `W7.2`, relevant feature events | notification acceptance | `parallel-after W7.2` |
+| `W8.1 Export Contract` | `W4.2` | `W8.2`, `W8.3` | `contract-first` |
+| `W8.2 Export Generators` | `W8.1` | `W8.4` | `parallel` with `W8.3` |
+| `W8.3 Export UI And Jobs` | `W8.1` | `W8.4` | `parallel` with `W8.2` |
+| `W8.4 Export Access QA` | `W8.2`, `W8.3` | export acceptance | `serial` |
+| `W9.1 Observability Foundation` | `W0.2` | all feature instrumentation | `parallel` unless touching feature locks |
+| `W9.2 Rate Limit Foundation` | `W1.1` | public mutation protection | `parallel` unless touching feature locks |
+| `W9.3 Production Deploy Readiness` | feature waves complete | store submission | `ship-gated` for push/deploy; `serial` for readiness |
+| `W9.4 Store Submission` | `W9.3` | public mobile release | `deferred-release` until listing assets/content are ready |
+
+### 12.6 Phase 0: Foundation
 
 Goal:
 
@@ -1417,14 +1516,54 @@ Status:
 - Shared package exists.
 - Convex schema skeleton exists.
 
-Remaining tasks:
+#### W0.1 Repo Baseline
 
-- Add CI.
-- Add Cloudflare Worker config.
-- Add Convex environment config.
-- Add EAS config.
-- Replace starter UI with Track shell.
-- Add baseline smoke tests.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T0.1.1` Normalize root scripts and package metadata | none | `root-config` | `serial` |
+| `T0.1.2` Confirm TypeScript 6 and shared import aliases | `T0.1.1` | `root-config`, `shared-contracts` | `serial` |
+| `T0.1.3` Confirm app package names and path aliases | `T0.1.2` | `web-shell`, `mobile-shell` | `parallel-after T0.1.2` |
+
+Exit gate:
+
+- Root scripts exist for lint, typecheck, test, build, docs, and dev.
+- Import aliases work in web, mobile, and shared package.
+
+#### W0.2 CI And Environment Wiring
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T0.2.1` Add GitHub Actions for root gates | `W0.1` | `ci-deploy` | `parallel` with `W0.3` |
+| `T0.2.2` Add Cloudflare Worker deployment config | `W0.1` | `ci-deploy` | `parallel` with `T0.2.3` if config files are separate |
+| `T0.2.3` Add Convex environment config docs/scripts | `W0.1` | `ci-deploy`, `docs-spec` | `parallel` with `T0.2.2` |
+| `T0.2.4` Add EAS config | `W0.1` | `ci-deploy`, `mobile-shell` | `parallel` with web-only work |
+
+Exit gate:
+
+- CI runs the same local gates.
+- Cloudflare, Convex, and EAS configs exist without storing secrets in git.
+
+#### W0.3 Track Shell Baseline
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T0.3.1` Create shared design token baseline from `DESIGN.md` | `W0.1` | `design-system`, `shared-contracts` | `contract-first` |
+| `T0.3.2` Replace web starter with Track shell | `T0.3.1` | `web-shell`, `web-feature` | `parallel` with `T0.3.3` |
+| `T0.3.3` Replace mobile starter with Track shell | `T0.3.1` | `mobile-shell`, `mobile-feature` | `parallel` with `T0.3.2` |
+| `T0.3.4` Add baseline empty/loading/error states | `T0.3.2`, `T0.3.3` | `web-feature`, `mobile-feature` | `parallel` by platform |
+
+Exit gate:
+
+- Web and mobile both display the Track shell using the stone/yellow theme.
+- The shell has placeholders for Project List, Group List, Conversation, Records, and Profile.
+
+#### W0.4 Smoke Gates
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T0.4.1` Add web smoke test | `W0.2`, `W0.3` | `web-feature` | `parallel` with `T0.4.2` |
+| `T0.4.2` Add mobile smoke test | `W0.2`, `W0.3` | `mobile-feature` | `parallel` with `T0.4.1` |
+| `T0.4.3` Verify full root gates | `T0.4.1`, `T0.4.2` | none | `serial` |
 
 Exit gate:
 
@@ -1433,7 +1572,7 @@ Exit gate:
 - Web preview starts.
 - Mobile Expo start works.
 
-### 12.4 Phase 1: Identity And Security
+### 12.7 Phase 1: Identity And Security
 
 Goal:
 
@@ -1441,18 +1580,18 @@ Goal:
 
 Depends on:
 
-- Phase 0.
+- `P0`.
 
-Wave 1.1: Auth Kernel
+#### W1.1 Auth Kernel
 
-Tasks:
-
-- Configure Better Auth Google OAuth.
-- Wire Convex auth integration.
-- Create user sync path.
-- Protect web routes.
-- Protect mobile routes.
-- Add auth state to shared contract.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T1.1.1` Configure Better Auth Google OAuth | `W0.4` | `convex-auth`, `web-shell`, `mobile-shell` | `contract-first` |
+| `T1.1.2` Wire Convex auth integration | `T1.1.1` | `convex-auth`, `convex-schema` | `serial` |
+| `T1.1.3` Create user sync path | `T1.1.2` | `convex-auth`, `convex-schema`, `shared-contracts` | `serial` |
+| `T1.1.4` Protect web routes | `T1.1.3` | `web-shell` | `parallel` with `T1.1.5` |
+| `T1.1.5` Protect mobile routes | `T1.1.3` | `mobile-shell` | `parallel` with `T1.1.4` |
+| `T1.1.6` Add auth tests and unauthenticated denial tests | `T1.1.4`, `T1.1.5` | `convex-auth`, `web-feature`, `mobile-feature` | `parallel-after T1.1.5` |
 
 Exit gate:
 
@@ -1460,34 +1599,36 @@ Exit gate:
 - Google login creates/loads user.
 - Web/mobile both show authenticated shell.
 
-Wave 1.2: TOTP
+#### W1.2 TOTP Enforcement
 
-Tasks:
-
-- Add TOTP enrollment.
-- Add TOTP challenge.
-- Add backup codes.
-- Add trusted device if cheap.
-- Add tests for enforcement.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T1.2.1` Add TOTP enrollment contract | `W1.1` | `convex-auth`, `convex-schema`, `shared-contracts` | `contract-first` |
+| `T1.2.2` Add TOTP challenge and enforcement | `T1.2.1` | `convex-auth`, `web-shell`, `mobile-shell` | `contract-first` |
+| `T1.2.3` Add backup codes | `T1.2.2` | `convex-auth`, `convex-schema` | `serial` |
+| `T1.2.4` Add web TOTP screens | `T1.2.2` | `web-feature` | `parallel` with `T1.2.5` |
+| `T1.2.5` Add mobile TOTP screens | `T1.2.2` | `mobile-feature` | `parallel` with `T1.2.4` |
+| `T1.2.6` Add enforcement tests | `T1.2.4`, `T1.2.5` | `convex-auth` | `parallel-after T1.2.5` |
 
 Exit gate:
 
 - User cannot access Projects before 2FA requirement is satisfied.
 
-Wave 1.3: Profile And Avatar
+#### W1.3 Profile And Avatar
 
-Tasks:
-
-- Profile edit.
-- Avatar upload to Convex.
-- Avatar display in web/mobile.
-- Audit event if security-relevant.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T1.3.1` Add profile/avatar schema fields and storage contract | `W1.1` | `convex-auth`, `convex-schema`, `shared-contracts` | `contract-first` |
+| `T1.3.2` Add profile edit mutations | `T1.3.1` | `convex-auth` | `parallel-after T1.3.1` |
+| `T1.3.3` Add web profile/avatar UI | `T1.3.2` | `web-feature` | `parallel` with `T1.3.4` |
+| `T1.3.4` Add mobile profile/avatar UI | `T1.3.2` | `mobile-feature` | `parallel` with `T1.3.3` |
+| `T1.3.5` Add profile audit events if security-relevant | `T1.3.2` | `convex-records`, `convex-auth` | `parallel-after W4.1` if audit helper does not exist yet |
 
 Exit gate:
 
 - Avatar appears in message-ready profile surfaces.
 
-### 12.5 Phase 2: Projects, Groups, Membership
+### 12.8 Phase 2: Projects, Groups, Membership
 
 Goal:
 
@@ -1495,17 +1636,19 @@ Goal:
 
 Depends on:
 
-- Phase 1.
+- `W1.1`.
+- `W1.2` for production access enforcement.
 
-Wave 2.1: Project Create/List
+#### W2.1 Project Create/List
 
-Tasks:
-
-- Create Project mutation.
-- Default Group creation.
-- Role default Group Membership seeding.
-- Project List web.
-- Project List mobile.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T2.1.1` Add Project and Project Member schema | `W1.1` | `convex-schema`, `convex-projects`, `shared-contracts` | `contract-first` |
+| `T2.1.2` Add Project create/list mutations and queries | `T2.1.1` | `convex-projects` | `parallel-after T2.1.1` |
+| `T2.1.3` Add default Group creation hook | `T2.1.2` | `convex-projects`, `convex-groups` | `serial` |
+| `T2.1.4` Add web Project List/Create UI | `T2.1.2` | `web-feature` | `parallel` with `T2.1.5` |
+| `T2.1.5` Add mobile Project List/Create UI | `T2.1.2` | `mobile-feature` | `parallel` with `T2.1.4` |
+| `T2.1.6` Add permission tests for Project creation | `T2.1.3` | `convex-projects` | `parallel-after T2.1.3` |
 
 Exit gate:
 
@@ -1513,34 +1656,37 @@ Exit gate:
 - Staff/Client cannot.
 - Default Groups exist.
 
-Wave 2.2: Group Management
+#### W2.2 Group Management
 
-Tasks:
-
-- Group List.
-- Create Group.
-- Group settings.
-- Group Member management.
-- Web/mobile Group navigation.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T2.2.1` Add Group and Group Member schema/indexes | `W2.1` | `convex-schema`, `convex-groups`, `shared-contracts` | `contract-first` |
+| `T2.2.2` Add Group visibility and membership helpers | `T2.2.1` | `convex-groups`, `convex-projects` | `serial` |
+| `T2.2.3` Add Group list/create/settings mutations | `T2.2.2` | `convex-groups` | `parallel-after T2.2.2` |
+| `T2.2.4` Add web Group navigation/settings UI | `T2.2.3` | `web-feature` | `parallel` with `T2.2.5` |
+| `T2.2.5` Add mobile Group navigation/settings UI | `T2.2.3` | `mobile-feature` | `parallel` with `T2.2.4` |
+| `T2.2.6` Add visibility denial tests | `T2.2.3` | `convex-groups` | `parallel-after T2.2.3` |
 
 Exit gate:
 
 - Group Membership gates visibility.
 
-Wave 2.3: Invites
+#### W2.3 Invites
 
-Tasks:
-
-- Project invite.
-- Group invite.
-- Invite acceptance.
-- Audit events.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T2.3.1` Add invite schema and acceptance contract | `W2.2` | `convex-schema`, `convex-projects`, `convex-groups`, `shared-contracts` | `contract-first` |
+| `T2.3.2` Add Project invite flow | `T2.3.1` | `convex-projects` | `parallel` with `T2.3.3` |
+| `T2.3.3` Add Group invite flow | `T2.3.1` | `convex-groups` | `parallel` with `T2.3.2` |
+| `T2.3.4` Add web invite UI | `T2.3.2`, `T2.3.3` | `web-feature` | `parallel` with `T2.3.5` |
+| `T2.3.5` Add mobile invite UI | `T2.3.2`, `T2.3.3` | `mobile-feature` | `parallel` with `T2.3.4` |
+| `T2.3.6` Add invite audit events and tests | `T2.3.2`, `T2.3.3`, `W4.1` | `convex-records`, `convex-projects`, `convex-groups` | `parallel-after W4.1` |
 
 Exit gate:
 
 - Invited user receives only intended Project/Group access.
 
-### 12.6 Phase 3: Conversation Core
+### 12.9 Phase 3: Conversation Core
 
 Goal:
 
@@ -1548,50 +1694,53 @@ Goal:
 
 Depends on:
 
-- Phase 2.
+- `W2.2`.
 
-Wave 3.1: Realtime Messages
+#### W3.1 Realtime Messages
 
-Tasks:
-
-- Send Message.
-- Message pagination.
-- Realtime subscriptions.
-- Web Conversation UI.
-- Mobile Conversation UI.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T3.1.1` Add Message schema/indexes | `W2.2` | `convex-schema`, `convex-messages`, `shared-contracts` | `contract-first` |
+| `T3.1.2` Add send/list/paginate functions | `T3.1.1` | `convex-messages`, `convex-groups` | `parallel-after T3.1.1` |
+| `T3.1.3` Add web Conversation UI | `T3.1.2` | `web-feature` | `parallel` with `T3.1.4` |
+| `T3.1.4` Add mobile Conversation UI | `T3.1.2` | `mobile-feature` | `parallel` with `T3.1.3` |
+| `T3.1.5` Add message visibility and realtime tests | `T3.1.2` | `convex-messages` | `parallel-after T3.1.2` |
 
 Exit gate:
 
 - Group Members can chat in realtime on web and mobile.
 
-Wave 3.2: Mentions And Presence
+#### W3.2 Mentions And Presence
 
-Tasks:
-
-- Mention parsing.
-- User mention UI.
-- Presence state.
-- Typing state.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T3.2.1` Add mention parsing contract | `W3.1` | `shared-contracts`, `convex-messages` | `contract-first` |
+| `T3.2.2` Add user mention picker web | `T3.2.1` | `web-feature` | `parallel` with `T3.2.3` |
+| `T3.2.3` Add user mention picker mobile | `T3.2.1` | `mobile-feature` | `parallel` with `T3.2.2` |
+| `T3.2.4` Add presence and typing state | `W3.1` | `convex-messages`, `web-feature`, `mobile-feature` | `contract-first` |
+| `T3.2.5` Add no-leakage tests | `T3.2.1`, `T3.2.4` | `convex-messages`, `convex-groups` | `parallel-after T3.2.4` |
 
 Exit gate:
 
 - Presence and mentions do not leak restricted Groups.
 
-Wave 3.3: Attachments
+#### W3.3 Attachments
 
-Tasks:
-
-- Upload UI web.
-- Upload UI mobile.
-- Convex storage metadata.
-- Access-safe download.
-- Extraction status.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T3.3.1` Add Attachment metadata schema and storage contract | `W3.1` | `convex-schema`, `convex-messages`, `shared-contracts` | `contract-first` |
+| `T3.3.2` Add access-safe upload/download functions | `T3.3.1` | `convex-messages` | `parallel-after T3.3.1` |
+| `T3.3.3` Add web attachment UI | `T3.3.2` | `web-feature` | `parallel` with `T3.3.4` |
+| `T3.3.4` Add mobile attachment UI | `T3.3.2` | `mobile-feature` | `parallel` with `T3.3.3` |
+| `T3.3.5` Add extraction status preservation | `T3.3.1` | `convex-messages` | `parallel-after T3.3.1` |
+| `T3.3.6` Add attachment access tests | `T3.3.2` | `convex-messages` | `parallel-after T3.3.2` |
 
 Exit gate:
 
 - Attachment visibility follows Message visibility.
+- Screenshots, images, scanned PDFs, and voice notes are preserved as evidence even before OCR/transcription exists.
 
-### 12.7 Phase 4: Audit And Records Backbone
+### 12.10 Phase 4: Audit And Records Backbone
 
 Goal:
 
@@ -1599,35 +1748,41 @@ Goal:
 
 Depends on:
 
-- Phase 3.
+- `W3.1`.
 
-Wave 4.1: Audit Events
+#### W4.1 Audit Events
 
-Tasks:
-
-- Append-only audit helper.
-- Audit viewer for authorized users.
-- Audit tests.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T4.1.1` Add append-only Audit Event schema/helper | `W3.1` | `convex-schema`, `convex-records`, `shared-contracts` | `contract-first` |
+| `T4.1.2` Instrument existing mutating actions | `T4.1.1` | `convex-projects`, `convex-groups`, `convex-messages`, `convex-auth` | `serial` unless split by feature owner |
+| `T4.1.3` Add audit viewer query | `T4.1.1` | `convex-records` | `parallel-after T4.1.1` |
+| `T4.1.4` Add web audit viewer | `T4.1.3` | `web-feature` | `parallel` with `T4.1.5` |
+| `T4.1.5` Add mobile audit viewer | `T4.1.3` | `mobile-feature` | `parallel` with `T4.1.4` |
+| `T4.1.6` Add immutable audit tests | `T4.1.1`, `T4.1.2` | `convex-records` | `parallel-after T4.1.2` |
 
 Exit gate:
 
 - Mutating actions write immutable events.
 
-Wave 4.2: Draft Records And Records
+#### W4.2 Draft Records And Records
 
-Tasks:
-
-- Draft Record model.
-- Record model.
-- Review/classification mutation.
-- Inline Draft Record card web/mobile.
-- Project Record list web/mobile.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T4.2.1` Add Draft Record and Record schema/indexes | `W4.1` | `convex-schema`, `convex-records`, `shared-contracts` | `contract-first` |
+| `T4.2.2` Add review/classification mutations | `T4.2.1` | `convex-records` | `parallel-after T4.2.1` |
+| `T4.2.3` Add Project Record queries | `T4.2.1` | `convex-records` | `parallel` with `T4.2.2` |
+| `T4.2.4` Add inline Draft Record card web | `T4.2.2` | `web-feature` | `parallel` with `T4.2.5` |
+| `T4.2.5` Add inline Draft Record card mobile | `T4.2.2` | `mobile-feature` | `parallel` with `T4.2.4` |
+| `T4.2.6` Add Project Record list web | `T4.2.3` | `web-feature` | `parallel` with `T4.2.7` |
+| `T4.2.7` Add Project Record list mobile | `T4.2.3` | `mobile-feature` | `parallel` with `T4.2.6` |
+| `T4.2.8` Add classification permission/audit tests | `T4.2.2`, `T4.2.3` | `convex-records` | `parallel-after T4.2.3` |
 
 Exit gate:
 
 - Reviewer can classify Draft Record into Record.
 
-### 12.8 Phase 5: AI Review
+### 12.11 Phase 5: AI Review
 
 Goal:
 
@@ -1635,36 +1790,40 @@ Goal:
 
 Depends on:
 
-- Phase 4.
+- `W4.2`.
+- `W3.3` for attachment evidence inclusion.
 
-Wave 5.1: Manual AI Review
+#### W5.1 Manual AI Review
 
-Tasks:
-
-- Manual review action.
-- Prompt/input/output schema.
-- Evidence citations.
-- Draft Record creation.
-- AI run observability.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T5.1.1` Define AI Review input/output schemas | `W4.2`, `W3.3` | `shared-contracts`, `convex-ai`, `convex-records` | `contract-first` |
+| `T5.1.2` Add manual review action | `T5.1.1` | `convex-ai`, `convex-records` | `parallel-after T5.1.1` |
+| `T5.1.3` Add evidence citation creation | `T5.1.2` | `convex-ai`, `convex-records` | `serial` with `T5.1.2` owner |
+| `T5.1.4` Add web manual review controls | `T5.1.2` | `web-feature` | `parallel` with `T5.1.5` |
+| `T5.1.5` Add mobile manual review controls | `T5.1.2` | `mobile-feature` | `parallel` with `T5.1.4` |
+| `T5.1.6` Add AI run observability events | `T5.1.2`, `W9.1` | `convex-ai`, `convex-observability` | `parallel-after W9.1` |
+| `T5.1.7` Add manual review tests | `T5.1.3` | `convex-ai`, `convex-records` | `parallel-after T5.1.3` |
 
 Exit gate:
 
 - Reviewer can run review and see Draft Records inline.
 
-Wave 5.2: Scheduled Incremental Review
+#### W5.2 Scheduled Incremental Review
 
-Tasks:
-
-- Review cursor.
-- Scheduled jobs.
-- Durable context input.
-- Failure handling.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T5.2.1` Add review cursor contract | `W5.1` | `convex-schema`, `convex-ai`, `shared-contracts` | `contract-first` |
+| `T5.2.2` Add scheduled jobs | `T5.2.1` | `convex-ai` | `parallel-after T5.2.1` |
+| `T5.2.3` Add durable context input assembly | `T5.2.1` | `convex-ai`, `convex-messages`, `convex-records` | `serial` with AI owner |
+| `T5.2.4` Add failure handling and retry state | `T5.2.2`, `T5.2.3` | `convex-ai`, `convex-observability` | `parallel-after T5.2.3` |
+| `T5.2.5` Add scheduled review tests | `T5.2.4` | `convex-ai` | `parallel-after T5.2.4` |
 
 Exit gate:
 
 - Cursor advances only after successful run.
 
-### 12.9 Phase 6: Track Assistant
+### 12.12 Phase 6: Track Assistant
 
 Goal:
 
@@ -1672,47 +1831,54 @@ Goal:
 
 Depends on:
 
-- Phase 4.
+- `W4.2`.
+- `W3.1`.
 
-Wave 6.1: Invocation And Streaming
+#### W6.1 Invocation And Streaming
 
-Tasks:
-
-- Detect `@track`.
-- Create assistant stream.
-- Persistent text streaming.
-- Web streaming UI.
-- Mobile streaming UI.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T6.1.1` Add assistant stream schema/storage contract | `W4.2`, `W3.1` | `convex-schema`, `convex-ai`, `shared-contracts` | `contract-first` |
+| `T6.1.2` Detect `@track` in Message flow | `T6.1.1` | `convex-ai`, `convex-messages` | `serial` with message owner |
+| `T6.1.3` Add persistent text streaming action | `T6.1.1` | `convex-ai` | `parallel-after T6.1.1` |
+| `T6.1.4` Add web streaming response UI | `T6.1.3` | `web-feature` | `parallel` with `T6.1.5` |
+| `T6.1.5` Add mobile streaming response UI | `T6.1.3` | `mobile-feature` | `parallel` with `T6.1.4` |
+| `T6.1.6` Add stream persistence tests | `T6.1.3` | `convex-ai` | `parallel-after T6.1.3` |
 
 Exit gate:
 
 - Answer survives reload.
 
-Wave 6.2: Evidence Retrieval
+#### W6.2 Evidence Retrieval
 
-Tasks:
-
-- Permission-safe retrieval.
-- Current Group default.
-- Optional broadening.
-- Evidence links.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T6.2.1` Add permission-safe retrieval contract | `W6.1`, `W3.3` | `convex-ai`, `convex-messages`, `convex-records`, `shared-contracts` | `contract-first` |
+| `T6.2.2` Add current Group default retrieval | `T6.2.1` | `convex-ai`, `convex-groups` | `parallel-after T6.2.1` |
+| `T6.2.3` Add optional broadening rules | `T6.2.1` | `convex-ai`, `convex-groups` | `serial` with retrieval owner |
+| `T6.2.4` Add evidence links in web UI | `T6.2.2`, `T6.2.3` | `web-feature` | `parallel` with `T6.2.5` |
+| `T6.2.5` Add evidence links in mobile UI | `T6.2.2`, `T6.2.3` | `mobile-feature` | `parallel` with `T6.2.4` |
+| `T6.2.6` Add no-leak retrieval tests | `T6.2.3` | `convex-ai`, `convex-groups` | `parallel-after T6.2.3` |
 
 Exit gate:
 
 - Assistant cannot leak inaccessible evidence.
 
-Wave 6.3: Draft Creation Offer
+#### W6.3 Draft Creation Offer
 
-Tasks:
-
-- Assistant answer can offer Draft Record.
-- Reviewer path can accept/edit.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T6.3.1` Add assistant-to-Draft Record offer contract | `W6.2`, `W4.2` | `convex-ai`, `convex-records`, `shared-contracts` | `contract-first` |
+| `T6.3.2` Add reviewer accept/edit path | `T6.3.1` | `convex-ai`, `convex-records` | `parallel-after T6.3.1` |
+| `T6.3.3` Add web offer UI | `T6.3.2` | `web-feature` | `parallel` with `T6.3.4` |
+| `T6.3.4` Add mobile offer UI | `T6.3.2` | `mobile-feature` | `parallel` with `T6.3.3` |
+| `T6.3.5` Add offer audit tests | `T6.3.2` | `convex-ai`, `convex-records` | `parallel-after T6.3.2` |
 
 Exit gate:
 
 - Offer creates Draft Record with evidence.
 
-### 12.10 Phase 7: Notifications
+### 12.13 Phase 7: Notifications
 
 Goal:
 
@@ -1720,24 +1886,51 @@ Goal:
 
 Depends on:
 
-- Phase 3.
+- `W1.1` for subscription infrastructure.
+- `W3.2` for message and mention rules.
 
-Tasks:
+#### W7.1 Push Subscription Infrastructure
 
-- Web VAPID subscription.
-- Expo push token registration.
-- Global preferences.
-- Per-Group overrides.
-- Message notifications.
-- Mention notifications.
-- Review/export notifications.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T7.1.1` Add push subscription schema | `W1.1` | `convex-schema`, `convex-notifications`, `shared-contracts` | `contract-first` |
+| `T7.1.2` Add web VAPID subscription registration | `T7.1.1` | `web-shell`, `convex-notifications` | `parallel` with `T7.1.3` |
+| `T7.1.3` Add Expo push token registration | `T7.1.1` | `mobile-shell`, `convex-notifications` | `parallel` with `T7.1.2` |
+| `T7.1.4` Add token revoke/update handling | `T7.1.2`, `T7.1.3` | `convex-notifications` | `parallel-after T7.1.3` |
+
+Exit gate:
+
+- Web and mobile can register notification destinations for the authenticated user.
+
+#### W7.2 Notification Preferences And Rules
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T7.2.1` Add global and per-Group preference schema | `W7.1`, `W3.2` | `convex-schema`, `convex-notifications`, `shared-contracts` | `contract-first` |
+| `T7.2.2` Add preference queries/mutations | `T7.2.1` | `convex-notifications`, `convex-groups` | `parallel-after T7.2.1` |
+| `T7.2.3` Add message notification rules | `T7.2.2` | `convex-notifications`, `convex-messages` | `serial` with notification owner |
+| `T7.2.4` Add mention notification rules | `T7.2.2`, `W3.2` | `convex-notifications`, `convex-messages` | `serial` with notification owner |
+| `T7.2.5` Add web notification settings UI | `T7.2.2` | `web-feature` | `parallel` with `T7.2.6` |
+| `T7.2.6` Add mobile notification settings UI | `T7.2.2` | `mobile-feature` | `parallel` with `T7.2.5` |
 
 Exit gate:
 
 - Group settings override global settings.
 - Notifications respect Group Membership.
 
-### 12.11 Phase 8: Export
+#### W7.3 Notification Delivery QA
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T7.3.1` Add delivery jobs for message/mention events | `W7.2` | `convex-notifications`, `convex-messages` | `parallel-after W7.2` |
+| `T7.3.2` Add review/export notification hooks | `W7.2`, `W5.1`, `W8.3` | `convex-notifications`, `convex-ai`, `convex-exports` | `parallel-after feature owner handoff` |
+| `T7.3.3` Add notification permission tests | `T7.3.1`, `T7.3.2` | `convex-notifications` | `parallel-after T7.3.2` |
+
+Exit gate:
+
+- Delivery logic respects user preferences and Group Membership.
+
+### 12.14 Phase 8: Export
 
 Goal:
 
@@ -1745,23 +1938,60 @@ Goal:
 
 Depends on:
 
-- Phase 4.
+- `W4.2`.
 
-Tasks:
+#### W8.1 Export Contract
 
-- Export request UI web/mobile.
-- CSV generator.
-- Client Summary PDF generator.
-- Full Audit Packet PDF generator.
-- Export job tracking.
-- Convex file storage.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T8.1.1` Add export request/job schema | `W4.2` | `convex-schema`, `convex-exports`, `shared-contracts` | `contract-first` |
+| `T8.1.2` Add export filter contract | `T8.1.1` | `convex-exports`, `convex-records`, `shared-contracts` | `serial` with export owner |
+| `T8.1.3` Add export access rules | `T8.1.2` | `convex-exports`, `convex-groups`, `convex-records` | `serial` with export owner |
+
+Exit gate:
+
+- Export jobs can be requested only for accessible project record data.
+
+#### W8.2 Export Generators
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T8.2.1` Add CSV generator | `W8.1` | `convex-exports` | `parallel` with `T8.2.2` |
+| `T8.2.2` Add Client Summary PDF generator | `W8.1` | `convex-exports` | `parallel` with `T8.2.1` |
+| `T8.2.3` Add Full Audit Packet PDF generator | `W8.1` | `convex-exports`, `convex-records` | `parallel-after T8.2.2` |
+| `T8.2.4` Store generated files in Convex storage | `T8.2.1`, `T8.2.2`, `T8.2.3` | `convex-exports` | `parallel-after T8.2.3` |
+
+Exit gate:
+
+- CSV, Client Summary PDF, and Full Audit Packet PDF can be generated from the same export contract.
+
+#### W8.3 Export UI And Jobs
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T8.3.1` Add export request UI web | `W8.1` | `web-feature` | `parallel` with `T8.3.2` |
+| `T8.3.2` Add export request UI mobile | `W8.1` | `mobile-feature` | `parallel` with `T8.3.1` |
+| `T8.3.3` Add export job tracking UI web | `W8.1` | `web-feature` | `parallel` with `T8.3.4` |
+| `T8.3.4` Add export job tracking UI mobile | `W8.1` | `mobile-feature` | `parallel` with `T8.3.3` |
+
+Exit gate:
+
+- Users can request and retrieve exports from web and mobile.
+
+#### W8.4 Export Access QA
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T8.4.1` Add restricted Group disclosure tests | `W8.2`, `W8.3` | `convex-exports`, `convex-groups` | `serial` |
+| `T8.4.2` Add export audit tests | `W8.2`, `W8.3`, `W4.1` | `convex-exports`, `convex-records` | `parallel-after T8.4.1` |
+| `T8.4.3` Add visual PDF proof artifacts | `W8.2` | `docs-spec`, `convex-exports` | `parallel-after T8.2.3` |
 
 Exit gate:
 
 - Export respects access and filters.
 - Client-facing PDF does not reveal restricted Group names.
 
-### 12.12 Phase 9: Observability, Rate Limits, Production
+### 12.15 Phase 9: Observability, Rate Limits, Production
 
 Goal:
 
@@ -1769,35 +1999,160 @@ Goal:
 
 Depends on:
 
-- All earlier phases.
+- `W0.2` for observability foundation.
+- `W1.1` for rate limit identity.
+- All feature waves for final production release.
 
-Tasks:
+#### W9.1 Observability Foundation
 
-- Axiom client.
-- Wide structured events.
-- Redaction tests.
-- Rate limits.
-- Cloudflare deploy.
-- Convex dev/prod deploy.
-- EAS development builds.
-- Store listing content.
-- App Store submission.
-- Play Store submission.
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T9.1.1` Add observability sink interface and env contract | `W0.2` | `convex-observability`, `docs-spec` | `contract-first` |
+| `T9.1.2` Add no-op/local development sink | `T9.1.1` | `convex-observability` | `parallel-after T9.1.1` |
+| `T9.1.3` Add Axiom adapter when credentials exist | `T9.1.1` | `convex-observability`, `docs-spec` | `deferred-external` until Axiom token/dataset exist |
+| `T9.1.4` Add wide structured event helper | `T9.1.1`, `T9.1.2` | `convex-observability`, `shared-contracts` | `contract-first` |
+| `T9.1.5` Add redaction helper and tests | `T9.1.4` | `convex-observability` | `parallel-after T9.1.4` |
+| `T9.1.6` Add feature instrumentation handoff checklist | `T9.1.4` | `docs-spec` | `parallel` |
 
 Exit gate:
 
-- Live web target serves current revision.
-- Convex prod is connected.
+- Feature workers can emit operational events through a single redacted helper.
+- Core product completion does not require external Axiom emission.
+- External Axiom emission is a deferred external-sink gate.
+
+#### W9.2 Rate Limit Foundation
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T9.2.1` Add Convex rate limit component config | `W1.1` | `convex-observability`, `convex-auth` | `contract-first` |
+| `T9.2.2` Add generic rate-limit wrappers | `T9.2.1` | `convex-observability`, `shared-contracts` | `parallel-after T9.2.1` |
+| `T9.2.3` Add feature-specific limit checklist | `T9.2.2` | `docs-spec` | `parallel` |
+
+Exit gate:
+
+- Public mutations/actions have an obvious rate-limit integration path.
+
+#### W9.3 Production Deploy Readiness
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T9.3.1` Prepare and verify Convex dev/prod deploy config | feature waves complete | `ci-deploy` | `serial` |
+| `T9.3.2` Prepare Cloudflare Worker deploy config | `T9.3.1` | `ci-deploy` | `serial` |
+| `T9.3.3` Create EAS development builds | `T9.3.1` | `ci-deploy`, `mobile-shell` | `serial` |
+| `T9.3.4` Push and deploy web/Convex production | `T9.3.1`, `T9.3.2` | `ci-deploy` | `ship-gated` |
+| `T9.3.5` Verify live revision and mobile build boot | `T9.3.3`, `T9.3.4` | none | `ship-gated` for live web proof; `serial` for local/mobile build proof |
+
+Exit gate:
+
+- Deploy config is ready and verified locally.
 - Mobile builds succeed.
-- Store submission is complete.
+- Live web target serves current revision only after `ship it`.
+- Convex prod is connected only after `ship it`.
+
+#### W9.4 Store Submission
+
+This wave is a deferred release track. It is not required for core product completion.
+
+| Task | Depends On | Write Scope | Parallel Clearance |
+| --- | --- | --- | --- |
+| `T9.4.1` Finalize store listing content and screenshots | `W9.3` | `docs-spec`, `ci-deploy` | `deferred-release` until listing assets/content are ready |
+| `T9.4.2` Submit App Store build | `T9.4.1` | `ci-deploy` | `parallel` with `T9.4.3` if credentials are stable |
+| `T9.4.3` Submit Play Store build | `T9.4.1` | `ci-deploy` | `deferred-release` if Play production release permission is not granted |
+| `T9.4.4` Verify store submission status | `T9.4.2`, `T9.4.3` | none | `serial` |
+
+Exit gate:
+
+- App Store submission is complete.
+- Play Store submission is complete.
+
+### 12.16 Parallel Worker Clearance Pattern
+
+For a normal feature wave after the contract task lands, use this split:
+
+```text
+Worker A: Convex/shared contract and backend behavior
+  locks: convex-*, shared-contracts
+
+Worker B: Web UI
+  locks: web-feature
+
+Worker C: Mobile UI
+  locks: mobile-feature
+
+Worker D: Tests, docs, observability
+  locks: feature test files, docs-spec, convex-observability
+```
+
+Do not start Workers B/C/D until Worker A has either:
+
+- committed the contract,
+- produced a stable patch,
+- or written an explicit handoff with function names, schema fields, validators, and expected states.
+
+### 12.17 Conflict Prevention Protocol
+
+Before starting any worker:
+
+1. Read the target wave and task IDs.
+2. Claim the write-scope locks in the worker prompt.
+3. Confirm no other active worker owns those locks.
+4. Include `depends_on` and `unlocks` in the worker prompt.
+5. Require the worker to list changed files in the final response.
+
+Before merging any worker output:
+
+1. Re-run `git status --short`.
+2. Review changed files against the claimed write-scope locks.
+3. Reject or rework output that silently touched another worker's lock.
+4. Run the wave exit gate.
+5. Update the session log with the completed task IDs.
+
+### 12.18 Execution Command Semantics
+
+If Hasan says `execute phases 1-9 end-to-end until full completion`, the executor MUST understand that as:
+
+- Complete every non-deferred task in `P1` through `P9`.
+- Complete any missing `P0` prerequisite that blocks `P1`.
+- Preserve web/mobile feature parity for every user-facing capability.
+- Keep backend/shared contracts ahead of web/mobile UI work.
+- Use the dependency IDs and write-scope locks in this file to avoid worker conflicts.
+- Run the wave exit gate before advancing to the next dependent wave.
+- Commit scoped completed work as it lands.
+- Stop before push unless Hasan says `ship it`.
+- Stop before production deploy unless Hasan says `ship it` or explicitly says to deploy production.
+
+That command does NOT mean:
+
+- Skip testing because the scope is large.
+- Start AI Review or Track Assistant before permissions, audit, and records are ready.
+- Treat external Axiom emission as required before product completion.
+- Treat App Store/Play Store submission as required before product completion.
+- Attempt store submission without final listing content/screenshots.
+- Attempt Play production rollout without the required Play permission.
+
+Core product completion means:
+
+- Auth, TOTP, Projects, Groups, invites, chat, attachments, presence, audit, records, AI Review, Track Assistant, notifications, exports, rate limits, and production deploy path are implemented.
+- Web and mobile have parity for the same product capabilities.
+- Observability emits through the internal redacted helper and can use a no-op/local sink until Axiom credentials are available.
+- Full local gates pass.
+- The latest committed revision is ready for user review or, if instructed, push/deploy.
+- Production deploy readiness is complete; actual production deployment is ship-gated.
+
+Release completion means:
+
+- External Axiom emission is configured and verified.
+- Store listing content/screenshots are finalized.
+- App Store submission is complete.
+- Play Store submission is complete.
 
 ## 13. Current Known External Loose Ends
 
-These do not block implementation start:
+These do not block product implementation or core product completion:
 
-- Axiom token/dataset access must be provided before real external observability can emit.
-- Store listing content and screenshots must be finalized before store submission.
-- Play submit service account currently may need production release permission for automated production rollout.
+- Axiom token/dataset access is only required before real external Axiom emission can be verified.
+- Store listing content and screenshots are only required before App Store/Play Store submission.
+- Play submit service account production release permission is only required before automated Play production rollout.
 
 ## 14. First Implementation Start Point
 
