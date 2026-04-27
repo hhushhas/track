@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Navigate, createFileRoute } from '@tanstack/react-router'
 import {
   Bell,
   Check,
@@ -19,6 +19,7 @@ import {
   demoMetrics,
   demoRecords,
 } from '@track/shared'
+import { authClient } from '../lib/auth-client'
 
 export const Route = createFileRoute('/')({ component: App })
 
@@ -52,6 +53,7 @@ type ProjectRecord = {
 }
 
 function App() {
+  const session = authClient.useSession()
   const [activeGroupId, setActiveGroupId] = useState<string>(demoGroups[0]?.id ?? '')
   const [composer, setComposer] = useState('')
   const [messages, setMessages] = useState<ThreadMessage[]>([...demoMessages])
@@ -86,6 +88,21 @@ function App() {
     ],
     [notificationMode, pendingDrafts.length],
   )
+
+  if (session.isPending) {
+    return (
+      <main className="flex h-[calc(100vh-48px)] items-center justify-center bg-[var(--paper)] px-4">
+        <div className="track-surface max-w-[360px] rounded-md p-4 text-center">
+          <p className="mono-label m-0">Track Access</p>
+          <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">Checking your session...</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (!session.data) {
+    return <Navigate to="/sign-in" />
+  }
 
   function sendMessage() {
     const body = composer.trim()
