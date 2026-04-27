@@ -801,13 +801,6 @@ High-risk tests to prioritize:
 - Export respects filters and access boundaries.
 - Observability does not leak secrets.
 
-## Missing Decisions
-
-These need to be decided before implementation gets too deep:
-
-1. Store listing content and screenshots.
-2. Whether to grant the Play submit service account production release permission.
-
 ## Track Scope
 
 ### In Scope
