@@ -1406,7 +1406,8 @@ Use these exact clearance labels:
 | `blocked` | Must not start until a missing external dependency is resolved. |
 | `deferred-external` | Not required for core product completion; complete when external credentials or services are ready. |
 | `deferred-release` | Not required for core product completion; complete when release assets, review inputs, or store permissions are ready. |
-| `ship-gated` | Implementation may be completed, but push, production deploy, or public submission requires explicit `ship it` approval. |
+| `ship-gated` | Implementation may be completed, but push, production deploy, or public submission requires explicit shipping authorization. |
+| `auto-ship` | Push, production deploy, infra provisioning, and app deployment are authorized by the command currently being executed. |
 
 ### 12.3 Write-Scope Locks
 
@@ -1499,8 +1500,8 @@ Important exceptions:
 | `W8.4 Export Access QA` | `W8.2`, `W8.3` | export acceptance | `serial` |
 | `W9.1 Observability Foundation` | `W0.2` | all feature instrumentation | `parallel` unless touching feature locks |
 | `W9.2 Rate Limit Foundation` | `W1.1` | public mutation protection | `parallel` unless touching feature locks |
-| `W9.3 Production Deploy Readiness` | feature waves complete | store submission | `ship-gated` for push/deploy; `serial` for readiness |
-| `W9.4 Store Submission` | `W9.3` | public mobile release | `deferred-release` until listing assets/content are ready |
+| `W9.3 Production Deploy` | feature waves complete | store submission | `auto-ship` only when the execution command grants shipping authority |
+| `W9.4 Store Submission` | `W9.3` | public mobile release | `auto-ship` when listing assets/content and store permissions are ready; otherwise `deferred-release` |
 
 ### 12.6 Phase 0: Foundation
 
@@ -2032,31 +2033,35 @@ Exit gate:
 
 - Public mutations/actions have an obvious rate-limit integration path.
 
-#### W9.3 Production Deploy Readiness
+#### W9.3 Production Deploy
 
 | Task | Depends On | Write Scope | Parallel Clearance |
 | --- | --- | --- | --- |
 | `T9.3.1` Prepare and verify Convex dev/prod deploy config | feature waves complete | `ci-deploy` | `serial` |
 | `T9.3.2` Prepare Cloudflare Worker deploy config | `T9.3.1` | `ci-deploy` | `serial` |
 | `T9.3.3` Create EAS development builds | `T9.3.1` | `ci-deploy`, `mobile-shell` | `serial` |
-| `T9.3.4` Push and deploy web/Convex production | `T9.3.1`, `T9.3.2` | `ci-deploy` | `ship-gated` |
-| `T9.3.5` Verify live revision and mobile build boot | `T9.3.3`, `T9.3.4` | none | `ship-gated` for live web proof; `serial` for local/mobile build proof |
+| `T9.3.4` Push repository changes | full local gates pass | `ci-deploy` | `auto-ship` only when command grants shipping authority |
+| `T9.3.5` Deploy Convex production | `T9.3.1`, `T9.3.4` | `ci-deploy` | `auto-ship` only when command grants shipping authority |
+| `T9.3.6` Deploy web to Cloudflare Workers at `track.q9labs.ai` | `T9.3.2`, `T9.3.4` | `ci-deploy` | `auto-ship` only when command grants shipping authority |
+| `T9.3.7` Create EAS production builds | `T9.3.3`, `T9.3.4` | `ci-deploy`, `mobile-shell` | `auto-ship` only when command grants shipping authority |
+| `T9.3.8` Verify live revision and mobile build boot | `T9.3.5`, `T9.3.6`, `T9.3.7` | none | `serial` |
 
 Exit gate:
 
-- Deploy config is ready and verified locally.
-- Mobile builds succeed.
-- Live web target serves current revision only after `ship it`.
-- Convex prod is connected only after `ship it`.
+- Repository changes are pushed when shipping authority is granted.
+- Convex prod is connected and serving the current revision.
+- `track.q9labs.ai` serves the current web revision.
+- Mobile production builds succeed.
+- Live proof is captured in the handoff.
 
 #### W9.4 Store Submission
 
-This wave is a deferred release track. It is not required for core product completion.
+This wave is part of full auto-ship when listing assets/content and store permissions are ready. It is deferred only when those assets, content, or permissions are missing.
 
 | Task | Depends On | Write Scope | Parallel Clearance |
 | --- | --- | --- | --- |
 | `T9.4.1` Finalize store listing content and screenshots | `W9.3` | `docs-spec`, `ci-deploy` | `deferred-release` until listing assets/content are ready |
-| `T9.4.2` Submit App Store build | `T9.4.1` | `ci-deploy` | `parallel` with `T9.4.3` if credentials are stable |
+| `T9.4.2` Submit App Store build | `T9.4.1` | `ci-deploy` | `auto-ship` with shipping authority; parallel with `T9.4.3` if credentials are stable |
 | `T9.4.3` Submit Play Store build | `T9.4.1` | `ci-deploy` | `deferred-release` if Play production release permission is not granted |
 | `T9.4.4` Verify store submission status | `T9.4.2`, `T9.4.3` | none | `serial` |
 
@@ -2109,7 +2114,9 @@ Before merging any worker output:
 
 ### 12.18 Execution Command Semantics
 
-If Hasan says `execute phases 1-9 end-to-end until full completion`, the executor MUST understand that as:
+If Hasan says `execute phases 1-9 end-to-end until full completion`, the executor MUST understand that as a full auto-ship command.
+
+It means:
 
 - Complete every non-deferred task in `P1` through `P9`.
 - Complete any missing `P0` prerequisite that blocks `P1`.
@@ -2118,17 +2125,41 @@ If Hasan says `execute phases 1-9 end-to-end until full completion`, the executo
 - Use the dependency IDs and write-scope locks in this file to avoid worker conflicts.
 - Run the wave exit gate before advancing to the next dependent wave.
 - Commit scoped completed work as it lands.
-- Stop before push unless Hasan says `ship it`.
-- Stop before production deploy unless Hasan says `ship it` or explicitly says to deploy production.
+- Push committed work.
+- Monitor CI and fix failures until green or truly blocked.
+- Provision or update infrastructure as needed.
+- Deploy Convex production.
+- Deploy web live to `track.q9labs.ai`.
+- Create and deploy mobile app builds through Expo/EAS as far as credentials, store assets, and store permissions allow.
+- Use authenticated browser/console workflows when CLI/API automation is insufficient.
+- Verify live proof before final handoff.
+
+Authorized tools and accounts for full auto-ship:
+
+- CLI tools: `gh`, `wrangler`, `convex`, `eas`, and other configured repo tooling.
+- Browser/desktop tools: Computer Use and the authenticated Helium Browser.
+- Allowed consoles: Expo, App Store Connect, Apple Developer, Google Play Console, Google Cloud, Convex, Cloudflare, GitHub, and related Track deployment consoles.
+- Required console account: switch to or confirm `q9labs.ai@gmail.com` before console changes.
+- If the browser is on another account, switch accounts before making changes.
+
+It must stop only for true blockers:
+
+- Missing credentials or missing account access.
+- Any destructive action that risks data loss.
+- Payment, legal, tax, or account-ownership decisions.
+- Store listing assets/content that cannot be generated or finalized yet.
+- Play production release permission if production Play submission is impossible.
+- Security-sensitive scope expansion not already described in this file.
 
 That command does NOT mean:
 
 - Skip testing because the scope is large.
 - Start AI Review or Track Assistant before permissions, audit, and records are ready.
 - Treat external Axiom emission as required before product completion.
-- Treat App Store/Play Store submission as required before product completion.
+- Pretend App Store/Play Store submission succeeded if listing assets/content or permissions are missing.
 - Attempt store submission without final listing content/screenshots.
 - Attempt Play production rollout without the required Play permission.
+- Make console changes under the wrong Google/Apple/Expo account.
 
 Core product completion means:
 
@@ -2136,8 +2167,8 @@ Core product completion means:
 - Web and mobile have parity for the same product capabilities.
 - Observability emits through the internal redacted helper and can use a no-op/local sink until Axiom credentials are available.
 - Full local gates pass.
-- The latest committed revision is ready for user review or, if instructed, push/deploy.
-- Production deploy readiness is complete; actual production deployment is ship-gated.
+- The latest committed revision is pushed when the full auto-ship command is active.
+- Production deploy is complete when the full auto-ship command is active.
 
 Release completion means:
 
@@ -2148,10 +2179,10 @@ Release completion means:
 
 ## 13. Current Known External Loose Ends
 
-These do not block product implementation or core product completion:
+These do not block product implementation or live product deployment:
 
 - Axiom token/dataset access is only required before real external Axiom emission can be verified.
-- Store listing content and screenshots are only required before App Store/Play Store submission.
+- Store listing content and screenshots are only required before App Store/Play Store submission; they can be deferred until the product is built enough to generate final screenshots.
 - Play submit service account production release permission is only required before automated Play production rollout.
 
 ## 14. First Implementation Start Point
