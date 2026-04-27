@@ -2,6 +2,7 @@
   "expo": {
     "name": "Q9 Track",
     "slug": "track",
+    "owner": "q9labs",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

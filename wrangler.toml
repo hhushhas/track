@@ -1,0 +1,12 @@
+name = "track"
+main = "apps/web/.output/server/index.mjs"
+compatibility_date = "2026-04-27"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "apps/web/.output/public"
+binding = "ASSETS"
+
+[[routes]]
+pattern = "track.q9labs.ai"
+custom_domain = true

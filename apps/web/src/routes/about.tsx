@@ -6,18 +6,14 @@ export const Route = createFileRoute('/about')({
 
 function About() {
   return (
-    <main className="page-wrap px-4 py-12">
-      <section className="island-shell rounded-2xl p-6 sm:p-8">
-        <p className="island-kicker mb-2">About</p>
-        <h1 className="display-title mb-3 text-4xl font-bold text-[var(--sea-ink)] sm:text-5xl">
-          A small starter with room to grow.
-        </h1>
-        <p className="m-0 max-w-3xl text-base leading-8 text-[var(--sea-ink-soft)]">
-          TanStack Start gives you type-safe routing, server functions, and
-          modern SSR defaults. Use this as a clean foundation, then layer in
-          your own routes, styling, and add-ons.
-        </p>
-      </section>
+    <main className="mx-auto max-w-3xl px-4 py-10">
+      <p className="mono-label m-0 mb-2">Track</p>
+      <h1 className="m-0 text-2xl font-semibold">Shared project memory.</h1>
+      <p className="mt-3 text-sm leading-6 text-[var(--ink-3)]">
+        Track is a client/vendor project chat that turns normal conversation
+        into reviewable records, evidence, action items, and exportable audit
+        packets.
+      </p>
     </main>
   )
 }
