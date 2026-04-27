@@ -1,7 +1,9 @@
 import { v } from 'convex/values'
 
-import { mutation, query } from './_generated/server'
+import { action, mutation, query } from './_generated/server'
+import { api } from './_generated/api'
 import { appendAuditEvent } from './lib/audit'
+import { generateTrackText } from './lib/ai'
 import { emitOperationalEvent } from './lib/observability'
 import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember } from './lib/permissions'
@@ -110,5 +112,34 @@ export const ask = mutation({
     })
 
     return { streamId, answer }
+  },
+})
+
+export const draftModelAnswer = action({
+  args: {
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    question: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const messages = await ctx.runQuery(api.messages.list, {
+      groupId: args.groupId,
+      userId: args.userId,
+      limit: 40,
+    })
+    const transcript = messages
+      .reverse()
+      .map((message) => `${message.authorId}: ${message.body}`)
+      .join('\n')
+    return await generateTrackText(
+      [
+        'You are Track Assistant. Answer naturally with yes/no when supported.',
+        'Use only the supplied conversation evidence. If evidence is insufficient, say so.',
+        '',
+        `Question: ${args.question}`,
+        '',
+        `Conversation:\n${transcript}`,
+      ].join('\n'),
+    )
   },
 })
