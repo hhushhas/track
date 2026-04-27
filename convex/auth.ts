@@ -1,0 +1,73 @@
+import { v } from 'convex/values'
+
+import { mutation, query } from './_generated/server'
+
+export const syncGoogleUser = mutation({
+  args: {
+    googleSubject: v.string(),
+    email: v.string(),
+    displayName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now()
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('by_google_subject', (q) =>
+        q.eq('googleSubject', args.googleSubject),
+      )
+      .unique()
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        email: args.email,
+        displayName: args.displayName,
+        updatedAt: now,
+      })
+      return existing._id
+    }
+
+    return await ctx.db.insert('users', {
+      googleSubject: args.googleSubject,
+      email: args.email,
+      displayName: args.displayName,
+      twoFactorEnabled: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+export const getUser = query({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId)
+  },
+})
+
+export const setTwoFactorEnabled = mutation({
+  args: {
+    userId: v.id('users'),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      twoFactorEnabled: args.enabled,
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const setAvatar = mutation({
+  args: {
+    userId: v.id('users'),
+    avatarStorageId: v.id('_storage'),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      avatarStorageId: args.avatarStorageId,
+      updatedAt: Date.now(),
+    })
+  },
+})
