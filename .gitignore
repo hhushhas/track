@@ -18,6 +18,8 @@ build/
 
 # Provisioning credentials and generated private material
 scratchpad/credentials/
+credentials.json
+apps/mobile/credentials.json
 *.p8
 *.p12
 *.jks
@@ -29,3 +31,6 @@ scratchpad/credentials/
 
 # Local screenshots / scratch captures
 SCR-*.png
+
+# Store release artifacts downloaded for manual console upload
+scratchpad/store-assets/play-release/
