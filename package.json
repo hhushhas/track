@@ -18,6 +18,7 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "^25.6.0",
+    "@types/web-push": "^3.6.4",
     "convex": "^1.36.1",
     "oxlint": "^1.61.0",
     "three": "^0.184.0",
@@ -37,6 +38,7 @@
     "@openrouter/ai-sdk-provider": "^2.8.1",
     "ai": "^6.0.168",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "web-push": "^3.6.7"
   }
 }

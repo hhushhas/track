@@ -26,6 +26,7 @@ import type * as lib_rateLimit from "../lib/rateLimit.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
 import type * as projects from "../projects.js";
+import type * as pushNotifications from "../pushNotifications.js";
 import type * as records from "../records.js";
 
 import type {
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   notifications: typeof notifications;
   projects: typeof projects;
+  pushNotifications: typeof pushNotifications;
   records: typeof records;
 }>;
 

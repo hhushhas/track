@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
+import { internal } from './_generated/api'
 import { appendAuditEvent } from './lib/audit'
 import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember } from './lib/permissions'
@@ -102,6 +103,10 @@ export const send = mutation({
         bodyPreview: args.body.slice(0, 180),
         mentionCount: args.mentions?.length ?? 0,
       },
+    })
+
+    await ctx.scheduler.runAfter(0, internal.pushNotifications.deliverMessageNotifications, {
+      messageId,
     })
 
     return messageId

@@ -59,6 +59,28 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
+self.addEventListener('push', (event) => {
+  let payload = {}
+  try {
+    payload = event.data?.json() ?? {}
+  } catch {
+    payload = {
+      body: event.data?.text() ?? '',
+    }
+  }
+
+  const title = payload.title ?? 'Track'
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      badge: payload.badge ?? '/logo192.png',
+      body: payload.body ?? '',
+      data: { url: payload.url ?? '/workspace' },
+      icon: payload.icon ?? '/logo192.png',
+      tag: payload.tag ?? 'track-message',
+    }),
+  )
+})
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const targetUrl = event.notification.data?.url ?? '/workspace'

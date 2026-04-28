@@ -1,6 +1,6 @@
 import { v } from 'convex/values'
 
-import { mutation, query } from './_generated/server'
+import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { requireGroupMember } from './lib/permissions'
 
@@ -17,6 +17,17 @@ const groupNotificationMode = v.union(
   v.literal('none'),
 )
 
+function shouldNotifyForMessage(input: {
+  globalMode: 'all' | 'mentions' | 'none'
+  groupMode: 'inherit' | 'all' | 'mentions' | 'none'
+  mentioned: boolean
+}) {
+  const mode = input.groupMode === 'inherit' ? input.globalMode : input.groupMode
+  if (mode === 'none') return false
+  if (mode === 'all') return true
+  return input.mentioned
+}
+
 export const getSettings = query({
   args: {
     userId: v.id('users'),
@@ -32,6 +43,11 @@ export const getSettings = query({
       .collect()
     return { global, groups }
   },
+})
+
+export const getWebPushPublicKey = query({
+  args: {},
+  handler: () => process.env.VAPID_PUBLIC_KEY ?? null,
 })
 
 export const setGlobalMode = mutation({
@@ -101,13 +117,45 @@ export const registerSubscription = mutation({
   args: {
     userId: v.id('users'),
     platform: v.union(v.literal('web'), v.literal('ios'), v.literal('android')),
-    tokenOrEndpoint: v.string(),
+    endpoint: v.string(),
+    expirationTime: v.optional(v.number()),
+    keys: v.object({
+      auth: v.string(),
+      p256dh: v.string(),
+    }),
   },
   handler: async (ctx, args) => {
+    const tokenOrEndpoint = JSON.stringify({
+      endpoint: args.endpoint,
+      expirationTime: args.expirationTime ?? null,
+      keys: args.keys,
+    })
+    const existingSubscriptions = await ctx.db
+      .query('notificationSubscriptions')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .collect()
+    const existing = existingSubscriptions.find((subscription) => {
+      try {
+        return JSON.parse(subscription.tokenOrEndpoint).endpoint === args.endpoint
+      } catch {
+        return subscription.tokenOrEndpoint === args.endpoint
+      }
+    })
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        enabled: true,
+        platform: args.platform,
+        tokenOrEndpoint,
+        updatedAt: Date.now(),
+      })
+      return existing._id
+    }
+
     const subscriptionId = await ctx.db.insert('notificationSubscriptions', {
       userId: args.userId,
       platform: args.platform,
-      tokenOrEndpoint: args.tokenOrEndpoint,
+      tokenOrEndpoint,
       enabled: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -122,5 +170,84 @@ export const registerSubscription = mutation({
     })
 
     return subscriptionId
+  },
+})
+
+export const collectMessageNotificationTargets = internalQuery({
+  args: {
+    messageId: v.id('messages'),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId)
+    if (!message) return null
+    const [author, group, project] = await Promise.all([
+      ctx.db.get(message.authorId),
+      ctx.db.get(message.groupId),
+      ctx.db.get(message.projectId),
+    ])
+    if (!group || !project) return null
+
+    const groupMembers = await ctx.db
+      .query('groupMembers')
+      .withIndex('by_group', (q) => q.eq('groupId', message.groupId))
+      .collect()
+
+    const targets = await Promise.all(
+      groupMembers.map(async (membership) => {
+        if (membership.userId === message.authorId) return []
+
+        const [globalSettings, groupSettings, subscriptions] = await Promise.all([
+          ctx.db
+            .query('notificationSettings')
+            .withIndex('by_user', (q) => q.eq('userId', membership.userId))
+            .unique(),
+          ctx.db
+            .query('groupNotificationSettings')
+            .withIndex('by_user_group', (q) =>
+              q.eq('userId', membership.userId).eq('groupId', message.groupId),
+            )
+            .unique(),
+          ctx.db
+            .query('notificationSubscriptions')
+            .withIndex('by_user', (q) => q.eq('userId', membership.userId))
+            .collect(),
+        ])
+
+        const shouldNotify = shouldNotifyForMessage({
+          globalMode: globalSettings?.globalMode ?? 'mentions',
+          groupMode: groupSettings?.mode ?? 'inherit',
+          mentioned: message.mentions.some((userId) => userId === membership.userId),
+        })
+        if (!shouldNotify) return []
+
+        return subscriptions
+          .filter((subscription) => subscription.enabled && subscription.platform === 'web')
+          .map((subscription) => ({
+            id: subscription._id,
+            tokenOrEndpoint: subscription.tokenOrEndpoint,
+          }))
+      }),
+    )
+
+    return {
+      body: message.body,
+      groupName: group.name,
+      projectName: project.name,
+      senderName: author?.displayName ?? 'Track',
+      targets: targets.flat(),
+      url: `/workspace/projects/${message.projectId}/groups/${message.groupId}`,
+    }
+  },
+})
+
+export const disableSubscription = internalMutation({
+  args: {
+    subscriptionId: v.id('notificationSubscriptions'),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.subscriptionId, {
+      enabled: false,
+      updatedAt: Date.now(),
+    })
   },
 })

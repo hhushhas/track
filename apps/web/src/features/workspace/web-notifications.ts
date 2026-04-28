@@ -19,6 +19,43 @@ export async function requestNotificationPermission() {
   return await Notification.requestPermission()
 }
 
+function urlBase64ToUint8Array(value: string) {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4)
+  const base64 = `${value}${padding}`.replaceAll('-', '+').replaceAll('_', '/')
+  const rawData = window.atob(base64)
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
+}
+
+export async function subscribeToWebPush(publicKey: string) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('This browser does not support web push.')
+  }
+
+  const registration = await navigator.serviceWorker.ready
+  const existingSubscription = await registration.pushManager.getSubscription()
+  if (existingSubscription) return existingSubscription
+
+  return await registration.pushManager.subscribe({
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+    userVisibleOnly: true,
+  })
+}
+
+export function serializePushSubscription(subscription: PushSubscription) {
+  const json = subscription.toJSON()
+  if (!json.endpoint || !json.keys?.auth || !json.keys.p256dh) {
+    throw new Error('Browser returned an incomplete push subscription.')
+  }
+  return {
+    endpoint: json.endpoint,
+    expirationTime: subscription.expirationTime ?? undefined,
+    keys: {
+      auth: json.keys.auth,
+      p256dh: json.keys.p256dh,
+    },
+  }
+}
+
 export function shouldNotifyForIncomingMessage(input: {
   authorId: string
   currentUserId: string
@@ -41,6 +78,7 @@ export async function showMessageNotification(input: {
   url: string
 }) {
   if (getNotificationPermission() !== 'granted') return
+  if ('PushManager' in window) return
 
   const options = {
     body: input.body,

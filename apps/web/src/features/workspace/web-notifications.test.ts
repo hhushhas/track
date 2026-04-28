@@ -35,4 +35,27 @@ describe('shouldNotifyForIncomingMessage', () => {
       }),
     ).toBe(false)
   })
+
+  it('lets remote push own supported browsers to avoid duplicate foreground alerts', async () => {
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: {
+        permission: 'granted',
+      },
+    })
+    Object.defineProperty(window, 'PushManager', {
+      configurable: true,
+      value: class PushManager {},
+    })
+
+    const { showMessageNotification } = await import('./web-notifications')
+    await expect(
+      showMessageNotification({
+        title: 'Track',
+        body: 'Hello',
+        tag: 'test',
+        url: '/workspace',
+      }),
+    ).resolves.toBeUndefined()
+  })
 })

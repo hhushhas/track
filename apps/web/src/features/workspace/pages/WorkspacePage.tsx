@@ -8,6 +8,7 @@ import {
   Clock3,
   Download,
   FileCheck2,
+  FileText,
   FolderKanban,
   GripVertical,
   LoaderCircle,
@@ -24,9 +25,10 @@ import {
   Smile,
   Sparkles,
   Upload,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, ClipboardEvent } from 'react'
 import type { CSSProperties } from 'react'
 import type { FormEvent } from 'react'
 
@@ -61,8 +63,10 @@ import {
   getNotificationPermission,
   notificationPermissionLabels,
   requestNotificationPermission,
+  serializePushSubscription,
   shouldNotifyForIncomingMessage,
   showMessageNotification,
+  subscribeToWebPush,
   type WebNotificationPermission,
 } from '#/features/workspace/web-notifications'
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
@@ -118,6 +122,20 @@ const emojiGroups = [
   },
 ] as const
 
+function createPendingAttachment(file: File) {
+  return {
+    file,
+    id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+  }
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function formatRailLabel(value: string) {
   return value.replaceAll('_', ' ')
 }
@@ -141,6 +159,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const askTrackAction = useAction(api.assistant.ask)
   const setGlobalNotificationMode = useMutation(api.notifications.setGlobalMode)
   const setGroupNotificationMode = useMutation(api.notifications.setGroupMode)
+  const registerNotificationSubscription = useMutation(api.notifications.registerSubscription)
   const requestExport = useMutation(api.exports.request)
 
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null)
@@ -148,6 +167,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
   const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null)
   const [composer, setComposer] = useState('')
+  const [pendingAttachments, setPendingAttachments] = useState<Array<ReturnType<typeof createPendingAttachment>>>([])
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [uiError, setUiError] = useState<string | null>(null)
   const [composerCursor, setComposerCursor] = useState(0)
@@ -176,8 +196,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(getNotificationPermission)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const pendingAttachmentsRef = useRef<Array<ReturnType<typeof createPendingAttachment>>>([])
   const hydratedNotificationMessagesRef = useRef(false)
   const notifiedMessageIdsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    return () => {
+      for (const attachment of pendingAttachmentsRef.current) {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments
+  }, [pendingAttachments])
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
   const sessionUser = useMemo(() => getSessionUser(session.data), [session.data])
@@ -230,6 +263,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     api.notifications.getSettings,
     trackUserId ? { userId: trackUserId } : 'skip',
   )
+  const webPushPublicKey = useQuery(api.notifications.getWebPushPublicKey)
   const auditEvents = useQuery(
     api.audit.listProjectEvents,
     trackUserId && activeProjectId
@@ -740,9 +774,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   async function handleSendMessage() {
     if (!trackUserId || !activeProjectId || !activeGroupId) return
     const body = composer.trim()
-    if (!body) return
-    setComposer('')
-    setComposerCursor(0)
+    if (!body && pendingAttachments.length === 0) return
     await withBusy('send-message', async () => {
       const mentionHandles = parseMentions(body)
       const mentionedUserIds: Array<Id<'users'>> = []
@@ -750,22 +782,59 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         const option = mentionOptions.find((item) => item.kind === 'member' && item.handle === handle)
         if (option?.kind === 'member') mentionedUserIds.push(option.id)
       }
+      const attachmentBody =
+        body ||
+        `Attached ${pendingAttachments.map((attachment) => attachment.file.name).join(', ')}`
+      const uploadedAttachments = await Promise.all(pendingAttachments.map(async (pendingAttachment) => {
+        const uploadUrl = await generateUploadUrl({
+          groupId: activeGroupId,
+          userId: trackUserId,
+        })
+        const uploadResponse = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': pendingAttachment.file.type || 'application/octet-stream' },
+          body: pendingAttachment.file,
+        })
+        if (!uploadResponse.ok) throw new Error('upload_failed')
+        const { storageId } = (await uploadResponse.json()) as { storageId: Id<'_storage'> }
+        return {
+          contentType: pendingAttachment.file.type || 'application/octet-stream',
+          filename: pendingAttachment.file.name,
+          size: pendingAttachment.file.size,
+          storageId,
+        }
+      }))
       const messageId = await sendMessageMutation({
         projectId: activeProjectId,
         groupId: activeGroupId,
         authorId: trackUserId,
-        body,
+        body: attachmentBody,
         mentions: mentionedUserIds,
       })
+      for (const attachment of uploadedAttachments) {
+        await attachFileMutation({
+          projectId: activeProjectId,
+          groupId: activeGroupId,
+          messageId,
+          userId: trackUserId,
+          storageId: attachment.storageId,
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.size,
+        })
+      }
       if (mentionHandles.includes('track')) {
         await askTrackAction({
           projectId: activeProjectId,
           groupId: activeGroupId,
           requesterId: trackUserId,
           promptMessageId: messageId,
-          question: body,
+          question: attachmentBody,
         })
       }
+      setComposer('')
+      setComposerCursor(0)
+      clearPendingAttachments()
     })
   }
 
@@ -799,39 +868,39 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }
 
   async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0]
+    const files = Array.from(event.currentTarget.files ?? [])
     event.currentTarget.value = ''
-    if (!file || !trackUserId || !activeProjectId || !activeGroupId) return
-    await withBusy('attach-file', async () => {
-      const uploadUrl = await generateUploadUrl({
-        groupId: activeGroupId,
-        userId: trackUserId,
-      })
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      })
-      if (!uploadResponse.ok) throw new Error('upload_failed')
-      const { storageId } = (await uploadResponse.json()) as { storageId: Id<'_storage'> }
-      const messageId = await sendMessageMutation({
-        projectId: activeProjectId,
-        groupId: activeGroupId,
-        authorId: trackUserId,
-        body: composer.trim() || `Attached ${file.name}`,
-        mentions: [],
-      })
-      await attachFileMutation({
-        projectId: activeProjectId,
-        groupId: activeGroupId,
-        messageId,
-        userId: trackUserId,
-        storageId,
-        filename: file.name,
-        contentType: file.type || 'application/octet-stream',
-        size: file.size,
-      })
-      setComposer('')
+    if (files.length === 0 || !activeGroupId) return
+    addPendingAttachments(files)
+  }
+
+  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (!activeGroupId) return
+    const files = Array.from(event.clipboardData.files)
+    if (files.length === 0) return
+    addPendingAttachments(files)
+  }
+
+  function addPendingAttachments(files: Array<File>) {
+    setPendingAttachments((attachments) => [...attachments, ...files.map(createPendingAttachment)])
+    setEmojiPickerOpen(false)
+    requestAnimationFrame(() => composerRef.current?.focus())
+  }
+
+  function removePendingAttachment(id: string) {
+    setPendingAttachments((attachments) => {
+      const attachment = attachments.find((item) => item.id === id)
+      if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+      return attachments.filter((item) => item.id !== id)
+    })
+  }
+
+  function clearPendingAttachments() {
+    setPendingAttachments((attachments) => {
+      for (const attachment of attachments) {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+      }
+      return []
     })
   }
 
@@ -931,6 +1000,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }
 
   async function handleEnableBrowserNotifications() {
+    if (!trackUserId) return
     await withBusy('notifications', async () => {
       const permission = await requestNotificationPermission()
       setNotificationPermission(permission)
@@ -941,6 +1011,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         throw new Error('This browser does not support web notifications.')
       }
       if (permission === 'granted') {
+        if (!webPushPublicKey) {
+          throw new Error('Web push is not configured for this environment.')
+        }
+        const subscription = await subscribeToWebPush(webPushPublicKey)
+        await registerNotificationSubscription({
+          userId: trackUserId,
+          platform: 'web',
+          ...serializePushSubscription(subscription),
+        })
         await showMessageNotification({
           title: 'Track notifications enabled',
           body: 'You will get alerts for new project messages.',
@@ -1212,6 +1291,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <Input
                   className="track-file-input"
                   onChange={(event) => void handleFileSelected(event)}
+                  multiple
                   ref={fileInputRef}
                   type="file"
                 />
@@ -1315,6 +1395,33 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
             <div className="track-composer-wrap">
               <div className="track-composer">
+                {pendingAttachments.length > 0 ? (
+                  <div className="track-composer-attachments" aria-label="Pending attachments">
+                    {pendingAttachments.map((attachment) => (
+                      <div className="track-composer-attachment" key={attachment.id}>
+                        {attachment.previewUrl ? (
+                          <img alt="" src={attachment.previewUrl} />
+                        ) : (
+                          <span className="track-composer-file-icon">
+                            <FileText size={18} />
+                          </span>
+                        )}
+                        <span className="track-composer-attachment-meta">
+                          <strong>{attachment.file.name}</strong>
+                          <small>{formatFileSize(attachment.file.size)}</small>
+                        </span>
+                        <button
+                          aria-label={`Remove ${attachment.file.name}`}
+                          className="track-composer-attachment-remove"
+                          onClick={() => removePendingAttachment(attachment.id)}
+                          type="button"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <Textarea
                   aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
                   disabled={!activeGroupId || busyAction === 'send-message'}
@@ -1359,6 +1466,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     }
                   }}
                   onKeyUp={handleComposerSelection}
+                  onPaste={handleComposerPaste}
                   onSelect={handleComposerSelection}
                   placeholder={composerPlaceholder}
                   ref={composerRef}
@@ -1418,7 +1526,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <div className="track-composer-bar">
                   <Button
                     className="icon-button"
-                    disabled={!activeGroupId || busyAction === 'attach-file'}
+                    disabled={!activeGroupId || busyAction === 'send-message'}
                     onClick={() => fileInputRef.current?.click()}
                     title="Attach evidence"
                     type="button"
@@ -1464,7 +1572,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   </span>
                   <Button
                     className="track-button track-button-primary"
-                    disabled={!composer.trim() || !activeGroupId || busyAction === 'send-message'}
+                    disabled={
+                      (!composer.trim() && pendingAttachments.length === 0) ||
+                      !activeGroupId ||
+                      busyAction === 'send-message'
+                    }
                     onClick={handleSendMessage}
                     type="button"
                   >
