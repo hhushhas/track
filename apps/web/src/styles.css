@@ -2733,6 +2733,13 @@ button.track-mention-inline.group:focus-visible {
   padding: 10px 14px;
 }
 
+.track-composer textarea:focus,
+.track-composer textarea:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+  outline: 0;
+}
+
 .track-composer.recording {
   overflow: hidden;
   background: var(--accent-tint);
