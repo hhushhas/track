@@ -2537,56 +2537,76 @@ button.track-citation-chip:hover {
   text-align: center;
 }
 
-.track-settings-card {
-  display: block;
-  border-color: var(--hairline) !important;
-  background: var(--paper) !important;
-  color: var(--ink) !important;
-  padding: 13px !important;
-}
-
-.track-settings-card-head,
-.track-settings-actions,
-.track-export-button-row {
+.track-settings-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.track-settings-card-head {
-  justify-content: space-between;
-}
-
-.track-settings-actions,
-.track-export-button-row {
   margin-top: 10px;
 }
 
-.track-settings-actions .track-button,
-.track-export-button-row .track-button {
-  flex: 1;
+.track-settings-actions .track-button {
+  min-width: 132px;
 }
 
 .track-settings-page {
   background: var(--paper-2);
-  padding: 16px;
+  padding: 18px;
 }
 
-.track-settings-grid {
-  display: grid;
+.track-settings-panel {
   width: 100%;
-  max-width: 1180px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  max-width: 760px;
   margin: 0 auto;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
 }
 
-.track-settings-wide {
-  grid-column: 1 / -1;
+.track-settings-section {
+  padding: 18px;
 }
 
-.track-settings-metrics {
-  min-height: 154px;
+.track-settings-section + .track-settings-section {
+  border-top: 1px solid var(--hairline);
+}
+
+.track-settings-section-head,
+.track-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.track-settings-section-head {
+  margin-bottom: 12px;
+}
+
+.track-settings-section-head h2 {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.track-settings-section-head svg {
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+
+.track-settings-row {
+  min-height: 34px;
+  border-top: 1px solid var(--hairline);
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.track-settings-row strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
 }
 
 button:disabled {
@@ -2608,10 +2628,6 @@ button:disabled:hover {
 
   .track-rail {
     display: none;
-  }
-
-  .track-settings-grid {
-    grid-template-columns: 1fr;
   }
 }
 

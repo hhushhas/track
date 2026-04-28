@@ -1013,7 +1013,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   value={chatSearchQuery}
                 />
               ) : null}
-            {view === 'records' || view === 'settings' ? (
+            {view === 'records' ? (
               <Button
                 className="track-button"
                 disabled={!activeProjectId || busyAction === 'export-csv'}
@@ -1045,14 +1045,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 />
               </>
             ) : null}
-            <Button
-              className="track-button"
-              disabled={!activeProjectId || busyAction === 'invite'}
-              onClick={handleInvite}
-              type="button"
-            >
-              Invite
-            </Button>
+            {view !== 'settings' ? (
+              <Button
+                className="track-button"
+                disabled={!activeProjectId || busyAction === 'invite'}
+                onClick={handleInvite}
+                type="button"
+              >
+                Invite
+              </Button>
+            ) : null}
             {view === 'group' ? (
               <Button
                 className="track-button track-button-accent"
@@ -1063,7 +1065,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <Sparkles size={14} />
                 Run AI Review
               </Button>
-            ) : view === 'records' || view === 'settings' ? (
+            ) : view === 'records' ? (
               <Button
                 className="track-button track-button-accent"
                 disabled={!activeProjectId || busyAction === 'export-pdf'}
@@ -1325,21 +1327,12 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         ) : view === 'settings' ? (
           <ProjectSettingsPage
             activeProject={activeProject?.project ?? null}
-            auditEvents={projectAuditEvents}
-            busyAction={busyAction}
-            exportDownloadUrl={exportDownloadUrl}
-            exports={projectExports}
             globalNotificationMode={globalNotificationMode}
             groupNotificationSettings={groupNotificationSettings}
             groups={visibleGroups}
-            invitations={projectInvitations}
-            latestExportId={latestExportId}
             members={activeProjectMembers}
-            onCreateGroup={handleCreateGroup}
             onInvite={handleInvite}
             onNotificationMode={handleNotificationMode}
-            onRequestExport={handleRequestExport}
-            records={projectRecords}
           />
         ) : (
           <ProjectGroupGallery groups={visibleGroups} onOpenGroup={navigateToGroup} />
@@ -1420,18 +1413,20 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                         <Bell size={14} />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="track-rail-menu">
-                        <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-                        <p className="track-rail-menu-note">Global {formatRailLabel(globalNotificationMode)}</p>
-                        <DropdownMenuRadioGroup
-                          value={groupNotificationMode}
-                          onValueChange={(mode) => void handleNotificationMode(mode as (typeof notificationModes)[number])}
-                        >
-                          {notificationModes.map((mode) => (
-                            <DropdownMenuRadioItem key={mode} value={mode}>
-                              {formatRailLabel(mode)}
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                          <p className="track-rail-menu-note">Global {formatRailLabel(globalNotificationMode)}</p>
+                          <DropdownMenuRadioGroup
+                            value={groupNotificationMode}
+                            onValueChange={(mode) => void handleNotificationMode(mode as (typeof notificationModes)[number])}
+                          >
+                            {notificationModes.map((mode) => (
+                              <DropdownMenuRadioItem key={mode} value={mode}>
+                                {formatRailLabel(mode)}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -1699,119 +1694,54 @@ function ProjectRecordsPage({
 
 function ProjectSettingsPage({
   activeProject,
-  auditEvents,
-  busyAction,
-  exportDownloadUrl,
-  exports,
   globalNotificationMode,
   groupNotificationSettings,
   groups,
-  invitations,
-  latestExportId,
   members,
-  onCreateGroup,
   onInvite,
   onNotificationMode,
-  onRequestExport,
-  records,
 }: {
   activeProject: Doc<'projects'> | null
-  auditEvents: Array<Doc<'auditEvents'>>
-  busyAction: string | null
-  exportDownloadUrl: string | null | undefined
-  exports: Array<Doc<'exports'>>
   globalNotificationMode: (typeof notificationModes)[number]
   groupNotificationSettings: Array<Doc<'groupNotificationSettings'>>
   groups: Array<Doc<'groups'>>
-  invitations: Array<Doc<'invitations'>>
-  latestExportId: Id<'exports'> | null
   members: Array<{ membership: Doc<'projectMembers'>; user: Doc<'users'> | null }>
-  onCreateGroup: () => Promise<void>
   onInvite: () => Promise<void>
   onNotificationMode: (mode: (typeof notificationModes)[number]) => Promise<void>
-  onRequestExport: (format: 'csv' | 'pdf') => Promise<void>
-  records: Array<Doc<'records'>>
 }) {
-  const latestExport = exports[0] ?? null
-  const reviewEnabledGroups = groups.filter((group) => group.aiReviewSettings?.enabled ?? true)
-  const openRecords = records.filter((record) => record.status === 'open' || record.status === 'in_progress')
-  const billableRecords = records.filter((record) => record.classification === 'billable_scope')
-  const blockedRecords = records.filter((record) => record.status === 'blocked')
-
   return (
     <div className="track-settings-page">
-      <section className="track-settings-grid">
-        <Card className="track-settings-card" size="sm">
-          <div className="track-settings-card-head">
-            <span className="track-rail-heading">Project</span>
-            <Settings2 size={14} />
+      <section className="track-settings-panel">
+        <div className="track-settings-section">
+          <div className="track-settings-section-head">
+            <div>
+              <span className="mono-label">General</span>
+              <h2>Project identity</h2>
+            </div>
+            <Settings2 size={15} />
           </div>
-          <p className="track-muted track-rail-compact-copy">
-            {activeProject?.clientLabel ?? 'No client label'} · {groups.length} groups · {members.length} members
-          </p>
-          <div className="track-settings-actions">
-            <Button className="track-button" onClick={() => void onInvite()} type="button">
-              Invite
-            </Button>
-            <Button className="track-button" onClick={() => void onCreateGroup()} type="button">
-              New Group
-            </Button>
+          <div className="track-settings-row">
+            <span>Name</span>
+            <strong>{activeProject?.name ?? 'Untitled project'}</strong>
           </div>
-        </Card>
+          <div className="track-settings-row">
+            <span>Client label</span>
+            <strong>{activeProject?.clientLabel ?? 'None'}</strong>
+          </div>
+          <div className="track-settings-row">
+            <span>Groups</span>
+            <strong>{groups.length}</strong>
+          </div>
+        </div>
 
-        <Card className="track-count-grid track-settings-metrics" size="sm">
-          <Metric label="Records" value={records.length} />
-          <Metric label="Open" value={openRecords.length} />
-          <Metric label="Billable" value={billableRecords.length} />
-          <Metric label="Blocked" value={blockedRecords.length} />
-        </Card>
-
-        <Card className="track-settings-card" size="sm">
-          <div className="track-settings-card-head">
-            <span className="track-rail-heading">Exports</span>
-            <Download size={14} />
-          </div>
-          <div className="track-export-button-row">
-            <Button
-              className="track-button"
-              disabled={busyAction === 'export-csv'}
-              onClick={() => void onRequestExport('csv')}
-              type="button"
-            >
-              CSV
-            </Button>
-            <Button
-              className="track-button track-button-primary"
-              disabled={busyAction === 'export-pdf'}
-              onClick={() => void onRequestExport('pdf')}
-              type="button"
-            >
-              Full packet
-            </Button>
-          </div>
-          {exportDownloadUrl ? (
-            <a className="track-export-link" href={exportDownloadUrl} rel="noreferrer" target="_blank">
-              Download latest export
-            </a>
-          ) : latestExportId ? (
-            <span className="track-muted track-export-preparing">Preparing export...</span>
-          ) : latestExport ? (
-            <span className="track-muted track-export-preparing">
-              Latest {latestExport.format} · {latestExport.status}
-            </span>
-          ) : (
-            <span className="track-muted track-export-preparing">No exports requested yet.</span>
-          )}
-        </Card>
-
-        <Card className="track-settings-card" size="sm">
-          <div className="track-settings-card-head">
-            <span className="track-rail-heading">Notifications</span>
+        <div className="track-settings-section">
+          <div className="track-settings-section-head">
+            <div>
+              <span className="mono-label">Notifications</span>
+              <h2>Default notification mode</h2>
+            </div>
             <Bell size={14} />
           </div>
-          <p className="track-muted track-rail-compact-copy">
-            Global {globalNotificationMode} · {groupNotificationSettings.length} group overrides
-          </p>
           <ToggleGroup
             className="track-mode-grid"
             value={[globalNotificationMode]}
@@ -1830,59 +1760,34 @@ function ProjectSettingsPage({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-        </Card>
-
-        <Card className="track-settings-card" size="sm">
-          <div className="track-settings-card-head">
-            <span className="track-rail-heading">AI Review Coverage</span>
-            <Sparkles size={14} />
+          <div className="track-settings-row">
+            <span>Group overrides</span>
+            <strong>{groupNotificationSettings.length}</strong>
           </div>
-          <div className="track-audit-list">
-            {groups.slice(0, 6).map((group) => (
-              <p key={group._id}>
-                <span>{group.name}</span>
-                <small>
-                  {group.aiReviewSettings?.frequencyMinutes ?? 30} min ·{' '}
-                  {(group.aiReviewSettings?.enabled ?? true) ? 'on' : 'off'}
-                </small>
-              </p>
-            ))}
-          </div>
-          <p className="track-muted track-rail-compact-copy">
-            {reviewEnabledGroups.length} of {groups.length} groups are review-enabled.
-          </p>
-        </Card>
+        </div>
 
-        <Card className="track-settings-card" size="sm">
-          <div className="track-settings-card-head">
-            <span className="track-rail-heading">Invitations</span>
+        <div className="track-settings-section">
+          <div className="track-settings-section-head">
+            <div>
+              <span className="mono-label">Access</span>
+              <h2>Project members</h2>
+            </div>
             <Upload size={14} />
           </div>
-          <div className="track-audit-list">
-            {invitations.slice(0, 6).map((invite) => (
-              <p key={invite._id}>
-                <span>{invite.email}</span>
-                <small>{invite.role} · {invite.status}</small>
-              </p>
-            ))}
-            {invitations.length === 0 ? <p className="track-muted">No invites yet.</p> : null}
+          <div className="track-settings-row">
+            <span>Members</span>
+            <strong>{members.length}</strong>
           </div>
-        </Card>
-
-        <Card className="track-settings-card track-settings-wide" size="sm">
-          <div className="track-settings-card-head">
-            <span className="track-rail-heading">Audit Trail</span>
-            <Clock3 size={14} />
+          <div className="track-settings-row">
+            <span>Reviewers</span>
+            <strong>{members.filter((member) => member.membership.canReviewAiRecords).length}</strong>
           </div>
-          <div className="track-audit-list">
-            {auditEvents.slice(0, 10).map((event) => (
-              <p key={event._id}>
-                <span>{event.action}</span>
-                <small>{new Date(event.createdAt).toLocaleTimeString()}</small>
-              </p>
-            ))}
+          <div className="track-settings-actions">
+            <Button className="track-button" onClick={() => void onInvite()} type="button">
+              Invite member
+            </Button>
           </div>
-        </Card>
+        </div>
       </section>
     </div>
   )
