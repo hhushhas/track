@@ -3,6 +3,8 @@
     "name": "Q9 Track",
     "slug": "track",
     "owner": "q9labsai",
+    "privacy": "public",
+    "privacyPolicyUrl": "https://track.q9labs.ai/privacy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

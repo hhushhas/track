@@ -1,0 +1,112 @@
+import { createFileRoute } from '@tanstack/react-router'
+
+export const Route = createFileRoute('/privacy')({
+  component: Privacy,
+})
+
+const sections = [
+  {
+    title: 'Information We Collect',
+    body: [
+      'Google account profile data used for sign-in, including name, email address, and Google account identifier.',
+      'Profile details you add to Track, such as display name, avatar, role, project membership, and notification settings.',
+      'Project content created in Track, including messages, mentions, attachments, AI review drafts, accepted records, audit events, exports, and Track Assistant interactions.',
+      'Operational data needed to keep Track reliable, including device, browser, app version, push notification tokens, request metadata, and diagnostic logs.',
+    ],
+  },
+  {
+    title: 'How We Use Information',
+    body: [
+      'To authenticate users and control access to projects and groups.',
+      'To provide the core Track workflow: group conversation, AI-assisted review, evidence records, audit history, notifications, and exports.',
+      'To improve reliability, investigate abuse or errors, and maintain security.',
+      'To comply with legal, contractual, and audit obligations connected to the projects managed in Track.',
+    ],
+  },
+  {
+    title: 'Sharing',
+    body: [
+      'We do not sell personal information.',
+      'Project content is visible to users who have access to the relevant project or group.',
+      'We use service providers for hosting, authentication, AI processing, storage, notifications, observability, and app distribution. They process information only as needed to provide those services.',
+      'We may disclose information if required by law, to protect rights and security, or to enforce project agreements.',
+    ],
+  },
+  {
+    title: 'Retention',
+    body: [
+      'Track is designed as an audit product, so project records, accepted evidence, and audit history may be retained for the life of the project or longer when required for business, legal, or dispute-resolution reasons.',
+      'Operational logs are kept only as long as needed for security, reliability, and debugging.',
+    ],
+  },
+  {
+    title: 'Your Choices',
+    body: [
+      'You can request access, correction, or deletion of personal profile data by contacting us.',
+      'Deletion of project audit records may be limited when records must be preserved for contract, billing, legal, or security reasons.',
+      'You can control push notification preferences globally and per group inside Track.',
+    ],
+  },
+]
+
+function Privacy() {
+  return (
+    <main className="bg-[var(--paper)] px-4 py-10">
+      <article className="mx-auto max-w-3xl">
+        <p className="mono-label m-0 mb-2">Q9 Track</p>
+        <h1 className="m-0 text-3xl font-semibold">Privacy Policy</h1>
+        <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">
+          Effective date: April 28, 2026
+        </p>
+
+        <div className="track-surface mt-6 rounded-md p-4">
+          <p className="m-0 text-sm leading-6 text-[var(--ink-2)]">
+            Track is a project communication and audit tool operated by Q9 Labs. It
+            helps client and vendor teams turn project conversations into reviewable
+            records, action items, evidence trails, and exports.
+          </p>
+        </div>
+
+        <div className="mt-8 space-y-7">
+          {sections.map((section) => (
+            <section key={section.title}>
+              <h2 className="m-0 text-lg font-semibold">{section.title}</h2>
+              <ul className="m-0 mt-3 space-y-2 pl-5 text-sm leading-6 text-[var(--ink-3)]">
+                {section.body.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+
+          <section>
+            <h2 className="m-0 text-lg font-semibold">Security</h2>
+            <p className="m-0 mt-3 text-sm leading-6 text-[var(--ink-3)]">
+              We use access controls, secure authentication, encrypted transport,
+              managed hosting, and operational monitoring to protect Track data.
+              No internet service can be guaranteed to be perfectly secure.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="m-0 text-lg font-semibold">Children</h2>
+            <p className="m-0 mt-3 text-sm leading-6 text-[var(--ink-3)]">
+              Track is intended for business use and is not directed to children.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="m-0 text-lg font-semibold">Contact</h2>
+            <p className="m-0 mt-3 text-sm leading-6 text-[var(--ink-3)]">
+              For privacy requests, contact{' '}
+              <a className="font-semibold text-[var(--ink)]" href="mailto:support@q9labs.ai">
+                support@q9labs.ai
+              </a>
+              .
+            </p>
+          </section>
+        </div>
+      </article>
+    </main>
+  )
+}
