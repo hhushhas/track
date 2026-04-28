@@ -5,9 +5,19 @@ import { TooltipProvider } from '#/components/ui/tooltip'
 import { authClient } from '../lib/auth-client'
 import { convexClient } from '../lib/convex-client'
 
-export default function AppProviders({ children }: { children: ReactNode }) {
+export default function AppProviders({
+  children,
+  initialToken,
+}: {
+  children: ReactNode
+  initialToken?: string | null
+}) {
   return (
-    <ConvexBetterAuthProvider authClient={authClient} client={convexClient}>
+    <ConvexBetterAuthProvider
+      authClient={authClient}
+      client={convexClient}
+      initialToken={initialToken}
+    >
       <TooltipProvider>{children}</TooltipProvider>
     </ConvexBetterAuthProvider>
   )
