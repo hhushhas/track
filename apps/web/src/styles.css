@@ -218,6 +218,18 @@ button {
   color: var(--paper);
 }
 
+.track-button-primary:disabled {
+  border-color: var(--hairline-strong);
+  background: var(--paper-3);
+  color: var(--ink-3);
+  opacity: 1;
+}
+
+.track-button-primary:disabled .track-send-key {
+  border-color: var(--hairline-strong);
+  color: var(--ink-4);
+}
+
 .track-button-accent {
   border-color: var(--accent);
   background: var(--accent);
@@ -508,13 +520,14 @@ button {
 }
 
 .track-rail-collapse-button {
-  position: sticky;
+  position: absolute;
   z-index: 3;
   top: 10px;
+  right: 10px;
   align-self: flex-end;
   width: 28px;
   height: 28px;
-  margin: 10px 10px 0 0;
+  margin: 0;
   border-radius: 6px;
 }
 
@@ -661,6 +674,13 @@ button {
   box-shadow: 0 1px 0 rgba(27, 25, 23, 0.16);
 }
 
+.dark .track-nav-item.active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(243, 183, 11, 0.16);
+}
+
 .track-nav-icon {
   width: 14px;
   height: 14px;
@@ -669,6 +689,10 @@ button {
 }
 
 .track-nav-item.active .track-nav-icon {
+  color: var(--accent);
+}
+
+.dark .track-nav-item.active .track-nav-icon {
   color: var(--accent);
 }
 
@@ -700,6 +724,10 @@ button {
   color: rgba(250, 249, 247, 0.72);
 }
 
+.dark .track-nav-item.active .track-nav-meta {
+  color: var(--ink-3);
+}
+
 .track-nav-count {
   margin-left: auto;
   border: 1px solid var(--hairline-strong);
@@ -715,6 +743,11 @@ button {
 .track-nav-item.active .track-nav-count {
   border-color: rgba(250, 249, 247, 0.42);
   color: var(--paper);
+}
+
+.dark .track-nav-item.active .track-nav-count {
+  border-color: var(--hairline-strong);
+  color: var(--ink-2);
 }
 
 .track-nav-footer {
@@ -1979,6 +2012,10 @@ button.track-citation-chip:hover {
   box-shadow: none !important;
   gap: 0;
   padding: 14px 18px !important;
+}
+
+.track-rail-section:first-of-type {
+  padding-top: 28px !important;
 }
 
 .track-rail-title,
