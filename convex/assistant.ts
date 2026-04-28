@@ -10,9 +10,23 @@ import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember } from './lib/permissions'
 
 const citationPattern = /\[([a-z0-9]+)\]/gi
+const lowSignalQuestionPattern =
+  /^(hi|hello|hey|yo|sup|ok|okay|thanks|thank you|cool|nice|great|good|good good|test|testing)[.!?\s]*$/i
 
 function cleanQuestion(question: string) {
   return question.replace(/@track/gi, '').trim() || question.trim()
+}
+
+function lowSignalAnswer(question: string) {
+  const cleaned = cleanQuestion(question)
+  if (!lowSignalQuestionPattern.test(cleaned)) return null
+  if (/^(hi|hello|hey|yo|sup)/i.test(cleaned)) {
+    return "hey, i'm here. nothing to track from that yet."
+  }
+  if (/^(thanks|thank you)/i.test(cleaned)) {
+    return "anytime. no record needed for that."
+  }
+  return "got it. nothing to track from that on its own."
 }
 
 function extractCitations(answer: string) {
@@ -26,11 +40,19 @@ function answerPrompt(input: {
   drafts: Array<{ id: string; title: string; description: string; type: string }>
 }) {
   return [
-    'You are Track Assistant, an evidence-grounded project chat assistant.',
-    'Answer only from the supplied evidence. If the evidence is insufficient, say so plainly.',
-    'Use natural posture: yes, no, partly, or not enough evidence. Do not judge intent.',
-    'Cite factual claims with bracket citations like [messageId] or [recordId].',
-    'If the answer reveals a decision, task, blocker, or scope-relevant item, end with a short offer to create a Draft Record.',
+    'You are Track Assistant, a helpful teammate inside a project group chat.',
+    'Sound like a capable fellow team member: casual, direct, warm, and practical.',
+    'Do not sound like a support bot, auditor, or legal evidence machine.',
+    'Write in plain chat style: lowercase by default, no emoji, no markdown, no bullets, no headings, no line breaks unless the user explicitly asks for structure.',
+    'Do not use bold, italics, code formatting, tables, or numbered lists.',
+    'Answer the person first. Then, only if useful, mention what should be tracked.',
+    'Use only the supplied evidence for factual claims. If evidence is insufficient, say so plainly.',
+    'For casual greetings, acknowledgements, thanks, tests, or tiny messages, respond naturally and say there is nothing project-worthy to track.',
+    'Do not turn greetings, repeated @track pings, acknowledgements, or test messages into tasks.',
+    'Cite only important factual claims with bracket citations like [messageId]. Avoid citing every sentence.',
+    'Never expose raw ids except as bracket citations. The UI will render citations.',
+    'If the answer reveals a real decision, task, blocker, or scope-relevant item, end with one short offer to make or update a Draft Record.',
+    'Keep most answers to one short paragraph of 1-3 sentences unless the user asks for detail.',
     '',
     `Question: ${cleanQuestion(input.question)}`,
     '',
@@ -109,6 +131,18 @@ export const ask = action({
         streamId,
         status: 'running',
       })
+      const directAnswer = lowSignalAnswer(args.question)
+      if (directAnswer) {
+        await ctx.runMutation(internal.assistant.completeStream, {
+          streamId,
+          answer: directAnswer,
+          evidence: [],
+          model: 'track-local-intent',
+          durationMs: Date.now() - startedAt,
+          retrievalScope: 'low_signal_direct_response',
+        })
+        return { streamId, answer: directAnswer }
+      }
       const result = await generateTrackText(
         answerPrompt({
           question: args.question,

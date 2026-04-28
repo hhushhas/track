@@ -14,6 +14,8 @@ const recordTypeValues = ['task', 'scope_change', 'decision', 'action_item', 'bl
 const recordStatusValues = ['open', 'in_progress', 'blocked', 'done'] as const
 const recordTypes = new Set<string>(recordTypeValues)
 const recordStatuses = new Set<string>(recordStatusValues)
+const lowSignalMessagePattern =
+  /^@?track\s*(hi|hello|hey|yo|sup|ok|okay|thanks|thank you|cool|nice|great|good|good good|test|testing)?[.!?\s]*$/i
 
 function normalizeType(value: unknown): (typeof recordTypeValues)[number] {
   return typeof value === 'string' && recordTypes.has(value)
@@ -61,9 +63,11 @@ function reviewPrompt(input: {
   drafts: Array<{ title: string; description: string; type: string }>
 }) {
   return [
-    'You are Track AI Review. Extract reviewable project records from group chat evidence.',
+    'You are Track AI Review, a careful project teammate extracting useful records from group chat evidence.',
     'Return ONLY JSON. No markdown.',
     'Create draft records only for concrete project-relevant items: decisions, tasks, action items, scope changes, blockers, or questions.',
+    'Ignore greetings, acknowledgements, thanks, repeated @track pings, tests, jokes, and messages that do not change project state.',
+    'When in doubt, create no draft. It is better to miss a weak item than to clutter the project record.',
     'Do not duplicate existing records or unresolved drafts. Do not invent facts.',
     'Each draft must cite source message ids from the supplied messages.',
     'Schema:',
@@ -101,6 +105,8 @@ function fallbackDrafts(messages: Array<{ id: Id<'messages'>; authorId: Id<'user
   return messages
     .filter((message) => {
       const body = message.body.toLowerCase()
+      const normalized = body.replace(/\s+/g, ' ').trim()
+      if (!normalized || lowSignalMessagePattern.test(normalized)) return false
       return (
         body.includes('please') ||
         body.includes('need') ||
@@ -108,8 +114,7 @@ function fallbackDrafts(messages: Array<{ id: Id<'messages'>; authorId: Id<'user
         body.includes('change') ||
         body.includes('scope') ||
         body.includes('blocked') ||
-        body.includes('?') ||
-        body.includes('@track')
+        body.includes('?')
       )
     })
     .slice(0, 5)
