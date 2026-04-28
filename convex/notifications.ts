@@ -240,6 +240,25 @@ export const collectMessageNotificationTargets = internalQuery({
   },
 })
 
+export const collectUserNotificationTargets = internalQuery({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const subscriptions = await ctx.db
+      .query('notificationSubscriptions')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .collect()
+
+    return subscriptions
+      .filter((subscription) => subscription.enabled && subscription.platform === 'web')
+      .map((subscription) => ({
+        id: subscription._id,
+        tokenOrEndpoint: subscription.tokenOrEndpoint,
+      }))
+  },
+})
+
 export const disableSubscription = internalMutation({
   args: {
     subscriptionId: v.id('notificationSubscriptions'),

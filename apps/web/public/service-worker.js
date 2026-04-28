@@ -76,7 +76,11 @@ self.addEventListener('push', (event) => {
       body: payload.body ?? '',
       data: { url: payload.url ?? '/workspace' },
       icon: payload.icon ?? '/logo192.png',
+      renotify: true,
+      requireInteraction: Boolean(payload.requireInteraction),
       tag: payload.tag ?? 'track-message',
+      timestamp: payload.timestamp ?? Date.now(),
+      vibrate: payload.vibrate ?? [80, 40, 80],
     }),
   )
 })

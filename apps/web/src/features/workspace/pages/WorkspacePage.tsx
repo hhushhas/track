@@ -157,6 +157,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const classifyDraftMutation = useMutation(api.records.classifyDraft)
   const updateRecordStatus = useMutation(api.records.updateStatus)
   const askTrackAction = useAction(api.assistant.ask)
+  const sendTestPushAction = useAction(api.pushNotifications.sendTestNotification)
   const setGlobalNotificationMode = useMutation(api.notifications.setGlobalMode)
   const setGroupNotificationMode = useMutation(api.notifications.setGroupMode)
   const registerNotificationSubscription = useMutation(api.notifications.registerSubscription)
@@ -194,6 +195,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(getNotificationPermission)
+  const [notificationStatus, setNotificationStatus] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const pendingAttachmentsRef = useRef<Array<ReturnType<typeof createPendingAttachment>>>([])
@@ -1012,6 +1014,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   async function handleEnableBrowserNotifications() {
     if (!trackUserId) return
+    setNotificationStatus(null)
     await withBusy('notifications', async () => {
       const permission = await requestNotificationPermission()
       setNotificationPermission(permission)
@@ -1022,23 +1025,49 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         throw new Error('This browser does not support web notifications.')
       }
       if (permission === 'granted') {
-        await registerBrowserPushSubscription()
+        await registerBrowserPushSubscription({ forceRefresh: true })
         await showMessageNotification({
           title: 'Track notifications enabled',
           body: 'You will get alerts for new project messages.',
           tag: 'track-notifications-enabled',
           url: window.location.pathname,
         })
+        setNotificationStatus('Browser alerts reconnected.')
       }
     })
   }
 
-  async function registerBrowserPushSubscription() {
+  async function handleSendTestNotification() {
+    if (!trackUserId) return
+    setNotificationStatus(null)
+    await withBusy('test-notifications', async () => {
+      let permission = getNotificationPermission()
+      if (permission === 'default') {
+        permission = await requestNotificationPermission()
+        setNotificationPermission(permission as WebNotificationPermission)
+      }
+      if (permission !== 'granted') {
+        throw new Error(permission === 'denied' ? 'Browser notifications are blocked for Track.' : 'Browser notifications are not enabled.')
+      }
+
+      await registerBrowserPushSubscription({ forceRefresh: true })
+      const result = await sendTestPushAction({ userId: trackUserId })
+      if (result.attempted === 0) {
+        throw new Error('No browser push subscription was saved yet. Try reconnecting alerts and keep this tab open for a moment.')
+      }
+      if (result.sent === 0) {
+        throw new Error('Track found your browser subscription, but the push service rejected the test alert.')
+      }
+      setNotificationStatus(`Test alert sent to ${result.sent} browser${result.sent === 1 ? '' : 's'}.`)
+    })
+  }
+
+  async function registerBrowserPushSubscription(options: { forceRefresh?: boolean } = {}) {
     if (!trackUserId) return
     if (!webPushPublicKey) {
       throw new Error('Web push is not configured for this environment.')
     }
-    const subscription = await subscribeToWebPush(webPushPublicKey)
+    const subscription = await subscribeToWebPush(webPushPublicKey, options)
     await registerNotificationSubscription({
       userId: trackUserId,
       platform: 'web',
@@ -1724,6 +1753,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                           <DropdownMenuItem onClick={() => void handleEnableBrowserNotifications()}>
                             {notificationPermission === 'granted' ? 'Reconnect browser alerts' : 'Enable browser alerts'}
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={busyAction === 'test-notifications'}
+                            onClick={() => void handleSendTestNotification()}
+                          >
+                            Send test alert
+                          </DropdownMenuItem>
+                          {notificationStatus ? <p className="track-rail-menu-note">{notificationStatus}</p> : null}
                           <DropdownMenuSeparator />
                           <p className="track-rail-menu-note">Global: {formatRailLabel(globalNotificationMode)}</p>
                           <DropdownMenuRadioGroup

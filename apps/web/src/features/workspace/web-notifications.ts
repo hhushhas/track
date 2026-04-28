@@ -26,14 +26,17 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
 }
 
-export async function subscribeToWebPush(publicKey: string) {
+export async function subscribeToWebPush(publicKey: string, options: { forceRefresh?: boolean } = {}) {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     throw new Error('This browser does not support web push.')
   }
 
   const registration = await navigator.serviceWorker.ready
   const existingSubscription = await registration.pushManager.getSubscription()
-  if (existingSubscription) return existingSubscription
+  if (existingSubscription && !options.forceRefresh) return existingSubscription
+  if (existingSubscription) {
+    await existingSubscription.unsubscribe()
+  }
 
   return await registration.pushManager.subscribe({
     applicationServerKey: urlBase64ToUint8Array(publicKey),
@@ -78,7 +81,6 @@ export async function showMessageNotification(input: {
   url: string
 }) {
   if (getNotificationPermission() !== 'granted') return
-  if ('PushManager' in window) return
 
   const options = {
     body: input.body,

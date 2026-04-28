@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { shouldNotifyForIncomingMessage } from './web-notifications'
 
@@ -36,12 +36,11 @@ describe('shouldNotifyForIncomingMessage', () => {
     ).toBe(false)
   })
 
-  it('lets remote push own supported browsers to avoid duplicate foreground alerts', async () => {
+  it('shows a foreground notification even when web push is supported', async () => {
+    const notification = vi.fn()
     Object.defineProperty(window, 'Notification', {
       configurable: true,
-      value: {
-        permission: 'granted',
-      },
+      value: Object.assign(notification, { permission: 'granted' }),
     })
     Object.defineProperty(window, 'PushManager', {
       configurable: true,
@@ -57,5 +56,12 @@ describe('shouldNotifyForIncomingMessage', () => {
         url: '/workspace',
       }),
     ).resolves.toBeUndefined()
+    expect(notification).toHaveBeenCalledWith(
+      'Track',
+      expect.objectContaining({
+        body: 'Hello',
+        tag: 'test',
+      }),
+    )
   })
 })
