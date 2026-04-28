@@ -823,7 +823,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       event.preventDefault()
       setSearchOpen(true)
       requestAnimationFrame(() => {
-        document.querySelector<HTMLInputElement>('.track-chat-search')?.focus()
+        document.querySelector<HTMLInputElement>('.track-chat-search-popover-input')?.focus()
       })
     }
 
@@ -1715,6 +1715,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <span>Project</span>
               </div>
               <Button
+                className="track-nav-item"
+                disabled={!activeProjectId}
+                onClick={() => {
+                  setMobileNavOpen(false)
+                  setProjectSearchOpen(true)
+                }}
+                type="button"
+              >
+                <Search className="track-nav-icon" size={14} />
+                <span className="track-nav-copy">
+                  <span className="track-nav-title">Search</span>
+                  <span className="track-nav-meta">Messages, records, files</span>
+                </span>
+              </Button>
+              <Button
                 className={view === 'records' ? 'track-nav-item active' : 'track-nav-item'}
                 onFocus={preloadProjectRecordsRoute}
                 onClick={navigateToProjectRecords}
@@ -1828,50 +1843,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 </AvatarNameTooltip>
               ) : null}
             </div>
-            {view === 'group' && searchOpen ? (
-              <div className="track-chat-search-wrap">
-                <Input
-                  autoFocus
-                  className="track-chat-search"
-                  onChange={(event) => setChatSearchQuery(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      cycleChatSearchMatch(event.shiftKey ? -1 : 1)
-                    }
-                    if (event.key === 'Escape') {
-                      event.preventDefault()
-                      setChatSearchQuery('')
-                      setSearchOpen(false)
-                      requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
-                    }
-                  }}
-                  placeholder="Search chat..."
-                  value={chatSearchQuery}
-                />
-                <span className="track-chat-search-count">
-                  {chatSearchTerm ? `${chatSearchMatches.length ? activeChatMatchIndex + 1 : 0}/${chatSearchMatches.length}` : '/'}
-                </span>
-                <Button
-                  aria-label="Previous chat search match"
-                  className="track-chat-search-step"
-                  disabled={chatSearchMatches.length === 0}
-                  onClick={() => cycleChatSearchMatch(-1)}
-                  type="button"
-                >
-                  <ChevronUp size={13} />
-                </Button>
-                <Button
-                  aria-label="Next chat search match"
-                  className="track-chat-search-step"
-                  disabled={chatSearchMatches.length === 0}
-                  onClick={() => cycleChatSearchMatch(1)}
-                  type="button"
-                >
-                  <ChevronDown size={13} />
-                </Button>
-              </div>
-            ) : null}
             {view === 'group' ? (
               <>
                 <Button
@@ -1884,7 +1855,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   title="Search this chat (/)"
                   type="button"
                 >
-                  <MessagesSquare size={15} />
+                  <Search size={15} />
                 </Button>
                 <Input
                   className="track-file-input"
@@ -1894,17 +1865,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   type="file"
                 />
               </>
-            ) : null}
-            {activeProjectId ? (
-              <Button
-                aria-label="Search project"
-                className="icon-button"
-                onClick={() => setProjectSearchOpen(true)}
-                title="Search project (⌘K)"
-                type="button"
-              >
-                <Search size={15} />
-              </Button>
             ) : null}
             {view !== 'settings' && view !== 'records' ? (
               <Button
@@ -1941,6 +1901,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         </header>
 
         {uiError ? <div className="track-error">{uiError}</div> : null}
+        {view === 'group' && searchOpen ? (
+          <ChatSearchPopover
+            activeIndex={activeChatMatchIndex}
+            matchCount={chatSearchMatches.length}
+            onClose={() => {
+              setChatSearchQuery('')
+              setSearchOpen(false)
+              requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
+            }}
+            onNext={() => cycleChatSearchMatch(1)}
+            onPrevious={() => cycleChatSearchMatch(-1)}
+            onQueryChange={setChatSearchQuery}
+            query={chatSearchQuery}
+          />
+        ) : null}
 
         {isProjectRouteLoading || isGroupRouteLoading ? (
           <WorkspaceRouteLoader label={view === 'group' ? 'Opening group conversation' : view === 'records' ? 'Loading project records' : view === 'settings' ? 'Loading project settings' : 'Loading project groups'} />
@@ -2569,6 +2544,80 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   )
 }
 
+function ChatSearchPopover({
+  activeIndex,
+  matchCount,
+  onClose,
+  onNext,
+  onPrevious,
+  onQueryChange,
+  query,
+}: {
+  activeIndex: number
+  matchCount: number
+  onClose: () => void
+  onNext: () => void
+  onPrevious: () => void
+  onQueryChange: (query: string) => void
+  query: string
+}) {
+  return (
+    <div className="track-chat-search-popover" role="dialog" aria-label="Search this chat">
+      <Search size={15} />
+      <Input
+        autoFocus
+        className="track-chat-search-popover-input"
+        onChange={(event) => onQueryChange(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'Enter') {
+            event.preventDefault()
+            onNext()
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            onPrevious()
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+          }
+        }}
+        placeholder="Search this chat..."
+        value={query}
+      />
+      <span className="track-chat-search-count">
+        {query.trim() ? `${matchCount ? activeIndex + 1 : 0}/${matchCount}` : '/'}
+      </span>
+      <Button
+        aria-label="Previous chat search match"
+        className="track-chat-search-step"
+        disabled={matchCount === 0}
+        onClick={onPrevious}
+        type="button"
+      >
+        <ChevronUp size={13} />
+      </Button>
+      <Button
+        aria-label="Next chat search match"
+        className="track-chat-search-step"
+        disabled={matchCount === 0}
+        onClick={onNext}
+        type="button"
+      >
+        <ChevronDown size={13} />
+      </Button>
+      <Button
+        aria-label="Close chat search"
+        className="track-chat-search-step"
+        onClick={onClose}
+        type="button"
+      >
+        <X size={13} />
+      </Button>
+    </div>
+  )
+}
+
 function ProjectSearchDialog({
   filter,
   loading,
@@ -2594,26 +2643,71 @@ function ProjectSearchDialog({
   sections: Array<{ key: string; label: string; results: ProjectSearchResult[] }>
   total: number
 }) {
+  const resultButtonsRef = useRef<Array<HTMLButtonElement | null>>([])
+  const flatResults = useMemo(
+    () => sections.flatMap((section) => section.results),
+    [sections],
+  )
+  const [activeResultIndex, setActiveResultIndex] = useState(0)
+
   useEffect(() => {
     if (!open) return
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose()
+    function handleKeyboard(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+        return
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setActiveResultIndex((index) =>
+          flatResults.length > 0 ? (index + 1) % flatResults.length : 0,
+        )
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActiveResultIndex((index) =>
+          flatResults.length > 0 ? (index - 1 + flatResults.length) % flatResults.length : 0,
+        )
+        return
+      }
+      if (event.key === 'Enter' && flatResults[activeResultIndex]) {
+        event.preventDefault()
+        onOpenResult(flatResults[activeResultIndex])
+      }
     }
 
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [onClose, open])
+    window.addEventListener('keydown', handleKeyboard)
+    return () => window.removeEventListener('keydown', handleKeyboard)
+  }, [activeResultIndex, flatResults, onClose, onOpenResult, open])
+
+  useEffect(() => {
+    setActiveResultIndex(0)
+  }, [filter, query])
+
+  useEffect(() => {
+    if (activeResultIndex < flatResults.length) return
+    setActiveResultIndex(Math.max(flatResults.length - 1, 0))
+  }, [activeResultIndex, flatResults.length])
+
+  useEffect(() => {
+    resultButtonsRef.current[activeResultIndex]?.scrollIntoView({
+      block: 'nearest',
+    })
+  }, [activeResultIndex])
 
   if (!open) return null
 
-  const filters: Array<{ label: string; value: ProjectSearchFilter }> = [
-    { label: 'All', value: 'all' },
-    { label: 'Messages', value: 'messages' },
-    { label: 'Records', value: 'records' },
-    { label: 'Files', value: 'files' },
-    { label: 'Groups', value: 'groups' },
+  const filters: Array<{ Icon: typeof Search; label: string; value: ProjectSearchFilter }> = [
+    { Icon: Search, label: 'All', value: 'all' },
+    { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
+    { Icon: FileCheck2, label: 'Records', value: 'records' },
+    { Icon: Paperclip, label: 'Files', value: 'files' },
+    { Icon: FolderKanban, label: 'Groups', value: 'groups' },
   ]
   const hasQuery = query.trim().length >= 2
+  let resultIndex = -1
 
   return (
     <div className="track-project-search-overlay" role="presentation" onMouseDown={onClose}>
@@ -2650,13 +2744,15 @@ function ProjectSearchDialog({
               className={filter === item.value ? 'active' : ''}
               key={item.value}
               onClick={() => onFilterChange(item.value)}
+              title={item.label}
               type="button"
             >
-              {item.label}
+              <item.Icon size={15} />
+              <span>{item.label}</span>
             </button>
           ))}
         </div>
-        <div className="track-project-search-results">
+        <div className="track-project-search-results" role={total > 0 ? 'listbox' : undefined}>
           {!hasQuery ? (
             <div className="track-project-search-state">
               <Search size={18} />
@@ -2678,35 +2774,45 @@ function ProjectSearchDialog({
               section.results.length > 0 ? (
                 <div className="track-project-search-section" key={section.key}>
                   <p className="track-project-search-section-label">{section.label}</p>
-                  {section.results.map((result) => (
-                    <button
-                      className="track-project-search-result"
-                      key={`${result.kind}-${result.id}`}
-                      onClick={() => onOpenResult(result)}
-                      type="button"
-                    >
-                      <span className={`track-project-search-icon ${result.kind}`}>
-                        {result.kind === 'file' ? (
-                          <AttachmentTypeIcon
-                            contentType={result.contentType ?? 'application/octet-stream'}
-                            filename={result.title}
-                            size={16}
-                          />
-                        ) : result.kind === 'record' ? (
-                          <FileCheck2 size={16} />
-                        ) : result.kind === 'group' ? (
-                          <FolderKanban size={16} />
-                        ) : (
-                          <MessagesSquare size={16} />
-                        )}
-                      </span>
-                      <span className="track-project-search-copy">
-                        <strong>{result.title}</strong>
-                        <small>{result.subtitle}</small>
-                        <span>{result.preview}</span>
-                      </span>
-                    </button>
-                  ))}
+                  {section.results.map((result) => {
+                    resultIndex += 1
+                    const currentResultIndex = resultIndex
+                    const isActive = currentResultIndex === activeResultIndex
+                    return (
+                      <button
+                        aria-selected={isActive}
+                        className={isActive ? 'track-project-search-result active' : 'track-project-search-result'}
+                        key={`${result.kind}-${result.id}`}
+                        onClick={() => onOpenResult(result)}
+                        ref={(element) => {
+                          resultButtonsRef.current[currentResultIndex] = element
+                        }}
+                        role="option"
+                        type="button"
+                      >
+                        <span className={`track-project-search-icon ${result.kind}`}>
+                          {result.kind === 'file' ? (
+                            <AttachmentTypeIcon
+                              contentType={result.contentType ?? 'application/octet-stream'}
+                              filename={result.title}
+                              size={16}
+                            />
+                          ) : result.kind === 'record' ? (
+                            <FileCheck2 size={16} />
+                          ) : result.kind === 'group' ? (
+                            <FolderKanban size={16} />
+                          ) : (
+                            <MessagesSquare size={16} />
+                          )}
+                        </span>
+                        <span className="track-project-search-copy">
+                          <strong>{result.title}</strong>
+                          <small>{result.subtitle}</small>
+                          <span>{result.preview}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               ) : null,
             )

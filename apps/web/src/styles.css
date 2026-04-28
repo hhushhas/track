@@ -1281,6 +1281,7 @@ button {
 }
 
 .track-workspace {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -1383,21 +1384,50 @@ button {
   box-shadow: none;
 }
 
-.track-chat-search-wrap {
-  display: inline-flex;
+.track-chat-search-popover {
+  position: absolute;
+  z-index: 30;
+  top: 66px;
+  right: max(24px, calc((100% - 760px) / 2));
+  display: grid;
+  width: min(380px, calc(100% - 48px));
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 4px;
   border: 1px solid var(--hairline-strong);
   border-radius: 7px;
   background: var(--paper);
-  padding: 3px;
+  color: var(--ink-3);
+  box-shadow: 0 12px 30px rgba(12, 11, 10, 0.16);
+  padding: 5px 6px;
+  animation: track-search-popover-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.track-chat-search-wrap .track-chat-search {
-  width: 190px;
+@keyframes track-search-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.track-chat-search-popover-input {
+  width: 100%;
   height: 26px;
   border: 0;
-  padding-right: 4px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12.5px;
+  line-height: 1.2;
+  padding: 0;
+}
+
+.track-chat-search-popover-input::placeholder {
+  color: var(--ink-4);
+  font-size: 12.5px;
 }
 
 .track-chat-search-count {
@@ -1555,21 +1585,21 @@ button {
   display: grid;
   align-items: start;
   justify-items: center;
-  background: rgba(12, 11, 10, 0.46);
-  padding: 9vh 18px 24px;
+  background: rgba(12, 11, 10, 0.5);
+  padding: 7vh 18px 24px;
 }
 
 .track-project-search {
   display: flex;
-  width: min(760px, 100%);
-  max-height: min(720px, 82vh);
+  width: min(640px, 100%);
+  max-height: min(620px, 84vh);
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   background: var(--paper);
   color: var(--ink);
-  box-shadow: 0 28px 80px rgba(12, 11, 10, 0.34);
+  box-shadow: 0 24px 70px rgba(12, 11, 10, 0.36);
   animation: track-project-search-enter 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -1590,12 +1620,12 @@ button {
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid var(--hairline);
-  padding: 16px;
+  padding: 12px 14px;
 }
 
 .track-project-search-header h2 {
-  margin: 4px 0 0;
-  font-size: 17px;
+  margin: 3px 0 0;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -1604,20 +1634,27 @@ button {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 10px;
-  margin: 14px 16px 10px;
+  margin: 10px 12px 8px;
   border: 1px solid var(--hairline-strong);
   border-radius: 7px;
   background: var(--paper-2);
   color: var(--ink-3);
-  padding: 9px 11px;
+  padding: 7px 9px;
 }
 
 .track-project-search-input {
-  height: 30px;
+  height: 28px;
   border: 0;
   background: transparent;
   box-shadow: none;
+  font-size: 12.5px;
+  line-height: 1.2;
   padding: 0;
+}
+
+.track-project-search-input::placeholder {
+  color: var(--ink-4);
+  font-size: 12.5px;
 }
 
 .track-project-search-box > span {
@@ -1630,25 +1667,34 @@ button {
 .track-project-search-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 16px 12px;
+  gap: 5px;
+  padding: 0 12px 10px;
 }
 
 .track-project-search-filters button {
-  min-height: 28px;
+  display: inline-flex;
+  min-width: 34px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--hairline);
-  border-radius: 999px;
+  border-radius: 7px;
   background: transparent;
   color: var(--ink-3);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 650;
-  padding: 4px 10px;
+  padding: 5px 8px;
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
     color 140ms ease,
     transform 140ms ease;
+}
+
+.track-project-search-filters button span {
+  display: none;
 }
 
 .track-project-search-filters button:hover,
@@ -1666,10 +1712,10 @@ button {
 }
 
 .track-project-search-results {
-  min-height: 260px;
+  min-height: 220px;
   overflow-y: auto;
   border-top: 1px solid var(--hairline);
-  padding: 10px 8px 12px;
+  padding: 7px 7px 9px;
 }
 
 .track-project-search-state {
@@ -1695,11 +1741,11 @@ button {
 }
 
 .track-project-search-section {
-  padding: 4px 0 8px;
+  padding: 2px 0 6px;
 }
 
 .track-project-search-section-label {
-  margin: 4px 8px 6px;
+  margin: 4px 8px 4px;
   color: var(--ink-4);
   font-family: var(--font-mono);
   font-size: 10.5px;
@@ -1711,14 +1757,14 @@ button {
 .track-project-search-result {
   display: grid;
   width: 100%;
-  grid-template-columns: 34px 1fr;
-  gap: 10px;
+  grid-template-columns: 28px 1fr;
+  gap: 8px;
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
-  padding: 9px 10px;
+  padding: 7px 8px;
   text-align: left;
   transition:
     background-color 140ms ease,
@@ -1727,7 +1773,8 @@ button {
 }
 
 .track-project-search-result:hover,
-.track-project-search-result:focus-visible {
+.track-project-search-result:focus-visible,
+.track-project-search-result.active {
   border-color: var(--hairline-strong);
   background: var(--paper-2);
   transform: translateY(-1px);
@@ -1735,8 +1782,8 @@ button {
 
 .track-project-search-icon {
   display: inline-flex;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   align-items: center;
   justify-content: center;
   border-radius: 7px;
@@ -1773,7 +1820,7 @@ button {
 }
 
 .track-project-search-copy strong {
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .track-project-search-copy small {
@@ -4342,12 +4389,12 @@ button:disabled:hover {
     padding-right: 9px;
   }
 
-  .track-chat-search-wrap {
-    width: min(100%, 180px);
-  }
-
-  .track-chat-search-wrap .track-chat-search {
-    width: min(100%, 92px);
+  .track-chat-search-popover {
+    top: 62px;
+    right: 14px;
+    left: 14px;
+    width: auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
   }
 
   .track-project-search-overlay {
@@ -4419,13 +4466,14 @@ button:disabled:hover {
   .track-message-row,
   .track-assistant-row,
   .track-message-row.flashing .track-message-body,
+  .track-chat-search-popover,
   .track-project-search {
     animation: none;
   }
 
   .track-button,
-    .icon-button,
-    .group-button,
+  .icon-button,
+  .group-button,
   .track-chat-search-step,
   .track-jump-latest,
   .track-attachment-card,
