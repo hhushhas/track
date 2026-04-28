@@ -3,7 +3,6 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { useEffect } from 'react'
 import AppProviders from '../components/AppProviders'
-import { getToken } from '../lib/auth-server'
 
 import appCss from '../styles.css?url'
 
@@ -15,14 +14,6 @@ const SITE_DESCRIPTION =
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`
 
 export const Route = createRootRoute({
-  loader: async () => {
-    if (typeof document !== 'undefined') return { initialToken: null }
-    try {
-      return { initialToken: await getToken() }
-    } catch {
-      return { initialToken: null }
-    }
-  },
   head: () => ({
     meta: [
       {
@@ -137,8 +128,6 @@ export const Route = createRootRoute({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
-  const { initialToken } = Route.useLoaderData()
-
   useEffect(() => {
     if (import.meta.env.DEV) {
       void import('react-grab')
@@ -157,7 +146,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(240,177,0,0.28)]">
-        <AppProviders initialToken={initialToken}>{children}</AppProviders>
+        <AppProviders>{children}</AppProviders>
         <TanStackDevtools
           config={{
             position: 'bottom-right',

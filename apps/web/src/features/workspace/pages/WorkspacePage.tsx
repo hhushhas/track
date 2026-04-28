@@ -89,7 +89,7 @@ function formatRailLabel(value: string) {
 export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePageProps) {
   const navigate = useNavigate()
   const session = authClient.useSession()
-  const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser)
+  const syncCurrentUser = useMutation(api.auth.syncGoogleUser)
   const ensureStarterProject = useMutation(api.projects.ensureStarter)
   const createProject = useMutation(api.projects.create)
   const createGroup = useMutation(api.groups.create)
@@ -137,16 +137,12 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [authSyncAttempt, setAuthSyncAttempt] = useState(0)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
+  const sessionUser = session.data?.user
 
-  const trackUser = useQuery(
-    api.auth.getCurrentUser,
-    session.data ? {} : 'skip',
-  )
   const projects = useQuery(
     api.projects.list,
     trackUserId ? { userId: trackUserId } : 'skip',
@@ -374,30 +370,18 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [activeGroupId, routeGroupId])
 
   useEffect(() => {
-    if (!session.data || trackUserId) return
-    let retryTimeout: ReturnType<typeof setTimeout> | undefined
-    void ensureCurrentUser()
+    if (!sessionUser?.id || trackUserId) return
+    void syncCurrentUser({
+      googleSubject: sessionUser.id,
+      email: sessionUser.email ?? '',
+      displayName: sessionUser.name ?? sessionUser.email?.split('@')[0] ?? 'Track User',
+    })
       .then(async (userId) => {
-        if (!userId) {
-          retryTimeout = setTimeout(() => {
-            setAuthSyncAttempt((attempt) => attempt + 1)
-          }, 500)
-          return
-        }
         setTrackUserId(userId)
         await acceptPendingInvitations({ userId })
       })
       .catch(setActionError)
-    return () => {
-      if (retryTimeout) clearTimeout(retryTimeout)
-    }
-  }, [acceptPendingInvitations, authSyncAttempt, ensureCurrentUser, session.data, trackUserId])
-
-  useEffect(() => {
-    if (trackUser?._id && trackUser._id !== trackUserId) {
-      setTrackUserId(trackUser._id)
-    }
-  }, [trackUser?._id, trackUserId])
+  }, [acceptPendingInvitations, sessionUser?.email, sessionUser?.id, sessionUser?.name, syncCurrentUser, trackUserId])
 
   useEffect(() => {
     if (!trackUserId || projects === undefined || projectItems.length > 0) return
@@ -464,6 +448,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
+  const currentUserName = sessionUser?.name ?? sessionUser?.email?.split('@')[0] ?? 'Track User'
+  const currentUserEmail = sessionUser?.email ?? currentUserName
   const isProjectRouteLoading =
     trackUserId !== null &&
     (projects === undefined ||
@@ -1025,11 +1011,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         ) : null}
 
         <div className="track-nav-footer">
-          <Avatar className={`track-avatar ${getAvatarTone(trackUser?.email ?? trackUser?.displayName ?? 'Track User')}`}>
-            <AvatarFallback>{getInitials(trackUser?.displayName ?? 'Track User')}</AvatarFallback>
+          <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
+            <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
           </Avatar>
           <div className="track-nav-copy">
-            <span className="track-nav-title">{trackUser?.displayName ?? 'Track User'}</span>
+            <span className="track-nav-title">{currentUserName}</span>
             <span className="track-nav-meta">{activeProject?.membership.role ?? 'owner'}</span>
           </div>
           <div className="track-nav-footer-actions">
