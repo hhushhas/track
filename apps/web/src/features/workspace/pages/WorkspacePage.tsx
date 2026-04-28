@@ -1178,7 +1178,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       }
       if (permission === 'granted') {
         await registerBrowserPushSubscription({
-          forceRefresh: true,
           onStep: (step) => setNotificationStatus(`${step} (${getWebPushDiagnostics()})`),
         })
         await showMessageNotification({
@@ -1214,7 +1213,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       }
 
       await registerBrowserPushSubscription({
-        forceRefresh: true,
         onStep: (step) => setNotificationStatus(`${step} (${getWebPushDiagnostics()})`),
       })
       setNotificationStatus(`Sending server test... (${getWebPushDiagnostics()})`)
