@@ -120,6 +120,8 @@ export const classifyDraft = mutation({
     classification: recordClassification,
     status: recordStatus,
     ownerId: v.optional(v.id('users')),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireReviewer(ctx, args.projectId, args.reviewerId)
@@ -127,8 +129,14 @@ export const classifyDraft = mutation({
     const draft = await ctx.db.get(args.draftRecordId)
     if (!draft) throw new Error('draft_not_found')
     const now = Date.now()
+    const title = args.title?.trim() || draft.title
+    const description = args.description?.trim() || draft.description
 
     await ctx.db.patch(args.draftRecordId, {
+      title,
+      description,
+      proposedStatus: args.status,
+      proposedOwnerId: args.ownerId ?? draft.proposedOwnerId,
       status: args.classification === 'ignored' ? 'declined' : 'accepted',
       updatedAt: now,
     })
@@ -153,9 +161,9 @@ export const classifyDraft = mutation({
       type: draft.type,
       classification: args.classification,
       status: args.status,
-      title: draft.title,
-      description: draft.description,
-      ownerId: args.ownerId,
+      title,
+      description,
+      ownerId: args.ownerId ?? draft.proposedOwnerId,
       reviewedBy: args.reviewerId,
       reviewedAt: now,
       createdAt: now,

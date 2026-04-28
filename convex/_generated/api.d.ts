@@ -12,6 +12,7 @@ import type * as ai from "../ai.js";
 import type * as assistant from "../assistant.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as exports from "../exports.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
@@ -37,6 +38,7 @@ declare const fullApi: ApiFromModules<{
   assistant: typeof assistant;
   audit: typeof audit;
   auth: typeof auth;
+  crons: typeof crons;
   exports: typeof exports;
   groups: typeof groups;
   http: typeof http;

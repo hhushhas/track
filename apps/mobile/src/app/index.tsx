@@ -1,5 +1,5 @@
 import { parseMentions } from '@track/shared';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -14,6 +14,14 @@ import { useTheme } from '@/hooks/use-theme';
 import { authClient } from '@/lib/auth-client';
 
 const notificationModes = ['inherit', 'all', 'mentions', 'none'] as const;
+const draftClassifications = [
+  'billable_scope',
+  'non_billable_scope',
+  'official_record',
+  'informational',
+  'ignored',
+] as const;
+const draftStatuses = ['open', 'in_progress', 'blocked', 'done'] as const;
 
 export default function ThreadScreen() {
   const theme = useTheme();
@@ -27,9 +35,9 @@ export default function ThreadScreen() {
   const sendMessageMutation = useMutation(api.messages.send);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
   const attachFileMutation = useMutation(api.messages.attachFile);
-  const runReviewMutation = useMutation(api.ai.runReviewNow);
+  const runReviewAction = useAction(api.ai.runReviewNow);
   const classifyDraftMutation = useMutation(api.records.classifyDraft);
-  const askTrackMutation = useMutation(api.assistant.ask);
+  const askTrackAction = useAction(api.assistant.ask);
   const setGroupNotificationMode = useMutation(api.notifications.setGroupMode);
   const setGlobalNotificationMode = useMutation(api.notifications.setGlobalMode);
 
@@ -104,6 +112,30 @@ export default function ThreadScreen() {
   const groupAssistantStreams = useMemo(
     () => (assistantStreams ?? []) as Array<Doc<'assistantStreams'>>,
     [assistantStreams],
+  );
+  const threadItems = useMemo(
+    () =>
+      [
+        ...threadMessages.map((item) => ({
+          at: item.message.createdAt,
+          item,
+          kind: 'message' as const,
+          key: item.message._id,
+        })),
+        ...groupAssistantStreams.map((stream) => ({
+          at: stream.createdAt,
+          stream,
+          kind: 'assistant' as const,
+          key: stream._id,
+        })),
+        ...pendingDrafts.map((draft) => ({
+          at: draft.createdAt,
+          draft,
+          kind: 'draft' as const,
+          key: draft._id,
+        })),
+      ].sort((a, b) => a.at - b.at),
+    [groupAssistantStreams, pendingDrafts, threadMessages],
   );
   const groupNotificationSettings = useMemo(
     () => (notificationSettings?.groups ?? []) as Array<Doc<'groupNotificationSettings'>>,
@@ -182,7 +214,7 @@ export default function ThreadScreen() {
         mentions: [],
       });
       if (parseMentions(body).includes('track')) {
-        await askTrackMutation({
+        await askTrackAction({
           projectId: activeProjectId,
           groupId: activeGroupId,
           requesterId: trackUserId,
@@ -233,7 +265,7 @@ export default function ThreadScreen() {
   async function runReview() {
     if (!trackUserId || !activeProjectId || !activeGroupId) return;
     await withBusy('run-review', async () => {
-      await runReviewMutation({
+      await runReviewAction({
         projectId: activeProjectId,
         groupId: activeGroupId,
         reviewerId: trackUserId,
@@ -292,7 +324,8 @@ export default function ThreadScreen() {
 
   async function classifyDraft(
     draftRecordId: Id<'draftRecords'>,
-    classification: 'official_record' | 'billable_scope' | 'informational' | 'ignored',
+    classification: (typeof draftClassifications)[number],
+    updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
   ) {
     if (!trackUserId || !activeProjectId || !activeGroupId) return;
     await withBusy(`classify-${draftRecordId}`, async () => {
@@ -302,7 +335,9 @@ export default function ThreadScreen() {
         draftRecordId,
         reviewerId: trackUserId,
         classification,
-        status: classification === 'ignored' ? 'declined' : 'accepted',
+        status: updates.status,
+        title: updates.title,
+        description: updates.description,
       });
     });
   }
@@ -434,20 +469,32 @@ export default function ThreadScreen() {
           </ThemedView>
 
           <View style={styles.messages}>
-            {threadMessages.map((item) => (
-              <MessageCard key={item.message._id} item={item} />
-            ))}
-            {groupAssistantStreams.map((stream) => (
-              <ThemedView key={stream._id} type="backgroundSelected" style={[styles.message, { borderColor: theme.accent }]}>
-                <ThemedText type="smallBold">Track Assistant</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {stream.answer}
-                </ThemedText>
-              </ThemedView>
-            ))}
-            {pendingDrafts.map((draft) => (
-              <DraftCard busy={busyAction === `classify-${draft._id}`} draft={draft} key={draft._id} onClassify={classifyDraft} />
-            ))}
+            {threadItems.map((threadItem) => {
+              if (threadItem.kind === 'message') {
+                return <MessageCard key={threadItem.key} item={threadItem.item} />;
+              }
+              if (threadItem.kind === 'assistant') {
+                return (
+                  <ThemedView
+                    key={threadItem.key}
+                    type="backgroundSelected"
+                    style={[styles.message, { borderColor: theme.accent }]}>
+                    <ThemedText type="smallBold">Track Assistant</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {threadItem.stream.answer || threadItem.stream.status}
+                    </ThemedText>
+                  </ThemedView>
+                );
+              }
+              return (
+                <DraftCard
+                  busy={busyAction === `classify-${threadItem.draft._id}`}
+                  draft={threadItem.draft}
+                  key={threadItem.key}
+                  onClassify={classifyDraft}
+                />
+              );
+            })}
           </View>
         </ScrollView>
 
@@ -601,25 +648,60 @@ function DraftCard({
   draft: Doc<'draftRecords'>;
   onClassify: (
     draftRecordId: Id<'draftRecords'>,
-    classification: 'official_record' | 'billable_scope' | 'informational' | 'ignored',
+    classification: (typeof draftClassifications)[number],
+    updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
   ) => Promise<void>;
 }) {
   const theme = useTheme();
+  const [title, setTitle] = useState(draft.title);
+  const [description, setDescription] = useState(draft.description);
+  const [status, setStatus] = useState<(typeof draftStatuses)[number]>(
+    draftStatuses.includes(draft.proposedStatus as (typeof draftStatuses)[number])
+      ? (draft.proposedStatus as (typeof draftStatuses)[number])
+      : 'open',
+  );
+  const updates = { title, description, status };
   return (
     <ThemedView type="backgroundSelected" style={[styles.draft, { borderColor: theme.accent }]}>
       <ThemedText type="code" themeColor="textSecondary">
         Draft Record / {draft.type}
       </ThemedText>
-      <ThemedText type="smallBold">{draft.title}</ThemedText>
-      <ThemedText type="small" themeColor="textSecondary">
-        {draft.description}
-      </ThemedText>
+      <TextInput
+        editable={!busy}
+        onChangeText={setTitle}
+        style={[styles.draftInput, { borderColor: theme.hairline, color: theme.text }]}
+        value={title}
+      />
+      <TextInput
+        editable={!busy}
+        multiline
+        onChangeText={setDescription}
+        style={[styles.draftInput, styles.draftTextArea, { borderColor: theme.hairline, color: theme.text }]}
+        value={description}
+      />
+      <View style={styles.statusRow}>
+        {draftStatuses.map((item) => (
+          <Pressable
+            disabled={busy}
+            key={item}
+            onPress={() => setStatus(item)}
+            style={[
+              styles.statusButton,
+              {
+                borderColor: item === status ? theme.accent : theme.hairline,
+                backgroundColor: item === status ? theme.accentSoft : theme.background,
+              },
+            ]}>
+            <ThemedText type="code">{item}</ThemedText>
+          </Pressable>
+        ))}
+      </View>
       <View style={styles.draftActions}>
-        {(['billable_scope', 'official_record', 'informational', 'ignored'] as const).map((classification) => (
+        {draftClassifications.map((classification) => (
           <Pressable
             disabled={busy}
             key={classification}
-            onPress={() => void onClassify(draft._id, classification)}
+            onPress={() => void onClassify(draft._id, classification, updates)}
             style={[styles.draftButton, { borderColor: theme.hairline }]}>
             <ThemedText type="code">{classification}</ThemedText>
           </Pressable>
@@ -749,6 +831,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: Spacing.three,
     gap: Spacing.two,
+  },
+  draftInput: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 13,
+  },
+  draftTextArea: {
+    minHeight: 76,
+    textAlignVertical: 'top',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  statusButton: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
   },
   draftActions: {
     flexDirection: 'row',

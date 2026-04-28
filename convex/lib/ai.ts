@@ -1,7 +1,7 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { generateText } from 'ai'
 
-const modelName = 'anthropic/claude-sonnet-4.6'
+const modelName = process.env.AI_MODEL ?? 'anthropic/claude-sonnet-4.6'
 
 export async function generateTrackText(prompt: string) {
   const apiKey = process.env.OPENROUTER_API_KEY

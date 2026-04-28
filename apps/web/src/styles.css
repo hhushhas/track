@@ -573,6 +573,43 @@ select {
   font-size: 14px;
 }
 
+.track-draft-field {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.track-draft-field span {
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.track-draft-field input,
+.track-draft-field select,
+.track-draft-field textarea {
+  width: 100%;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 8px;
+}
+
+.track-draft-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.track-draft-field.compact {
+  max-width: 220px;
+}
+
 .track-draft-content p,
 .track-muted {
   margin: 0;

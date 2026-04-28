@@ -1,5 +1,5 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import {
   Bell,
   Bot,
@@ -29,6 +29,14 @@ import { authClient } from '../lib/auth-client'
 export const Route = createFileRoute('/')({ component: App })
 
 const notificationModes = ['inherit', 'all', 'mentions', 'none'] as const
+const draftClassifications = [
+  'billable_scope',
+  'non_billable_scope',
+  'official_record',
+  'informational',
+  'ignored',
+] as const
+const draftStatuses = ['open', 'in_progress', 'blocked', 'done'] as const
 
 function App() {
   const session = authClient.useSession()
@@ -42,10 +50,10 @@ function App() {
   const sendMessageMutation = useMutation(api.messages.send)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const attachFileMutation = useMutation(api.messages.attachFile)
-  const runReviewMutation = useMutation(api.ai.runReviewNow)
+  const runReviewAction = useAction(api.ai.runReviewNow)
   const classifyDraftMutation = useMutation(api.records.classifyDraft)
   const updateRecordStatus = useMutation(api.records.updateStatus)
-  const askTrackMutation = useMutation(api.assistant.ask)
+  const askTrackAction = useAction(api.assistant.ask)
   const setGlobalNotificationMode = useMutation(api.notifications.setGlobalMode)
   const setGroupNotificationMode = useMutation(api.notifications.setGroupMode)
   const requestExport = useMutation(api.exports.request)
@@ -215,6 +223,30 @@ function App() {
     () => groupDrafts.filter((draft) => draft.status === 'pending'),
     [groupDrafts],
   )
+  const threadItems = useMemo(
+    () =>
+      [
+        ...visibleMessages.map((item) => ({
+          at: item.message.createdAt,
+          item,
+          kind: 'message' as const,
+          key: item.message._id,
+        })),
+        ...groupAssistantStreams.map((stream) => ({
+          at: stream.createdAt,
+          stream,
+          kind: 'assistant' as const,
+          key: stream._id,
+        })),
+        ...pendingDrafts.map((draft) => ({
+          at: draft.createdAt,
+          draft,
+          kind: 'draft' as const,
+          key: draft._id,
+        })),
+      ].sort((a, b) => a.at - b.at),
+    [groupAssistantStreams, pendingDrafts, visibleMessages],
+  )
   const groupNotificationMode =
     groupNotificationSettings.find((item) => item.groupId === activeGroupId)?.mode ?? 'inherit'
   const globalNotificationMode = notificationSettings?.global?.globalMode ?? 'mentions'
@@ -309,7 +341,7 @@ function App() {
         mentions: [],
       })
       if (parseMentions(body).includes('track')) {
-        await askTrackMutation({
+        await askTrackAction({
           projectId: activeProjectId,
           groupId: activeGroupId,
           requesterId: trackUserId,
@@ -360,7 +392,7 @@ function App() {
   async function handleRunReview() {
     if (!trackUserId || !activeProjectId || !activeGroupId) return
     await withBusy('run-review', async () => {
-      await runReviewMutation({
+      await runReviewAction({
         projectId: activeProjectId,
         groupId: activeGroupId,
         reviewerId: trackUserId,
@@ -419,7 +451,8 @@ function App() {
 
   async function handleClassifyDraft(
     draftRecordId: Id<'draftRecords'>,
-    classification: 'official_record' | 'billable_scope' | 'informational' | 'ignored',
+    classification: (typeof draftClassifications)[number],
+    updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
   ) {
     if (!trackUserId || !activeProjectId || !activeGroupId) return
     await withBusy(`classify-${draftRecordId}`, async () => {
@@ -429,7 +462,9 @@ function App() {
         draftRecordId,
         reviewerId: trackUserId,
         classification,
-        status: classification === 'ignored' ? 'declined' : 'accepted',
+        status: updates.status,
+        title: updates.title,
+        description: updates.description,
       })
     })
   }
@@ -578,22 +613,22 @@ function App() {
               </div>
             ) : null}
 
-            {visibleMessages.map((message) => (
-              <MessageRow key={message.message._id} item={message} />
-            ))}
-
-            {groupAssistantStreams.map((stream) => (
-              <AssistantAnswer key={stream._id} stream={stream} />
-            ))}
-
-            {pendingDrafts.map((draft) => (
-              <DraftRecordCard
-                busy={busyAction === `classify-${draft._id}`}
-                draft={draft}
-                key={draft._id}
-                onClassify={handleClassifyDraft}
-              />
-            ))}
+            {threadItems.map((threadItem) => {
+              if (threadItem.kind === 'message') {
+                return <MessageRow key={threadItem.key} item={threadItem.item} />
+              }
+              if (threadItem.kind === 'assistant') {
+                return <AssistantAnswer key={threadItem.key} stream={threadItem.stream} />
+              }
+              return (
+                <DraftRecordCard
+                  busy={busyAction === `classify-${threadItem.draft._id}`}
+                  draft={threadItem.draft}
+                  key={threadItem.key}
+                  onClassify={handleClassifyDraft}
+                />
+              )
+            })}
           </div>
         </div>
 
@@ -873,7 +908,7 @@ function MessageRow({
 function AssistantAnswer({
   stream,
 }: {
-  stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }> }
+  stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
 }) {
   return (
     <article className="track-assistant-row">
@@ -884,7 +919,7 @@ function AssistantAnswer({
           <span className="track-role-chip accent">evidence answer</span>
           <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
         </div>
-        <p>{stream.answer}</p>
+        <p>{stream.answer || (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)}</p>
         {stream.evidence.length > 0 ? (
           <div className="track-evidence-note">
             Evidence: {stream.evidence.map((item) => item.quote).join(' · ')}
@@ -906,13 +941,23 @@ function DraftRecordCard({
     type: string
     title: string
     description: string
+    proposedStatus: string
     evidence: Array<{ quote: string }>
   }
   onClassify: (
     draftRecordId: Id<'draftRecords'>,
-    classification: 'official_record' | 'billable_scope' | 'informational' | 'ignored',
+    classification: (typeof draftClassifications)[number],
+    updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
   ) => Promise<void>
 }) {
+  const [title, setTitle] = useState(draft.title)
+  const [description, setDescription] = useState(draft.description)
+  const [status, setStatus] = useState<(typeof draftStatuses)[number]>(
+    draftStatuses.includes(draft.proposedStatus as (typeof draftStatuses)[number])
+      ? (draft.proposedStatus as (typeof draftStatuses)[number])
+      : 'open',
+  )
+  const updates = { title, description, status }
   return (
     <article className="track-draft-record">
       <header>
@@ -925,31 +970,51 @@ function DraftRecordCard({
       <div className="track-draft-content">
         <div className="track-draft-meta">
           <span className="track-badge accent">{draft.type}</span>
-          <span className="track-badge">proposed open</span>
+          <span className="track-badge">proposed {status}</span>
         </div>
-        <h2>{draft.title}</h2>
-        <p>{draft.description}</p>
+        <label className="track-draft-field">
+          <span>Title</span>
+          <input disabled={busy} onChange={(event) => setTitle(event.currentTarget.value)} value={title} />
+        </label>
+        <label className="track-draft-field">
+          <span>Description</span>
+          <textarea
+            disabled={busy}
+            onChange={(event) => setDescription(event.currentTarget.value)}
+            value={description}
+          />
+        </label>
+        <label className="track-draft-field compact">
+          <span>Status</span>
+          <select
+            disabled={busy}
+            onChange={(event) => setStatus(event.currentTarget.value as (typeof draftStatuses)[number])}
+            value={status}
+          >
+            {draftStatuses.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="track-evidence-note">
           Evidence: {draft.evidence.map((item) => item.quote).join(' · ') || 'Source messages attached'}
         </div>
       </div>
       <footer>
-        <button disabled={busy} onClick={() => void onClassify(draft._id, 'billable_scope')} type="button">
-          <Check size={14} />
-          Billable
-        </button>
-        <button disabled={busy} onClick={() => void onClassify(draft._id, 'official_record')} type="button">
-          <FileText size={14} />
-          Official
-        </button>
-        <button disabled={busy} onClick={() => void onClassify(draft._id, 'informational')} type="button">
-          <Settings size={14} />
-          Info
-        </button>
-        <button className="secondary" disabled={busy} onClick={() => void onClassify(draft._id, 'ignored')} type="button">
-          <X size={14} />
-          Ignore
-        </button>
+        {draftClassifications.map((classification) => (
+          <button
+            className={classification === 'ignored' ? 'secondary' : undefined}
+            disabled={busy}
+            key={classification}
+            onClick={() => void onClassify(draft._id, classification, updates)}
+            type="button"
+          >
+            {classification === 'ignored' ? <X size={14} /> : classification === 'official_record' ? <FileText size={14} /> : classification === 'informational' ? <Settings size={14} /> : <Check size={14} />}
+            {classification}
+          </button>
+        ))}
       </footer>
     </article>
   )
