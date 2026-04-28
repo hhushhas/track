@@ -26,26 +26,56 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
 }
 
-export async function subscribeToWebPush(publicKey: string, options: { forceRefresh?: boolean } = {}) {
+async function withTimeout<T>(label: string, promise: Promise<T>, timeoutMs = 8000) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out.`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
+export async function subscribeToWebPush(
+  publicKey: string,
+  options: { forceRefresh?: boolean; onStep?: (step: string) => void } = {},
+) {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     throw new Error('This browser does not support web push.')
   }
 
+  options.onStep?.('Checking service worker...')
   let registration = await navigator.serviceWorker.getRegistration('/')
   if (!registration) {
-    registration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+    options.onStep?.('Registering service worker...')
+    registration = await withTimeout(
+      'Service worker registration',
+      navigator.serviceWorker.register('/service-worker.js', { scope: '/' }),
+    )
   }
-  registration = await navigator.serviceWorker.ready
-  const existingSubscription = await registration.pushManager.getSubscription()
+  options.onStep?.('Waiting for service worker...')
+  registration = await withTimeout('Service worker readiness', navigator.serviceWorker.ready)
+
+  options.onStep?.('Checking push subscription...')
+  const existingSubscription = await withTimeout('Push subscription lookup', registration.pushManager.getSubscription())
   if (existingSubscription && !options.forceRefresh) return existingSubscription
   if (existingSubscription) {
-    await existingSubscription.unsubscribe()
+    options.onStep?.('Refreshing push subscription...')
+    await withTimeout('Push subscription refresh', existingSubscription.unsubscribe())
   }
 
-  return await registration.pushManager.subscribe({
-    applicationServerKey: urlBase64ToUint8Array(publicKey),
-    userVisibleOnly: true,
-  })
+  options.onStep?.('Creating push subscription...')
+  return await withTimeout(
+    'Push subscription creation',
+    registration.pushManager.subscribe({
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+      userVisibleOnly: true,
+    }),
+  )
 }
 
 export function getWebPushDiagnostics() {

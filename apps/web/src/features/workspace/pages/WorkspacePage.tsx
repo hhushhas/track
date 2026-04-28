@@ -1177,7 +1177,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         throw new Error('This browser does not support web notifications.')
       }
       if (permission === 'granted') {
-        await registerBrowserPushSubscription({ forceRefresh: true })
+        await registerBrowserPushSubscription({
+          forceRefresh: true,
+          onStep: (step) => setNotificationStatus(`${step} (${getWebPushDiagnostics()})`),
+        })
         await showMessageNotification({
           title: 'Track notifications enabled',
           body: 'You will get alerts for new project messages.',
@@ -1210,7 +1213,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         throw new Error(permission === 'denied' ? 'Browser notifications are blocked for Track.' : 'Browser notifications are not enabled.')
       }
 
-      await registerBrowserPushSubscription({ forceRefresh: true })
+      await registerBrowserPushSubscription({
+        forceRefresh: true,
+        onStep: (step) => setNotificationStatus(`${step} (${getWebPushDiagnostics()})`),
+      })
+      setNotificationStatus(`Sending server test... (${getWebPushDiagnostics()})`)
       const result = await sendTestPushAction({ userId: trackUserId })
       if (result.attempted === 0) {
         throw new Error('No browser push subscription was saved yet. Try reconnecting alerts and keep this tab open for a moment.')
@@ -1228,12 +1235,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     }
   }
 
-  async function registerBrowserPushSubscription(options: { forceRefresh?: boolean } = {}) {
+  async function registerBrowserPushSubscription(options: { forceRefresh?: boolean; onStep?: (step: string) => void } = {}) {
     if (!trackUserId) return
     if (!webPushPublicKey) {
       throw new Error('Web push is not configured for this environment.')
     }
     const subscription = await subscribeToWebPush(webPushPublicKey, options)
+    options.onStep?.('Saving push subscription...')
     await registerNotificationSubscription({
       userId: trackUserId,
       platform: 'web',
