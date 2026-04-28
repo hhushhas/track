@@ -36,6 +36,7 @@
     "expo-image": "~55.0.9",
     "expo-image-picker": "^55.0.19",
     "expo-linking": "~55.0.14",
+    "expo-network": "^55.0.13",
     "expo-notifications": "^55.0.20",
     "expo-router": "~55.0.13",
     "expo-secure-store": "^55.0.13",
@@ -59,5 +60,12 @@
     "@types/react": "~19.2.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "typescript"
+      ]
+    }
   }
 }
