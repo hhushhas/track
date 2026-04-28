@@ -71,6 +71,12 @@ import {
   subscribeToWebPush,
   type WebNotificationPermission,
 } from '#/features/workspace/web-notifications'
+import {
+  VoiceNoteReview,
+  VoiceRecorder,
+  isVoiceNoteAttachment,
+  formatVoiceDuration,
+} from '#/features/workspace/voice-notes'
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
 import ThemeToggle from '#/components/ThemeToggle'
@@ -124,11 +130,16 @@ const emojiGroups = [
   },
 ] as const
 
-function createPendingAttachment(file: File) {
+function createPendingAttachment(
+  file: File,
+  metadata: { durationMs?: number; kind?: 'file' | 'voice_note'; previewUrl?: string | null } = {},
+) {
   return {
     file,
     id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
-    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+    durationMs: metadata.durationMs,
+    kind: metadata.kind ?? 'file',
+    previewUrl: metadata.previewUrl ?? (file.type.startsWith('image/') ? URL.createObjectURL(file) : null),
   }
 }
 
@@ -191,6 +202,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const [voiceRecordingActive, setVoiceRecordingActive] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(getNotificationPermission)
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -789,9 +801,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       return
     }
 
+    const notificationBody =
+      latestMessage.message.body ||
+      (latestMessage.attachments.some(({ attachment }) => attachment.kind === 'voice_note')
+        ? 'Sent a voice note.'
+        : latestMessage.attachments.length > 0
+          ? 'Sent an attachment.'
+          : 'New message.')
+
     void showMessageNotification({
       title: `${latestMessage.author?.displayName ?? 'New message'} in ${activeGroup.name}`,
-      body: latestMessage.message.body.slice(0, 160),
+      body: notificationBody.slice(0, 160),
       tag: `track-message-${latestMessage.message._id}`,
       url: window.location.pathname,
     }).catch(setActionError)
@@ -936,17 +956,27 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         const { storageId } = (await uploadResponse.json()) as { storageId: Id<'_storage'> }
         return {
           contentType: pendingAttachment.file.type || 'application/octet-stream',
+          durationMs: pendingAttachment.durationMs,
           filename: pendingAttachment.file.name,
+          kind: pendingAttachment.kind,
           size: pendingAttachment.file.size,
           storageId,
         }
       }))
+      const hasVoiceNote = pendingAttachments.some((attachment) => attachment.kind === 'voice_note')
       const messageId = await sendMessageMutation({
         projectId: activeProjectId,
         groupId: activeGroupId,
         authorId: trackUserId,
         body: messageBody,
         mentions: mentionedUserIds,
+        notificationPreview: messageBody
+          ? undefined
+          : hasVoiceNote
+            ? 'Sent a voice note.'
+            : pendingAttachments.length > 0
+              ? 'Sent an attachment.'
+              : undefined,
       })
       for (const attachment of uploadedAttachments) {
         await attachFileMutation({
@@ -958,6 +988,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           filename: attachment.filename,
           contentType: attachment.contentType,
           size: attachment.size,
+          kind: attachment.kind,
+          durationMs: attachment.durationMs,
         })
       }
       if (mentionHandles.includes('track')) {
@@ -1045,7 +1077,23 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }
 
   function addPendingAttachments(files: Array<File>) {
-    setPendingAttachments((attachments) => [...attachments, ...files.map(createPendingAttachment)])
+    setPendingAttachments((attachments) => [
+      ...attachments,
+      ...files.map((file) => createPendingAttachment(file)),
+    ])
+    setEmojiPickerOpen(false)
+    requestAnimationFrame(() => composerRef.current?.focus())
+  }
+
+  function handleVoiceNoteRecorded(recording: { file: File; durationMs: number; previewUrl: string }) {
+    setPendingAttachments((attachments) => [
+      ...attachments,
+      createPendingAttachment(recording.file, {
+        durationMs: recording.durationMs,
+        kind: 'voice_note',
+        previewUrl: recording.previewUrl,
+      }),
+    ])
     setEmojiPickerOpen(false)
     requestAnimationFrame(() => composerRef.current?.focus())
   }
@@ -1659,12 +1707,26 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             </div>
 
             <div className="track-composer-wrap">
-              <div className="track-composer">
-                {pendingAttachments.length > 0 ? (
+              <div className={voiceRecordingActive ? 'track-composer recording' : 'track-composer'}>
+                {!voiceRecordingActive && pendingAttachments.length > 0 ? (
                   <div className="track-composer-attachments" aria-label="Pending attachments">
                     {pendingAttachments.map((attachment) => (
-                      <div className="track-composer-attachment" key={attachment.id}>
-                        {attachment.previewUrl ? (
+                      <div
+                        className={
+                          attachment.kind === 'voice_note'
+                            ? 'track-composer-attachment voice'
+                            : 'track-composer-attachment'
+                        }
+                        key={attachment.id}
+                      >
+                        {attachment.kind === 'voice_note' && attachment.previewUrl ? (
+                          <VoiceNoteReview
+                            durationMs={attachment.durationMs}
+                            file={attachment.file}
+                            onRemove={() => removePendingAttachment(attachment.id)}
+                            previewUrl={attachment.previewUrl}
+                          />
+                        ) : attachment.previewUrl ? (
                           <img alt="" src={attachment.previewUrl} />
                         ) : (
                           <span className="track-composer-file-icon">
@@ -1675,74 +1737,88 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                             />
                           </span>
                         )}
-                        <span className="track-composer-attachment-meta">
-                          <strong>{attachment.file.name}</strong>
-                          <small>{formatFileSize(attachment.file.size)}</small>
-                        </span>
-                        <button
-                          aria-label={`Remove ${attachment.file.name}`}
-                          className="track-composer-attachment-remove"
-                          onClick={() => removePendingAttachment(attachment.id)}
-                          type="button"
-                        >
-                          <X size={13} />
-                        </button>
+                        {attachment.kind === 'voice_note' ? null : (
+                          <>
+                            <span className="track-composer-attachment-meta">
+                              <strong>{attachment.file.name}</strong>
+                              <small>
+                                {isVoiceNoteAttachment({
+                                  contentType: attachment.file.type,
+                                  filename: attachment.file.name,
+                                  kind: attachment.kind,
+                                })
+                                  ? formatVoiceDuration(attachment.durationMs)
+                                  : formatFileSize(attachment.file.size)}
+                              </small>
+                            </span>
+                            <button
+                              aria-label={`Remove ${attachment.file.name}`}
+                              className="track-composer-attachment-remove"
+                              onClick={() => removePendingAttachment(attachment.id)}
+                              type="button"
+                            >
+                              <X size={13} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : null}
-                <Textarea
-                  aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
-                  disabled={!activeGroupId || busyAction === 'send-message'}
-                  onBlur={handleComposerSelection}
-                  onChange={(event) => {
-                    setComposer(event.currentTarget.value)
-                    setComposerCursor(event.currentTarget.selectionStart)
-                    setEmojiPickerOpen(false)
-                  }}
-                  onKeyDown={(event) => {
-                    if (emojiPickerOpen && event.key === 'Escape') {
-                      event.preventDefault()
+                {!voiceRecordingActive ? (
+                  <Textarea
+                    aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
+                    disabled={!activeGroupId || busyAction === 'send-message'}
+                    onBlur={handleComposerSelection}
+                    onChange={(event) => {
+                      setComposer(event.currentTarget.value)
+                      setComposerCursor(event.currentTarget.selectionStart)
                       setEmojiPickerOpen(false)
-                      return
-                    }
-                    if (showMentionMenu) {
-                      if (event.key === 'ArrowDown') {
+                    }}
+                    onKeyDown={(event) => {
+                      if (emojiPickerOpen && event.key === 'Escape') {
                         event.preventDefault()
-                        setMentionIndex((index) => (index + 1) % filteredMentionOptions.length)
+                        setEmojiPickerOpen(false)
                         return
                       }
-                      if (event.key === 'ArrowUp') {
-                        event.preventDefault()
-                        setMentionIndex((index) => (index - 1 + filteredMentionOptions.length) % filteredMentionOptions.length)
-                        return
+                      if (showMentionMenu) {
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault()
+                          setMentionIndex((index) => (index + 1) % filteredMentionOptions.length)
+                          return
+                        }
+                        if (event.key === 'ArrowUp') {
+                          event.preventDefault()
+                          setMentionIndex((index) => (index - 1 + filteredMentionOptions.length) % filteredMentionOptions.length)
+                          return
+                        }
+                        if (event.key === 'Enter' || event.key === 'Tab') {
+                          event.preventDefault()
+                          const option = filteredMentionOptions[mentionIndex] ?? filteredMentionOptions[0]
+                          if (option) handleMentionSelect(option)
+                          return
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          setComposerCursor(0)
+                          return
+                        }
                       }
-                      if (event.key === 'Enter' || event.key === 'Tab') {
+                      if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault()
-                        const option = filteredMentionOptions[mentionIndex] ?? filteredMentionOptions[0]
-                        if (option) handleMentionSelect(option)
-                        return
+                        void handleSendMessage()
                       }
-                      if (event.key === 'Escape') {
-                        event.preventDefault()
-                        setComposerCursor(0)
-                        return
-                      }
-                    }
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault()
-                      void handleSendMessage()
-                    }
-                  }}
-                  onKeyUp={handleComposerSelection}
-                  onPaste={handleComposerPaste}
-                  onSelect={handleComposerSelection}
-                  placeholder={composerPlaceholder}
-                  ref={composerRef}
-                  autoFocus
-                  value={composer}
-                />
-                {showMentionMenu ? (
+                    }}
+                    onKeyUp={handleComposerSelection}
+                    onPaste={handleComposerPaste}
+                    onSelect={handleComposerSelection}
+                    placeholder={composerPlaceholder}
+                    ref={composerRef}
+                    autoFocus
+                    value={composer}
+                  />
+                ) : null}
+                {!voiceRecordingActive && showMentionMenu ? (
                   <div className="track-mention-menu" role="listbox" aria-label="Mention someone">
                     {mentionSections.map((section) => (
                       <div className="track-mention-section" key={section.label}>
@@ -1786,7 +1862,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     ))}
                   </div>
                 ) : null}
-                {emojiPickerOpen ? (
+                {!voiceRecordingActive && emojiPickerOpen ? (
                   <div className="track-emoji-picker" role="dialog" aria-label="Emoji picker">
                     {emojiGroups.map((group) => (
                       <div className="track-emoji-group" key={group.label}>
@@ -1813,65 +1889,73 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   </div>
                 ) : null}
                 <div className="track-composer-bar">
-                  <Button
-                    className="icon-button"
+                  {!voiceRecordingActive ? (
+                    <Button
+                      className="icon-button"
+                      disabled={!activeGroupId || busyAction === 'send-message'}
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Add attachment"
+                      type="button"
+                    >
+                      <Paperclip size={15} />
+                    </Button>
+                  ) : null}
+                  <VoiceRecorder
                     disabled={!activeGroupId || busyAction === 'send-message'}
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Add attachment"
-                    type="button"
-                  >
-                    <Paperclip size={15} />
-                  </Button>
-                  <Button
-                    className="icon-button"
-                    disabled={!activeGroupId || busyAction === 'send-message'}
-                    onClick={() => {
-                      setEmojiPickerOpen(false)
-                      const cursor = composerRef.current?.selectionStart ?? composer.length
-                      const spacer = cursor > 0 && !/\s$/.test(composer.slice(0, cursor)) ? ' @' : '@'
-                      const nextComposer = `${composer.slice(0, cursor)}${spacer}${composer.slice(cursor)}`
-                      const nextCursor = cursor + spacer.length
-                      setComposer(nextComposer)
-                      setComposerCursor(nextCursor)
-                      requestAnimationFrame(() => {
-                        composerRef.current?.focus()
-                        composerRef.current?.setSelectionRange(nextCursor, nextCursor)
-                      })
-                    }}
-                    title="Mention"
-                    type="button"
-                  >
-                    <AtSign size={15} />
-                  </Button>
-                  <Button
-                    className="icon-button"
-                    disabled={!activeGroupId}
-                    onClick={() => {
-                      setComposerCursor(composerRef.current?.selectionStart ?? composerCursor)
-                      setEmojiPickerOpen((open) => !open)
-                    }}
-                    title="Emoji"
-                    type="button"
-                  >
-                    <Smile size={15} />
-                  </Button>
-                  <span className="track-composer-hint">
-                    <Sparkles size={12} />
-                    AI auto-review on
-                  </span>
-                  <Button
-                    className="track-button track-button-primary"
-                    disabled={
-                      (!composer.trim() && pendingAttachments.length === 0) ||
-                      !activeGroupId ||
-                      busyAction === 'send-message'
-                    }
-                    onClick={handleSendMessage}
-                    type="button"
-                  >
-                    Send
-                    <span className="track-send-key">↵</span>
-                  </Button>
+                    onRecordingChange={setVoiceRecordingActive}
+                    onRecorded={handleVoiceNoteRecorded}
+                  />
+                  {!voiceRecordingActive ? (
+                    <>
+                      <Button
+                        className="icon-button"
+                        disabled={!activeGroupId || busyAction === 'send-message'}
+                        onClick={() => {
+                          setEmojiPickerOpen(false)
+                          const cursor = composerRef.current?.selectionStart ?? composer.length
+                          const spacer = cursor > 0 && !/\s$/.test(composer.slice(0, cursor)) ? ' @' : '@'
+                          const nextComposer = `${composer.slice(0, cursor)}${spacer}${composer.slice(cursor)}`
+                          const nextCursor = cursor + spacer.length
+                          setComposer(nextComposer)
+                          setComposerCursor(nextCursor)
+                          requestAnimationFrame(() => {
+                            composerRef.current?.focus()
+                            composerRef.current?.setSelectionRange(nextCursor, nextCursor)
+                          })
+                        }}
+                        title="Mention"
+                        type="button"
+                      >
+                        <AtSign size={15} />
+                      </Button>
+                      <Button
+                        className="icon-button"
+                        disabled={!activeGroupId}
+                        onClick={() => {
+                          setComposerCursor(composerRef.current?.selectionStart ?? composerCursor)
+                          setEmojiPickerOpen((open) => !open)
+                        }}
+                        title="Emoji"
+                        type="button"
+                      >
+                        <Smile size={15} />
+                      </Button>
+                      <span className="track-composer-spacer" />
+                      <Button
+                        className="track-button track-button-primary"
+                        disabled={
+                          (!composer.trim() && pendingAttachments.length === 0) ||
+                          !activeGroupId ||
+                          busyAction === 'send-message'
+                        }
+                        onClick={handleSendMessage}
+                        type="button"
+                      >
+                        Send
+                        <span className="track-send-key">↵</span>
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </div>

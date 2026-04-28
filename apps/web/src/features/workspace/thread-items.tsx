@@ -15,6 +15,7 @@ import { draftClassifications, draftStatuses } from './constants'
 import { getGroupAvatar } from './group-avatar'
 import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
+import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
 
 export function MessageRow({
   item,
@@ -67,6 +68,19 @@ export function MessageRow({
           <div className="track-attachment-list">
             {item.attachments.map(({ attachment, url }) => {
               const isImage = attachment.contentType.startsWith('image/')
+              if (isAudioAttachment(attachment)) {
+                return (
+                  <VoiceNotePlayer
+                    contentType={attachment.contentType}
+                    durationMs={attachment.durationMs}
+                    filename={attachment.filename}
+                    kind={attachment.kind}
+                    key={attachment._id}
+                    size={attachment.size}
+                    url={url}
+                  />
+                )
+              }
               const content = isImage ? (
                 <>
                   {url ? (

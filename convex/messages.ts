@@ -6,6 +6,8 @@ import { appendAuditEvent } from './lib/audit'
 import { rateLimiter } from './lib/rateLimit'
 import { requireGroupMember } from './lib/permissions'
 
+const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
+
 export const list = query({
   args: {
     groupId: v.id('groups'),
@@ -71,6 +73,7 @@ export const send = mutation({
     authorId: v.id('users'),
     body: v.string(),
     mentions: v.optional(v.array(v.id('users'))),
+    notificationPreview: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireGroupMember(ctx, args.groupId, args.authorId)
@@ -89,6 +92,7 @@ export const send = mutation({
       body: args.body,
       mentions: args.mentions ?? [],
       attachmentIds: [],
+      notificationPreview: args.notificationPreview,
       createdAt: Date.now(),
     })
 
@@ -134,6 +138,8 @@ export const attachFile = mutation({
     filename: v.string(),
     contentType: v.string(),
     size: v.number(),
+    kind: v.optional(attachmentKind),
+    durationMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireGroupMember(ctx, args.groupId, args.userId)
@@ -157,6 +163,8 @@ export const attachFile = mutation({
       filename: args.filename,
       contentType: args.contentType,
       size: args.size,
+      kind: args.kind,
+      durationMs: args.durationMs,
       uploadedBy: args.userId,
       extractionStatus: 'preserved',
       createdAt: Date.now(),
@@ -175,6 +183,8 @@ export const attachFile = mutation({
         filename: args.filename,
         contentType: args.contentType,
         size: args.size,
+        kind: args.kind ?? 'file',
+        durationMs: args.durationMs,
       },
     })
     return attachmentId

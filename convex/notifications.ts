@@ -230,7 +230,7 @@ export const collectMessageNotificationTargets = internalQuery({
     )
 
     return {
-      body: message.body,
+      body: message.body || message.notificationPreview || 'Sent an attachment.',
       groupName: group.name,
       projectName: project.name,
       senderName: author?.displayName ?? 'Track',

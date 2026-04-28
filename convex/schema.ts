@@ -62,6 +62,8 @@ const jobStatus = v.union(
   v.literal('failed'),
 )
 
+const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
+
 const evidenceItem = v.object({
   messageId: v.optional(v.id('messages')),
   attachmentId: v.optional(v.id('attachments')),
@@ -157,6 +159,7 @@ export default defineSchema({
     body: v.string(),
     mentions: v.array(v.id('users')),
     attachmentIds: v.array(v.id('attachments')),
+    notificationPreview: v.optional(v.string()),
     trackInvocationId: v.optional(v.id('assistantStreams')),
     createdAt: v.number(),
   })
@@ -171,6 +174,8 @@ export default defineSchema({
     filename: v.string(),
     contentType: v.string(),
     size: v.number(),
+    kind: v.optional(attachmentKind),
+    durationMs: v.optional(v.number()),
     uploadedBy: v.id('users'),
     extractionStatus: v.union(
       v.literal('preserved'),
