@@ -57,6 +57,14 @@ import { draftClassifications, draftStatuses, notificationModes } from '#/featur
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
 import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
+import {
+  getNotificationPermission,
+  notificationPermissionLabels,
+  requestNotificationPermission,
+  shouldNotifyForIncomingMessage,
+  showMessageNotification,
+  type WebNotificationPermission,
+} from '#/features/workspace/web-notifications'
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
 import ThemeToggle from '#/components/ThemeToggle'
@@ -165,8 +173,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(getNotificationPermission)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const hydratedNotificationMessagesRef = useRef(false)
+  const notifiedMessageIdsRef = useRef(new Set<string>())
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
   const sessionUser = useMemo(() => getSessionUser(session.data), [session.data])
@@ -568,6 +579,61 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     groupNotificationSettings.find((item) => item.groupId === activeGroupId)?.mode ?? 'inherit'
   const globalNotificationMode = notificationSettings?.global?.globalMode ?? 'mentions'
 
+  useEffect(() => {
+    hydratedNotificationMessagesRef.current = false
+    notifiedMessageIdsRef.current.clear()
+  }, [activeGroupId])
+
+  useEffect(() => {
+    setNotificationPermission(getNotificationPermission())
+  }, [])
+
+  useEffect(() => {
+    if (!activeGroup || !activeProject || !activeGroupId || !trackUserId || messages === undefined) return
+    if (notificationPermission !== 'granted') return
+
+    if (!hydratedNotificationMessagesRef.current) {
+      for (const item of visibleMessages) {
+        notifiedMessageIdsRef.current.add(item.message._id)
+      }
+      hydratedNotificationMessagesRef.current = true
+      return
+    }
+
+    const latestMessage = visibleMessages.at(-1)
+    if (!latestMessage || notifiedMessageIdsRef.current.has(latestMessage.message._id)) return
+    notifiedMessageIdsRef.current.add(latestMessage.message._id)
+
+    if (
+      !shouldNotifyForIncomingMessage({
+        authorId: latestMessage.message.authorId,
+        currentUserId: trackUserId,
+        globalMode: globalNotificationMode,
+        groupMode: groupNotificationMode,
+        mentions: latestMessage.message.mentions,
+      })
+    ) {
+      return
+    }
+
+    void showMessageNotification({
+      title: `${latestMessage.author?.displayName ?? 'New message'} in ${activeGroup.name}`,
+      body: latestMessage.message.body.slice(0, 160),
+      tag: `track-message-${latestMessage.message._id}`,
+      url: window.location.pathname,
+    }).catch(setActionError)
+  }, [
+    activeGroup,
+    activeGroupId,
+    activeProject,
+    globalNotificationMode,
+    groupNotificationMode,
+    messages,
+    notificationPermission,
+    trackUserId,
+    visibleMessages,
+  ])
+
   if (session.isPending) return <TrackLoading label="Checking your session" />
   if (!session.data) return <Navigate to="/sign-in" />
   if (!sessionUser) return <Navigate to="/sign-in" />
@@ -860,6 +926,27 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         await setGroupNotificationMode({ userId: trackUserId, groupId: activeGroupId, mode })
       } else {
         await setGlobalNotificationMode({ userId: trackUserId, mode })
+      }
+    })
+  }
+
+  async function handleEnableBrowserNotifications() {
+    await withBusy('notifications', async () => {
+      const permission = await requestNotificationPermission()
+      setNotificationPermission(permission)
+      if (permission === 'denied') {
+        throw new Error('Browser notifications are blocked for Track.')
+      }
+      if (permission === 'unsupported') {
+        throw new Error('This browser does not support web notifications.')
+      }
+      if (permission === 'granted') {
+        await showMessageNotification({
+          title: 'Track notifications enabled',
+          body: 'You will get alerts for new project messages.',
+          tag: 'track-notifications-enabled',
+          url: window.location.pathname,
+        })
       }
     })
   }
@@ -1504,7 +1591,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                       </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="track-rail-menu">
                           <DropdownMenuGroup>
-                            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                          <p className="track-rail-menu-note">Browser: {notificationPermissionLabels[notificationPermission]}</p>
+                          {notificationPermission !== 'granted' ? (
+                            <>
+                              <DropdownMenuItem onClick={() => void handleEnableBrowserNotifications()}>
+                                Enable browser alerts
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          ) : null}
                           <p className="track-rail-menu-note">Global: {formatRailLabel(globalNotificationMode)}</p>
                           <DropdownMenuRadioGroup
                             value={groupNotificationMode}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'track-shell-v2'
+const CACHE_NAME = 'track-shell-v3'
 const SHELL_ASSETS = [
   '/manifest.json',
   '/favicon.ico',
@@ -56,5 +56,24 @@ self.addEventListener('fetch', (event) => {
         return response
       })
       .catch(() => caches.match(request)),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const targetUrl = event.notification.data?.url ?? '/workspace'
+  const url = new URL(targetUrl, self.location.origin).href
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ includeUncontrolled: true, type: 'window' })
+      .then((clients) => {
+        const client = clients.find((item) => item.url === url || item.url.startsWith(self.location.origin))
+        if (client) {
+          client.focus()
+          return client.navigate(url)
+        }
+        return self.clients.openWindow(url)
+      }),
   )
 })
