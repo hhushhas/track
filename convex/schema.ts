@@ -115,7 +115,12 @@ export default defineSchema({
     createdBy: v.id('users'),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_project', ['projectId']),
+  })
+    .index('by_project', ['projectId'])
+    .searchIndex('search_name_by_project', {
+      searchField: 'name',
+      filterFields: ['projectId'],
+    }),
 
   groupMembers: defineTable({
     projectId: v.id('projects'),
@@ -164,7 +169,11 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_group_created_at', ['groupId', 'createdAt'])
-    .index('by_project_created_at', ['projectId', 'createdAt']),
+    .index('by_project_created_at', ['projectId', 'createdAt'])
+    .searchIndex('search_body_by_project', {
+      searchField: 'body',
+      filterFields: ['projectId'],
+    }),
 
   attachments: defineTable({
     projectId: v.id('projects'),
@@ -186,7 +195,11 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_message', ['messageId'])
-    .index('by_group', ['groupId']),
+    .index('by_group', ['groupId'])
+    .searchIndex('search_filename_by_project', {
+      searchField: 'filename',
+      filterFields: ['projectId'],
+    }),
 
   notificationSettings: defineTable({
     userId: v.id('users'),
@@ -263,6 +276,7 @@ export default defineSchema({
     status: recordStatus,
     title: v.string(),
     description: v.string(),
+    searchText: v.optional(v.string()),
     ownerId: v.optional(v.id('users')),
     requestedById: v.optional(v.id('users')),
     reviewedBy: v.id('users'),
@@ -273,7 +287,11 @@ export default defineSchema({
     .index('by_project', ['projectId'])
     .index('by_group', ['groupId'])
     .index('by_project_classification', ['projectId', 'classification'])
-    .index('by_project_status', ['projectId', 'status']),
+    .index('by_project_status', ['projectId', 'status'])
+    .searchIndex('search_text_by_project', {
+      searchField: 'searchText',
+      filterFields: ['projectId'],
+    }),
 
   exports: defineTable({
     projectId: v.id('projects'),

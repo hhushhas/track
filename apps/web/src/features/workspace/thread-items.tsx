@@ -18,11 +18,14 @@ import { MarkdownText } from './markdown'
 import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
 
 export function MessageRow({
+  isFlashing,
   item,
   mentionGroups,
   onOpenGroup,
+  searchQuery,
 }: {
   authorRole: Doc<'projectMembers'>['role'] | null
+  isFlashing?: boolean
   item: {
     message: Doc<'messages'>
     author: Doc<'users'> | null
@@ -31,10 +34,15 @@ export function MessageRow({
   }
   mentionGroups: Map<string, Doc<'groups'>>
   onOpenGroup: (groupId: Id<'groups'>) => void
+  searchQuery?: string
 }) {
   const authorName = item.author?.displayName ?? 'Unknown Member'
   return (
-    <article className="track-message-row" id={`message-${item.message._id}`}>
+    <article
+      className={isFlashing ? 'track-message-row flashing' : 'track-message-row'}
+      data-thread-item-key={item.message._id}
+      id={`message-${item.message._id}`}
+    >
       <AvatarNameTooltip
         detail={item.authorRole ? item.authorRole.replaceAll('_', ' ') : null}
         name={authorName}
@@ -54,6 +62,7 @@ export function MessageRow({
         </div>
         <MarkdownText
           className="track-markdown"
+          highlightQuery={searchQuery}
           renderMention={(handle, index) => (
             <MentionInline
               handle={handle}
@@ -145,18 +154,24 @@ export function AssistantAnswer({
   messageCitations,
   mentionGroups,
   onOpenGroup,
+  onOpenMessageCitation,
+  searchQuery,
   stream,
+  threadItemKey,
 }: {
   messageCitations: Map<string, { author: string; body: string; createdAt: number }>
   mentionGroups: Map<string, Doc<'groups'>>
   onOpenGroup: (groupId: Id<'groups'>) => void
+  onOpenMessageCitation: (messageId: Id<'messages'> | string) => void
+  searchQuery?: string
   stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
+  threadItemKey: string
 }) {
   const answer =
     stream.answer ||
     (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)
   return (
-    <article className="track-assistant-row">
+    <article className="track-assistant-row" data-thread-item-key={threadItemKey}>
       <AvatarNameTooltip detail="AI review" name="Track Assistant" side="right">
         <Avatar className="track-message-avatar bot">
           <AvatarFallback>
@@ -171,12 +186,14 @@ export function AssistantAnswer({
         </div>
         <MarkdownText
           className="track-markdown"
+          highlightQuery={searchQuery}
           renderCitation={(citationId, index) => (
             <MessageCitation
               citationId={citationId}
               index={index}
               key={`${citationId}-${index}`}
               message={messageCitations.get(citationId)}
+              onOpen={onOpenMessageCitation}
             />
           )}
           renderMention={(handle, index) => (
@@ -198,10 +215,12 @@ function MessageCitation({
   citationId,
   index,
   message,
+  onOpen,
 }: {
   citationId: string
   index: number
   message?: { author: string; body: string; createdAt: number }
+  onOpen: (messageId: Id<'messages'> | string) => void
 }) {
   if (!message) {
     return (
@@ -215,12 +234,7 @@ function MessageCitation({
     <button
       className="track-citation-chip"
       key={`${citationId}-${index}`}
-      onClick={() => {
-        document.getElementById(`message-${citationId}`)?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        })
-      }}
+      onClick={() => onOpen(citationId)}
       type="button"
     >
       <span className="track-citation-source">
@@ -275,7 +289,9 @@ function MentionInline({
 export function DraftRecordCard({
   busy,
   draft,
+  isSearchActive,
   onClassify,
+  searchQuery,
 }: {
   busy: boolean
   draft: {
@@ -286,11 +302,13 @@ export function DraftRecordCard({
     proposedStatus: string
     evidence: Array<{ quote: string }>
   }
+  isSearchActive?: boolean
   onClassify: (
     draftRecordId: Id<'draftRecords'>,
     classification: (typeof draftClassifications)[number],
     updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
   ) => Promise<void>
+  searchQuery?: string
 }) {
   const [title, setTitle] = useState(draft.title)
   const [description, setDescription] = useState(draft.description)
@@ -312,7 +330,11 @@ export function DraftRecordCard({
 
   const updates = { title, description, status }
   return (
-    <Card className="track-draft-record" size="sm">
+    <Card
+      className={isSearchActive ? 'track-draft-record search-active' : 'track-draft-record'}
+      data-thread-item-key={draft._id}
+      size="sm"
+    >
       <header>
         <span className="track-draft-kicker">
           <Sparkles size={13} />
@@ -328,6 +350,11 @@ export function DraftRecordCard({
           onChange={(event) => setTitle(event.currentTarget.value)}
           value={title}
         />
+        {isSearchActive && searchQuery?.trim() ? (
+          <span className="track-draft-search-hint">
+            Search match in draft title or summary
+          </span>
+        ) : null}
         <dl className="track-draft-meta">
           <dt>Type</dt>
           <dd>

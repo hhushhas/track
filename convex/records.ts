@@ -31,6 +31,24 @@ const recordStatus = v.union(
   v.literal('done'),
 )
 
+function buildRecordSearchText(record: {
+  classification?: string
+  description: string
+  status: string
+  title: string
+  type: string
+}) {
+  return [
+    record.title,
+    record.description,
+    record.type.replaceAll('_', ' '),
+    record.classification?.replaceAll('_', ' '),
+    record.status.replaceAll('_', ' '),
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 export const listDrafts = query({
   args: {
     projectId: v.id('projects'),
@@ -163,6 +181,13 @@ export const classifyDraft = mutation({
       status: args.status,
       title,
       description,
+      searchText: buildRecordSearchText({
+        classification: args.classification,
+        description,
+        status: args.status,
+        title,
+        type: draft.type,
+      }),
       ownerId: args.ownerId ?? draft.proposedOwnerId,
       reviewedBy: args.reviewerId,
       reviewedAt: now,
@@ -209,6 +234,13 @@ export const updateStatus = mutation({
     const before = { status: record.status }
     await ctx.db.patch(args.recordId, {
       status: args.status,
+      searchText: buildRecordSearchText({
+        classification: record.classification,
+        description: record.description,
+        status: args.status,
+        title: record.title,
+        type: record.type,
+      }),
       updatedAt: Date.now(),
     })
 

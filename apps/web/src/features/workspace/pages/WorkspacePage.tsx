@@ -5,6 +5,7 @@ import {
   Bell,
   Bot,
   ChevronDown,
+  ChevronUp,
   Clock3,
   Download,
   FileCheck2,
@@ -85,6 +86,29 @@ type WorkspacePageProps = {
   groupId?: string
   projectId?: string
   view?: 'home' | 'project' | 'group' | 'records' | 'settings'
+}
+
+type ProjectSearchFilter = 'all' | 'messages' | 'records' | 'files' | 'groups'
+
+type ProjectSearchResult = {
+  attachmentId?: Id<'attachments'>
+  contentType?: string
+  createdAt: number
+  groupId: Id<'groups'>
+  groupName: string
+  id: string
+  kind: 'message' | 'record' | 'file' | 'group'
+  messageId?: Id<'messages'>
+  preview: string
+  recordId?: Id<'records'>
+  subtitle: string
+  title: string
+}
+
+type ChatSearchMatch = {
+  key: string
+  kind: 'assistant' | 'draft' | 'message'
+  messageId?: Id<'messages'>
 }
 
 function getSessionUser(sessionData: unknown) {
@@ -183,6 +207,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [mentionIndex, setMentionIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [activeChatMatchIndex, setActiveChatMatchIndex] = useState(0)
+  const [projectSearchOpen, setProjectSearchOpen] = useState(false)
+  const [projectSearchQuery, setProjectSearchQuery] = useState('')
+  const [projectSearchFilter, setProjectSearchFilter] = useState<ProjectSearchFilter>('all')
   const [recordSearchQuery, setRecordSearchQuery] = useState('')
   const [recordFilter, setRecordFilter] = useState<'all' | 'open' | 'billable' | 'blocked' | 'done'>('all')
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
@@ -203,6 +231,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const [flashingMessageId, setFlashingMessageId] = useState<string | null>(null)
+  const [pendingFocusMessageId, setPendingFocusMessageId] = useState<string | null>(null)
   const [voiceRecordingActive, setVoiceRecordingActive] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(getNotificationPermission)
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null)
@@ -212,6 +242,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const mentionOptionRefs = useRef<Array<HTMLButtonElement | null>>([])
   const shouldFollowLatestRef = useRef(true)
   const lastLoadedGroupIdRef = useRef<Id<'groups'> | null>(null)
+  const flashMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingAttachmentsRef = useRef<Array<ReturnType<typeof createPendingAttachment>>>([])
   const hydratedNotificationMessagesRef = useRef(false)
   const notifiedMessageIdsRef = useRef(new Set<string>())
@@ -219,6 +250,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   useEffect(() => {
     return () => {
+      if (flashMessageTimeoutRef.current) {
+        clearTimeout(flashMessageTimeoutRef.current)
+      }
       for (const attachment of pendingAttachmentsRef.current) {
         if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
       }
@@ -264,6 +298,18 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     api.records.listProjectRecords,
     trackUserId && activeProjectId
       ? { userId: trackUserId, projectId: activeProjectId }
+      : 'skip',
+  )
+  const projectSearchResults = useQuery(
+    api.search.project,
+    trackUserId && activeProjectId && projectSearchOpen && projectSearchQuery.trim().length >= 2
+      ? {
+          filter: projectSearchFilter,
+          limit: 8,
+          projectId: activeProjectId,
+          query: projectSearchQuery,
+          userId: trackUserId,
+        }
       : 'skip',
   )
   const latestReview = useQuery(
@@ -651,26 +697,45 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       ].sort((a, b) => a.at - b.at),
     [groupAssistantStreams, pendingDrafts, visibleMessages],
   )
-  const filteredThreadItems = useMemo(() => {
-    const query = chatSearchQuery.trim().toLowerCase()
-    if (!query) return threadItems
+  const chatSearchTerm = chatSearchQuery.trim()
+  const chatSearchMatches = useMemo<ChatSearchMatch[]>(() => {
+    const query = chatSearchTerm.toLowerCase()
+    if (!query) return []
 
-    return threadItems.filter((threadItem) => {
+    const matches: ChatSearchMatch[] = []
+    for (const threadItem of threadItems) {
       if (threadItem.kind === 'message') {
-        return (
-          threadItem.item.message.body.toLowerCase().includes(query) ||
-          (threadItem.item.author?.displayName.toLowerCase().includes(query) ?? false)
-        )
+        const body = threadItem.item.message.body.toLowerCase()
+        const author = threadItem.item.author?.displayName.toLowerCase() ?? ''
+        if (body.includes(query) || author.includes(query)) {
+          matches.push({
+            key: threadItem.key,
+            kind: threadItem.kind,
+            messageId: threadItem.item.message._id,
+          })
+        }
+        continue
       }
-      if (threadItem.kind === 'assistant') return threadItem.stream.answer.toLowerCase().includes(query)
-      return (
-        threadItem.draft.title.toLowerCase().includes(query) ||
-        threadItem.draft.description.toLowerCase().includes(query)
-      )
-    })
-  }, [chatSearchQuery, threadItems])
+      if (threadItem.kind === 'assistant') {
+        if (threadItem.stream.answer.toLowerCase().includes(query)) {
+          matches.push({ key: threadItem.key, kind: threadItem.kind })
+        }
+        continue
+      }
+      const draftText = `${threadItem.draft.title} ${threadItem.draft.description}`.toLowerCase()
+      if (draftText.includes(query)) {
+        matches.push({ key: threadItem.key, kind: threadItem.kind })
+      }
+    }
+
+    return matches
+  }, [chatSearchTerm, threadItems])
+  const chatSearchMatchKeys = useMemo(
+    () => new Set(chatSearchMatches.map((match) => match.key)),
+    [chatSearchMatches],
+  )
+  const activeChatMatch = chatSearchMatches[activeChatMatchIndex] ?? null
   const latestThreadItemKey = threadItems.at(-1)?.key ?? null
-  const latestFilteredThreadItemKey = filteredThreadItems.at(-1)?.key ?? null
 
   useEffect(() => {
     if (view !== 'group' || messages === undefined) return
@@ -705,14 +770,100 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [chatSearchQuery, latestThreadItemKey, view])
 
   useEffect(() => {
-    if (view !== 'group' || !chatSearchQuery.trim()) return
-    requestThreadScrollToLatest('auto')
-  }, [chatSearchQuery, latestFilteredThreadItemKey, view])
+    setActiveChatMatchIndex(0)
+  }, [chatSearchTerm])
+
+  useEffect(() => {
+    if (activeChatMatchIndex < chatSearchMatches.length) return
+    setActiveChatMatchIndex(Math.max(chatSearchMatches.length - 1, 0))
+  }, [activeChatMatchIndex, chatSearchMatches.length])
+
+  useEffect(() => {
+    if (view !== 'group' || !activeChatMatch) return
+    requestThreadItemScroll(activeChatMatch.key)
+    if (activeChatMatch.kind === 'message' && activeChatMatch.messageId) {
+      requestMessageFlash(activeChatMatch.messageId)
+    }
+  }, [activeChatMatch, view])
+
+  useEffect(() => {
+    if (view !== 'group' || !pendingFocusMessageId || messages === undefined) return
+    if (!visibleMessages.some((item) => item.message._id === pendingFocusMessageId)) return
+    requestMessageFocus(pendingFocusMessageId)
+    setPendingFocusMessageId(null)
+  }, [messages, pendingFocusMessageId, view, visibleMessages])
+
+  useEffect(() => {
+    function handleProjectSearchShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setProjectSearchOpen(true)
+      }
+    }
+
+    window.addEventListener('keydown', handleProjectSearchShortcut)
+    return () => window.removeEventListener('keydown', handleProjectSearchShortcut)
+  }, [])
+
+  useEffect(() => {
+    function handleChatSearchShortcut(event: KeyboardEvent) {
+      if (view !== 'group' || event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target
+      const isEditable =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      const composerElement = composerRef.current
+      const isEmptyComposer =
+        composerElement !== null &&
+        target === composerElement &&
+        composerElement.value.trim().length === 0
+      if (isEditable && !isEmptyComposer) return
+
+      event.preventDefault()
+      setSearchOpen(true)
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLInputElement>('.track-chat-search')?.focus()
+      })
+    }
+
+    window.addEventListener('keydown', handleChatSearchShortcut)
+    return () => window.removeEventListener('keydown', handleChatSearchShortcut)
+  }, [view])
 
   function requestThreadScrollToLatest(behavior: ScrollBehavior = 'smooth') {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => scrollThreadToLatest(behavior))
     })
+  }
+
+  function requestThreadItemScroll(threadItemKey: string, behavior: ScrollBehavior = 'smooth') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollThreadItemIntoView(threadItemKey, behavior))
+    })
+  }
+
+  function requestMessageFocus(messageId: Id<'messages'> | string, behavior: ScrollBehavior = 'smooth') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById(`message-${messageId}`)?.scrollIntoView({
+          behavior,
+          block: 'center',
+        })
+        requestMessageFlash(messageId)
+      })
+    })
+  }
+
+  function requestMessageFlash(messageId: Id<'messages'> | string) {
+    if (flashMessageTimeoutRef.current) {
+      clearTimeout(flashMessageTimeoutRef.current)
+    }
+    setFlashingMessageId(String(messageId))
+    flashMessageTimeoutRef.current = setTimeout(() => {
+      setFlashingMessageId(null)
+      flashMessageTimeoutRef.current = null
+    }, 1500)
   }
 
   const headerMembers = useMemo(
@@ -750,6 +901,35 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         ]),
       ),
     [visibleMessages],
+  )
+  const projectSearchSections = useMemo(
+    () => [
+      {
+        key: 'messages',
+        label: 'Messages',
+        results: (projectSearchResults?.messages ?? []) as ProjectSearchResult[],
+      },
+      {
+        key: 'records',
+        label: 'Records',
+        results: (projectSearchResults?.records ?? []) as ProjectSearchResult[],
+      },
+      {
+        key: 'files',
+        label: 'Files',
+        results: (projectSearchResults?.files ?? []) as ProjectSearchResult[],
+      },
+      {
+        key: 'groups',
+        label: 'Groups',
+        results: (projectSearchResults?.groups ?? []) as ProjectSearchResult[],
+      },
+    ],
+    [projectSearchResults],
+  )
+  const projectSearchTotal = projectSearchSections.reduce(
+    (total, section) => total + section.results.length,
+    0,
   )
   const groupNotificationMode =
     groupNotificationSettings.find((item) => item.groupId === activeGroupId)?.mode ?? 'inherit'
@@ -1022,6 +1202,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
     shouldFollowLatestRef.current = true
     setShowJumpToLatest(false)
+  }
+
+  function scrollThreadItemIntoView(threadItemKey: string, behavior: ScrollBehavior = 'smooth') {
+    const scrollElement = threadScrollRef.current
+    const target = scrollElement?.querySelector<HTMLElement>(
+      `[data-thread-item-key="${CSS.escape(threadItemKey)}"]`,
+    )
+    if (!target) return
+    target.scrollIntoView({ behavior, block: 'center' })
+    shouldFollowLatestRef.current = false
+    setShowJumpToLatest(true)
   }
 
   function handleThreadScroll() {
@@ -1367,6 +1558,38 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     }).catch(() => undefined)
   }
 
+  function cycleChatSearchMatch(direction: 1 | -1) {
+    if (chatSearchMatches.length === 0) return
+    setActiveChatMatchIndex((index) =>
+      (index + direction + chatSearchMatches.length) % chatSearchMatches.length,
+    )
+  }
+
+  function handleProjectSearchResult(result: ProjectSearchResult) {
+    setProjectSearchOpen(false)
+    setProjectSearchQuery('')
+    setMobileNavOpen(false)
+
+    if (result.kind === 'record') {
+      setRecordSearchQuery(result.title)
+      navigateToProjectRecords()
+      return
+    }
+
+    if (result.kind === 'group') {
+      navigateToGroup(result.groupId)
+      return
+    }
+
+    navigateToGroup(result.groupId)
+    if (result.messageId) {
+      setPendingFocusMessageId(result.messageId)
+      if (result.groupId === activeGroupId) {
+        requestMessageFocus(result.messageId)
+      }
+    }
+  }
+
   async function handleSignOut() {
     await authClient.signOut()
     await navigate({ to: '/sign-in' })
@@ -1606,26 +1829,62 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               ) : null}
             </div>
             {view === 'group' && searchOpen ? (
+              <div className="track-chat-search-wrap">
                 <Input
                   autoFocus
                   className="track-chat-search"
                   onChange={(event) => setChatSearchQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      cycleChatSearchMatch(event.shiftKey ? -1 : 1)
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setChatSearchQuery('')
+                      setSearchOpen(false)
+                      requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
+                    }
+                  }}
                   placeholder="Search chat..."
                   value={chatSearchQuery}
                 />
-              ) : null}
+                <span className="track-chat-search-count">
+                  {chatSearchTerm ? `${chatSearchMatches.length ? activeChatMatchIndex + 1 : 0}/${chatSearchMatches.length}` : '/'}
+                </span>
+                <Button
+                  aria-label="Previous chat search match"
+                  className="track-chat-search-step"
+                  disabled={chatSearchMatches.length === 0}
+                  onClick={() => cycleChatSearchMatch(-1)}
+                  type="button"
+                >
+                  <ChevronUp size={13} />
+                </Button>
+                <Button
+                  aria-label="Next chat search match"
+                  className="track-chat-search-step"
+                  disabled={chatSearchMatches.length === 0}
+                  onClick={() => cycleChatSearchMatch(1)}
+                  type="button"
+                >
+                  <ChevronDown size={13} />
+                </Button>
+              </div>
+            ) : null}
             {view === 'group' ? (
               <>
                 <Button
-                  aria-label="Search chat"
+                  aria-label="Search this chat"
                   className="icon-button"
                   onClick={() => {
                     setSearchOpen((open) => !open)
                     if (searchOpen) setChatSearchQuery('')
                   }}
+                  title="Search this chat (/)"
                   type="button"
                 >
-                  <Search size={15} />
+                  <MessagesSquare size={15} />
                 </Button>
                 <Input
                   className="track-file-input"
@@ -1635,6 +1894,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   type="file"
                 />
               </>
+            ) : null}
+            {activeProjectId ? (
+              <Button
+                aria-label="Search project"
+                className="icon-button"
+                onClick={() => setProjectSearchOpen(true)}
+                title="Search project (⌘K)"
+                type="button"
+              >
+                <Search size={15} />
+              </Button>
             ) : null}
             {view !== 'settings' && view !== 'records' ? (
               <Button
@@ -1695,14 +1965,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   </div>
                 ) : null}
 
-                {chatSearchQuery.trim() && filteredThreadItems.length === 0 ? (
+                {chatSearchTerm && chatSearchMatches.length === 0 ? (
                   <div className="track-empty">
                     <p className="mono-label m-0">No matches</p>
-                    <p>No chat items match "{chatSearchQuery.trim()}".</p>
+                    <p>No chat items match "{chatSearchTerm}".</p>
                   </div>
                 ) : null}
 
-                {filteredThreadItems.map((threadItem) => {
+                {threadItems.map((threadItem) => {
+                  const searchQuery = chatSearchMatchKeys.has(threadItem.key) ? chatSearchTerm : undefined
                   if (threadItem.kind === 'message') {
                     return (
                       <MessageRow
@@ -1711,9 +1982,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                           threadItem.item.authorRole
                         }
                         key={threadItem.key}
+                        isFlashing={flashingMessageId === threadItem.item.message._id}
                         item={threadItem.item}
                         mentionGroups={mentionGroups}
                         onOpenGroup={navigateToGroup}
+                        searchQuery={searchQuery}
                       />
                     )
                   }
@@ -1724,7 +1997,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                         mentionGroups={mentionGroups}
                         messageCitations={messageCitations}
                         onOpenGroup={navigateToGroup}
+                        onOpenMessageCitation={requestMessageFocus}
+                        searchQuery={searchQuery}
                         stream={threadItem.stream}
+                        threadItemKey={threadItem.key}
                       />
                     )
                   }
@@ -1732,8 +2008,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     <DraftRecordCard
                       busy={busyAction === `classify-${threadItem.draft._id}`}
                       draft={threadItem.draft}
+                      isSearchActive={chatSearchMatchKeys.has(threadItem.key)}
                       key={threadItem.key}
                       onClassify={handleClassifyDraft}
+                      searchQuery={searchQuery}
                     />
                   )
                 })}
@@ -2237,6 +2515,23 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           )}
         </aside>
       ) : null}
+      <ProjectSearchDialog
+        filter={projectSearchFilter}
+        loading={
+          projectSearchOpen &&
+          projectSearchQuery.trim().length >= 2 &&
+          projectSearchResults === undefined
+        }
+        onClose={() => setProjectSearchOpen(false)}
+        onFilterChange={setProjectSearchFilter}
+        onOpenResult={handleProjectSearchResult}
+        onQueryChange={setProjectSearchQuery}
+        open={projectSearchOpen}
+        projectName={activeProject?.project.name ?? 'Project'}
+        query={projectSearchQuery}
+        sections={projectSearchSections}
+        total={projectSearchTotal}
+      />
       <WorkspaceDialogs
         activeGroupId={activeGroupId}
         activeGroupName={activeGroup?.name}
@@ -2271,6 +2566,154 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         setProjectName={setProjectName}
       />
     </main>
+  )
+}
+
+function ProjectSearchDialog({
+  filter,
+  loading,
+  onClose,
+  onFilterChange,
+  onOpenResult,
+  onQueryChange,
+  open,
+  projectName,
+  query,
+  sections,
+  total,
+}: {
+  filter: ProjectSearchFilter
+  loading: boolean
+  onClose: () => void
+  onFilterChange: (filter: ProjectSearchFilter) => void
+  onOpenResult: (result: ProjectSearchResult) => void
+  onQueryChange: (query: string) => void
+  open: boolean
+  projectName: string
+  query: string
+  sections: Array<{ key: string; label: string; results: ProjectSearchResult[] }>
+  total: number
+}) {
+  useEffect(() => {
+    if (!open) return
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose, open])
+
+  if (!open) return null
+
+  const filters: Array<{ label: string; value: ProjectSearchFilter }> = [
+    { label: 'All', value: 'all' },
+    { label: 'Messages', value: 'messages' },
+    { label: 'Records', value: 'records' },
+    { label: 'Files', value: 'files' },
+    { label: 'Groups', value: 'groups' },
+  ]
+  const hasQuery = query.trim().length >= 2
+
+  return (
+    <div className="track-project-search-overlay" role="presentation" onMouseDown={onClose}>
+      <section
+        aria-label="Project search"
+        aria-modal="true"
+        className="track-project-search"
+        onMouseDown={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header className="track-project-search-header">
+          <div>
+            <span className="mono-label">Current project search</span>
+            <h2>{projectName}</h2>
+          </div>
+          <Button aria-label="Close project search" className="icon-button" onClick={onClose} type="button">
+            <X size={15} />
+          </Button>
+        </header>
+        <div className="track-project-search-box">
+          <Search size={16} />
+          <Input
+            autoFocus
+            className="track-project-search-input"
+            onChange={(event) => onQueryChange(event.currentTarget.value)}
+            placeholder="Search messages, records, files, and groups..."
+            value={query}
+          />
+          <span>{total} results</span>
+        </div>
+        <div className="track-project-search-filters" role="list" aria-label="Search filters">
+          {filters.map((item) => (
+            <button
+              className={filter === item.value ? 'active' : ''}
+              key={item.value}
+              onClick={() => onFilterChange(item.value)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="track-project-search-results">
+          {!hasQuery ? (
+            <div className="track-project-search-state">
+              <Search size={18} />
+              <p>Type at least 2 characters to search this project.</p>
+              <small>Use ⌘K anywhere, or / inside a group when the composer is not focused.</small>
+            </div>
+          ) : loading ? (
+            <div className="track-project-search-state">
+              <LoaderCircle className="spin" size={18} />
+              <p>Searching project...</p>
+            </div>
+          ) : total === 0 ? (
+            <div className="track-project-search-state">
+              <Search size={18} />
+              <p>No results for "{query.trim()}".</p>
+            </div>
+          ) : (
+            sections.map((section) =>
+              section.results.length > 0 ? (
+                <div className="track-project-search-section" key={section.key}>
+                  <p className="track-project-search-section-label">{section.label}</p>
+                  {section.results.map((result) => (
+                    <button
+                      className="track-project-search-result"
+                      key={`${result.kind}-${result.id}`}
+                      onClick={() => onOpenResult(result)}
+                      type="button"
+                    >
+                      <span className={`track-project-search-icon ${result.kind}`}>
+                        {result.kind === 'file' ? (
+                          <AttachmentTypeIcon
+                            contentType={result.contentType ?? 'application/octet-stream'}
+                            filename={result.title}
+                            size={16}
+                          />
+                        ) : result.kind === 'record' ? (
+                          <FileCheck2 size={16} />
+                        ) : result.kind === 'group' ? (
+                          <FolderKanban size={16} />
+                        ) : (
+                          <MessagesSquare size={16} />
+                        )}
+                      </span>
+                      <span className="track-project-search-copy">
+                        <strong>{result.title}</strong>
+                        <small>{result.subtitle}</small>
+                        <span>{result.preview}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null,
+            )
+          )}
+        </div>
+      </section>
+    </div>
   )
 }
 

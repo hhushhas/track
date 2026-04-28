@@ -2,11 +2,13 @@ import type { ReactNode } from 'react'
 
 export function MarkdownText({
   className,
+  highlightQuery,
   renderCitation,
   renderMention,
   text,
 }: {
   className?: string
+  highlightQuery?: string
   renderCitation?: (citationId: string, index: number) => ReactNode
   renderMention?: (handle: string, index: number) => ReactNode
   text: string
@@ -54,7 +56,9 @@ export function MarkdownText({
         block.kind === 'list' ? (
           <ul key={`list-${blockIndex}`}>
             {block.items.map((item, itemIndex) => (
-              <li key={`${item}-${itemIndex}`}>{renderMarkdownInline(item, renderCitation, renderMention)}</li>
+              <li key={`${item}-${itemIndex}`}>
+                {renderMarkdownInline(item, renderCitation, renderMention, highlightQuery)}
+              </li>
             ))}
           </ul>
         ) : (
@@ -62,7 +66,7 @@ export function MarkdownText({
             {block.text.split('\n').map((line, lineIndex) => (
               <span key={`${line}-${lineIndex}`}>
                 {lineIndex > 0 ? <br /> : null}
-                {renderMarkdownInline(line, renderCitation, renderMention)}
+                {renderMarkdownInline(line, renderCitation, renderMention, highlightQuery)}
               </span>
             ))}
           </p>
@@ -76,6 +80,7 @@ function renderMarkdownInline(
   text: string,
   renderCitation?: (citationId: string, index: number) => ReactNode,
   renderMention?: (handle: string, index: number) => ReactNode,
+  highlightQuery?: string,
 ): ReactNode[] {
   const tokenPattern =
     /(\[[a-z0-9]+\]|\[[^\]]+\]\([^)]+\)|@[a-z0-9._-]+|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/gi
@@ -112,13 +117,52 @@ function renderMarkdownInline(
     }
 
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`${part}-${index}`}>{renderMarkdownInline(part.slice(2, -2), renderCitation, renderMention)}</strong>
+      return (
+        <strong key={`${part}-${index}`}>
+          {renderMarkdownInline(part.slice(2, -2), renderCitation, renderMention, highlightQuery)}
+        </strong>
+      )
     }
 
     if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={`${part}-${index}`}>{renderMarkdownInline(part.slice(1, -1), renderCitation, renderMention)}</em>
+      return (
+        <em key={`${part}-${index}`}>
+          {renderMarkdownInline(part.slice(1, -1), renderCitation, renderMention, highlightQuery)}
+        </em>
+      )
     }
 
-    return <span key={`${part}-${index}`}>{part}</span>
+    return <span key={`${part}-${index}`}>{highlightText(part, highlightQuery)}</span>
   })
+}
+
+function highlightText(text: string, query?: string) {
+  const needle = query?.trim()
+  if (!needle) return text
+
+  const lowerText = text.toLowerCase()
+  const lowerNeedle = needle.toLowerCase()
+  const nodes: ReactNode[] = []
+  let cursor = 0
+  let matchIndex = lowerText.indexOf(lowerNeedle)
+
+  while (matchIndex !== -1) {
+    if (matchIndex > cursor) {
+      nodes.push(text.slice(cursor, matchIndex))
+    }
+    const end = matchIndex + needle.length
+    nodes.push(
+      <mark className="track-search-highlight" key={`${matchIndex}-${end}`}>
+        {text.slice(matchIndex, end)}
+      </mark>,
+    )
+    cursor = end
+    matchIndex = lowerText.indexOf(lowerNeedle, cursor)
+  }
+
+  if (cursor < text.length) {
+    nodes.push(text.slice(cursor))
+  }
+
+  return nodes.length > 0 ? nodes : text
 }
