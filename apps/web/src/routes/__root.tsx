@@ -3,6 +3,7 @@ import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { useEffect } from 'react'
 import AppProviders from '../components/AppProviders'
+import PwaInstallPrompt from '../components/PwaInstallPrompt'
 
 import appCss from '../styles.css?url'
 
@@ -156,7 +157,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(240,177,0,0.28)]">
-        <AppProviders>{children}</AppProviders>
+        <AppProviders>
+          {children}
+          <PwaInstallPrompt />
+        </AppProviders>
         <TanStackDevtools
           config={{
             position: 'bottom-right',
