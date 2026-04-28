@@ -55,6 +55,7 @@ import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { AttachmentTypeIcon, formatFileSize } from '#/features/workspace/attachment-ui'
+import { AvatarNameTooltip } from '#/features/workspace/avatar-tooltip'
 import { draftClassifications, draftStatuses, notificationModes } from '#/features/workspace/constants'
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
@@ -195,6 +196,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const threadScrollRef = useRef<HTMLDivElement | null>(null)
+  const mentionOptionRefs = useRef<Array<HTMLButtonElement | null>>([])
   const shouldFollowLatestRef = useRef(true)
   const lastLoadedGroupIdRef = useRef<Id<'groups'> | null>(null)
   const pendingAttachmentsRef = useRef<Array<ReturnType<typeof createPendingAttachment>>>([])
@@ -481,6 +483,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [activeMention?.query])
 
   useEffect(() => {
+    if (!showMentionMenu) return
+    mentionOptionRefs.current[mentionIndex]?.scrollIntoView({
+      block: 'nearest',
+    })
+  }, [mentionIndex, showMentionMenu])
+
+  useEffect(() => {
     if (!railResizing) return
     function handlePointerMove(event: PointerEvent) {
       setRailWidth(Math.min(460, Math.max(280, window.innerWidth - event.clientX)))
@@ -696,6 +705,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const headerMembers = useMemo(
     () => activeProjectMembers.filter((item) => item.user).slice(0, 5),
     [activeProjectMembers],
+  )
+  const hiddenHeaderMembers = useMemo(
+    () => activeProjectMembers.filter((item) => item.user).slice(headerMembers.length),
+    [activeProjectMembers, headerMembers.length],
   )
   const extraHeaderMemberCount = Math.max(activeProjectMembers.filter((item) => item.user).length - headerMembers.length, 0)
   const composerPeople = useMemo(
@@ -1414,9 +1427,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         ) : null}
 
         <div className="track-nav-footer">
-          <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
-            <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
-          </Avatar>
+          <AvatarNameTooltip
+            detail={activeProject?.membership.role ?? 'owner'}
+            name={currentUserName}
+            side="right"
+          >
+            <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
+              <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
+            </Avatar>
+          </AvatarNameTooltip>
           <div className="track-nav-copy">
             <span className="track-nav-title">{currentUserName}</span>
             <span className="track-nav-meta">{activeProject?.membership.role ?? 'owner'}</span>
@@ -1464,13 +1483,28 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               {headerMembers.map((item) => {
                 const user = item.user as Doc<'users'>
                 return (
-                  <Avatar className={`track-avatar ${getAvatarTone(user.email)}`} key={user._id}>
-                    <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
-                  </Avatar>
+                  <AvatarNameTooltip
+                    detail={item.membership.role.replaceAll('_', ' ')}
+                    key={user._id}
+                    name={user.displayName}
+                  >
+                    <Avatar className={`track-avatar ${getAvatarTone(user.email)}`}>
+                      <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
+                    </Avatar>
+                  </AvatarNameTooltip>
                 )
               })}
               {extraHeaderMemberCount > 0 ? (
-                <span className="track-member-more">+{extraHeaderMemberCount}</span>
+                <AvatarNameTooltip
+                  detail={hiddenHeaderMembers
+                    .map((item) => item.user?.displayName)
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .join(', ')}
+                  name={`${extraHeaderMemberCount} more member${extraHeaderMemberCount === 1 ? '' : 's'}`}
+                >
+                  <span className="track-member-more">+{extraHeaderMemberCount}</span>
+                </AvatarNameTooltip>
               ) : null}
             </div>
             {view === 'group' && searchOpen ? (
@@ -1717,6 +1751,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                               onMouseDown={(event) => {
                                 event.preventDefault()
                                 handleMentionSelect(option)
+                              }}
+                              ref={(element) => {
+                                mentionOptionRefs.current[index] = element
                               }}
                               role="option"
                               type="button"

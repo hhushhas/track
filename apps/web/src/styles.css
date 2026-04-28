@@ -1197,6 +1197,62 @@ button {
   font-weight: inherit;
 }
 
+.track-avatar-tooltip-trigger {
+  display: inline-flex;
+  width: fit-content;
+  min-width: 0;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  line-height: 0;
+  outline: none;
+  transition: transform 140ms ease;
+}
+
+.track-avatar-tooltip-trigger:hover {
+  transform: translateY(-1px);
+}
+
+.track-avatar-tooltip-trigger:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--paper),
+    0 0 0 4px rgba(240, 177, 0, 0.42);
+}
+
+.track-avatar-tooltip {
+  border: 1px solid rgba(250, 249, 247, 0.12);
+  background: var(--ink);
+  box-shadow: 0 10px 28px rgba(27, 25, 23, 0.18);
+  color: var(--paper);
+  padding: 7px 9px;
+}
+
+.track-avatar-tooltip-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.track-avatar-tooltip-copy strong {
+  max-width: 180px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-avatar-tooltip-copy small {
+  max-width: 220px;
+  overflow: hidden;
+  color: rgba(250, 249, 247, 0.66);
+  font-size: 10.5px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
 .track-workspace {
   display: flex;
   min-width: 0;
@@ -1257,7 +1313,7 @@ button {
   margin-right: 6px;
 }
 
-.track-header-members .track-avatar,
+.track-header-members .track-avatar-tooltip-trigger,
 .track-member-more {
   width: 24px;
   height: 24px;
@@ -1266,8 +1322,14 @@ button {
   margin-left: -4px;
 }
 
-.track-header-members .track-avatar:first-child {
+.track-header-members .track-avatar-tooltip-trigger:first-child {
   margin-left: 0;
+}
+
+.track-header-members .track-avatar {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
 }
 
 .track-member-more {
@@ -3734,6 +3796,7 @@ button:disabled:hover {
   .group-button,
   .track-jump-latest,
   .track-attachment-card,
+  .track-avatar-tooltip-trigger,
   .track-mention-option {
     transition: none;
   }

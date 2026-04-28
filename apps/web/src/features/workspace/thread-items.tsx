@@ -10,6 +10,7 @@ import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Textarea } from '#/components/ui/textarea'
 import { AttachmentTypeIcon, formatFileSize } from './attachment-ui'
+import { AvatarNameTooltip } from './avatar-tooltip'
 import { draftClassifications, draftStatuses } from './constants'
 import { getGroupAvatar } from './group-avatar'
 import { getAvatarTone, getInitials } from './identity'
@@ -33,9 +34,15 @@ export function MessageRow({
   const authorName = item.author?.displayName ?? 'Unknown Member'
   return (
     <article className="track-message-row" id={`message-${item.message._id}`}>
-      <Avatar className={`track-message-avatar ${getAvatarTone(item.author?.email ?? authorName)}`}>
-        <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
-      </Avatar>
+      <AvatarNameTooltip
+        detail={item.authorRole ? item.authorRole.replaceAll('_', ' ') : null}
+        name={authorName}
+        side="right"
+      >
+        <Avatar className={`track-message-avatar ${getAvatarTone(item.author?.email ?? authorName)}`}>
+          <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
+        </Avatar>
+      </AvatarNameTooltip>
       <Card className="track-message-body" size="sm">
         <div className="track-message-meta">
           <strong>{authorName}</strong>
@@ -136,11 +143,13 @@ export function AssistantAnswer({
     (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)
   return (
     <article className="track-assistant-row">
-      <Avatar className="track-message-avatar bot">
-        <AvatarFallback>
-          <Bot size={14} />
-        </AvatarFallback>
-      </Avatar>
+      <AvatarNameTooltip detail="AI review" name="Track Assistant" side="right">
+        <Avatar className="track-message-avatar bot">
+          <AvatarFallback>
+            <Bot size={14} />
+          </AvatarFallback>
+        </Avatar>
+      </AvatarNameTooltip>
       <Card className="track-assistant-body" size="sm">
         <div className="track-message-meta">
           <strong>Track Assistant</strong>
