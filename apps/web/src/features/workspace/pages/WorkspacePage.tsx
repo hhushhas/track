@@ -1,4 +1,4 @@
-import { Navigate, useNavigate } from '@tanstack/react-router'
+import { Navigate, useNavigate, useRouter } from '@tanstack/react-router'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import {
   AtSign,
@@ -149,6 +149,7 @@ function formatRailLabel(value: string) {
 
 export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePageProps) {
   const navigate = useNavigate()
+  const router = useRouter()
   const session = authClient.useSession()
   const syncCurrentUser = useMutation(api.auth.syncGoogleUser)
   const ensureStarterProject = useMutation(api.projects.ensureStarter)
@@ -1305,6 +1306,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
+  function preloadProjectRoute(projectIdToOpen: Id<'projects'>) {
+    void router.preloadRoute({
+      to: '/workspace/projects/$projectId',
+      params: { projectId: projectIdToOpen },
+    }).catch(() => undefined)
+  }
+
   function navigateToGroup(groupIdToOpen: Id<'groups'>) {
     if (!activeProjectId) return
     setMobileNavOpen(false)
@@ -1313,6 +1321,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       to: '/workspace/projects/$projectId/groups/$groupId',
       params: { groupId: groupIdToOpen, projectId: activeProjectId },
     })
+  }
+
+  function preloadGroupRoute(groupIdToOpen: Id<'groups'>) {
+    if (!activeProjectId) return
+    void router.preloadRoute({
+      to: '/workspace/projects/$projectId/groups/$groupId',
+      params: { groupId: groupIdToOpen, projectId: activeProjectId },
+    }).catch(() => undefined)
   }
 
   function navigateToProjectRecords() {
@@ -1325,6 +1341,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
+  function preloadProjectRecordsRoute() {
+    if (!activeProjectId) return
+    void router.preloadRoute({
+      to: '/workspace/projects/$projectId/records',
+      params: { projectId: activeProjectId },
+    }).catch(() => undefined)
+  }
+
   function navigateToProjectSettings() {
     if (!activeProjectId) return
     setMobileNavOpen(false)
@@ -1333,6 +1357,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       to: '/workspace/projects/$projectId/settings',
       params: { projectId: activeProjectId },
     })
+  }
+
+  function preloadProjectSettingsRoute() {
+    if (!activeProjectId) return
+    void router.preloadRoute({
+      to: '/workspace/projects/$projectId/settings',
+      params: { projectId: activeProjectId },
+    }).catch(() => undefined)
   }
 
   async function handleSignOut() {
@@ -1391,7 +1423,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   <DropdownMenuItem
                     className={item.project._id === activeProjectId ? 'track-project-switcher-item active' : 'track-project-switcher-item'}
                     key={item.project._id}
+                    onFocus={() => preloadProjectRoute(item.project._id)}
                     onClick={() => navigateToProject(item.project._id)}
+                    onPointerEnter={() => preloadProjectRoute(item.project._id)}
+                    onTouchStart={() => preloadProjectRoute(item.project._id)}
                   >
                     <span className="track-menu-project-name">{item.project.name}</span>
                     <span className="track-menu-project-role">{item.membership.role}</span>
@@ -1430,7 +1465,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                       <Button
                         className={group._id === activeGroupId ? 'track-nav-item compact active' : 'track-nav-item compact'}
                         key={group._id}
+                        onFocus={() => preloadGroupRoute(group._id)}
                         onClick={() => navigateToGroup(group._id)}
+                        onPointerEnter={() => preloadGroupRoute(group._id)}
+                        onTouchStart={() => preloadGroupRoute(group._id)}
                         type="button"
                       >
                         <span className={`track-nav-group-icon ${tone}`}>
@@ -1455,7 +1493,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               </div>
               <Button
                 className={view === 'records' ? 'track-nav-item active' : 'track-nav-item'}
+                onFocus={preloadProjectRecordsRoute}
                 onClick={navigateToProjectRecords}
+                onPointerEnter={preloadProjectRecordsRoute}
+                onTouchStart={preloadProjectRecordsRoute}
                 type="button"
               >
                 <FileCheck2 className="track-nav-icon" size={14} />
@@ -1467,7 +1508,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               </Button>
               <Button
                 className={view === 'settings' ? 'track-nav-item active' : 'track-nav-item'}
+                onFocus={preloadProjectSettingsRoute}
                 onClick={navigateToProjectSettings}
+                onPointerEnter={preloadProjectSettingsRoute}
+                onTouchStart={preloadProjectSettingsRoute}
                 type="button"
               >
                 <Settings2 className="track-nav-icon" size={14} />
