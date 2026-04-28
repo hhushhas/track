@@ -2,6 +2,13 @@
   "short_name": "Track",
   "name": "Track",
   "description": "Project memory for client and vendor teams.",
+  "id": "/workspace",
+  "start_url": "/workspace",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "orientation": "portrait",
+  "categories": ["business", "productivity"],
   "icons": [
     {
       "src": "favicon.ico",
@@ -11,17 +18,30 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
+  "shortcuts": [
+    {
+      "name": "Open Track",
+      "short_name": "Track",
+      "url": "/workspace",
+      "icons": [
+        {
+          "src": "logo192.png",
+          "type": "image/png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
   "theme_color": "#1b1917",
   "background_color": "#faf7f2"
 }

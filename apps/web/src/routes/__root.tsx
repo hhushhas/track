@@ -39,6 +39,18 @@ export const Route = createRootRoute({
         content: 'Track',
       },
       {
+        name: 'apple-mobile-web-app-capable',
+        content: 'yes',
+      },
+      {
+        name: 'apple-mobile-web-app-status-bar-style',
+        content: 'black-translucent',
+      },
+      {
+        name: 'mobile-web-app-capable',
+        content: 'yes',
+      },
+      {
         name: 'theme-color',
         content: '#1b1917',
       },
@@ -120,6 +132,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     if (import.meta.env.DEV) {
       void import('react-grab')
     }
+  }, [])
+
+  useEffect(() => {
+    if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
+    void navigator.serviceWorker.register('/service-worker.js')
   }, [])
 
   return (

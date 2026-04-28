@@ -4,6 +4,7 @@ import {
   AtSign,
   Bell,
   Bot,
+  ChevronDown,
   Clock3,
   Download,
   FileCheck2,
@@ -11,6 +12,7 @@ import {
   GripVertical,
   LoaderCircle,
   LogOut,
+  Menu,
   MessageSquarePlus,
   MessagesSquare,
   PanelRightClose,
@@ -27,7 +29,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import type { CSSProperties } from 'react'
 import type { FormEvent } from 'react'
-import type { ReactNode } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
@@ -50,12 +51,11 @@ import {
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
-import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { draftClassifications, draftStatuses, notificationModes } from '#/features/workspace/constants'
+import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
-import { ProjectGroupGallery } from '#/features/workspace/project-group-gallery'
 import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
@@ -136,6 +136,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [railWidth, setRailWidth] = useState(312)
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const routeProjectId = projectId as Id<'projects'> | undefined
@@ -432,6 +433,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       setActiveGroupId(visibleGroups[0]?._id ?? null)
     }
   }, [activeGroupId, groups, routeGroupId, view, visibleGroups])
+
+  useEffect(() => {
+    const firstGroupId = visibleGroups[0]?._id
+    if (view !== 'project' || groups === undefined || !activeProjectId || !firstGroupId) return
+    void navigate({
+      to: '/workspace/projects/$projectId/groups/$groupId',
+      params: { groupId: firstGroupId, projectId: activeProjectId },
+    })
+  }, [activeProjectId, groups, navigate, view, visibleGroups])
 
   useEffect(() => {
     if (!latestCompletedExport || latestExportId) return
@@ -824,6 +834,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }
 
   function navigateToProject(projectIdToOpen: Id<'projects'>) {
+    setMobileNavOpen(false)
     setActiveProjectId(projectIdToOpen)
     setActiveGroupId(null)
     void navigate({
@@ -834,6 +845,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   function navigateToGroup(groupIdToOpen: Id<'groups'>) {
     if (!activeProjectId) return
+    setMobileNavOpen(false)
     setActiveGroupId(groupIdToOpen)
     void navigate({
       to: '/workspace/projects/$projectId/groups/$groupId',
@@ -843,6 +855,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   function navigateToProjectRecords() {
     if (!activeProjectId) return
+    setMobileNavOpen(false)
     setActiveGroupId(null)
     void navigate({
       to: '/workspace/projects/$projectId/records',
@@ -852,6 +865,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   function navigateToProjectSettings() {
     if (!activeProjectId) return
+    setMobileNavOpen(false)
     setActiveGroupId(null)
     void navigate({
       to: '/workspace/projects/$projectId/settings',
@@ -873,7 +887,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       ].filter(Boolean).join(' ')}
       style={{ '--track-rail-width': `${railWidth}px` } as CSSProperties}
     >
-      <aside className="track-nav">
+      {mobileNavOpen ? (
+        <button
+          aria-label="Close navigation"
+          className="track-mobile-nav-scrim"
+          onClick={() => setMobileNavOpen(false)}
+          type="button"
+        />
+      ) : null}
+
+      <aside className={mobileNavOpen ? 'track-nav mobile-open' : 'track-nav'}>
         <div className="track-brand">
           <img
             alt=""
@@ -885,67 +908,104 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           <span className="track-brand-word">Track</span>
         </div>
 
-        <NavSection
-          actionLabel="Create project"
-          icon={<Plus size={13} />}
-          label="Projects"
-          onAction={handleCreateProject}
-        />
-        <div className="track-nav-list">
-          {projectItems.map((item) => (
-            <Button
-              className={item.project._id === activeProjectId ? 'track-nav-item active' : 'track-nav-item'}
-              key={item.project._id}
-              onClick={() => navigateToProject(item.project._id)}
-              type="button"
+        <div className="track-current-project">
+          <span className="track-nav-section-label">Project</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className="track-current-project-card"
+              disabled={!projectItems.length}
             >
               <FolderKanban className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
-                <span className="track-nav-title">{item.project.name}</span>
-                <span className="track-nav-meta">{item.project.clientLabel ?? 'No client label'}</span>
+                <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
+                <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No client label'}</span>
               </span>
-              <span className="track-nav-count">{item.membership.role}</span>
-            </Button>
-          ))}
+              <ChevronDown className="track-nav-icon" size={14} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="track-project-switcher-menu" side="right" sideOffset={8}>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Switch project</DropdownMenuLabel>
+                {projectItems.map((item) => (
+                  <DropdownMenuItem
+                    className={item.project._id === activeProjectId ? 'track-project-switcher-item active' : 'track-project-switcher-item'}
+                    key={item.project._id}
+                    onClick={() => navigateToProject(item.project._id)}
+                  >
+                    <span className="track-menu-project-name">{item.project.name}</span>
+                    <span className="track-menu-project-role">{item.membership.role}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="track-project-switcher-create" onClick={handleCreateProject}>
+                <Plus size={13} />
+                Create project
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {activeProjectId ? (
           <div className="track-nav-secondary">
-            <Button
-              className={view === 'project' ? 'track-nav-item active' : 'track-nav-item'}
-              onClick={() => navigateToProject(activeProjectId)}
-              type="button"
-            >
-              <MessagesSquare className="track-nav-icon" size={14} />
-              <span className="track-nav-copy">
-                <span className="track-nav-title">Groups</span>
-                <span className="track-nav-meta">Open group gallery</span>
-              </span>
-              <span className="track-nav-count">{visibleGroups.length}</span>
-            </Button>
-            <Button
-              className={view === 'records' ? 'track-nav-item active' : 'track-nav-item'}
-              onClick={navigateToProjectRecords}
-              type="button"
-            >
-              <FileCheck2 className="track-nav-icon" size={14} />
-              <span className="track-nav-copy">
-                <span className="track-nav-title">Records</span>
-                <span className="track-nav-meta">Project audit register</span>
-              </span>
-              <span className="track-nav-count">{projectRecords.length}</span>
-            </Button>
-            <Button
-              className={view === 'settings' ? 'track-nav-item active' : 'track-nav-item'}
-              onClick={navigateToProjectSettings}
-              type="button"
-            >
-              <Settings2 className="track-nav-icon" size={14} />
-              <span className="track-nav-copy">
-                <span className="track-nav-title">Settings</span>
-                <span className="track-nav-meta">Members, notifications</span>
-              </span>
-            </Button>
+            <div className="track-sidebar-groups">
+              <div className="track-nav-section no-action">
+                <span>Groups</span>
+              </div>
+              <div className="track-nav-list">
+                {visibleGroups.map((group) => (
+                  (() => {
+                    const { Icon, tone } = getGroupAvatar(group)
+                    return (
+                      <Button
+                        className={group._id === activeGroupId ? 'track-nav-item compact active' : 'track-nav-item compact'}
+                        key={group._id}
+                        onClick={() => navigateToGroup(group._id)}
+                        type="button"
+                      >
+                        <span className={`track-nav-group-icon ${tone}`}>
+                          <Icon size={14} strokeWidth={2.1} />
+                        </span>
+                        <span className="track-nav-copy">
+                          <span className="track-nav-title">{group.name}</span>
+                        </span>
+                      </Button>
+                    )
+                  })()
+                ))}
+                {visibleGroups.length === 0 ? (
+                  <span className="track-nav-empty">No groups yet</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="track-sidebar-tools">
+              <div className="track-nav-section no-action">
+                <span>Project</span>
+              </div>
+              <Button
+                className={view === 'records' ? 'track-nav-item active' : 'track-nav-item'}
+                onClick={navigateToProjectRecords}
+                type="button"
+              >
+                <FileCheck2 className="track-nav-icon" size={14} />
+                <span className="track-nav-copy">
+                  <span className="track-nav-title">Records</span>
+                  <span className="track-nav-meta">Project audit register</span>
+                </span>
+                <span className="track-nav-count">{projectRecords.length}</span>
+              </Button>
+              <Button
+                className={view === 'settings' ? 'track-nav-item active' : 'track-nav-item'}
+                onClick={navigateToProjectSettings}
+                type="button"
+              >
+                <Settings2 className="track-nav-icon" size={14} />
+                <span className="track-nav-copy">
+                  <span className="track-nav-title">Settings</span>
+                  <span className="track-nav-meta">Members, notifications</span>
+                </span>
+              </Button>
+            </div>
           </div>
         ) : null}
 
@@ -974,6 +1034,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
       <section className="track-workspace">
         <header className="track-thread-header">
+          <Button
+            aria-label="Open navigation"
+            className="icon-button track-mobile-menu-button"
+            onClick={() => setMobileNavOpen(true)}
+            type="button"
+          >
+            <Menu size={16} />
+          </Button>
           <div className="track-header-title">
             <h1>
               {view === 'group' && activeGroup
@@ -985,9 +1053,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 : activeProject
                   ? `${activeProject.project.name} Groups`
                   : 'Select a Project'}
-              {activeProject?.project.clientLabel ? (
-                <span className="track-header-status">{activeProject.project.clientLabel} · Active</span>
-              ) : null}
             </h1>
           </div>
           <div className="track-header-actions">
@@ -1314,22 +1379,28 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             onInvite={handleInvite}
             onNotificationMode={handleNotificationMode}
           />
+        ) : visibleGroups.length > 0 ? (
+          <WorkspaceRouteLoader label="Opening first group" />
         ) : (
-          <ProjectGroupGallery groups={visibleGroups} onOpenGroup={navigateToGroup} />
+          <div className="track-empty">
+            <p className="mono-label m-0">No groups</p>
+            <p>Create a group to start tracking project conversations.</p>
+          </div>
         )}
       </section>
 
       {view === 'group' ? (
         <aside className={railCollapsed ? 'track-rail collapsed' : 'track-rail'}>
-          <button
-            aria-label={railCollapsed ? 'Expand AI review panel' : 'Collapse AI review panel'}
-            className="track-rail-collapse-button"
-            onClick={() => setRailCollapsed((collapsed) => !collapsed)}
-            type="button"
-          >
-            {railCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
-          </button>
-          {railCollapsed ? null : (
+          {railCollapsed ? (
+            <button
+              aria-label="Expand AI review panel"
+              className="track-rail-collapse-button"
+              onClick={() => setRailCollapsed(false)}
+              type="button"
+            >
+              <PanelRightOpen size={15} />
+            </button>
+          ) : (
             <>
               <button
                 aria-label="Resize AI review panel"
@@ -1345,11 +1416,19 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 </span>
               </button>
               <Card className="track-rail-section" size="sm">
-                <div className="track-rail-title">
-                  <span>
-                    <span className="track-rail-heading">AI Review</span>
-                  </span>
-                  <div className="track-rail-icon-actions">
+	                <div className="track-rail-title">
+	                  <span>
+	                    <span className="track-rail-heading">AI Review</span>
+	                  </span>
+	                  <div className="track-rail-icon-actions">
+                    <button
+                      aria-label="Collapse AI review panel"
+                      className="track-rail-icon-button"
+                      onClick={() => setRailCollapsed(true)}
+                      type="button"
+                    >
+                      <PanelRightClose size={14} />
+                    </button>
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         aria-label="Project record exports"
@@ -1358,9 +1437,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                       >
                         <Download size={14} />
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="track-rail-menu">
-                        <DropdownMenuLabel>Export project record</DropdownMenuLabel>
-                        <DropdownMenuGroup>
+                        <DropdownMenuContent align="end" className="track-rail-menu">
+                          <DropdownMenuGroup>
+                            <DropdownMenuLabel>Export project record</DropdownMenuLabel>
                           <DropdownMenuItem
                             disabled={!activeProjectId || busyAction === 'export-csv'}
                             onClick={() => void handleRequestExport('csv')}
@@ -1392,10 +1471,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                       >
                         <Bell size={14} />
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="track-rail-menu">
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-                          <p className="track-rail-menu-note">Global {formatRailLabel(globalNotificationMode)}</p>
+                        <DropdownMenuContent align="end" className="track-rail-menu">
+                          <DropdownMenuGroup>
+                            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                          <p className="track-rail-menu-note">Global: {formatRailLabel(globalNotificationMode)}</p>
                           <DropdownMenuRadioGroup
                             value={groupNotificationMode}
                             onValueChange={(mode) => void handleNotificationMode(mode as (typeof notificationModes)[number])}
@@ -1443,37 +1522,25 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
               <Card className="track-rail-section" size="sm">
                 <div className="track-rail-heading-row">
-                  <span className="track-rail-heading">Project Record</span>
+                  <span className="track-rail-heading">Records</span>
                 </div>
                 <div className="track-record-list">
                   {projectRecords.slice(0, 8).map((record) => (
-                    <Card className="track-record-item" key={record._id} size="sm">
-                      <div>
-                        <span className="track-record-id">{record._id.slice(-6)}</span>
-                        <Badge className={record.classification === 'billable_scope' ? 'track-badge success' : 'track-badge'} variant="outline">
-                          {formatRailLabel(record.classification)}
-                        </Badge>
-                      </div>
+                    <div className="track-record-item" key={record._id}>
                       <strong>{record.title}</strong>
-                      <p>{formatRailLabel(record.type)} · {formatRailLabel(record.status)}</p>
-                      <div className="track-record-actions">
-                        <NativeSelect
-                          aria-label={`Set status for ${record.title}`}
-                          className="track-status-select"
+                      <div className="track-record-item-side">
+                        <RecordStatusDropdown
+                          ariaLabel={`Set status for ${record.title}`}
                           disabled={busyAction === `record-status-${record._id}`}
-                          onChange={(event) => void handleRecordStatus(record._id, event.currentTarget.value as (typeof draftStatuses)[number])}
-                          size="sm"
-                          value={record.status}
-                        >
-                          {draftStatuses.map((status) => (
-                            <NativeSelectOption key={status} value={status}>
-                              {formatRailLabel(status)}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
+                          onStatus={(status) => handleRecordStatus(record._id, status)}
+                          status={record.status}
+                        />
                       </div>
-                    </Card>
+                    </div>
                   ))}
+                  {projectRecords.length === 0 ? (
+                    <p className="track-muted track-record-empty">No project records yet.</p>
+                  ) : null}
                 </div>
               </Card>
 
@@ -1659,20 +1726,12 @@ function ProjectRecordsPage({
                     </Badge>
                   </td>
                   <td>
-                    <NativeSelect
-                      aria-label={`Set status for ${record.title}`}
-                      className="track-status-select"
+                    <RecordStatusDropdown
+                      ariaLabel={`Set status for ${record.title}`}
                       disabled={busyAction === `record-status-${record._id}`}
-                      onChange={(event) => void onRecordStatus(record._id, event.currentTarget.value as (typeof draftStatuses)[number])}
-                      size="sm"
-                      value={record.status}
-                    >
-                      {draftStatuses.map((status) => (
-                        <NativeSelectOption key={status} value={status}>
-                          {status.replaceAll('_', ' ')}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
+                      onStatus={(status) => onRecordStatus(record._id, status)}
+                      status={record.status}
+                    />
                   </td>
                   <td className="track-record-time-cell">
                     {new Date(record.reviewedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
@@ -1691,6 +1750,43 @@ function ProjectRecordsPage({
         </div>
       </section>
     </div>
+  )
+}
+
+function RecordStatusDropdown({
+  ariaLabel,
+  disabled,
+  onStatus,
+  status,
+}: {
+  ariaLabel: string
+  disabled: boolean
+  onStatus: (status: (typeof draftStatuses)[number]) => Promise<void>
+  status: Doc<'records'>['status']
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={ariaLabel}
+        className="track-status-menu-trigger"
+        disabled={disabled}
+      >
+        {formatRailLabel(status)}
+        <ChevronDown size={12} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="track-status-menu">
+        <DropdownMenuRadioGroup
+          onValueChange={(nextStatus) => void onStatus(nextStatus as (typeof draftStatuses)[number])}
+          value={status}
+        >
+          {draftStatuses.map((nextStatus) => (
+            <DropdownMenuRadioItem className="track-status-menu-item" key={nextStatus} value={nextStatus}>
+              {formatRailLabel(nextStatus)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1811,27 +1907,6 @@ function WorkspaceRouteLoader({ label }: { label: string }) {
     <div className="track-route-loader" role="status" aria-live="polite">
       <LoaderCircle className="track-route-loader-icon" size={18} />
       <span>{label}</span>
-    </div>
-  )
-}
-
-function NavSection({
-  actionLabel,
-  icon,
-  label,
-  onAction,
-}: {
-  actionLabel: string
-  icon: ReactNode
-  label: string
-  onAction: () => void
-}) {
-  return (
-    <div className="track-nav-section">
-      <span>{label}</span>
-      <Button aria-label={actionLabel} className="track-nav-action" onClick={onAction} type="button">
-        {icon}
-      </Button>
     </div>
   )
 }
