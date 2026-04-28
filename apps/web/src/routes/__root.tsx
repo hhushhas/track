@@ -138,7 +138,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
     let refreshing = false
+    const hadController = Boolean(navigator.serviceWorker.controller)
     const handleControllerChange = () => {
+      if (!hadController) return
       if (refreshing) return
       refreshing = true
       window.location.reload()

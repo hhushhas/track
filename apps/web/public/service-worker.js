@@ -26,6 +26,16 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting())
+    return
+  }
+  if (event.data?.type === 'CLAIM_CLIENTS') {
+    event.waitUntil(self.clients.claim())
+  }
+})
+
 self.addEventListener('fetch', (event) => {
   const request = event.request
   if (request.method !== 'GET') return

@@ -40,6 +40,22 @@ async function withTimeout<T>(label: string, promise: Promise<T>, timeoutMs = 80
   }
 }
 
+async function waitForServiceWorkerController() {
+  if (navigator.serviceWorker.controller) return
+
+  await withTimeout(
+    'Service worker control',
+    new Promise<void>((resolve) => {
+      const handleControllerChange = () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
+        resolve()
+      }
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)
+    }),
+    5000,
+  )
+}
+
 export async function subscribeToWebPush(
   publicKey: string,
   options: { forceRefresh?: boolean; onStep?: (step: string) => void } = {},
@@ -59,6 +75,12 @@ export async function subscribeToWebPush(
   }
   options.onStep?.('Waiting for service worker...')
   registration = await withTimeout('Service worker readiness', navigator.serviceWorker.ready)
+
+  if (!navigator.serviceWorker.controller) {
+    options.onStep?.('Claiming service worker...')
+    registration.active?.postMessage({ type: 'CLAIM_CLIENTS' })
+    await waitForServiceWorkerController()
+  }
 
   options.onStep?.('Checking push subscription...')
   const existingSubscription = await withTimeout('Push subscription lookup', registration.pushManager.getSubscription())
