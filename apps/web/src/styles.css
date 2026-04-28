@@ -2609,16 +2609,47 @@ button.track-mention-inline.group:focus-visible {
 
 .track-composer-attachment.voice {
   grid-template-columns: minmax(0, 1fr);
-  width: min(386px, 100%);
-  padding: 6px;
+  width: min(360px, 100%);
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .track-voice-review {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
-  align-items: center;
-  gap: 7px;
+  position: relative;
   min-width: 0;
+}
+
+.track-voice-review-remove {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  z-index: 1;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  color: transparent;
+  cursor: pointer;
+  opacity: 0;
+  padding: 0;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.track-voice-review:hover .track-voice-review-remove,
+.track-voice-review-remove:focus-visible {
+  border-color: rgba(229, 72, 77, 0.6);
+  color: var(--danger);
+  opacity: 1;
 }
 
 .track-composer-attachment img,

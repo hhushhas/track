@@ -1,4 +1,4 @@
-import { Mic, Pause, Play, Square, Trash2, X } from 'lucide-react'
+import { Mic, Pause, Play, Square, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 
@@ -238,8 +238,14 @@ export function VoiceNoteReview({
         url={previewUrl}
         variant="composer"
       />
-      <Button className="icon-button" onClick={onRemove} title="Remove voice note" type="button">
-        <Trash2 size={15} />
+      <Button
+        aria-label="Remove voice note"
+        className="track-voice-review-remove"
+        onClick={onRemove}
+        title="Remove voice note"
+        type="button"
+      >
+        <X size={13} />
       </Button>
     </div>
   )
