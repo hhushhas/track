@@ -16,6 +16,11 @@ const recordTypes = new Set<string>(recordTypeValues)
 const recordStatuses = new Set<string>(recordStatusValues)
 const lowSignalMessagePattern =
   /^@?track\s*(hi|hello|hey|yo|sup|ok|okay|thanks|thank you|cool|nice|great|good|good good|test|testing)?[.!?\s]*$/i
+const trackInvocationPattern = /(^|\s)@track\b/i
+
+function isTrackInvocation(body: string) {
+  return trackInvocationPattern.test(body)
+}
 
 function normalizeType(value: unknown): (typeof recordTypeValues)[number] {
   return typeof value === 'string' && recordTypes.has(value)
@@ -106,6 +111,7 @@ function fallbackDrafts(messages: Array<{ id: Id<'messages'>; authorId: Id<'user
     .filter((message) => {
       const body = message.body.toLowerCase()
       const normalized = body.replace(/\s+/g, ' ').trim()
+      if (isTrackInvocation(normalized)) return false
       if (!normalized || lowSignalMessagePattern.test(normalized)) return false
       return (
         body.includes('please') ||
@@ -430,6 +436,7 @@ async function collectReviewContext(
         ? message.createdAt > latestReview.lastReviewedAt
         : true,
     )
+    .filter((message) => !isTrackInvocation(message.body))
   const users = await Promise.all(
     Array.from(new Set(orderedMessages.map((message) => message.authorId))).map(
       async (userId) => await ctx.db.get(userId),
