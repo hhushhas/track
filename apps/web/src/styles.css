@@ -2417,6 +2417,14 @@ button.track-citation-chip:hover {
   padding: 14px 18px;
 }
 
+.track-record-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 360px;
+}
+
 .track-record-filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -2454,7 +2462,7 @@ button.track-citation-chip:hover {
 }
 
 .track-record-search {
-  width: min(100%, 280px);
+  width: min(100%, 300px);
   height: 30px;
   border-color: var(--hairline-strong);
   background: var(--paper);
@@ -2500,7 +2508,7 @@ button.track-citation-chip:hover {
 }
 
 .track-record-title-cell {
-  width: 48%;
+  width: 54%;
   min-width: 280px;
 }
 
@@ -2529,6 +2537,10 @@ button.track-citation-chip:hover {
   font-family: var(--font-mono);
   font-size: 11.5px;
   white-space: nowrap;
+}
+
+.track-record-table .track-status-select {
+  width: 142px;
 }
 
 .track-record-empty-row {
@@ -2685,6 +2697,12 @@ button:disabled:hover {
   .track-records-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .track-record-tools {
+    align-items: stretch;
+    flex-direction: column;
+    min-width: 0;
   }
 
   .track-record-search {

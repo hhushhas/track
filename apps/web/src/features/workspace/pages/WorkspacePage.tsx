@@ -943,7 +943,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               <Settings2 className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">Settings</span>
-                <span className="track-nav-meta">Exports, members, notifications</span>
+                <span className="track-nav-meta">Members, notifications</span>
               </span>
             </Button>
           </div>
@@ -1013,17 +1013,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   value={chatSearchQuery}
                 />
               ) : null}
-            {view === 'records' ? (
-              <Button
-                className="track-button"
-                disabled={!activeProjectId || busyAction === 'export-csv'}
-                onClick={() => void handleRequestExport('csv')}
-                type="button"
-              >
-                <Download size={14} />
-                Export CSV
-              </Button>
-            ) : null}
             {view === 'group' ? (
               <>
                 <Button
@@ -1045,7 +1034,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 />
               </>
             ) : null}
-            {view !== 'settings' ? (
+            {view !== 'settings' && view !== 'records' ? (
               <Button
                 className="track-button"
                 disabled={!activeProjectId || busyAction === 'invite'}
@@ -1065,17 +1054,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <Sparkles size={14} />
                 Run AI Review
               </Button>
-            ) : view === 'records' ? (
-              <Button
-                className="track-button track-button-accent"
-                disabled={!activeProjectId || busyAction === 'export-pdf'}
-                onClick={() => void handleRequestExport('pdf')}
-                type="button"
-              >
-                <Download size={14} />
-                Audit Packet
-              </Button>
-            ) : (
+            ) : view === 'project' ? (
               <Button
                 className="track-button track-button-accent"
                 disabled={!activeProjectId || busyAction === 'create-group'}
@@ -1085,7 +1064,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <MessageSquarePlus size={14} />
                 New Group
               </Button>
-            )}
+            ) : null}
           </div>
         </header>
 
@@ -1318,6 +1297,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             busyAction={busyAction}
             filteredRecords={filteredProjectRecords}
             onRecordStatus={handleRecordStatus}
+            onRequestExport={handleRequestExport}
             recordFilter={recordFilter}
             recordSearchQuery={recordSearchQuery}
             records={projectRecords}
@@ -1572,6 +1552,7 @@ function ProjectRecordsPage({
   busyAction,
   filteredRecords,
   onRecordStatus,
+  onRequestExport,
   recordFilter,
   recordSearchQuery,
   records,
@@ -1581,6 +1562,7 @@ function ProjectRecordsPage({
   busyAction: string | null
   filteredRecords: Array<Doc<'records'>>
   onRecordStatus: (recordId: Id<'records'>, status: (typeof draftStatuses)[number]) => Promise<void>
+  onRequestExport: (format: 'csv' | 'pdf') => Promise<void>
   recordFilter: 'all' | 'open' | 'billable' | 'blocked' | 'done'
   recordSearchQuery: string
   records: Array<Doc<'records'>>
@@ -1615,12 +1597,32 @@ function ProjectRecordsPage({
               </button>
             ))}
           </div>
-          <Input
-            className="track-record-search"
-            onChange={(event) => setRecordSearchQuery(event.currentTarget.value)}
-            placeholder="Search records..."
-            value={recordSearchQuery}
-          />
+          <div className="track-record-tools">
+            <Input
+              className="track-record-search"
+              onChange={(event) => setRecordSearchQuery(event.currentTarget.value)}
+              placeholder="Search records..."
+              value={recordSearchQuery}
+            />
+            <Button
+              className="track-button"
+              disabled={busyAction === 'export-csv'}
+              onClick={() => void onRequestExport('csv')}
+              type="button"
+            >
+              <Download size={14} />
+              CSV
+            </Button>
+            <Button
+              className="track-button track-button-primary"
+              disabled={busyAction === 'export-pdf'}
+              onClick={() => void onRequestExport('pdf')}
+              type="button"
+            >
+              <Download size={14} />
+              Audit packet
+            </Button>
+          </div>
         </div>
 
         <div className="track-record-table-wrap">
