@@ -1,24 +1,48 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { LogIn, ShieldCheck } from 'lucide-react'
+import { FileCheck2, MessageSquareText, ShieldCheck } from 'lucide-react'
 
+import { Button } from '#/components/ui/button'
 import { authClient } from '../lib/auth-client'
 
 export const Route = createFileRoute('/sign-in')({ component: SignIn })
 
 function SignIn() {
   return (
-    <main className="min-h-[calc(100vh-48px)] bg-[var(--paper)] px-4 py-10">
-      <section className="mx-auto max-w-[420px]">
-        <p className="mono-label m-0">Track Access</p>
-        <h1 className="m-0 mt-2 text-2xl font-semibold">Sign in to the project record</h1>
-        <p className="m-0 mt-2 text-sm leading-6 text-[var(--ink-3)]">
-          Google OAuth is the only identity path. TOTP is supported for accounts that
-          have two-factor enabled.
-        </p>
+    <main className="track-auth-page">
+      <section className="track-auth-shell">
+        <div className="track-auth-story">
+          <img
+            alt="Track"
+            className="track-auth-logo"
+            height={70}
+            src="/track-logo.svg"
+            width={160}
+          />
+          <div>
+            <p className="mono-label m-0">Project record workspace</p>
+            <h1>Turn project conversations into accountable records.</h1>
+            <p>
+              Track keeps client and vendor teams aligned around decisions,
+              evidence, action items, and audit-ready exports.
+            </p>
+          </div>
+          <div className="track-auth-proof">
+            <span><MessageSquareText size={16} /> Shared conversation</span>
+            <span><FileCheck2 size={16} /> Accepted records</span>
+            <span><ShieldCheck size={16} /> Permissioned access</span>
+          </div>
+        </div>
 
-        <div className="mt-6 space-y-3">
-          <button
-            className="track-button track-button-primary flex w-full items-center justify-center gap-2"
+        <div className="track-auth-panel">
+          <p className="mono-label m-0">Track Access</p>
+          <h2>Sign in to continue</h2>
+          <p>
+            Use the Google account invited to your Track project. Two-factor
+            verification appears next when enabled.
+          </p>
+
+          <Button
+            className="track-button track-button-primary track-auth-button"
             onClick={() =>
               void authClient.signIn.social({
                 provider: 'google',
@@ -27,16 +51,13 @@ function SignIn() {
             }
             type="button"
           >
-            <LogIn size={16} />
+            <img alt="" height={18} src="/google-g.svg" width={18} />
             Continue with Google
-          </button>
+          </Button>
 
-          <div className="track-surface flex items-start gap-3 rounded-md p-3 text-sm text-[var(--ink-3)]">
-            <ShieldCheck className="mt-0.5 shrink-0 text-[var(--success)]" size={16} />
-            <span>
-              Staff, Client, Admin, and Owner access is granted inside each project.
-              Group membership controls conversation visibility.
-            </span>
+          <div className="track-auth-note">
+            <ShieldCheck size={16} />
+            <span>Project and group membership control what you can see.</span>
           </div>
         </div>
       </section>

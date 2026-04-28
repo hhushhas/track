@@ -1,42 +1,45 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router'
 import { useAction, useMutation, useQuery } from 'convex/react'
 import {
+  AtSign,
   Bell,
   Bot,
-  Check,
   Clock3,
   Download,
-  FileText,
+  FolderKanban,
   MessageSquarePlus,
+  MessagesSquare,
   Paperclip,
-  Play,
   Plus,
-  Send,
-  Settings,
+  Search,
+  Smile,
+  Sparkles,
   Upload,
-  Users,
-  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
+import type { FormEvent } from 'react'
 import type { ReactNode } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../convex/_generated/dataModel'
 import { parseMentions } from '@track/shared'
+import { Avatar, AvatarFallback } from '#/components/ui/avatar'
+import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
+import {
+  Card,
+} from '#/components/ui/card'
+import { Input } from '#/components/ui/input'
+import { Textarea } from '#/components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import { draftClassifications, draftStatuses, notificationModes } from '#/features/workspace/constants'
+import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
+import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
+import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '../lib/auth-client'
 
 export const Route = createFileRoute('/')({ component: App })
-
-const notificationModes = ['inherit', 'all', 'mentions', 'none'] as const
-const draftClassifications = [
-  'billable_scope',
-  'non_billable_scope',
-  'official_record',
-  'informational',
-  'ignored',
-] as const
-const draftStatuses = ['open', 'in_progress', 'blocked', 'done'] as const
 
 function App() {
   const session = authClient.useSession()
@@ -65,7 +68,24 @@ function App() {
   const [composer, setComposer] = useState('')
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [uiError, setUiError] = useState<string | null>(null)
+  const [composerCursor, setComposerCursor] = useState(0)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
+  const [frequencyDialogOpen, setFrequencyDialogOpen] = useState(false)
+  const [projectName, setProjectName] = useState('')
+  const [projectClientLabel, setProjectClientLabel] = useState('')
+  const [groupName, setGroupName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'staff' | 'client'>('staff')
+  const [inviteCanReview, setInviteCanReview] = useState(true)
+  const [inviteScope, setInviteScope] = useState<'project' | 'group'>('project')
+  const [frequencyMinutesInput, setFrequencyMinutesInput] = useState('30')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const composerRef = useRef<HTMLTextAreaElement | null>(null)
 
   const trackUser = useQuery(api.auth.getCurrentUser)
   const projects = useQuery(
@@ -74,6 +94,12 @@ function App() {
   )
   const groups = useQuery(
     api.groups.listVisible,
+    trackUserId && activeProjectId
+      ? { userId: trackUserId, projectId: activeProjectId }
+      : 'skip',
+  )
+  const projectMembers = useQuery(
+    api.projects.listMembers,
     trackUserId && activeProjectId
       ? { userId: trackUserId, projectId: activeProjectId }
       : 'skip',
@@ -142,11 +168,71 @@ function App() {
     [projects],
   )
   const visibleGroups = useMemo(() => (groups ?? []) as Array<Doc<'groups'>>, [groups])
+  const activeProjectMembers = useMemo(
+    () =>
+      (projectMembers ?? []) as Array<{
+        membership: Doc<'projectMembers'>
+        user: Doc<'users'> | null
+      }>,
+    [projectMembers],
+  )
+  const projectMemberRoleByUserId = useMemo(() => {
+    const roles = new Map<string, Doc<'projectMembers'>['role']>()
+    for (const item of activeProjectMembers) {
+      if (item.user) roles.set(item.user._id, item.membership.role)
+    }
+    return roles
+  }, [activeProjectMembers])
+  const mentionOptions = useMemo(() => {
+    const members = activeProjectMembers
+      .filter((item) => item.user)
+      .map((item) => {
+        const user = item.user as Doc<'users'>
+        return {
+          id: user._id,
+          kind: 'member' as const,
+          label: user.displayName,
+          sublabel: item.membership.role,
+          handle: getMentionHandle(user.displayName) || getMentionHandle(user.email),
+          tone: getAvatarTone(user.email),
+        }
+      })
+
+    return [
+      {
+        id: 'track',
+        kind: 'assistant' as const,
+        label: 'Track Assistant',
+        sublabel: 'ai review',
+        handle: 'track',
+        tone: 'bot',
+      },
+      ...members,
+    ]
+  }, [activeProjectMembers])
+  const activeMention = useMemo(
+    () => getActiveMention(composer, composerCursor),
+    [composer, composerCursor],
+  )
+  const filteredMentionOptions = useMemo(() => {
+    if (!activeMention) return []
+    const query = activeMention.query
+    return mentionOptions
+      .filter(
+        (option) =>
+          option.handle.includes(query) ||
+          option.label.toLowerCase().includes(query) ||
+          option.sublabel.toLowerCase().includes(query),
+      )
+      .slice(0, 6)
+  }, [activeMention, mentionOptions])
+  const showMentionMenu = activeMention !== null && filteredMentionOptions.length > 0
   const groupMessages = useMemo(
     () =>
       (messages ?? []) as Array<{
         message: Doc<'messages'>
         author: Doc<'users'> | null
+        authorRole: Doc<'projectMembers'>['role'] | null
         attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
       }>,
     [messages],
@@ -172,6 +258,10 @@ function App() {
   )
   const latestCompletedExport =
     projectExports.find((exportJob) => exportJob.status === 'completed') ?? null
+
+  useEffect(() => {
+    setMentionIndex(0)
+  }, [activeMention?.query])
 
   useEffect(() => {
     if (!session.data || trackUserId) return
@@ -247,6 +337,42 @@ function App() {
       ].sort((a, b) => a.at - b.at),
     [groupAssistantStreams, pendingDrafts, visibleMessages],
   )
+  const filteredThreadItems = useMemo(() => {
+    const query = chatSearchQuery.trim().toLowerCase()
+    if (!query) return threadItems
+
+    return threadItems.filter((threadItem) => {
+      if (threadItem.kind === 'message') {
+        return (
+          threadItem.item.message.body.toLowerCase().includes(query) ||
+          (threadItem.item.author?.displayName.toLowerCase().includes(query) ?? false)
+        )
+      }
+      if (threadItem.kind === 'assistant') return threadItem.stream.answer.toLowerCase().includes(query)
+      return (
+        threadItem.draft.title.toLowerCase().includes(query) ||
+        threadItem.draft.description.toLowerCase().includes(query)
+      )
+    })
+  }, [chatSearchQuery, threadItems])
+  const headerMembers = useMemo(
+    () => activeProjectMembers.filter((item) => item.user).slice(0, 5),
+    [activeProjectMembers],
+  )
+  const extraHeaderMemberCount = Math.max(activeProjectMembers.filter((item) => item.user).length - headerMembers.length, 0)
+  const composerPeople = useMemo(
+    () =>
+      activeProjectMembers
+        .filter((item) => item.user)
+        .slice(0, 3)
+        .map((item) => item.user?.displayName.split(' ')[0])
+        .filter(Boolean),
+    [activeProjectMembers],
+  )
+  const composerPlaceholder =
+    composerPeople.length > 0
+      ? `Write to the project - ${composerPeople.join(', ')}${activeProjectMembers.length > composerPeople.length ? ` and ${activeProjectMembers.length - composerPeople.length} others` : ''}`
+      : `Message ${activeGroup?.name ?? 'the project'} or ask @track...`
   const messageCitations = useMemo(
     () =>
       new Map(
@@ -284,59 +410,79 @@ function App() {
   }
 
   async function handleCreateProject() {
-    if (!trackUserId) return
-    const name = window.prompt('Project name')
-    if (!name?.trim()) return
-    const clientLabel = window.prompt('Client/company label') ?? undefined
-    await withBusy('create-project', async () => {
-      const projectId = await createProject({
-        userId: trackUserId,
-        name: name.trim(),
-        clientLabel: clientLabel?.trim() || undefined,
-      })
-      setActiveProjectId(projectId)
-      setActiveGroupId(null)
-    })
+    setProjectName('')
+    setProjectClientLabel('')
+    setProjectDialogOpen(true)
   }
 
   async function handleCreateGroup() {
+    setGroupName('')
+    setGroupDialogOpen(true)
+  }
+
+  async function handleInvite() {
+    setInviteEmail('')
+    setInviteRole('staff')
+    setInviteCanReview(true)
+    setInviteScope(activeGroupId ? 'group' : 'project')
+    setInviteDialogOpen(true)
+  }
+
+  function handleFrequencyChange() {
+    const current = activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30
+    setFrequencyMinutesInput(String(current))
+    setFrequencyDialogOpen(true)
+  }
+
+  async function handleCreateProjectSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!trackUserId) return
+    const name = projectName.trim()
+    if (!name) return
+    await withBusy('create-project', async () => {
+      const projectId = await createProject({
+        userId: trackUserId,
+        name,
+        clientLabel: projectClientLabel.trim() || undefined,
+      })
+      setActiveProjectId(projectId)
+      setActiveGroupId(null)
+      setProjectDialogOpen(false)
+    })
+  }
+
+  async function handleCreateGroupSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     if (!trackUserId || !activeProjectId) return
-    const name = window.prompt('Group name')
-    if (!name?.trim()) return
+    const name = groupName.trim()
+    if (!name) return
     await withBusy('create-group', async () => {
       const groupId = await createGroup({
         userId: trackUserId,
         projectId: activeProjectId,
-        name: name.trim(),
+        name,
       })
       setActiveGroupId(groupId)
+      setGroupDialogOpen(false)
     })
   }
 
-  async function handleInvite() {
+  async function handleInviteSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     if (!trackUserId || !activeProjectId) return
-    const email = window.prompt('Invite email')
-    if (!email?.trim()) return
-    const roleInput = window.prompt('Role: admin, staff, or client', 'staff') ?? 'staff'
-    const role = roleInput.trim().toLowerCase()
-    if (role !== 'admin' && role !== 'staff' && role !== 'client') {
-      setUiError('Invite role must be admin, staff, or client.')
-      return
-    }
-    const reviewer = window.confirm('Can this person approve/decline Track Draft Records?')
-    const groupScoped = activeGroupId
-      ? window.confirm(`Invite directly to ${activeGroup?.name ?? 'this Group'} only?`)
-      : false
+    const email = inviteEmail.trim()
+    if (!email) return
 
     await withBusy('invite', async () => {
       await createInvitation({
         projectId: activeProjectId,
-        groupId: groupScoped && activeGroupId ? activeGroupId : undefined,
+        groupId: inviteScope === 'group' && activeGroupId ? activeGroupId : undefined,
         invitedBy: trackUserId,
-        email: email.trim(),
-        role,
-        canReviewAiRecords: reviewer,
+        email,
+        role: inviteRole,
+        canReviewAiRecords: inviteCanReview,
       })
+      setInviteDialogOpen(false)
     })
   }
 
@@ -345,15 +491,22 @@ function App() {
     const body = composer.trim()
     if (!body) return
     setComposer('')
+    setComposerCursor(0)
     await withBusy('send-message', async () => {
+      const mentionHandles = parseMentions(body)
+      const mentionedUserIds: Array<Id<'users'>> = []
+      for (const handle of mentionHandles) {
+        const option = mentionOptions.find((item) => item.kind === 'member' && item.handle === handle)
+        if (option?.kind === 'member') mentionedUserIds.push(option.id)
+      }
       const messageId = await sendMessageMutation({
         projectId: activeProjectId,
         groupId: activeGroupId,
         authorId: trackUserId,
         body,
-        mentions: [],
+        mentions: mentionedUserIds,
       })
-      if (parseMentions(body).includes('track')) {
+      if (mentionHandles.includes('track')) {
         await askTrackAction({
           projectId: activeProjectId,
           groupId: activeGroupId,
@@ -362,6 +515,23 @@ function App() {
           question: body,
         })
       }
+    })
+  }
+
+  function handleComposerSelection() {
+    setComposerCursor(composerRef.current?.selectionStart ?? composer.length)
+  }
+
+  function handleMentionSelect(option: (typeof mentionOptions)[number]) {
+    if (!activeMention) return
+    const nextComposer = `${composer.slice(0, activeMention.start)}@${option.handle} ${composer.slice(activeMention.end)}`
+    const nextCursor = activeMention.start + option.handle.length + 2
+    setComposer(nextComposer)
+    setComposerCursor(nextCursor)
+    setMentionIndex(0)
+    requestAnimationFrame(() => {
+      composerRef.current?.focus()
+      composerRef.current?.setSelectionRange(nextCursor, nextCursor)
     })
   }
 
@@ -413,12 +583,10 @@ function App() {
     })
   }
 
-  async function handleFrequencyChange() {
+  async function handleFrequencySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     if (!trackUserId || !activeProjectId || !activeGroupId || !activeGroup) return
-    const current = activeGroup.aiReviewSettings?.frequencyMinutes ?? 30
-    const input = window.prompt('AI review frequency in minutes', String(current))
-    if (!input) return
-    const frequencyMinutes = Number(input)
+    const frequencyMinutes = Number(frequencyMinutesInput)
     if (!Number.isFinite(frequencyMinutes)) {
       setUiError('Frequency must be a number.')
       return
@@ -431,6 +599,7 @@ function App() {
         enabled: activeGroup.aiReviewSettings?.enabled ?? true,
         frequencyMinutes,
       })
+      setFrequencyDialogOpen(false)
     })
   }
 
@@ -502,25 +671,26 @@ function App() {
     <main className="track-app-shell">
       <aside className="track-nav">
         <div className="track-brand">
-          <span className="track-brand-mark">T</span>
-          <span>
-            <span className="track-brand-name">Track</span>
-            <span className="track-brand-sub">project memory</span>
-          </span>
+          <img
+            alt=""
+            className="track-brand-mark"
+            height={24}
+            src="/track-mark.svg"
+            width={35}
+          />
+          <span className="track-brand-word">Track</span>
         </div>
 
         <NavSection
           actionLabel="Create project"
-          icon={<Plus size={14} />}
+          icon={<Plus size={13} />}
           label="Projects"
           onAction={handleCreateProject}
         />
         <div className="track-nav-list">
           {projectItems.map((item) => (
-            <button
-              className={
-                item.project._id === activeProjectId ? 'track-nav-item active' : 'track-nav-item'
-              }
+            <Button
+              className={item.project._id === activeProjectId ? 'track-nav-item active' : 'track-nav-item'}
               key={item.project._id}
               onClick={() => {
                 setActiveProjectId(item.project._id)
@@ -528,90 +698,117 @@ function App() {
               }}
               type="button"
             >
-              <span className="track-nav-dot" />
+              <FolderKanban className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{item.project.name}</span>
                 <span className="track-nav-meta">{item.project.clientLabel ?? 'No client label'}</span>
               </span>
               <span className="track-nav-count">{item.membership.role}</span>
-            </button>
+            </Button>
           ))}
         </div>
 
         <NavSection
           actionLabel="Create group"
-          icon={<MessageSquarePlus size={14} />}
+          icon={<MessageSquarePlus size={13} />}
           label="Groups"
           onAction={handleCreateGroup}
         />
-        <div className="track-nav-list">
+        <div className="track-nav-list track-nav-secondary">
           {visibleGroups.map((group) => (
-            <button
+            <Button
               className={group._id === activeGroupId ? 'track-nav-item active' : 'track-nav-item'}
               key={group._id}
               onClick={() => setActiveGroupId(group._id)}
               type="button"
             >
-              <span className="track-nav-dot" />
+              <MessagesSquare className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{group.name}</span>
                 <span className="track-nav-meta">{group.kind} · {group.aiReviewSettings?.frequencyMinutes ?? 30}m</span>
               </span>
-            </button>
+            </Button>
           ))}
         </div>
 
         <div className="track-nav-footer">
-          <div className="track-avatar">{trackUser?.displayName?.slice(0, 2).toUpperCase() ?? 'T'}</div>
+          <Avatar className={`track-avatar ${getAvatarTone(trackUser?.email ?? trackUser?.displayName ?? 'Track User')}`}>
+            <AvatarFallback>{getInitials(trackUser?.displayName ?? 'Track User')}</AvatarFallback>
+          </Avatar>
           <div className="track-nav-copy">
             <span className="track-nav-title">{trackUser?.displayName ?? 'Track User'}</span>
-            <span className="track-nav-meta">{trackUser?.email ?? 'Signed in'}</span>
+            <span className="track-nav-meta">{activeProject?.membership.role ?? 'owner'}</span>
           </div>
         </div>
       </aside>
 
       <section className="track-workspace">
         <header className="track-thread-header">
-          <div>
-            <p className="mono-label m-0">
-              {activeProject?.project.name ?? 'Project'} / {activeGroup?.name ?? 'Group'}
-            </p>
-            <h1>{activeGroup ? `${activeGroup.name} Conversation` : 'Select a Group'}</h1>
+          <div className="track-header-title">
+            <h1>
+              {activeGroup ? `${activeGroup.name} Conversation` : 'Select a Group'}
+              {activeProject?.project.clientLabel ? (
+                <span className="track-header-status">{activeProject.project.clientLabel} · Active</span>
+              ) : null}
+            </h1>
           </div>
           <div className="track-header-actions">
-            <button
-              className="track-button"
-              disabled={!activeProjectId || busyAction === 'invite'}
-              onClick={handleInvite}
+            <div className="track-header-members" aria-label="Project members">
+              {headerMembers.map((item) => {
+                const user = item.user as Doc<'users'>
+                return (
+                  <Avatar className={`track-avatar ${getAvatarTone(user.email)}`} key={user._id}>
+                    <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
+                  </Avatar>
+                )
+              })}
+              {extraHeaderMemberCount > 0 ? (
+                <span className="track-member-more">+{extraHeaderMemberCount}</span>
+              ) : null}
+            </div>
+            {searchOpen ? (
+              <Input
+                autoFocus
+                className="track-chat-search"
+                onChange={(event) => setChatSearchQuery(event.currentTarget.value)}
+                placeholder="Search chat..."
+                value={chatSearchQuery}
+              />
+            ) : null}
+            <Button
+              aria-label="Search chat"
+              className="icon-button"
+              onClick={() => {
+                setSearchOpen((open) => !open)
+                if (searchOpen) setChatSearchQuery('')
+              }}
               type="button"
             >
-              <Users size={14} />
-              Invite
-            </button>
-            <button
-              className="track-button"
-              disabled={!activeGroupId || busyAction === 'attach-file'}
-              onClick={() => fileInputRef.current?.click()}
-              type="button"
-            >
-              <Paperclip size={14} />
-              Attach
-            </button>
-            <input
+              <Search size={15} />
+            </Button>
+            <Input
               className="track-file-input"
               onChange={(event) => void handleFileSelected(event)}
               ref={fileInputRef}
               type="file"
             />
-            <button
+            <Button
+              className="track-button"
+              disabled={!activeProjectId || busyAction === 'invite'}
+              onClick={handleInvite}
+              type="button"
+            >
+              Invite
+            </Button>
+            <Button
               className="track-button track-button-accent"
               disabled={!activeGroupId || busyAction === 'run-review'}
               onClick={handleRunReview}
               type="button"
             >
-              <Play size={14} />
+              <Sparkles size={14} />
               Run AI Review
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -626,9 +823,25 @@ function App() {
               </div>
             ) : null}
 
-            {threadItems.map((threadItem) => {
+            {chatSearchQuery.trim() && filteredThreadItems.length === 0 ? (
+              <div className="track-empty">
+                <p className="mono-label m-0">No matches</p>
+                <p>No chat items match "{chatSearchQuery.trim()}".</p>
+              </div>
+            ) : null}
+
+            {filteredThreadItems.map((threadItem) => {
               if (threadItem.kind === 'message') {
-                return <MessageRow key={threadItem.key} item={threadItem.item} />
+                return (
+                  <MessageRow
+                    authorRole={
+                      projectMemberRoleByUserId.get(threadItem.item.author?._id ?? '') ??
+                      threadItem.item.authorRole
+                    }
+                    key={threadItem.key}
+                    item={threadItem.item}
+                  />
+                )
               }
               if (threadItem.kind === 'assistant') {
                 return (
@@ -653,21 +866,76 @@ function App() {
 
         <div className="track-composer-wrap">
           <div className="track-composer">
-            <textarea
+            <Textarea
               aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
               disabled={!activeGroupId || busyAction === 'send-message'}
-              onChange={(event) => setComposer(event.currentTarget.value)}
+              onBlur={handleComposerSelection}
+              onChange={(event) => {
+                setComposer(event.currentTarget.value)
+                setComposerCursor(event.currentTarget.selectionStart)
+              }}
               onKeyDown={(event) => {
+                if (showMentionMenu) {
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    setMentionIndex((index) => (index + 1) % filteredMentionOptions.length)
+                    return
+                  }
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault()
+                    setMentionIndex((index) => (index - 1 + filteredMentionOptions.length) % filteredMentionOptions.length)
+                    return
+                  }
+                  if (event.key === 'Enter' || event.key === 'Tab') {
+                    event.preventDefault()
+                    const option = filteredMentionOptions[mentionIndex] ?? filteredMentionOptions[0]
+                    if (option) handleMentionSelect(option)
+                    return
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    setComposerCursor(0)
+                    return
+                  }
+                }
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault()
                   void handleSendMessage()
                 }
               }}
-              placeholder={`Message ${activeGroup?.name ?? 'a Group'} or ask @track...`}
+              onKeyUp={handleComposerSelection}
+              onSelect={handleComposerSelection}
+              placeholder={composerPlaceholder}
+              ref={composerRef}
               value={composer}
             />
+            {showMentionMenu ? (
+              <div className="track-mention-menu" role="listbox" aria-label="Mention someone">
+                {filteredMentionOptions.map((option, index) => (
+                  <button
+                    aria-selected={index === mentionIndex}
+                    className={index === mentionIndex ? 'track-mention-option active' : 'track-mention-option'}
+                    key={option.id}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      handleMentionSelect(option)
+                    }}
+                    role="option"
+                    type="button"
+                  >
+                    <Avatar className={option.tone === 'bot' ? 'track-mention-avatar bot' : `track-mention-avatar ${option.tone}`}>
+                      <AvatarFallback>{option.kind === 'assistant' ? <Bot size={13} /> : getInitials(option.label)}</AvatarFallback>
+                    </Avatar>
+                    <span>
+                      <strong>@{option.handle}</strong>
+                      <small>{option.label} · {option.sublabel}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="track-composer-bar">
-              <button
+              <Button
                 className="icon-button"
                 disabled={!activeGroupId || busyAction === 'attach-file'}
                 onClick={() => fileInputRef.current?.click()}
@@ -675,24 +943,50 @@ function App() {
                 type="button"
               >
                 <Paperclip size={15} />
-              </button>
-              <span className="track-composer-hint">Evidence stays tied to this Group.</span>
-              <button
+              </Button>
+              <Button
+                className="icon-button"
+                disabled={!activeGroupId || busyAction === 'send-message'}
+                onClick={() => {
+                  const cursor = composerRef.current?.selectionStart ?? composer.length
+                  const spacer = cursor > 0 && !/\s$/.test(composer.slice(0, cursor)) ? ' @' : '@'
+                  const nextComposer = `${composer.slice(0, cursor)}${spacer}${composer.slice(cursor)}`
+                  const nextCursor = cursor + spacer.length
+                  setComposer(nextComposer)
+                  setComposerCursor(nextCursor)
+                  requestAnimationFrame(() => {
+                    composerRef.current?.focus()
+                    composerRef.current?.setSelectionRange(nextCursor, nextCursor)
+                  })
+                }}
+                title="Mention"
+                type="button"
+              >
+                <AtSign size={15} />
+              </Button>
+              <Button className="icon-button" disabled={!activeGroupId} title="Reaction" type="button">
+                <Smile size={15} />
+              </Button>
+              <span className="track-composer-hint">
+                <Sparkles size={12} />
+                AI auto-review on
+              </span>
+              <Button
                 className="track-button track-button-primary"
                 disabled={!composer.trim() || !activeGroupId || busyAction === 'send-message'}
                 onClick={handleSendMessage}
                 type="button"
               >
-                <Send size={14} />
                 Send
-              </button>
+                <span className="track-send-key">↵</span>
+              </Button>
             </div>
           </div>
         </div>
       </section>
 
       <aside className="track-rail">
-        <section className="track-rail-section">
+        <Card className="track-rail-section" size="sm">
           <div className="track-rail-title">
             <span>
               <span className="track-rail-heading">AI Review</span>
@@ -704,18 +998,18 @@ function App() {
             <span>Last run</span>
             <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
           </div>
-          <button
+          <Button
             className="track-setting-button"
             disabled={!activeGroupId || busyAction === 'review-frequency'}
             onClick={handleFrequencyChange}
             type="button"
           >
             Every {activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30} minutes
-          </button>
+          </Button>
           <p className="track-muted">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
-        </section>
+        </Card>
 
-        <section className="track-count-grid">
+        <Card className="track-count-grid" size="sm">
           <Metric label="Drafts" value={pendingDrafts.length} />
           <Metric label="Records" value={records?.length ?? 0} />
           <Metric
@@ -726,32 +1020,38 @@ function App() {
             label="Open"
             value={projectRecords.filter((record) => record.status === 'open' || record.status === 'in_progress' || record.status === 'blocked').length}
           />
-        </section>
+        </Card>
 
-        <section className="track-rail-section">
+        <Card className="track-rail-section" size="sm">
           <div className="track-rail-heading-row">
             <span className="track-rail-heading">Notifications</span>
             <Bell size={14} />
           </div>
           <p className="track-muted">Global: {globalNotificationMode}. Group: {groupNotificationMode}.</p>
-          <div className="track-mode-grid">
+          <ToggleGroup
+            className="track-mode-grid"
+            value={[groupNotificationMode]}
+            onValueChange={(value) => {
+              const mode = value.at(-1) as (typeof notificationModes)[number] | undefined
+              if (mode) void handleNotificationMode(mode)
+            }}
+          >
             {notificationModes.map((mode) => (
-              <button
+              <ToggleGroupItem
                 className={mode === groupNotificationMode ? 'track-chip active' : 'track-chip'}
                 key={mode}
-                onClick={() => void handleNotificationMode(mode)}
-                type="button"
+                value={mode}
               >
                 {mode}
-              </button>
+              </ToggleGroupItem>
             ))}
-          </div>
-        </section>
+          </ToggleGroup>
+        </Card>
 
-        <section className="track-rail-section">
+        <Card className="track-rail-section" size="sm">
           <div className="track-rail-heading-row">
             <span className="track-rail-heading">Project Record</span>
-            <button
+            <Button
               className="icon-button"
               disabled={!activeProjectId || busyAction === 'export-pdf'}
               onClick={() => void handleRequestExport('pdf')}
@@ -759,25 +1059,25 @@ function App() {
               type="button"
             >
               <Download size={14} />
-            </button>
+            </Button>
           </div>
           <div className="track-export-row">
-            <button
+            <Button
               className="track-chip"
               disabled={!activeProjectId || busyAction === 'export-csv'}
               onClick={() => void handleRequestExport('csv')}
               type="button"
             >
               CSV
-            </button>
-            <button
+            </Button>
+            <Button
               className="track-chip"
               disabled={!activeProjectId || busyAction === 'export-pdf'}
               onClick={() => void handleRequestExport('pdf')}
               type="button"
             >
               PDF
-            </button>
+            </Button>
             {exportDownloadUrl ? (
               <a className="track-export-link" href={exportDownloadUrl} rel="noreferrer" target="_blank">
                 Download latest
@@ -788,18 +1088,18 @@ function App() {
           </div>
           <div className="track-record-list">
             {projectRecords.slice(0, 8).map((record) => (
-              <article className="track-record-item" key={record._id}>
+              <Card className="track-record-item" key={record._id} size="sm">
                 <div>
                   <span className="track-record-id">{record._id.slice(-6)}</span>
-                  <span className={record.classification === 'billable_scope' ? 'track-badge success' : 'track-badge'}>
+                  <Badge className={record.classification === 'billable_scope' ? 'track-badge success' : 'track-badge'} variant="outline">
                     {record.classification}
-                  </span>
+                  </Badge>
                 </div>
                 <strong>{record.title}</strong>
                 <p>{record.type} · {record.status}</p>
                 <div className="track-record-actions">
                   {(['open', 'in_progress', 'blocked', 'done'] as const).map((status) => (
-                    <button
+                    <Button
                       className={record.status === status ? 'track-mini-button active' : 'track-mini-button'}
                       disabled={busyAction === `record-status-${record._id}`}
                       key={status}
@@ -807,15 +1107,15 @@ function App() {
                       type="button"
                     >
                       {status}
-                    </button>
+                    </Button>
                   ))}
                 </div>
-              </article>
+              </Card>
             ))}
           </div>
-        </section>
+        </Card>
 
-        <section className="track-rail-section">
+        <Card className="track-rail-section" size="sm">
           <div className="track-rail-heading-row">
             <span className="track-rail-heading">Invitations</span>
             <Upload size={14} />
@@ -829,9 +1129,9 @@ function App() {
             ))}
             {projectInvitations.length === 0 ? <p className="track-muted">No invites yet.</p> : null}
           </div>
-        </section>
+        </Card>
 
-        <section className="track-rail-section">
+        <Card className="track-rail-section" size="sm">
           <div className="track-rail-heading-row">
             <span className="track-rail-heading">Audit Trail</span>
             <Clock3 size={14} />
@@ -844,8 +1144,41 @@ function App() {
               </p>
             ))}
           </div>
-        </section>
+        </Card>
       </aside>
+      <WorkspaceDialogs
+        activeGroupId={activeGroupId}
+        activeGroupName={activeGroup?.name}
+        busyAction={busyAction}
+        frequencyDialogOpen={frequencyDialogOpen}
+        frequencyMinutesInput={frequencyMinutesInput}
+        groupDialogOpen={groupDialogOpen}
+        groupName={groupName}
+        inviteCanReview={inviteCanReview}
+        inviteDialogOpen={inviteDialogOpen}
+        inviteEmail={inviteEmail}
+        inviteRole={inviteRole}
+        inviteScope={inviteScope}
+        onCreateGroupSubmit={handleCreateGroupSubmit}
+        onCreateProjectSubmit={handleCreateProjectSubmit}
+        onFrequencySubmit={handleFrequencySubmit}
+        onInviteSubmit={handleInviteSubmit}
+        projectClientLabel={projectClientLabel}
+        projectDialogOpen={projectDialogOpen}
+        projectName={projectName}
+        setFrequencyDialogOpen={setFrequencyDialogOpen}
+        setFrequencyMinutesInput={setFrequencyMinutesInput}
+        setGroupDialogOpen={setGroupDialogOpen}
+        setGroupName={setGroupName}
+        setInviteCanReview={setInviteCanReview}
+        setInviteDialogOpen={setInviteDialogOpen}
+        setInviteEmail={setInviteEmail}
+        setInviteRole={setInviteRole}
+        setInviteScope={setInviteScope}
+        setProjectClientLabel={setProjectClientLabel}
+        setProjectDialogOpen={setProjectDialogOpen}
+        setProjectName={setProjectName}
+      />
     </main>
   )
 }
@@ -875,324 +1208,9 @@ function NavSection({
   return (
     <div className="track-nav-section">
       <span>{label}</span>
-      <button aria-label={actionLabel} className="track-nav-action" onClick={onAction} type="button">
+      <Button aria-label={actionLabel} className="track-nav-action" onClick={onAction} type="button">
         {icon}
-      </button>
-    </div>
-  )
-}
-
-function MessageRow({
-  item,
-}: {
-  item: {
-    message: Doc<'messages'>
-    author: Doc<'users'> | null
-    attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
-  }
-}) {
-  const authorName = item.author?.displayName ?? 'Unknown Member'
-  return (
-    <article className="track-message-row" id={`message-${item.message._id}`}>
-      <div className="track-message-avatar">{authorName.slice(0, 2).toUpperCase()}</div>
-      <div className="track-message-body">
-        <div className="track-message-meta">
-          <strong>{authorName}</strong>
-          <span className="track-role-chip">{item.author?.email ?? 'member'}</span>
-          <time>{new Date(item.message.createdAt).toLocaleTimeString()}</time>
-        </div>
-        <MarkdownText className="track-markdown" text={item.message.body} />
-        {item.attachments.length > 0 ? (
-          <div className="track-attachment-list">
-            {item.attachments.map(({ attachment, url }) =>
-              url ? (
-                <a href={url} key={attachment._id} rel="noreferrer" target="_blank">
-                  <Paperclip size={13} />
-                  {attachment.filename}
-                </a>
-              ) : (
-                <span key={attachment._id}>
-                  <Paperclip size={13} />
-                  {attachment.filename}
-                </span>
-              ),
-            )}
-          </div>
-        ) : null}
-      </div>
-    </article>
-  )
-}
-
-function AssistantAnswer({
-  messageCitations,
-  stream,
-}: {
-  messageCitations: Map<string, { author: string; createdAt: number }>
-  stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
-}) {
-  const answer = stream.answer || (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)
-  return (
-    <article className="track-assistant-row">
-      <div className="track-message-avatar bot"><Bot size={14} /></div>
-      <div className="track-assistant-body">
-        <div className="track-message-meta">
-          <strong>Track Assistant</strong>
-          <span className="track-role-chip accent">evidence answer</span>
-          <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
-        </div>
-        <MarkdownText
-          className="track-markdown"
-          renderCitation={(citationId, index) => (
-            <MessageCitation
-              citationId={citationId}
-              index={index}
-              key={`${citationId}-${index}`}
-              message={messageCitations.get(citationId)}
-            />
-          )}
-          text={answer}
-        />
-      </div>
-    </article>
-  )
-}
-
-function MessageCitation({
-  citationId,
-  index,
-  message,
-}: {
-  citationId: string
-  index: number
-  message?: { author: string; createdAt: number }
-}) {
-  if (!message) {
-    return (
-      <span className="track-citation-chip" key={`${citationId}-${index}`}>
-        source
-      </span>
-    )
-  }
-
-  return (
-    <button
-      className="track-citation-chip"
-      key={`${citationId}-${index}`}
-      onClick={() => {
-        document.getElementById(`message-${citationId}`)?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        })
-      }}
-      type="button"
-    >
-      {message.author} · {new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-    </button>
-  )
-}
-
-function MarkdownText({
-  className,
-  renderCitation,
-  text,
-}: {
-  className?: string
-  renderCitation?: (citationId: string, index: number) => ReactNode
-  text: string
-}) {
-  const lines = text.split(/\r?\n/)
-  const blocks: Array<{ kind: 'list'; items: string[] } | { kind: 'paragraph'; text: string }> = []
-  let paragraph: string[] = []
-  let listItems: string[] = []
-
-  function flushParagraph() {
-    if (paragraph.length > 0) {
-      blocks.push({ kind: 'paragraph', text: paragraph.join('\n') })
-      paragraph = []
-    }
-  }
-
-  function flushList() {
-    if (listItems.length > 0) {
-      blocks.push({ kind: 'list', items: listItems })
-      listItems = []
-    }
-  }
-
-  for (const line of lines) {
-    const listMatch = /^\s*[-*]\s+(.+)$/.exec(line)
-    if (listMatch) {
-      flushParagraph()
-      listItems.push(listMatch[1])
-      continue
-    }
-    if (!line.trim()) {
-      flushParagraph()
-      flushList()
-      continue
-    }
-    flushList()
-    paragraph.push(line)
-  }
-  flushParagraph()
-  flushList()
-
-  return (
-    <div className={className}>
-      {blocks.map((block, blockIndex) =>
-        block.kind === 'list' ? (
-          <ul key={`list-${blockIndex}`}>
-            {block.items.map((item, itemIndex) => (
-              <li key={`${item}-${itemIndex}`}>{renderMarkdownInline(item, renderCitation)}</li>
-            ))}
-          </ul>
-        ) : (
-          <p key={`paragraph-${blockIndex}`}>
-            {block.text.split('\n').map((line, lineIndex) => (
-              <span key={`${line}-${lineIndex}`}>
-                {lineIndex > 0 ? <br /> : null}
-                {renderMarkdownInline(line, renderCitation)}
-              </span>
-            ))}
-          </p>
-        ),
-      )}
-    </div>
-  )
-}
-
-function renderMarkdownInline(
-  text: string,
-  renderCitation?: (citationId: string, index: number) => ReactNode,
-): ReactNode[] {
-  const tokenPattern = /(\[[a-z0-9]+\]|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/gi
-  const parts = text.split(tokenPattern).filter(Boolean)
-
-  return parts.map((part, index) => {
-    const citationMatch = /^\[([a-z0-9]+)\]$/i.exec(part)
-    if (citationMatch && renderCitation) return renderCitation(citationMatch[1], index)
-
-    const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
-    if (linkMatch) {
-      return (
-        <a href={linkMatch[2]} key={`${part}-${index}`} rel="noreferrer" target="_blank">
-          {linkMatch[1]}
-        </a>
-      )
-    }
-
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>
-    }
-
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`${part}-${index}`}>{renderMarkdownInline(part.slice(2, -2), renderCitation)}</strong>
-    }
-
-    if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={`${part}-${index}`}>{renderMarkdownInline(part.slice(1, -1), renderCitation)}</em>
-    }
-
-    return <span key={`${part}-${index}`}>{part}</span>
-  })
-}
-
-function DraftRecordCard({
-  busy,
-  draft,
-  onClassify,
-}: {
-  busy: boolean
-  draft: {
-    _id: Id<'draftRecords'>
-    type: string
-    title: string
-    description: string
-    proposedStatus: string
-    evidence: Array<{ quote: string }>
-  }
-  onClassify: (
-    draftRecordId: Id<'draftRecords'>,
-    classification: (typeof draftClassifications)[number],
-    updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
-  ) => Promise<void>
-}) {
-  const [title, setTitle] = useState(draft.title)
-  const [description, setDescription] = useState(draft.description)
-  const [status, setStatus] = useState<(typeof draftStatuses)[number]>(
-    draftStatuses.includes(draft.proposedStatus as (typeof draftStatuses)[number])
-      ? (draft.proposedStatus as (typeof draftStatuses)[number])
-      : 'open',
-  )
-  const updates = { title, description, status }
-  return (
-    <article className="track-draft-record">
-      <header>
-        <span className="track-draft-kicker">
-          <Bot size={13} />
-          Draft Record
-        </span>
-        <span className="track-record-id">{draft._id.slice(-6)}</span>
-      </header>
-      <div className="track-draft-content">
-        <div className="track-draft-meta">
-          <span className="track-badge accent">{draft.type}</span>
-          <span className="track-badge">proposed {status}</span>
-        </div>
-        <label className="track-draft-field">
-          <span>Title</span>
-          <input disabled={busy} onChange={(event) => setTitle(event.currentTarget.value)} value={title} />
-        </label>
-        <label className="track-draft-field">
-          <span>Description</span>
-          <textarea
-            disabled={busy}
-            onChange={(event) => setDescription(event.currentTarget.value)}
-            value={description}
-          />
-        </label>
-        <label className="track-draft-field compact">
-          <span>Status</span>
-          <select
-            disabled={busy}
-            onChange={(event) => setStatus(event.currentTarget.value as (typeof draftStatuses)[number])}
-            value={status}
-          >
-            {draftStatuses.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="track-evidence-note">
-          Evidence: {draft.evidence.map((item) => item.quote).join(' · ') || 'Source messages attached'}
-        </div>
-      </div>
-      <footer>
-        {draftClassifications.map((classification) => (
-          <button
-            className={classification === 'ignored' ? 'secondary' : undefined}
-            disabled={busy}
-            key={classification}
-            onClick={() => void onClassify(draft._id, classification, updates)}
-            type="button"
-          >
-            {classification === 'ignored' ? <X size={14} /> : classification === 'official_record' ? <FileText size={14} /> : classification === 'informational' ? <Settings size={14} /> : <Check size={14} />}
-            {classification}
-          </button>
-        ))}
-      </footer>
-    </article>
-  )
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="track-count-cell">
-      <strong>{value}</strong>
-      <span>{label}</span>
+      </Button>
     </div>
   )
 }

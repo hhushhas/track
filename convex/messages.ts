@@ -38,6 +38,12 @@ export const listDetailed = query({
     return await Promise.all(
       messages.map(async (message) => {
         const author = await ctx.db.get(message.authorId)
+        const authorProjectMember = await ctx.db
+          .query('projectMembers')
+          .withIndex('by_project_user', (q) =>
+            q.eq('projectId', message.projectId).eq('userId', message.authorId),
+          )
+          .unique()
         const attachments = await Promise.all(
           message.attachmentIds.map(async (attachmentId) => {
             const attachment = await ctx.db.get(attachmentId)
@@ -49,6 +55,7 @@ export const listDetailed = query({
         return {
           message,
           author,
+          authorRole: authorProjectMember?.role ?? null,
           attachments: attachments.filter((attachment) => attachment !== null),
         }
       }),
@@ -66,6 +73,10 @@ export const send = mutation({
   },
   handler: async (ctx, args) => {
     await requireGroupMember(ctx, args.groupId, args.authorId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group || group.projectId !== args.projectId) {
+      throw new Error('group_project_mismatch')
+    }
     await rateLimiter.limit(ctx, 'sendMessage', {
       key: args.authorId,
       throws: true,
@@ -121,6 +132,18 @@ export const attachFile = mutation({
   },
   handler: async (ctx, args) => {
     await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group || group.projectId !== args.projectId) {
+      throw new Error('group_project_mismatch')
+    }
+    const message = await ctx.db.get(args.messageId)
+    if (
+      !message ||
+      message.projectId !== args.projectId ||
+      message.groupId !== args.groupId
+    ) {
+      throw new Error('message_scope_mismatch')
+    }
     const attachmentId = await ctx.db.insert('attachments', {
       projectId: args.projectId,
       groupId: args.groupId,
@@ -133,12 +156,9 @@ export const attachFile = mutation({
       extractionStatus: 'preserved',
       createdAt: Date.now(),
     })
-    const message = await ctx.db.get(args.messageId)
-    if (message) {
-      await ctx.db.patch(args.messageId, {
-        attachmentIds: [...message.attachmentIds, attachmentId],
-      })
-    }
+    await ctx.db.patch(args.messageId, {
+      attachmentIds: [...message.attachmentIds, attachmentId],
+    })
     await appendAuditEvent(ctx, {
       projectId: args.projectId,
       groupId: args.groupId,

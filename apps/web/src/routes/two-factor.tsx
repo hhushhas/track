@@ -2,6 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 
+import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import { authClient } from '../lib/auth-client'
 
 export const Route = createFileRoute('/two-factor')({ component: TwoFactor })
@@ -32,7 +34,7 @@ function TwoFactor() {
             })
           }}
         >
-          <input
+          <Input
             aria-label="Authenticator code"
             autoComplete="one-time-code"
             className="min-h-11 w-full rounded-md border border-[var(--hairline-strong)] bg-[var(--paper)] px-3 text-sm outline-none focus:border-[var(--accent)]"
@@ -41,9 +43,9 @@ function TwoFactor() {
             placeholder="123456"
             value={code}
           />
-          <button className="track-button track-button-primary w-full" type="submit">
+          <Button className="track-button track-button-primary w-full" type="submit">
             Verify
-          </button>
+          </Button>
           {message ? (
             <p className="m-0 text-sm text-[var(--danger)]">{message}</p>
           ) : null}

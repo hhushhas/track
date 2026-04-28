@@ -31,6 +31,27 @@ export const list = query({
   },
 })
 
+export const listMembers = query({
+  args: {
+    projectId: v.id('projects'),
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectMember(ctx, args.projectId, args.userId)
+    const memberships = await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
+      .collect()
+
+    return await Promise.all(
+      memberships.map(async (membership) => {
+        const user = await ctx.db.get(membership.userId)
+        return { membership, user }
+      }),
+    )
+  },
+})
+
 export const create = mutation({
   args: {
     userId: v.id('users'),
