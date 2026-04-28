@@ -1343,8 +1343,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         {activeProjectId ? (
           <div className="track-nav-secondary">
             <div className="track-sidebar-groups">
-              <div className="track-nav-section no-action">
+              <div className="track-nav-section">
                 <span>Groups</span>
+                <button
+                  aria-label="Create group"
+                  className="track-nav-action"
+                  disabled={busyAction === 'create-group'}
+                  onClick={handleCreateGroup}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={13} />
+                </button>
               </div>
               <div className="track-nav-list">
                 {visibleGroups.map((group) => (
