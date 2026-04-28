@@ -39,6 +39,17 @@ export const getAuthUser = query({
   },
 })
 
+async function getOptionalAuthUser(ctx: GenericCtx<DataModel>) {
+  try {
+    return await authComponent.getAuthUser(ctx)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unauthenticated')) {
+      return null
+    }
+    throw error
+  }
+}
+
 function getAuthUserDisplayName(authUser: {
   name?: string | null
   email?: string | null
@@ -49,7 +60,9 @@ function getAuthUserDisplayName(authUser: {
 export const ensureCurrentUser = mutation({
   args: {},
   handler: async (ctx) => {
-    const authUser = await authComponent.getAuthUser(ctx)
+    const authUser = await getOptionalAuthUser(ctx)
+    if (!authUser) return null
+
     const now = Date.now()
     const existing = await ctx.db
       .query('users')
@@ -79,7 +92,9 @@ export const ensureCurrentUser = mutation({
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
-    const authUser = await authComponent.getAuthUser(ctx)
+    const authUser = await getOptionalAuthUser(ctx)
+    if (!authUser) return null
+
     return await ctx.db
       .query('users')
       .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))

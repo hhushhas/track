@@ -376,6 +376,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (!session.data || trackUserId) return
     void ensureCurrentUser()
       .then(async (userId) => {
+        if (!userId) return
         setTrackUserId(userId)
         await acceptPendingInvitations({ userId })
       })
