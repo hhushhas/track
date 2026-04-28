@@ -6,6 +6,7 @@ import {
   Bot,
   Clock3,
   Download,
+  FileCheck2,
   FolderKanban,
   GripVertical,
   LoaderCircle,
@@ -17,6 +18,7 @@ import {
   Paperclip,
   Plus,
   Search,
+  Settings2,
   Smile,
   Sparkles,
   Upload,
@@ -36,7 +38,19 @@ import { Button } from '#/components/ui/button'
 import {
   Card,
 } from '#/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
 import { draftClassifications, draftStatuses, notificationModes } from '#/features/workspace/constants'
@@ -50,7 +64,7 @@ import ThemeToggle from '#/components/ThemeToggle'
 type WorkspacePageProps = {
   groupId?: string
   projectId?: string
-  view?: 'home' | 'project' | 'group'
+  view?: 'home' | 'project' | 'group' | 'records' | 'settings'
 }
 
 const emojiGroups = [
@@ -67,6 +81,10 @@ const emojiGroups = [
     emojis: ['😀', '😅', '😂', '😊', '🤝', '🙌', '👏', '💪', '🤔', '😬', '😎', '✨'],
   },
 ] as const
+
+function formatRailLabel(value: string) {
+  return value.replaceAll('_', ' ')
+}
 
 export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePageProps) {
   const navigate = useNavigate()
@@ -100,6 +118,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [mentionIndex, setMentionIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
+  const [recordSearchQuery, setRecordSearchQuery] = useState('')
+  const [recordFilter, setRecordFilter] = useState<'all' | 'open' | 'billable' | 'blocked' | 'done'>('all')
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
@@ -273,6 +293,27 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   )
   const groupDrafts = useMemo(() => (drafts ?? []) as Array<Doc<'draftRecords'>>, [drafts])
   const projectRecords = useMemo(() => (records ?? []) as Array<Doc<'records'>>, [records])
+  const filteredProjectRecords = useMemo(() => {
+    const query = recordSearchQuery.trim().toLowerCase()
+    return projectRecords.filter((record) => {
+      const matchesFilter =
+        recordFilter === 'all' ||
+        (recordFilter === 'open' &&
+          (record.status === 'open' || record.status === 'in_progress')) ||
+        (recordFilter === 'billable' && record.classification === 'billable_scope') ||
+        (recordFilter === 'blocked' && record.status === 'blocked') ||
+        (recordFilter === 'done' && record.status === 'done')
+      if (!matchesFilter) return false
+      if (!query) return true
+      return [
+        record.title,
+        record.description,
+        record.type,
+        record.classification,
+        record.status,
+      ].some((value) => value.toLowerCase().includes(query))
+    })
+  }, [projectRecords, recordFilter, recordSearchQuery])
   const groupAssistantStreams = useMemo(
     () => (assistantStreams ?? []) as Array<Doc<'assistantStreams'>>,
     [assistantStreams],
@@ -800,6 +841,24 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
+  function navigateToProjectRecords() {
+    if (!activeProjectId) return
+    setActiveGroupId(null)
+    void navigate({
+      to: '/workspace/projects/$projectId/records',
+      params: { projectId: activeProjectId },
+    })
+  }
+
+  function navigateToProjectSettings() {
+    if (!activeProjectId) return
+    setActiveGroupId(null)
+    void navigate({
+      to: '/workspace/projects/$projectId/settings',
+      params: { projectId: activeProjectId },
+    })
+  }
+
   async function handleSignOut() {
     await authClient.signOut()
     await navigate({ to: '/sign-in' })
@@ -851,18 +910,43 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         </div>
 
         {activeProjectId ? (
-          <Button
-            className="track-nav-item"
-            onClick={() => navigateToProject(activeProjectId)}
-            type="button"
-          >
-            <MessagesSquare className="track-nav-icon" size={14} />
-            <span className="track-nav-copy">
-              <span className="track-nav-title">Groups</span>
-              <span className="track-nav-meta">Open group gallery</span>
-            </span>
-            <span className="track-nav-count">{visibleGroups.length}</span>
-          </Button>
+          <div className="track-nav-secondary">
+            <Button
+              className={view === 'project' ? 'track-nav-item active' : 'track-nav-item'}
+              onClick={() => navigateToProject(activeProjectId)}
+              type="button"
+            >
+              <MessagesSquare className="track-nav-icon" size={14} />
+              <span className="track-nav-copy">
+                <span className="track-nav-title">Groups</span>
+                <span className="track-nav-meta">Open group gallery</span>
+              </span>
+              <span className="track-nav-count">{visibleGroups.length}</span>
+            </Button>
+            <Button
+              className={view === 'records' ? 'track-nav-item active' : 'track-nav-item'}
+              onClick={navigateToProjectRecords}
+              type="button"
+            >
+              <FileCheck2 className="track-nav-icon" size={14} />
+              <span className="track-nav-copy">
+                <span className="track-nav-title">Records</span>
+                <span className="track-nav-meta">Project audit register</span>
+              </span>
+              <span className="track-nav-count">{projectRecords.length}</span>
+            </Button>
+            <Button
+              className={view === 'settings' ? 'track-nav-item active' : 'track-nav-item'}
+              onClick={navigateToProjectSettings}
+              type="button"
+            >
+              <Settings2 className="track-nav-icon" size={14} />
+              <span className="track-nav-copy">
+                <span className="track-nav-title">Settings</span>
+                <span className="track-nav-meta">Exports, members, notifications</span>
+              </span>
+            </Button>
+          </div>
         ) : null}
 
         <div className="track-nav-footer">
@@ -894,6 +978,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             <h1>
               {view === 'group' && activeGroup
                 ? `${activeGroup.name} Conversation`
+                : view === 'records' && activeProject
+                  ? `${activeProject.project.name} Records`
+                : view === 'settings' && activeProject
+                  ? `${activeProject.project.name} Settings`
                 : activeProject
                   ? `${activeProject.project.name} Groups`
                   : 'Select a Project'}
@@ -925,6 +1013,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   value={chatSearchQuery}
                 />
               ) : null}
+            {view === 'records' || view === 'settings' ? (
+              <Button
+                className="track-button"
+                disabled={!activeProjectId || busyAction === 'export-csv'}
+                onClick={() => void handleRequestExport('csv')}
+                type="button"
+              >
+                <Download size={14} />
+                Export CSV
+              </Button>
+            ) : null}
             {view === 'group' ? (
               <>
                 <Button
@@ -964,6 +1063,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <Sparkles size={14} />
                 Run AI Review
               </Button>
+            ) : view === 'records' || view === 'settings' ? (
+              <Button
+                className="track-button track-button-accent"
+                disabled={!activeProjectId || busyAction === 'export-pdf'}
+                onClick={() => void handleRequestExport('pdf')}
+                type="button"
+              >
+                <Download size={14} />
+                Audit Packet
+              </Button>
             ) : (
               <Button
                 className="track-button track-button-accent"
@@ -981,7 +1090,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         {uiError ? <div className="track-error">{uiError}</div> : null}
 
         {isProjectRouteLoading || isGroupRouteLoading ? (
-          <WorkspaceRouteLoader label={view === 'group' ? 'Opening group conversation' : 'Loading project groups'} />
+          <WorkspaceRouteLoader label={view === 'group' ? 'Opening group conversation' : view === 'records' ? 'Loading project records' : view === 'settings' ? 'Loading project settings' : 'Loading project groups'} />
         ) : view === 'group' ? (
           <>
             <div className="track-thread-scroll">
@@ -1202,6 +1311,36 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               </div>
             </div>
           </>
+        ) : view === 'records' ? (
+          <ProjectRecordsPage
+            busyAction={busyAction}
+            filteredRecords={filteredProjectRecords}
+            onRecordStatus={handleRecordStatus}
+            recordFilter={recordFilter}
+            recordSearchQuery={recordSearchQuery}
+            records={projectRecords}
+            setRecordFilter={setRecordFilter}
+            setRecordSearchQuery={setRecordSearchQuery}
+          />
+        ) : view === 'settings' ? (
+          <ProjectSettingsPage
+            activeProject={activeProject?.project ?? null}
+            auditEvents={projectAuditEvents}
+            busyAction={busyAction}
+            exportDownloadUrl={exportDownloadUrl}
+            exports={projectExports}
+            globalNotificationMode={globalNotificationMode}
+            groupNotificationSettings={groupNotificationSettings}
+            groups={visibleGroups}
+            invitations={projectInvitations}
+            latestExportId={latestExportId}
+            members={activeProjectMembers}
+            onCreateGroup={handleCreateGroup}
+            onInvite={handleInvite}
+            onNotificationMode={handleNotificationMode}
+            onRequestExport={handleRequestExport}
+            records={projectRecords}
+          />
         ) : (
           <ProjectGroupGallery groups={visibleGroups} onOpenGroup={navigateToGroup} />
         )}
@@ -1228,136 +1367,140 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 }}
                 type="button"
               >
-                <GripVertical size={14} />
+                <span className="track-rail-resize-grip">
+                  <GripVertical size={14} />
+                </span>
               </button>
               <Card className="track-rail-section" size="sm">
-            <div className="track-rail-title">
-              <span>
-                <span className="track-rail-heading">AI Review</span>
-                <span className="track-rail-sub">current Group</span>
-              </span>
-              <span className="track-pulse" />
-            </div>
-            <div className="track-review-status">
-              <span>Last run</span>
-              <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
-            </div>
-            <Button
-              className="track-setting-button"
-              disabled={!activeGroupId || busyAction === 'review-frequency'}
-              onClick={handleFrequencyChange}
-              type="button"
-            >
-              Every {activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30} minutes
-            </Button>
-            <p className="track-muted">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
+                <div className="track-rail-title">
+                  <span>
+                    <span className="track-rail-heading">AI Review</span>
+                  </span>
+                  <div className="track-rail-icon-actions">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        aria-label="Project record exports"
+                        className="track-rail-icon-button"
+                        disabled={!activeProjectId}
+                      >
+                        <Download size={14} />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="track-rail-menu">
+                        <DropdownMenuLabel>Export project record</DropdownMenuLabel>
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem
+                            disabled={!activeProjectId || busyAction === 'export-csv'}
+                            onClick={() => void handleRequestExport('csv')}
+                          >
+                            Export csv
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!activeProjectId || busyAction === 'export-pdf'}
+                            onClick={() => void handleRequestExport('pdf')}
+                          >
+                            Export pdf
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                        {exportDownloadUrl || latestExportId ? <DropdownMenuSeparator /> : null}
+                        {exportDownloadUrl ? (
+                          <a className="track-rail-menu-link" href={exportDownloadUrl} rel="noreferrer" target="_blank">
+                            Download latest
+                          </a>
+                        ) : latestExportId ? (
+                          <span className="track-rail-menu-note">Preparing export...</span>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        aria-label="Notification settings"
+                        className="track-rail-icon-button"
+                        disabled={!activeProjectId}
+                      >
+                        <Bell size={14} />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="track-rail-menu">
+                        <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+                        <p className="track-rail-menu-note">Global {formatRailLabel(globalNotificationMode)}</p>
+                        <DropdownMenuRadioGroup
+                          value={groupNotificationMode}
+                          onValueChange={(mode) => void handleNotificationMode(mode as (typeof notificationModes)[number])}
+                        >
+                          {notificationModes.map((mode) => (
+                            <DropdownMenuRadioItem key={mode} value={mode}>
+                              {formatRailLabel(mode)}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+                <div className="track-review-status">
+                  <span>Last run</span>
+                  <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
+                </div>
+                <div className="track-rail-inline-actions">
+                  <Button
+                    className="track-setting-button"
+                    disabled={!activeGroupId || busyAction === 'review-frequency'}
+                    onClick={handleFrequencyChange}
+                    type="button"
+                  >
+                    Every {activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30} minutes
+                  </Button>
+                </div>
+                <p className="track-muted track-rail-compact-copy">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
               </Card>
 
-        <Card className="track-count-grid" size="sm">
-          <Metric label="Drafts" value={pendingDrafts.length} />
-          <Metric label="Records" value={records?.length ?? 0} />
-          <Metric
-            label="Billable"
-            value={projectRecords.filter((record) => record.classification === 'billable_scope').length}
-          />
-          <Metric
-            label="Open"
-            value={projectRecords.filter((record) => record.status === 'open' || record.status === 'in_progress' || record.status === 'blocked').length}
-          />
-        </Card>
+              <Card className="track-count-grid" size="sm">
+                <Metric label="Drafts" value={pendingDrafts.length} />
+                <Metric label="Records" value={records?.length ?? 0} />
+                <Metric
+                  label="Billable"
+                  value={projectRecords.filter((record) => record.classification === 'billable_scope').length}
+                />
+                <Metric
+                  label="Open"
+                  value={projectRecords.filter((record) => record.status === 'open' || record.status === 'in_progress' || record.status === 'blocked').length}
+                />
+              </Card>
 
-        <Card className="track-rail-section" size="sm">
-          <div className="track-rail-heading-row">
-            <span className="track-rail-heading">Notifications</span>
-            <Bell size={14} />
-          </div>
-          <p className="track-muted">Global: {globalNotificationMode}. Group: {groupNotificationMode}.</p>
-          <ToggleGroup
-            className="track-mode-grid"
-            value={[groupNotificationMode]}
-            onValueChange={(value) => {
-              const mode = value.at(-1) as (typeof notificationModes)[number] | undefined
-              if (mode) void handleNotificationMode(mode)
-            }}
-          >
-            {notificationModes.map((mode) => (
-              <ToggleGroupItem
-                className={mode === groupNotificationMode ? 'track-chip active' : 'track-chip'}
-                key={mode}
-                value={mode}
-              >
-                {mode}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </Card>
-
-        <Card className="track-rail-section" size="sm">
-          <div className="track-rail-heading-row">
-            <span className="track-rail-heading">Project Record</span>
-            <Button
-              className="icon-button"
-              disabled={!activeProjectId || busyAction === 'export-pdf'}
-              onClick={() => void handleRequestExport('pdf')}
-              title="Generate audit PDF"
-              type="button"
-            >
-              <Download size={14} />
-            </Button>
-          </div>
-          <div className="track-export-row">
-            <Button
-              className="track-chip"
-              disabled={!activeProjectId || busyAction === 'export-csv'}
-              onClick={() => void handleRequestExport('csv')}
-              type="button"
-            >
-              CSV
-            </Button>
-            <Button
-              className="track-chip"
-              disabled={!activeProjectId || busyAction === 'export-pdf'}
-              onClick={() => void handleRequestExport('pdf')}
-              type="button"
-            >
-              PDF
-            </Button>
-            {exportDownloadUrl ? (
-              <a className="track-export-link" href={exportDownloadUrl} rel="noreferrer" target="_blank">
-                Download latest
-              </a>
-            ) : latestExportId ? (
-              <span className="track-muted">Preparing export...</span>
-            ) : null}
-          </div>
-          <div className="track-record-list">
-            {projectRecords.slice(0, 8).map((record) => (
-              <Card className="track-record-item" key={record._id} size="sm">
-                <div>
-                  <span className="track-record-id">{record._id.slice(-6)}</span>
-                  <Badge className={record.classification === 'billable_scope' ? 'track-badge success' : 'track-badge'} variant="outline">
-                    {record.classification}
-                  </Badge>
+              <Card className="track-rail-section" size="sm">
+                <div className="track-rail-heading-row">
+                  <span className="track-rail-heading">Project Record</span>
                 </div>
-                <strong>{record.title}</strong>
-                <p>{record.type} · {record.status}</p>
-                <div className="track-record-actions">
-                  {(['open', 'in_progress', 'blocked', 'done'] as const).map((status) => (
-                    <Button
-                      className={record.status === status ? 'track-mini-button active' : 'track-mini-button'}
-                      disabled={busyAction === `record-status-${record._id}`}
-                      key={status}
-                      onClick={() => void handleRecordStatus(record._id, status)}
-                      type="button"
-                    >
-                      {status}
-                    </Button>
+                <div className="track-record-list">
+                  {projectRecords.slice(0, 8).map((record) => (
+                    <Card className="track-record-item" key={record._id} size="sm">
+                      <div>
+                        <span className="track-record-id">{record._id.slice(-6)}</span>
+                        <Badge className={record.classification === 'billable_scope' ? 'track-badge success' : 'track-badge'} variant="outline">
+                          {formatRailLabel(record.classification)}
+                        </Badge>
+                      </div>
+                      <strong>{record.title}</strong>
+                      <p>{formatRailLabel(record.type)} · {formatRailLabel(record.status)}</p>
+                      <div className="track-record-actions">
+                        <NativeSelect
+                          aria-label={`Set status for ${record.title}`}
+                          className="track-status-select"
+                          disabled={busyAction === `record-status-${record._id}`}
+                          onChange={(event) => void handleRecordStatus(record._id, event.currentTarget.value as (typeof draftStatuses)[number])}
+                          size="sm"
+                          value={record.status}
+                        >
+                          {draftStatuses.map((status) => (
+                            <NativeSelectOption key={status} value={status}>
+                              {formatRailLabel(status)}
+                            </NativeSelectOption>
+                          ))}
+                        </NativeSelect>
+                      </div>
+                    </Card>
                   ))}
                 </div>
               </Card>
-            ))}
-          </div>
-        </Card>
 
         <Card className="track-rail-section" size="sm">
           <div className="track-rail-heading-row">
@@ -1427,6 +1570,321 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         setProjectName={setProjectName}
       />
     </main>
+  )
+}
+
+function ProjectRecordsPage({
+  busyAction,
+  filteredRecords,
+  onRecordStatus,
+  recordFilter,
+  recordSearchQuery,
+  records,
+  setRecordFilter,
+  setRecordSearchQuery,
+}: {
+  busyAction: string | null
+  filteredRecords: Array<Doc<'records'>>
+  onRecordStatus: (recordId: Id<'records'>, status: (typeof draftStatuses)[number]) => Promise<void>
+  recordFilter: 'all' | 'open' | 'billable' | 'blocked' | 'done'
+  recordSearchQuery: string
+  records: Array<Doc<'records'>>
+  setRecordFilter: (filter: 'all' | 'open' | 'billable' | 'blocked' | 'done') => void
+  setRecordSearchQuery: (query: string) => void
+}) {
+  const openRecords = records.filter((record) => record.status === 'open' || record.status === 'in_progress')
+  const billableRecords = records.filter((record) => record.classification === 'billable_scope')
+  const blockedRecords = records.filter((record) => record.status === 'blocked')
+  const doneRecords = records.filter((record) => record.status === 'done')
+
+  return (
+    <div className="track-records-page">
+      <section className="track-records-main">
+        <div className="track-records-toolbar">
+          <div className="track-record-filter-row" role="list" aria-label="Record filters">
+            {[
+              ['all', 'All', records.length],
+              ['open', 'Open', openRecords.length],
+              ['billable', 'Billable', billableRecords.length],
+              ['blocked', 'Blocked', blockedRecords.length],
+              ['done', 'Done', doneRecords.length],
+            ].map(([value, label, count]) => (
+              <button
+                className={recordFilter === value ? 'track-record-filter active' : 'track-record-filter'}
+                key={value}
+                onClick={() => setRecordFilter(value as typeof recordFilter)}
+                type="button"
+              >
+                <span>{label}</span>
+                <strong>{count}</strong>
+              </button>
+            ))}
+          </div>
+          <Input
+            className="track-record-search"
+            onChange={(event) => setRecordSearchQuery(event.currentTarget.value)}
+            placeholder="Search records..."
+            value={recordSearchQuery}
+          />
+        </div>
+
+        <div className="track-record-table-wrap">
+          <table className="track-record-table">
+            <thead>
+              <tr>
+                <th>Record</th>
+                <th>Type</th>
+                <th>Class</th>
+                <th>Status</th>
+                <th>Reviewed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRecords.map((record) => (
+                <tr key={record._id}>
+                  <td className="track-record-title-cell">
+                    <span className="track-record-id">R-{record._id.slice(-5).toUpperCase()}</span>
+                    <strong>{record.title}</strong>
+                    <small>{record.description}</small>
+                  </td>
+                  <td>
+                    <Badge className="track-type-pill" variant="outline">
+                      <span className="track-type-dot" />
+                      {record.type.replaceAll('_', ' ')}
+                    </Badge>
+                  </td>
+                  <td>
+                    <Badge
+                      className={record.classification === 'billable_scope' ? 'track-badge success' : 'track-badge'}
+                      variant="outline"
+                    >
+                      {record.classification.replaceAll('_', ' ')}
+                    </Badge>
+                  </td>
+                  <td>
+                    <NativeSelect
+                      aria-label={`Set status for ${record.title}`}
+                      className="track-status-select"
+                      disabled={busyAction === `record-status-${record._id}`}
+                      onChange={(event) => void onRecordStatus(record._id, event.currentTarget.value as (typeof draftStatuses)[number])}
+                      size="sm"
+                      value={record.status}
+                    >
+                      {draftStatuses.map((status) => (
+                        <NativeSelectOption key={status} value={status}>
+                          {status.replaceAll('_', ' ')}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </td>
+                  <td className="track-record-time-cell">
+                    {new Date(record.reviewedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  </td>
+                </tr>
+              ))}
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td className="track-record-empty-row" colSpan={5}>
+                    No records match this view.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function ProjectSettingsPage({
+  activeProject,
+  auditEvents,
+  busyAction,
+  exportDownloadUrl,
+  exports,
+  globalNotificationMode,
+  groupNotificationSettings,
+  groups,
+  invitations,
+  latestExportId,
+  members,
+  onCreateGroup,
+  onInvite,
+  onNotificationMode,
+  onRequestExport,
+  records,
+}: {
+  activeProject: Doc<'projects'> | null
+  auditEvents: Array<Doc<'auditEvents'>>
+  busyAction: string | null
+  exportDownloadUrl: string | null | undefined
+  exports: Array<Doc<'exports'>>
+  globalNotificationMode: (typeof notificationModes)[number]
+  groupNotificationSettings: Array<Doc<'groupNotificationSettings'>>
+  groups: Array<Doc<'groups'>>
+  invitations: Array<Doc<'invitations'>>
+  latestExportId: Id<'exports'> | null
+  members: Array<{ membership: Doc<'projectMembers'>; user: Doc<'users'> | null }>
+  onCreateGroup: () => Promise<void>
+  onInvite: () => Promise<void>
+  onNotificationMode: (mode: (typeof notificationModes)[number]) => Promise<void>
+  onRequestExport: (format: 'csv' | 'pdf') => Promise<void>
+  records: Array<Doc<'records'>>
+}) {
+  const latestExport = exports[0] ?? null
+  const reviewEnabledGroups = groups.filter((group) => group.aiReviewSettings?.enabled ?? true)
+  const openRecords = records.filter((record) => record.status === 'open' || record.status === 'in_progress')
+  const billableRecords = records.filter((record) => record.classification === 'billable_scope')
+  const blockedRecords = records.filter((record) => record.status === 'blocked')
+
+  return (
+    <div className="track-settings-page">
+      <section className="track-settings-grid">
+        <Card className="track-settings-card" size="sm">
+          <div className="track-settings-card-head">
+            <span className="track-rail-heading">Project</span>
+            <Settings2 size={14} />
+          </div>
+          <p className="track-muted track-rail-compact-copy">
+            {activeProject?.clientLabel ?? 'No client label'} · {groups.length} groups · {members.length} members
+          </p>
+          <div className="track-settings-actions">
+            <Button className="track-button" onClick={() => void onInvite()} type="button">
+              Invite
+            </Button>
+            <Button className="track-button" onClick={() => void onCreateGroup()} type="button">
+              New Group
+            </Button>
+          </div>
+        </Card>
+
+        <Card className="track-count-grid track-settings-metrics" size="sm">
+          <Metric label="Records" value={records.length} />
+          <Metric label="Open" value={openRecords.length} />
+          <Metric label="Billable" value={billableRecords.length} />
+          <Metric label="Blocked" value={blockedRecords.length} />
+        </Card>
+
+        <Card className="track-settings-card" size="sm">
+          <div className="track-settings-card-head">
+            <span className="track-rail-heading">Exports</span>
+            <Download size={14} />
+          </div>
+          <div className="track-export-button-row">
+            <Button
+              className="track-button"
+              disabled={busyAction === 'export-csv'}
+              onClick={() => void onRequestExport('csv')}
+              type="button"
+            >
+              CSV
+            </Button>
+            <Button
+              className="track-button track-button-primary"
+              disabled={busyAction === 'export-pdf'}
+              onClick={() => void onRequestExport('pdf')}
+              type="button"
+            >
+              Full packet
+            </Button>
+          </div>
+          {exportDownloadUrl ? (
+            <a className="track-export-link" href={exportDownloadUrl} rel="noreferrer" target="_blank">
+              Download latest export
+            </a>
+          ) : latestExportId ? (
+            <span className="track-muted track-export-preparing">Preparing export...</span>
+          ) : latestExport ? (
+            <span className="track-muted track-export-preparing">
+              Latest {latestExport.format} · {latestExport.status}
+            </span>
+          ) : (
+            <span className="track-muted track-export-preparing">No exports requested yet.</span>
+          )}
+        </Card>
+
+        <Card className="track-settings-card" size="sm">
+          <div className="track-settings-card-head">
+            <span className="track-rail-heading">Notifications</span>
+            <Bell size={14} />
+          </div>
+          <p className="track-muted track-rail-compact-copy">
+            Global {globalNotificationMode} · {groupNotificationSettings.length} group overrides
+          </p>
+          <ToggleGroup
+            className="track-mode-grid"
+            value={[globalNotificationMode]}
+            onValueChange={(value) => {
+              const mode = value.at(-1) as (typeof notificationModes)[number] | undefined
+              if (mode && mode !== 'inherit') void onNotificationMode(mode)
+            }}
+          >
+            {notificationModes.filter((mode) => mode !== 'inherit').map((mode) => (
+              <ToggleGroupItem
+                className={mode === globalNotificationMode ? 'track-chip active' : 'track-chip'}
+                key={mode}
+                value={mode}
+              >
+                {mode}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </Card>
+
+        <Card className="track-settings-card" size="sm">
+          <div className="track-settings-card-head">
+            <span className="track-rail-heading">AI Review Coverage</span>
+            <Sparkles size={14} />
+          </div>
+          <div className="track-audit-list">
+            {groups.slice(0, 6).map((group) => (
+              <p key={group._id}>
+                <span>{group.name}</span>
+                <small>
+                  {group.aiReviewSettings?.frequencyMinutes ?? 30} min ·{' '}
+                  {(group.aiReviewSettings?.enabled ?? true) ? 'on' : 'off'}
+                </small>
+              </p>
+            ))}
+          </div>
+          <p className="track-muted track-rail-compact-copy">
+            {reviewEnabledGroups.length} of {groups.length} groups are review-enabled.
+          </p>
+        </Card>
+
+        <Card className="track-settings-card" size="sm">
+          <div className="track-settings-card-head">
+            <span className="track-rail-heading">Invitations</span>
+            <Upload size={14} />
+          </div>
+          <div className="track-audit-list">
+            {invitations.slice(0, 6).map((invite) => (
+              <p key={invite._id}>
+                <span>{invite.email}</span>
+                <small>{invite.role} · {invite.status}</small>
+              </p>
+            ))}
+            {invitations.length === 0 ? <p className="track-muted">No invites yet.</p> : null}
+          </div>
+        </Card>
+
+        <Card className="track-settings-card track-settings-wide" size="sm">
+          <div className="track-settings-card-head">
+            <span className="track-rail-heading">Audit Trail</span>
+            <Clock3 size={14} />
+          </div>
+          <div className="track-audit-list">
+            {auditEvents.slice(0, 10).map((event) => (
+              <p key={event._id}>
+                <span>{event.action}</span>
+                <small>{new Date(event.createdAt).toLocaleTimeString()}</small>
+              </p>
+            ))}
+          </div>
+        </Card>
+      </section>
+    </div>
   )
 }
 

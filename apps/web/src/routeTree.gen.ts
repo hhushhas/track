@@ -19,6 +19,8 @@ import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
 import { Route as WorkspaceProjectsProjectIdRouteImport } from './routes/workspace.projects.$projectId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as WorkspaceProjectsProjectIdIndexRouteImport } from './routes/workspace.projects.$projectId.index'
+import { Route as WorkspaceProjectsProjectIdSettingsRouteImport } from './routes/workspace.projects.$projectId.settings'
+import { Route as WorkspaceProjectsProjectIdRecordsRouteImport } from './routes/workspace.projects.$projectId.records'
 import { Route as WorkspaceProjectsProjectIdGroupsGroupIdRouteImport } from './routes/workspace.projects.$projectId.groups.$groupId'
 
 const WorkspaceRoute = WorkspaceRouteImport.update({
@@ -73,6 +75,18 @@ const WorkspaceProjectsProjectIdIndexRoute =
     path: '/',
     getParentRoute: () => WorkspaceProjectsProjectIdRoute,
   } as any)
+const WorkspaceProjectsProjectIdSettingsRoute =
+  WorkspaceProjectsProjectIdSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => WorkspaceProjectsProjectIdRoute,
+  } as any)
+const WorkspaceProjectsProjectIdRecordsRoute =
+  WorkspaceProjectsProjectIdRecordsRouteImport.update({
+    id: '/records',
+    path: '/records',
+    getParentRoute: () => WorkspaceProjectsProjectIdRoute,
+  } as any)
 const WorkspaceProjectsProjectIdGroupsGroupIdRoute =
   WorkspaceProjectsProjectIdGroupsGroupIdRouteImport.update({
     id: '/groups/$groupId',
@@ -90,6 +104,8 @@ export interface FileRoutesByFullPath {
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
+  '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
+  '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
@@ -101,6 +117,8 @@ export interface FileRoutesByTo {
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
+  '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
@@ -115,6 +133,8 @@ export interface FileRoutesById {
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
+  '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
+  '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
@@ -130,6 +150,8 @@ export interface FileRouteTypes {
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
+    | '/workspace/projects/$projectId/records'
+    | '/workspace/projects/$projectId/settings'
     | '/workspace/projects/$projectId/'
     | '/workspace/projects/$projectId/groups/$groupId'
   fileRoutesByTo: FileRoutesByTo
@@ -141,6 +163,8 @@ export interface FileRouteTypes {
     | '/two-factor'
     | '/workspace'
     | '/api/auth/$'
+    | '/workspace/projects/$projectId/records'
+    | '/workspace/projects/$projectId/settings'
     | '/workspace/projects/$projectId'
     | '/workspace/projects/$projectId/groups/$groupId'
   id:
@@ -154,6 +178,8 @@ export interface FileRouteTypes {
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
+    | '/workspace/projects/$projectId/records'
+    | '/workspace/projects/$projectId/settings'
     | '/workspace/projects/$projectId/'
     | '/workspace/projects/$projectId/groups/$groupId'
   fileRoutesById: FileRoutesById
@@ -240,6 +266,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceProjectsProjectIdIndexRouteImport
       parentRoute: typeof WorkspaceProjectsProjectIdRoute
     }
+    '/workspace/projects/$projectId/settings': {
+      id: '/workspace/projects/$projectId/settings'
+      path: '/settings'
+      fullPath: '/workspace/projects/$projectId/settings'
+      preLoaderRoute: typeof WorkspaceProjectsProjectIdSettingsRouteImport
+      parentRoute: typeof WorkspaceProjectsProjectIdRoute
+    }
+    '/workspace/projects/$projectId/records': {
+      id: '/workspace/projects/$projectId/records'
+      path: '/records'
+      fullPath: '/workspace/projects/$projectId/records'
+      preLoaderRoute: typeof WorkspaceProjectsProjectIdRecordsRouteImport
+      parentRoute: typeof WorkspaceProjectsProjectIdRoute
+    }
     '/workspace/projects/$projectId/groups/$groupId': {
       id: '/workspace/projects/$projectId/groups/$groupId'
       path: '/groups/$groupId'
@@ -251,12 +291,18 @@ declare module '@tanstack/react-router' {
 }
 
 interface WorkspaceProjectsProjectIdRouteChildren {
+  WorkspaceProjectsProjectIdRecordsRoute: typeof WorkspaceProjectsProjectIdRecordsRoute
+  WorkspaceProjectsProjectIdSettingsRoute: typeof WorkspaceProjectsProjectIdSettingsRoute
   WorkspaceProjectsProjectIdIndexRoute: typeof WorkspaceProjectsProjectIdIndexRoute
   WorkspaceProjectsProjectIdGroupsGroupIdRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
 
 const WorkspaceProjectsProjectIdRouteChildren: WorkspaceProjectsProjectIdRouteChildren =
   {
+    WorkspaceProjectsProjectIdRecordsRoute:
+      WorkspaceProjectsProjectIdRecordsRoute,
+    WorkspaceProjectsProjectIdSettingsRoute:
+      WorkspaceProjectsProjectIdSettingsRoute,
     WorkspaceProjectsProjectIdIndexRoute: WorkspaceProjectsProjectIdIndexRoute,
     WorkspaceProjectsProjectIdGroupsGroupIdRoute:
       WorkspaceProjectsProjectIdGroupsGroupIdRoute,
