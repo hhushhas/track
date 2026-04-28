@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
-import { requireGroupMember, requireReviewer } from './lib/permissions'
+import { requireGroupMember, requireProjectMember, requireReviewer } from './lib/permissions'
 
 const recordType = v.union(
   v.literal('task'),
@@ -177,5 +177,42 @@ export const classifyDraft = mutation({
     })
 
     return recordId
+  },
+})
+
+export const updateStatus = mutation({
+  args: {
+    projectId: v.id('projects'),
+    recordId: v.id('records'),
+    actorId: v.id('users'),
+    status: v.union(
+      v.literal('open'),
+      v.literal('in_progress'),
+      v.literal('blocked'),
+      v.literal('done'),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectMember(ctx, args.projectId, args.actorId)
+    const record = await ctx.db.get(args.recordId)
+    if (!record || record.projectId !== args.projectId) throw new Error('record_not_found')
+    await requireGroupMember(ctx, record.groupId, args.actorId)
+
+    const before = { status: record.status }
+    await ctx.db.patch(args.recordId, {
+      status: args.status,
+      updatedAt: Date.now(),
+    })
+
+    await appendAuditEvent(ctx, {
+      projectId: args.projectId,
+      groupId: record.groupId,
+      actorId: args.actorId,
+      entityType: 'record',
+      entityId: args.recordId,
+      action: 'record.status_updated',
+      before,
+      after: { status: args.status },
+    })
   },
 })

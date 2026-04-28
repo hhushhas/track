@@ -1,87 +1,143 @@
-import { demoAuditEvents, demoRecords } from '@track/shared';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useMutation, useQuery } from 'convex/react';
+import { useEffect, useMemo, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { api } from '../../../../convex/_generated/api';
+import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-
-type DraftRecord = {
-  id: string;
-  title: string;
-  type: string;
-  evidence: string;
-  status: 'pending' | 'accepted' | 'declined';
-};
-
-type ProjectRecord = {
-  id: string;
-  type: string;
-  title: string;
-  classification: string;
-  status: string;
-  owner: string;
-  evidence: readonly string[] | string[];
-};
+import { authClient } from '@/lib/auth-client';
 
 export default function RecordScreen() {
   const theme = useTheme();
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [drafts, setDrafts] = useState<DraftRecord[]>([
-    {
-      id: 'DR-208',
-      title: 'Invoice audit trail in export',
-      type: 'scope_change',
-      evidence: 'Amina requested invoice audit trail inclusion.',
-      status: 'pending',
-    },
-    {
-      id: 'DR-207',
-      title: 'Client summary PDF separate from full audit packet',
-      type: 'decision',
-      evidence: 'Hasan confirmed the export split in General.',
-      status: 'pending',
-    },
-  ]);
-  const [records, setRecords] = useState<ProjectRecord[]>([...demoRecords]);
+  const session = authClient.useSession();
+  const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
+  const requestExport = useMutation(api.exports.request);
+  const updateRecordStatus = useMutation(api.records.updateStatus);
+  const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<Id<'projects'> | null>(null);
+  const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [uiError, setUiError] = useState<string | null>(null);
 
-  function acceptDraft(draftId: string, classification: string) {
-    const draft = drafts.find((item) => item.id === draftId);
-    if (!draft) return;
-    setDrafts((current) =>
-      current.map((item) => (item.id === draftId ? { ...item, status: 'accepted' } : item)),
-    );
-    setRecords((current) => [
-      {
-        id: draft.id.replace('DR', 'REC'),
-        type: draft.type,
-        title: draft.title,
-        classification,
-        status: 'accepted',
-        owner: 'Hasan Shoaib',
-        evidence: [draft.evidence],
-      },
-      ...current,
-    ]);
+  const trackUser = useQuery(api.auth.getCurrentUser);
+  const projects = useQuery(api.projects.list, trackUserId ? { userId: trackUserId } : 'skip');
+  const records = useQuery(
+    api.records.listProjectRecords,
+    trackUserId && activeProjectId ? { userId: trackUserId, projectId: activeProjectId } : 'skip',
+  );
+  const exports = useQuery(
+    api.exports.list,
+    trackUserId && activeProjectId ? { userId: trackUserId, projectId: activeProjectId } : 'skip',
+  );
+  const auditEvents = useQuery(
+    api.audit.listProjectEvents,
+    trackUserId && activeProjectId ? { userId: trackUserId, projectId: activeProjectId, limit: 50 } : 'skip',
+  );
+  const exportDownloadUrl = useQuery(
+    api.exports.getDownloadUrl,
+    trackUserId && latestExportId ? { userId: trackUserId, exportId: latestExportId } : 'skip',
+  );
+
+  const projectItems = useMemo(
+    () =>
+      (projects ?? []) as Array<{
+        project: Doc<'projects'>;
+        membership: Doc<'projectMembers'>;
+      }>,
+    [projects],
+  );
+  const projectRecords = useMemo(() => (records ?? []) as Array<Doc<'records'>>, [records]);
+  const projectExports = useMemo(() => (exports ?? []) as Array<Doc<'exports'>>, [exports]);
+  const projectAuditEvents = useMemo(() => (auditEvents ?? []) as Array<Doc<'auditEvents'>>, [auditEvents]);
+  const activeProject = projectItems.find((item) => item.project._id === activeProjectId);
+  const latestCompletedExport = projectExports.find((exportJob) => exportJob.status === 'completed') ?? null;
+
+  useEffect(() => {
+    if (!session.data || trackUserId) return;
+    void ensureCurrentUser().then(setTrackUserId).catch(setActionError);
+  }, [ensureCurrentUser, session.data, trackUserId]);
+
+  useEffect(() => {
+    if (trackUser?._id && trackUser._id !== trackUserId) setTrackUserId(trackUser._id);
+  }, [trackUser?._id, trackUserId]);
+
+  useEffect(() => {
+    if (!projectItems.length || activeProjectId) return;
+    setActiveProjectId(projectItems[0]?.project._id ?? null);
+  }, [activeProjectId, projectItems]);
+
+  useEffect(() => {
+    if (!latestCompletedExport || latestExportId) return;
+    setLatestExportId(latestCompletedExport._id);
+  }, [latestCompletedExport, latestExportId]);
+
+  function setActionError(error: unknown) {
+    setUiError(error instanceof Error ? error.message : 'Something went wrong');
   }
 
-  const pendingDrafts = drafts.filter((draft) => draft.status === 'pending');
+  async function withBusy(label: string, action: () => Promise<unknown>) {
+    setBusyAction(label);
+    setUiError(null);
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function createExport(format: 'csv' | 'pdf') {
+    if (!trackUserId || !activeProjectId) return;
+    await withBusy(`export-${format}`, async () => {
+      const exportId = await requestExport({
+        projectId: activeProjectId,
+        userId: trackUserId,
+        format,
+        preset: format === 'pdf' ? 'full_audit_packet' : 'client_summary',
+      });
+      setLatestExportId(exportId);
+    });
+  }
+
+  async function setRecordStatus(
+    recordId: Id<'records'>,
+    status: 'open' | 'in_progress' | 'blocked' | 'done',
+  ) {
+    if (!trackUserId || !activeProjectId) return;
+    await withBusy(`record-${recordId}`, async () => {
+      await updateRecordStatus({ projectId: activeProjectId, actorId: trackUserId, recordId, status });
+    });
+  }
+
+  if (session.isPending) return <CenteredState label="Checking your session" />;
+  if (!session.data) {
+    return (
+      <CenteredState
+        actionLabel="Continue with Google"
+        label="Sign in to view the Project Record"
+        onAction={() => void authClient.signIn.social({ provider: 'google', callbackURL: '/' })}
+      />
+    );
+  }
 
   return (
     <ThemedView style={styles.screen}>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <View style={[styles.header, { borderBottomColor: theme.hairline }]}>
-          <View>
+          <View style={styles.headerTitle}>
             <ThemedText type="code" themeColor="textSecondary">
               Project Record
             </ThemedText>
-            <ThemedText type="subtitle">Reviewed evidence</ThemedText>
+            <ThemedText type="subtitle">{activeProject?.project.name ?? 'Track'}</ThemedText>
           </View>
-          <Pressable style={[styles.exportButton, { backgroundColor: theme.text }]}>
+          <Pressable onPress={() => void createExport('pdf')} style={[styles.exportButton, { backgroundColor: theme.text }]}>
             <ThemedText type="smallBold" style={{ color: theme.background }}>
-              Export
+              PDF
             </ThemedText>
           </Pressable>
         </View>
@@ -89,93 +145,85 @@ export default function RecordScreen() {
         <ScrollView
           contentContainerStyle={[styles.content, { paddingBottom: BottomTabInset + Spacing.five }]}
           showsVerticalScrollIndicator={false}>
+          {uiError ? (
+            <ThemedView type="backgroundElement" style={[styles.panel, { borderColor: theme.hairline }]}>
+              <ThemedText type="small">{uiError}</ThemedText>
+            </ThemedView>
+          ) : null}
+
+          <ScrollView horizontal contentContainerStyle={styles.projectRail} showsHorizontalScrollIndicator={false}>
+            {projectItems.map((item) => (
+              <Pressable key={item.project._id} onPress={() => setActiveProjectId(item.project._id)}>
+                <ThemedView
+                  type={item.project._id === activeProjectId ? 'backgroundSelected' : 'backgroundElement'}
+                  style={[
+                    styles.projectPill,
+                    { borderColor: item.project._id === activeProjectId ? theme.accent : theme.hairline },
+                  ]}>
+                  <ThemedText type="smallBold">{item.project.name}</ThemedText>
+                  <ThemedText type="code" themeColor="textSecondary">
+                    {item.membership.role}
+                  </ThemedText>
+                </ThemedView>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <View style={styles.metrics}>
+            <Metric label="Records" value={projectRecords.length} />
+            <Metric
+              label="Billable"
+              value={projectRecords.filter((record) => record.classification === 'billable_scope').length}
+            />
+            <Metric
+              label="Open"
+              value={projectRecords.filter((record) => record.status !== 'done').length}
+            />
+          </View>
+
           <ThemedView type="backgroundElement" style={[styles.panel, { borderColor: theme.hairline }]}>
             <ThemedText type="code" themeColor="textSecondary">
-              Invite
+              Exports
             </ThemedText>
-            <View style={styles.inviteRow}>
-              <TextInput
-                onChangeText={setInviteEmail}
-                placeholder="person@client.com"
-                placeholderTextColor={theme.textSecondary}
-                style={[
-                  styles.inviteInput,
-                  {
-                    borderColor: theme.hairline,
-                    color: theme.text,
-                    backgroundColor: theme.background,
-                  },
-                ]}
-                value={inviteEmail}
-              />
-              <Pressable style={[styles.inviteButton, { backgroundColor: theme.accent }]}>
-                <ThemedText type="smallBold" style={{ color: '#1b1917' }}>
-                  Send
-                </ThemedText>
+            <View style={styles.actions}>
+              <Pressable
+                disabled={busyAction === 'export-csv'}
+                onPress={() => void createExport('csv')}
+                style={[styles.actionButton, { borderColor: theme.hairline }]}>
+                <ThemedText type="code">CSV</ThemedText>
               </Pressable>
+              <Pressable
+                disabled={busyAction === 'export-pdf'}
+                onPress={() => void createExport('pdf')}
+                style={[styles.actionButton, { borderColor: theme.hairline }]}>
+                <ThemedText type="code">PDF</ThemedText>
+              </Pressable>
+              {exportDownloadUrl ? (
+                <Pressable onPress={() => void Linking.openURL(exportDownloadUrl)} style={[styles.actionButton, { borderColor: theme.accent }]}>
+                  <ThemedText type="code">Download</ThemedText>
+                </Pressable>
+              ) : latestExportId ? (
+                <ThemedText type="code" themeColor="textSecondary">
+                  Preparing export
+                </ThemedText>
+              ) : null}
             </View>
+            {projectExports.slice(0, 4).map((exportJob) => (
+              <ThemedText key={exportJob._id} type="small" themeColor="textSecondary">
+                {exportJob.format} / {exportJob.preset} / {exportJob.status}
+              </ThemedText>
+            ))}
           </ThemedView>
 
           <View style={styles.section}>
             <ThemedText type="code" themeColor="textSecondary">
-              Review Drafts
+              Accepted Records
             </ThemedText>
-            {pendingDrafts.map((draft) => (
-              <ThemedView
-                key={draft.id}
-                type="backgroundElement"
-                style={[styles.record, { borderColor: theme.hairline }]}>
+            {projectRecords.map((record) => (
+              <ThemedView key={record._id} type="backgroundElement" style={[styles.record, { borderColor: theme.hairline }]}>
                 <View style={styles.recordMeta}>
                   <ThemedText type="code" themeColor="textSecondary">
-                    {draft.id}
-                  </ThemedText>
-                  <ThemedView style={[styles.badge, { backgroundColor: theme.accentSoft }]}>
-                    <ThemedText type="code">{draft.type}</ThemedText>
-                  </ThemedView>
-                </View>
-                <ThemedText type="smallBold">{draft.title}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {draft.evidence}
-                </ThemedText>
-                <View style={styles.actions}>
-                  <Pressable
-                    onPress={() => acceptDraft(draft.id, 'billable_scope')}
-                    style={[styles.actionButton, { borderColor: theme.hairline }]}>
-                    <ThemedText type="code">Billable</ThemedText>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => acceptDraft(draft.id, 'official_record')}
-                    style={[styles.actionButton, { borderColor: theme.hairline }]}>
-                    <ThemedText type="code">Official</ThemedText>
-                  </Pressable>
-                  <Pressable
-                    onPress={() =>
-                      setDrafts((current) =>
-                        current.map((item) =>
-                          item.id === draft.id ? { ...item, status: 'declined' } : item,
-                        ),
-                      )
-                    }
-                    style={[styles.actionButton, { borderColor: theme.hairline }]}>
-                    <ThemedText type="code">Decline</ThemedText>
-                  </Pressable>
-                </View>
-              </ThemedView>
-            ))}
-          </View>
-
-          <View style={styles.section}>
-            <ThemedText type="code" themeColor="textSecondary">
-              Accepted Record
-            </ThemedText>
-            {records.map((record) => (
-              <ThemedView
-                key={record.id}
-                type="backgroundElement"
-                style={[styles.record, { borderColor: theme.hairline }]}>
-                <View style={styles.recordMeta}>
-                  <ThemedText type="code" themeColor="textSecondary">
-                    {record.id}
+                    {record._id.slice(-6)}
                   </ThemedText>
                   <ThemedView style={[styles.badge, { backgroundColor: theme.accentSoft }]}>
                     <ThemedText type="code">{record.classification}</ThemedText>
@@ -183,23 +231,31 @@ export default function RecordScreen() {
                 </View>
                 <ThemedText type="smallBold">{record.title}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {record.type} · {record.status} · {record.owner}
+                  {record.type} / {record.status}
                 </ThemedText>
+                <View style={styles.actions}>
+                  {(['open', 'in_progress', 'blocked', 'done'] as const).map((status) => (
+                    <Pressable
+                      key={status}
+                      onPress={() => void setRecordStatus(record._id, status)}
+                      style={[styles.actionButton, { borderColor: record.status === status ? theme.accent : theme.hairline }]}>
+                      <ThemedText type="code">{status}</ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
               </ThemedView>
             ))}
           </View>
 
-          <View style={styles.audit}>
+          <View style={styles.section}>
             <ThemedText type="code" themeColor="textSecondary">
               Audit Trail
             </ThemedText>
-            {demoAuditEvents.map((event) => (
-              <ThemedView
-                key={event}
-                type="backgroundElement"
-                style={[styles.auditItem, { borderColor: theme.hairline }]}>
+            {projectAuditEvents.map((event) => (
+              <ThemedView key={event._id} type="backgroundElement" style={[styles.auditItem, { borderColor: theme.hairline }]}>
+                <ThemedText type="smallBold">{event.action}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {event}
+                  {event.entityType} / {new Date(event.createdAt).toLocaleString()}
                 </ThemedText>
               </ThemedView>
             ))}
@@ -210,12 +266,54 @@ export default function RecordScreen() {
   );
 }
 
+function CenteredState({
+  actionLabel,
+  label,
+  onAction,
+}: {
+  actionLabel?: string;
+  label: string;
+  onAction?: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <ThemedView style={styles.centered}>
+      <ThemedText type="code" themeColor="textSecondary">
+        Track Record
+      </ThemedText>
+      <ThemedText type="subtitle">{label}</ThemedText>
+      {actionLabel ? (
+        <Pressable onPress={onAction} style={[styles.exportButton, { backgroundColor: theme.accent }]}>
+          <ThemedText type="smallBold" style={{ color: '#1b1917' }}>
+            {actionLabel}
+          </ThemedText>
+        </Pressable>
+      ) : null}
+    </ThemedView>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  const theme = useTheme();
+  return (
+    <ThemedView type="backgroundElement" style={[styles.metric, { borderColor: theme.hairline }]}>
+      <ThemedText type="subtitle">{value}</ThemedText>
+      <ThemedText type="code" themeColor="textSecondary">
+        {label}
+      </ThemedText>
+    </ThemedView>
+  );
+}
+
 const styles = StyleSheet.create({
-  screen: {
+  screen: { flex: 1 },
+  safeArea: { flex: 1 },
+  centered: {
     flex: 1,
-  },
-  safeArea: {
-    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.three,
+    padding: Spacing.five,
   },
   header: {
     borderBottomWidth: 1,
@@ -226,6 +324,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Spacing.three,
   },
+  headerTitle: { flex: 1 },
   exportButton: {
     borderRadius: 6,
     paddingHorizontal: Spacing.three,
@@ -235,27 +334,32 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     gap: Spacing.four,
   },
+  projectRail: {
+    gap: Spacing.two,
+  },
+  projectPill: {
+    minWidth: 148,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: Spacing.three,
+    gap: Spacing.one,
+  },
+  metrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  metric: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: Spacing.three,
+    minWidth: 96,
+  },
   panel: {
     borderWidth: 1,
     borderRadius: 8,
     padding: Spacing.three,
     gap: Spacing.two,
-  },
-  inviteRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  inviteInput: {
-    flex: 1,
-    minHeight: 40,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: Spacing.three,
-  },
-  inviteButton: {
-    borderRadius: 8,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
   },
   section: {
     gap: Spacing.two,
@@ -268,6 +372,7 @@ const styles = StyleSheet.create({
   },
   recordMeta: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.two,
   },
@@ -280,6 +385,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.two,
+    alignItems: 'center',
   },
   actionButton: {
     borderWidth: 1,
@@ -287,13 +393,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
-  audit: {
-    marginTop: Spacing.two,
-    gap: Spacing.two,
-  },
   auditItem: {
     borderWidth: 1,
     borderRadius: 8,
     padding: Spacing.three,
+    gap: Spacing.one,
   },
 });

@@ -126,6 +126,30 @@ export default defineSchema({
     .index('by_user', ['userId'])
     .index('by_group_user', ['groupId', 'userId']),
 
+  invitations: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.optional(v.id('groups')),
+    email: v.string(),
+    role: projectRole,
+    canReviewAiRecords: v.boolean(),
+    invitedBy: v.id('users'),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('accepted'),
+      v.literal('revoked'),
+      v.literal('expired'),
+    ),
+    token: v.string(),
+    expiresAt: v.number(),
+    acceptedBy: v.optional(v.id('users')),
+    acceptedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_project_status', ['projectId', 'status'])
+    .index('by_email_status', ['email', 'status'])
+    .index('by_token', ['token']),
+
   messages: defineTable({
     projectId: v.id('projects'),
     groupId: v.id('groups'),

@@ -80,6 +80,44 @@ export const create = mutation({
   },
 })
 
+export const updateAiReviewSettings = mutation({
+  args: {
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    enabled: v.boolean(),
+    frequencyMinutes: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectManager(ctx, args.projectId, args.userId)
+    await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
+    const frequencyMinutes = Math.max(5, Math.min(1440, Math.round(args.frequencyMinutes)))
+
+    await ctx.db.patch(args.groupId, {
+      aiReviewSettings: {
+        enabled: args.enabled,
+        frequencyMinutes,
+      },
+      updatedAt: Date.now(),
+    })
+
+    await appendAuditEvent(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      actorId: args.userId,
+      entityType: 'group',
+      entityId: args.groupId,
+      action: 'group.ai_review_settings_updated',
+      after: {
+        enabled: args.enabled,
+        frequencyMinutes,
+      },
+    })
+  },
+})
+
 export const addProjectMember = mutation({
   args: {
     projectId: v.id('projects'),

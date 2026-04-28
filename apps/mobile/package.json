@@ -17,10 +17,13 @@
     "docs": "echo \"docs checked via root product specs\""
   },
   "dependencies": {
+    "@better-auth/expo": "^1.6.9",
+    "@convex-dev/better-auth": "^0.12.0",
     "@react-navigation/bottom-tabs": "^7.15.5",
     "@react-navigation/elements": "^2.9.10",
     "@react-navigation/native": "^7.1.33",
     "@track/shared": "workspace:*",
+    "better-auth": "^1.6.9",
     "convex": "^1.36.1",
     "expo": "~55.0.17",
     "expo-auth-session": "^55.0.15",

@@ -21,6 +21,41 @@ export const list = query({
   },
 })
 
+export const listDetailed = query({
+  args: {
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireGroupMember(ctx, args.groupId, args.userId)
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .order('desc')
+      .take(args.limit ?? 50)
+
+    return await Promise.all(
+      messages.map(async (message) => {
+        const author = await ctx.db.get(message.authorId)
+        const attachments = await Promise.all(
+          message.attachmentIds.map(async (attachmentId) => {
+            const attachment = await ctx.db.get(attachmentId)
+            if (!attachment) return null
+            const url = await ctx.storage.getUrl(attachment.storageId)
+            return { attachment, url }
+          }),
+        )
+        return {
+          message,
+          author,
+          attachments: attachments.filter((attachment) => attachment !== null),
+        }
+      }),
+    )
+  },
+})
+
 export const send = mutation({
   args: {
     projectId: v.id('projects'),

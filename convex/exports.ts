@@ -1,10 +1,11 @@
 import { v } from 'convex/values'
 
 import { internal } from './_generated/api'
-import { action, internalMutation, internalQuery, mutation, query } from './_generated/server'
+import { internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { rateLimiter } from './lib/rateLimit'
 import { requireProjectMember } from './lib/permissions'
+import type { Doc } from './_generated/dataModel'
 
 export const list = query({
   args: {
@@ -57,7 +58,23 @@ export const request = mutation({
       },
     })
 
+    await ctx.scheduler.runAfter(0, internal.exports.generate, { exportId })
+
     return exportId
+  },
+})
+
+export const getDownloadUrl = query({
+  args: {
+    exportId: v.id('exports'),
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const exportJob = await ctx.db.get(args.exportId)
+    if (!exportJob) throw new Error('export_not_found')
+    await requireProjectMember(ctx, exportJob.projectId, args.userId)
+    if (!exportJob.storageId) return null
+    return await ctx.storage.getUrl(exportJob.storageId)
   },
 })
 
@@ -127,7 +144,9 @@ function csvCell(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`
 }
 
-function buildCsv(data: Awaited<ReturnType<typeof collectData._handler>>) {
+function buildCsv(data: {
+  records: Array<Doc<'records'>>
+}) {
   const rows = [
     ['Record ID', 'Type', 'Classification', 'Status', 'Title', 'Description'],
     ...data.records.map((record) => [
@@ -190,7 +209,12 @@ function buildSimplePdf(lines: string[]) {
   return `%PDF-1.4\n${objects.join('')}${xref}`
 }
 
-function buildPdf(data: Awaited<ReturnType<typeof collectData._handler>>) {
+function buildPdf(data: {
+  exportJob: Doc<'exports'>
+  project: Doc<'projects'> | null
+  records: Array<Doc<'records'>>
+  auditEvents: Array<Doc<'auditEvents'>>
+}) {
   const projectName = data.project?.name ?? 'Track Project'
   const recordLines = data.records.map(
     (record) =>
@@ -213,7 +237,7 @@ function buildPdf(data: Awaited<ReturnType<typeof collectData._handler>>) {
   ])
 }
 
-export const generate = action({
+export const generate = internalAction({
   args: {
     exportId: v.id('exports'),
   },

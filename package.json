@@ -35,6 +35,8 @@
     "@convex-dev/better-auth": "^0.12.0",
     "@convex-dev/rate-limiter": "^0.3.2",
     "@openrouter/ai-sdk-provider": "^2.8.1",
-    "ai": "^6.0.168"
+    "ai": "^6.0.168",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
   }
 }

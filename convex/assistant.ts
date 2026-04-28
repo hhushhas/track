@@ -121,17 +121,17 @@ export const draftModelAnswer = action({
     userId: v.id('users'),
     question: v.string(),
   },
-  handler: async (ctx, args) => {
-    const messages = await ctx.runQuery(api.messages.list, {
+  handler: async (ctx, args): Promise<string> => {
+    const messages: Array<{ authorId: string; body: string }> = await ctx.runQuery(api.messages.list, {
       groupId: args.groupId,
       userId: args.userId,
       limit: 40,
     })
     const transcript = messages
       .reverse()
-      .map((message) => `${message.authorId}: ${message.body}`)
+      .map((message: { authorId: string; body: string }) => `${message.authorId}: ${message.body}`)
       .join('\n')
-    return await generateTrackText(
+    const result = await generateTrackText(
       [
         'You are Track Assistant. Answer naturally with yes/no when supported.',
         'Use only the supplied conversation evidence. If evidence is insufficient, say so.',
@@ -141,5 +141,6 @@ export const draftModelAnswer = action({
         `Conversation:\n${transcript}`,
       ].join('\n'),
     )
+    return result.text
   },
 })

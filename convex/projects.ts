@@ -110,6 +110,72 @@ export const create = mutation({
   },
 })
 
+export const ensureStarter = mutation({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const existingMembership = await ctx.db
+      .query('projectMembers')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .first()
+
+    if (existingMembership) return existingMembership.projectId
+
+    const now = Date.now()
+    const projectId = await ctx.db.insert('projects', {
+      name: 'Q9 Track',
+      clientLabel: 'Internal product build',
+      createdBy: args.userId,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await ctx.db.insert('projectMembers', {
+      projectId,
+      userId: args.userId,
+      role: 'owner',
+      canReviewAiRecords: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    for (const group of defaultGroups) {
+      const groupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: group.kind,
+        name: group.name,
+        aiReviewSettings: {
+          enabled: true,
+          frequencyMinutes: 30,
+        },
+        createdBy: args.userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      await ctx.db.insert('groupMembers', {
+        projectId,
+        groupId,
+        userId: args.userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    await appendAuditEvent(ctx, {
+      projectId,
+      actorId: args.userId,
+      entityType: 'project',
+      entityId: projectId,
+      action: 'project.created',
+      after: { name: 'Q9 Track', clientLabel: 'Internal product build' },
+    })
+
+    return projectId
+  },
+})
+
 export const getOverview = query({
   args: {
     projectId: v.id('projects'),

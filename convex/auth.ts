@@ -39,6 +39,54 @@ export const getAuthUser = query({
   },
 })
 
+function getAuthUserDisplayName(authUser: {
+  name?: string | null
+  email?: string | null
+}) {
+  return authUser.name ?? authUser.email?.split('@')[0] ?? 'Track User'
+}
+
+export const ensureCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const authUser = await authComponent.getAuthUser(ctx)
+    const now = Date.now()
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))
+      .unique()
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        email: authUser.email ?? existing.email,
+        displayName: getAuthUserDisplayName(authUser),
+        updatedAt: now,
+      })
+      return existing._id
+    }
+
+    return await ctx.db.insert('users', {
+      googleSubject: authUser._id,
+      email: authUser.email ?? '',
+      displayName: getAuthUserDisplayName(authUser),
+      twoFactorEnabled: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+export const getCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const authUser = await authComponent.getAuthUser(ctx)
+    return await ctx.db
+      .query('users')
+      .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))
+      .unique()
+  },
+})
+
 export const syncGoogleUser = mutation({
   args: {
     googleSubject: v.string(),
