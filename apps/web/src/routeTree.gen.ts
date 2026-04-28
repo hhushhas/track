@@ -9,13 +9,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspaceProjectsProjectIdRouteImport } from './routes/workspace.projects.$projectId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as WorkspaceProjectsProjectIdIndexRouteImport } from './routes/workspace.projects.$projectId.index'
+import { Route as WorkspaceProjectsProjectIdGroupsGroupIdRouteImport } from './routes/workspace.projects.$projectId.groups.$groupId'
 
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TwoFactorRoute = TwoFactorRouteImport.update({
   id: '/two-factor',
   path: '/two-factor',
@@ -41,11 +50,29 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceProjectsProjectIdRoute =
+  WorkspaceProjectsProjectIdRouteImport.update({
+    id: '/projects/$projectId',
+    path: '/projects/$projectId',
+    getParentRoute: () => WorkspaceRoute,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceProjectsProjectIdIndexRoute =
+  WorkspaceProjectsProjectIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => WorkspaceProjectsProjectIdRoute,
+  } as any)
+const WorkspaceProjectsProjectIdGroupsGroupIdRoute =
+  WorkspaceProjectsProjectIdGroupsGroupIdRouteImport.update({
+    id: '/groups/$groupId',
+    path: '/groups/$groupId',
+    getParentRoute: () => WorkspaceProjectsProjectIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -53,7 +80,11 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
+  '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
+  '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -61,7 +92,10 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdIndexRoute
+  '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -70,7 +104,11 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
+  '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
+  '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -80,9 +118,22 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sign-in'
     | '/two-factor'
+    | '/workspace'
     | '/api/auth/$'
+    | '/workspace/projects/$projectId'
+    | '/workspace/projects/$projectId/'
+    | '/workspace/projects/$projectId/groups/$groupId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/privacy' | '/sign-in' | '/two-factor' | '/api/auth/$'
+  to:
+    | '/'
+    | '/about'
+    | '/privacy'
+    | '/sign-in'
+    | '/two-factor'
+    | '/workspace'
+    | '/api/auth/$'
+    | '/workspace/projects/$projectId'
+    | '/workspace/projects/$projectId/groups/$groupId'
   id:
     | '__root__'
     | '/'
@@ -90,7 +141,11 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sign-in'
     | '/two-factor'
+    | '/workspace'
     | '/api/auth/$'
+    | '/workspace/projects/$projectId'
+    | '/workspace/projects/$projectId/'
+    | '/workspace/projects/$projectId/groups/$groupId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -99,11 +154,19 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   SignInRoute: typeof SignInRoute
   TwoFactorRoute: typeof TwoFactorRoute
+  WorkspaceRoute: typeof WorkspaceRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workspace': {
+      id: '/workspace'
+      path: '/workspace'
+      fullPath: '/workspace'
+      preLoaderRoute: typeof WorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/two-factor': {
       id: '/two-factor'
       path: '/two-factor'
@@ -139,6 +202,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/projects/$projectId': {
+      id: '/workspace/projects/$projectId'
+      path: '/projects/$projectId'
+      fullPath: '/workspace/projects/$projectId'
+      preLoaderRoute: typeof WorkspaceProjectsProjectIdRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -146,8 +216,51 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/projects/$projectId/': {
+      id: '/workspace/projects/$projectId/'
+      path: '/'
+      fullPath: '/workspace/projects/$projectId/'
+      preLoaderRoute: typeof WorkspaceProjectsProjectIdIndexRouteImport
+      parentRoute: typeof WorkspaceProjectsProjectIdRoute
+    }
+    '/workspace/projects/$projectId/groups/$groupId': {
+      id: '/workspace/projects/$projectId/groups/$groupId'
+      path: '/groups/$groupId'
+      fullPath: '/workspace/projects/$projectId/groups/$groupId'
+      preLoaderRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdRouteImport
+      parentRoute: typeof WorkspaceProjectsProjectIdRoute
+    }
   }
 }
+
+interface WorkspaceProjectsProjectIdRouteChildren {
+  WorkspaceProjectsProjectIdIndexRoute: typeof WorkspaceProjectsProjectIdIndexRoute
+  WorkspaceProjectsProjectIdGroupsGroupIdRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
+}
+
+const WorkspaceProjectsProjectIdRouteChildren: WorkspaceProjectsProjectIdRouteChildren =
+  {
+    WorkspaceProjectsProjectIdIndexRoute: WorkspaceProjectsProjectIdIndexRoute,
+    WorkspaceProjectsProjectIdGroupsGroupIdRoute:
+      WorkspaceProjectsProjectIdGroupsGroupIdRoute,
+  }
+
+const WorkspaceProjectsProjectIdRouteWithChildren =
+  WorkspaceProjectsProjectIdRoute._addFileChildren(
+    WorkspaceProjectsProjectIdRouteChildren,
+  )
+
+interface WorkspaceRouteChildren {
+  WorkspaceProjectsProjectIdRoute: typeof WorkspaceProjectsProjectIdRouteWithChildren
+}
+
+const WorkspaceRouteChildren: WorkspaceRouteChildren = {
+  WorkspaceProjectsProjectIdRoute: WorkspaceProjectsProjectIdRouteWithChildren,
+}
+
+const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
+  WorkspaceRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -155,6 +268,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   SignInRoute: SignInRoute,
   TwoFactorRoute: TwoFactorRoute,
+  WorkspaceRoute: WorkspaceRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

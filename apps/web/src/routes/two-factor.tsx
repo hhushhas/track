@@ -30,7 +30,7 @@ function TwoFactor() {
                 setMessage(error.message ?? 'Invalid two-factor code.')
                 return
               }
-              window.location.href = '/'
+              window.location.href = '/workspace'
             })
           }}
         >
