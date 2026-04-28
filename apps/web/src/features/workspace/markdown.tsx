@@ -3,10 +3,12 @@ import type { ReactNode } from 'react'
 export function MarkdownText({
   className,
   renderCitation,
+  renderMention,
   text,
 }: {
   className?: string
   renderCitation?: (citationId: string, index: number) => ReactNode
+  renderMention?: (handle: string, index: number) => ReactNode
   text: string
 }) {
   const lines = text.split(/\r?\n/)
@@ -52,7 +54,7 @@ export function MarkdownText({
         block.kind === 'list' ? (
           <ul key={`list-${blockIndex}`}>
             {block.items.map((item, itemIndex) => (
-              <li key={`${item}-${itemIndex}`}>{renderMarkdownInline(item, renderCitation)}</li>
+              <li key={`${item}-${itemIndex}`}>{renderMarkdownInline(item, renderCitation, renderMention)}</li>
             ))}
           </ul>
         ) : (
@@ -60,7 +62,7 @@ export function MarkdownText({
             {block.text.split('\n').map((line, lineIndex) => (
               <span key={`${line}-${lineIndex}`}>
                 {lineIndex > 0 ? <br /> : null}
-                {renderMarkdownInline(line, renderCitation)}
+                {renderMarkdownInline(line, renderCitation, renderMention)}
               </span>
             ))}
           </p>
@@ -73,6 +75,7 @@ export function MarkdownText({
 function renderMarkdownInline(
   text: string,
   renderCitation?: (citationId: string, index: number) => ReactNode,
+  renderMention?: (handle: string, index: number) => ReactNode,
 ): ReactNode[] {
   const tokenPattern =
     /(\[[a-z0-9]+\]|\[[^\]]+\]\([^)]+\)|@[a-z0-9._-]+|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/gi
@@ -83,6 +86,8 @@ function renderMarkdownInline(
     if (citationMatch && renderCitation) return renderCitation(citationMatch[1], index)
 
     if (/^@[a-z0-9._-]+$/i.test(part)) {
+      if (renderMention) return renderMention(part.slice(1).toLowerCase(), index)
+
       return (
         <span
           className={part.toLowerCase() === '@track' ? 'track-mention-inline track' : 'track-mention-inline'}
@@ -107,11 +112,11 @@ function renderMarkdownInline(
     }
 
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`${part}-${index}`}>{renderMarkdownInline(part.slice(2, -2), renderCitation)}</strong>
+      return <strong key={`${part}-${index}`}>{renderMarkdownInline(part.slice(2, -2), renderCitation, renderMention)}</strong>
     }
 
     if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={`${part}-${index}`}>{renderMarkdownInline(part.slice(1, -1), renderCitation)}</em>
+      return <em key={`${part}-${index}`}>{renderMarkdownInline(part.slice(1, -1), renderCitation, renderMention)}</em>
     }
 
     return <span key={`${part}-${index}`}>{part}</span>

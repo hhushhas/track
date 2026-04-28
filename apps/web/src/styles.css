@@ -361,7 +361,7 @@ button {
 .icon-button:active,
 .group-button:active {
   box-shadow: none;
-  transform: translateY(0);
+  transform: translateY(0) scale(0.98);
 }
 
 .track-button:focus-visible,
@@ -1289,10 +1289,71 @@ button {
 }
 
 .track-thread-scroll {
+  position: relative;
   min-height: 0;
   flex: 1;
   overflow-y: auto;
   padding: 18px 32px;
+  scroll-behavior: smooth;
+}
+
+.track-jump-latest {
+  position: sticky;
+  z-index: 4;
+  bottom: 14px;
+  display: flex;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  align-items: center;
+  justify-content: center;
+  margin: -38px 4px 0 auto;
+  padding: 0;
+  border-color: rgba(240, 177, 0, 0.58);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 10px 28px rgba(27, 25, 23, 0.18);
+  color: var(--ink);
+  animation: track-jump-latest-enter 180ms ease-out both;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.track-jump-latest:hover,
+.track-jump-latest:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  box-shadow: 0 10px 28px rgba(27, 25, 23, 0.2);
+  transform: translateY(-2px);
+}
+
+.track-jump-latest:active {
+  transform: translateY(0) scale(0.96);
+}
+
+@keyframes track-jump-latest-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes track-thread-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .track-group-gallery-scroll {
@@ -1513,6 +1574,7 @@ button {
   display: flex;
   gap: 10px;
   align-items: flex-start;
+  animation: track-thread-item-enter 180ms ease-out both;
 }
 
 .track-message-avatar.bot {
@@ -1560,22 +1622,194 @@ button {
 .track-attachment-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
-.track-attachment-list a,
-.track-attachment-list span {
-  display: inline-flex;
+.track-attachment-card {
+  display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  min-width: min(220px, 100%);
   border: 1px solid var(--hairline-strong);
-  border-radius: 5px;
+  border-radius: 7px;
   background: var(--paper-2);
   color: var(--ink-2);
-  font-size: 11px;
-  padding: 4px 7px;
+  padding: 7px;
   text-decoration: none;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.track-attachment-card:hover {
+  border-color: rgba(240, 177, 0, 0.5);
+  background: var(--accent-tint);
+  transform: translateY(-1px);
+}
+
+.track-attachment-card:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.track-attachment-card.image {
+  width: 154px;
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.track-attachment-card.file {
+  max-width: 100%;
+}
+
+.track-attachment-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--paper);
+}
+
+.track-attachment-card span:not(.track-attachment-file-icon) {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.track-attachment-card strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-attachment-card small {
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.track-attachment-file-icon {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: transparent;
+}
+
+.track-attachment-type-icon {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  min-width: 34px;
+  min-height: 34px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, currentColor 10%, var(--paper));
+  color: var(--ink-3);
+}
+
+.track-attachment-type-icon small {
+  display: block;
+  max-width: 30px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.track-attachment-type-icon.pdf {
+  color: #bd2f2f;
+}
+
+.track-attachment-type-icon.doc {
+  color: #2d5fb8;
+}
+
+.track-attachment-type-icon.sheet {
+  color: #1f7a4d;
+}
+
+.track-attachment-type-icon.slides {
+  color: #b56816;
+}
+
+.track-attachment-type-icon.google {
+  color: #2563eb;
+}
+
+.track-attachment-type-icon.html,
+.track-attachment-type-icon.code {
+  color: #7a3fb0;
+}
+
+.track-attachment-type-icon.data {
+  color: #476170;
+}
+
+.track-attachment-type-icon.markdown {
+  color: #2f6675;
+}
+
+.track-attachment-type-icon.text {
+  color: #59635c;
+}
+
+.track-attachment-type-icon.audio {
+  color: #b0457d;
+}
+
+.track-attachment-type-icon.video {
+  color: #9a3f4c;
+}
+
+.track-attachment-type-icon.archive {
+  color: #82612a;
+}
+
+.track-attachment-type-icon.design {
+  color: #b34c87;
+}
+
+.track-attachment-type-icon.font {
+  color: #5263b5;
+}
+
+.track-attachment-type-icon.ebook {
+  color: #65752b;
+}
+
+.track-attachment-type-icon.secret {
+  color: #8f5132;
+}
+
+.track-attachment-type-icon.cad {
+  color: #31716c;
+}
+
+.track-attachment-type-icon.file {
+  color: #5f635f;
+}
+
+.track-attachment-type-icon.image {
+  color: #7a5c10;
 }
 
 .track-role-chip,
@@ -1956,7 +2190,9 @@ button {
 
 .track-citation-chip {
   display: inline-flex;
+  max-width: min(360px, 100%);
   align-items: center;
+  gap: 6px;
   min-height: 22px;
   margin: 0 3px;
   border: 1px solid rgba(240, 177, 0, 0.5);
@@ -1969,6 +2205,25 @@ button {
   line-height: 1;
   padding: 0 6px;
   vertical-align: middle;
+}
+
+.track-citation-source,
+.track-citation-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-citation-source {
+  flex: 0 0 auto;
+}
+
+.track-citation-preview {
+  color: var(--ink-3);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 button.track-citation-chip {
@@ -1990,18 +2245,89 @@ button.track-citation-chip:hover {
 .track-mention-inline {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   min-height: 20px;
+  border: 0;
   margin: 0 1px;
   border-radius: 4px;
   background: var(--paper);
   color: var(--ink);
+  cursor: default;
+  font: inherit;
   font-weight: 650;
   padding: 0 4px;
+}
+
+button.track-mention-inline {
+  cursor: pointer;
+  transition:
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    transform 140ms ease;
 }
 
 .track-mention-inline.track {
   background: var(--accent-tint);
   color: #7a5800;
+}
+
+.track-mention-inline.group.sun,
+.track-mention-inline.group.amber,
+.track-mention-inline.group.orange,
+.track-mention-inline.group.yellow {
+  background: #b45309;
+  color: #fff7ed;
+}
+
+.track-mention-inline.group.sky,
+.track-mention-inline.group.blue {
+  background: #1d4ed8;
+  color: #eff6ff;
+}
+
+.track-mention-inline.group.mint,
+.track-mention-inline.group.emerald,
+.track-mention-inline.group.green,
+.track-mention-inline.group.lime {
+  background: #15803d;
+  color: #f0fdf4;
+}
+
+.track-mention-inline.group.rose,
+.track-mention-inline.group.red,
+.track-mention-inline.group.pink {
+  background: #be123c;
+  color: #fff1f2;
+}
+
+.track-mention-inline.group.indigo,
+.track-mention-inline.group.violet,
+.track-mention-inline.group.purple {
+  background: #6d28d9;
+  color: #faf5ff;
+}
+
+.track-mention-inline.group.slate,
+.track-mention-inline.group.stone,
+.track-mention-inline.group.zinc {
+  background: #57534e;
+  color: #fafaf9;
+}
+
+.track-mention-inline.group.cyan,
+.track-mention-inline.group.teal {
+  background: #0e7490;
+  color: #ecfeff;
+}
+
+button.track-mention-inline.group:hover,
+button.track-mention-inline.group:focus-visible {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, currentColor 42%, transparent),
+    0 2px 7px rgba(27, 25, 23, 0.16);
+  filter: saturate(1.08) brightness(1.04);
+  outline: 0;
+  transform: translateY(-1px);
 }
 
 .track-markdown {
@@ -2084,6 +2410,94 @@ button.track-citation-chip:hover {
   border-color: var(--ink-4);
 }
 
+.track-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--hairline);
+  padding: 9px 10px;
+}
+
+.track-composer-attachment {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: min(238px, 100%);
+  min-height: 54px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: var(--paper-2);
+  padding: 5px 6px;
+}
+
+.track-composer-attachment img,
+.track-composer-file-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 5px;
+  background: transparent;
+}
+
+.track-composer-attachment img {
+  display: block;
+  object-fit: cover;
+}
+
+.track-composer-file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.track-composer-attachment-meta {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.track-composer-attachment-meta strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-composer-attachment-meta small {
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.track-composer-attachment-remove {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.track-composer-attachment-remove:hover,
+.track-composer-attachment-remove:focus-visible {
+  border-color: rgba(190, 55, 45, 0.35);
+  background: rgba(190, 55, 45, 0.08);
+  color: var(--danger);
+  outline: 0;
+}
+
 .track-composer textarea {
   display: block;
   width: 100%;
@@ -2101,21 +2515,42 @@ button.track-citation-chip:hover {
 
 .track-mention-menu {
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: calc(100% - 1px);
+  left: 10px;
+  right: 10px;
+  bottom: calc(100% + 8px);
   z-index: 5;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  max-height: 138px;
+  gap: 4px;
+  max-height: 176px;
   overflow-y: auto;
   border: 1px solid var(--hairline-strong);
-  border-bottom-color: var(--hairline);
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px;
   background: var(--paper);
-  box-shadow: 0 -10px 24px rgba(27, 25, 23, 0.1);
-  padding: 3px;
+  box-shadow: 0 -14px 28px rgba(27, 25, 23, 0.16);
+  padding: 7px;
+}
+
+.track-mention-section {
+  display: grid;
+  gap: 4px;
+}
+
+.track-mention-section + .track-mention-section {
+  border-top: 1px solid var(--hairline);
+  padding-top: 6px;
+}
+
+.track-mention-section-label {
+  margin: 0;
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 2px 4px;
+  text-transform: uppercase;
 }
 
 .track-mention-option {
@@ -2128,18 +2563,25 @@ button.track-citation-chip:hover {
   background: transparent;
   color: var(--ink);
   cursor: pointer;
-  min-height: 40px;
-  padding: 5px 7px;
+  min-height: 50px;
+  padding: 7px 9px;
   text-align: left;
   transition:
     background-color 140ms ease,
-    border-color 140ms ease;
+    border-color 140ms ease,
+    transform 140ms ease;
 }
 
 .track-mention-option:hover,
 .track-mention-option.active {
-  border-color: rgba(240, 177, 0, 0.45);
-  background: var(--accent-tint);
+  border-color: rgba(240, 177, 0, 0.58);
+  background: rgba(240, 177, 0, 0.14);
+  box-shadow: inset 3px 0 0 var(--accent);
+  transform: translateX(2px);
+}
+
+.track-mention-option:active {
+  transform: translateX(0) scale(0.99);
 }
 
 .track-mention-option span {
@@ -2199,6 +2641,55 @@ button.track-citation-chip:hover {
 .track-mention-avatar.bot {
   background: var(--accent);
   color: var(--ink);
+}
+
+.track-mention-avatar.sun,
+.track-mention-avatar.amber,
+.track-mention-avatar.orange,
+.track-mention-avatar.yellow {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.track-mention-avatar.sky,
+.track-mention-avatar.blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.track-mention-avatar.mint,
+.track-mention-avatar.emerald,
+.track-mention-avatar.green,
+.track-mention-avatar.lime {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.track-mention-avatar.rose,
+.track-mention-avatar.red,
+.track-mention-avatar.pink {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.track-mention-avatar.indigo,
+.track-mention-avatar.violet,
+.track-mention-avatar.purple {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.track-mention-avatar.slate,
+.track-mention-avatar.stone,
+.track-mention-avatar.zinc {
+  background: #e7e5e4;
+  color: #57534e;
+}
+
+.track-mention-avatar.cyan,
+.track-mention-avatar.teal {
+  background: #cffafe;
+  color: #0e7490;
 }
 
 .track-mention-avatar [data-slot="avatar-fallback"] {
@@ -3214,6 +3705,27 @@ button:disabled:hover {
 
   .track-record-search {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-thread-scroll {
+    scroll-behavior: auto;
+  }
+
+  .track-jump-latest,
+  .track-message-row,
+  .track-assistant-row {
+    animation: none;
+  }
+
+  .track-button,
+  .icon-button,
+  .group-button,
+  .track-jump-latest,
+  .track-attachment-card,
+  .track-mention-option {
+    transition: none;
   }
 }
 

@@ -8,7 +8,6 @@ import {
   Clock3,
   Download,
   FileCheck2,
-  FileText,
   FolderKanban,
   GripVertical,
   LoaderCircle,
@@ -55,6 +54,7 @@ import {
 import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
+import { AttachmentTypeIcon, formatFileSize } from '#/features/workspace/attachment-ui'
 import { draftClassifications, draftStatuses, notificationModes } from '#/features/workspace/constants'
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
@@ -130,12 +130,6 @@ function createPendingAttachment(file: File) {
   }
 }
 
-function formatFileSize(size: number) {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
 function formatRailLabel(value: string) {
   return value.replaceAll('_', ' ')
 }
@@ -194,10 +188,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [notificationPermission, setNotificationPermission] = useState<WebNotificationPermission>(getNotificationPermission)
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const threadScrollRef = useRef<HTMLDivElement | null>(null)
+  const shouldFollowLatestRef = useRef(true)
+  const lastLoadedGroupIdRef = useRef<Id<'groups'> | null>(null)
   const pendingAttachmentsRef = useRef<Array<ReturnType<typeof createPendingAttachment>>>([])
   const hydratedNotificationMessagesRef = useRef(false)
   const notifiedMessageIdsRef = useRef(new Set<string>())
@@ -328,6 +326,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           tone: getAvatarTone(user.email),
         }
       })
+    const reservedHandles = new Set(['track', ...members.map((member) => member.handle)])
+    const groupMentions = visibleGroups
+      .map((group) => ({
+        id: group._id,
+        kind: 'group' as const,
+        label: group.name,
+        sublabel: 'group',
+        handle: getMentionHandle(group.name),
+        tone: getGroupAvatar(group).tone,
+      }))
+      .filter((group) => group.handle && !reservedHandles.has(group.handle))
 
     return [
       {
@@ -338,9 +347,27 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         handle: 'track',
         tone: 'bot',
       },
+      ...groupMentions,
       ...members,
     ]
-  }, [activeProjectMembers])
+  }, [activeProjectMembers, visibleGroups])
+  const mentionGroups = useMemo(() => {
+    const groupsByHandle = new Map<string, Doc<'groups'>>()
+    const reservedHandles = new Set([
+      'track',
+      ...activeProjectMembers
+        .filter((item) => item.user)
+        .map((item) => {
+          const user = item.user as Doc<'users'>
+          return getMentionHandle(user.displayName) || getMentionHandle(user.email)
+        }),
+    ])
+    for (const group of visibleGroups) {
+      const handle = getMentionHandle(group.name)
+      if (handle && !reservedHandles.has(handle)) groupsByHandle.set(handle, group)
+    }
+    return groupsByHandle
+  }, [activeProjectMembers, visibleGroups])
   const activeMention = useMemo(
     () => getActiveMention(composer, composerCursor),
     [composer, composerCursor],
@@ -348,15 +375,52 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const filteredMentionOptions = useMemo(() => {
     if (!activeMention) return []
     const query = activeMention.query
-    return mentionOptions
+    const assistantOptions = mentionOptions
+      .filter((option) => option.kind === 'assistant')
       .filter(
         (option) =>
           option.handle.includes(query) ||
           option.label.toLowerCase().includes(query) ||
           option.sublabel.toLowerCase().includes(query),
       )
-      .slice(0, 6)
+    const groupOptions = mentionOptions
+      .filter((option) => option.kind === 'group')
+      .filter(
+        (option) =>
+          option.handle.includes(query) ||
+          option.label.toLowerCase().includes(query) ||
+          option.sublabel.toLowerCase().includes(query),
+      )
+      .slice(0, 4)
+    const memberOptions = mentionOptions
+      .filter((option) => option.kind === 'member')
+      .filter(
+        (option) =>
+          option.handle.includes(query) ||
+          option.label.toLowerCase().includes(query) ||
+          option.sublabel.toLowerCase().includes(query),
+      )
+      .slice(0, 4)
+    return [...assistantOptions, ...groupOptions, ...memberOptions].slice(0, 9)
   }, [activeMention, mentionOptions])
+  const mentionSections = useMemo(
+    () =>
+      [
+        {
+          label: 'Groups',
+          options: filteredMentionOptions.filter((option) => option.kind === 'group'),
+        },
+        {
+          label: 'People',
+          options: filteredMentionOptions.filter((option) => option.kind === 'member'),
+        },
+        {
+          label: 'Assistant',
+          options: filteredMentionOptions.filter((option) => option.kind === 'assistant'),
+        },
+      ].filter((section) => section.options.length > 0),
+    [filteredMentionOptions],
+  )
   const showMentionMenu = activeMention !== null && filteredMentionOptions.length > 0
   const groupMessages = useMemo(
     () =>
@@ -487,6 +551,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   useEffect(() => {
     if (view !== 'group') {
       setActiveGroupId(null)
+      setShowJumpToLatest(false)
       return
     }
     if (routeGroupId) {
@@ -581,6 +646,52 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       )
     })
   }, [chatSearchQuery, threadItems])
+  const latestThreadItemKey = threadItems.at(-1)?.key ?? null
+  const latestFilteredThreadItemKey = filteredThreadItems.at(-1)?.key ?? null
+
+  useEffect(() => {
+    if (view !== 'group' || messages === undefined) return
+    const hasLoadedNewGroup = lastLoadedGroupIdRef.current !== activeGroupId
+    if (!hasLoadedNewGroup) return
+    lastLoadedGroupIdRef.current = activeGroupId
+    shouldFollowLatestRef.current = true
+    requestThreadScrollToLatest('auto')
+    requestAnimationFrame(() => {
+      composerRef.current?.focus({ preventScroll: true })
+    })
+  }, [activeGroupId, messages, view])
+
+  useEffect(() => {
+    if (view !== 'group') {
+      lastLoadedGroupIdRef.current = null
+    }
+  }, [view])
+
+  useEffect(() => {
+    if (view !== 'group') return
+    requestAnimationFrame(() => {
+      composerRef.current?.focus({ preventScroll: true })
+    })
+  }, [activeGroupId, view])
+
+  useEffect(() => {
+    if (view !== 'group' || chatSearchQuery.trim()) return
+    if (shouldFollowLatestRef.current) {
+      requestThreadScrollToLatest('smooth')
+    }
+  }, [chatSearchQuery, latestThreadItemKey, view])
+
+  useEffect(() => {
+    if (view !== 'group' || !chatSearchQuery.trim()) return
+    requestThreadScrollToLatest('auto')
+  }, [chatSearchQuery, latestFilteredThreadItemKey, view])
+
+  function requestThreadScrollToLatest(behavior: ScrollBehavior = 'smooth') {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollThreadToLatest(behavior))
+    })
+  }
+
   const headerMembers = useMemo(
     () => activeProjectMembers.filter((item) => item.user).slice(0, 5),
     [activeProjectMembers],
@@ -606,6 +717,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           String(item.message._id),
           {
             author: item.author?.displayName ?? 'Unknown Member',
+            body: item.message.body.slice(0, 90),
             createdAt: item.message.createdAt,
           },
         ]),
@@ -795,9 +907,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         const option = mentionOptions.find((item) => item.kind === 'member' && item.handle === handle)
         if (option?.kind === 'member') mentionedUserIds.push(option.id)
       }
-      const attachmentBody =
-        body ||
-        `Attached ${pendingAttachments.map((attachment) => attachment.file.name).join(', ')}`
+      const messageBody = body
       const uploadedAttachments = await Promise.all(pendingAttachments.map(async (pendingAttachment) => {
         const uploadUrl = await generateUploadUrl({
           groupId: activeGroupId,
@@ -821,7 +931,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         projectId: activeProjectId,
         groupId: activeGroupId,
         authorId: trackUserId,
-        body: attachmentBody,
+        body: messageBody,
         mentions: mentionedUserIds,
       })
       for (const attachment of uploadedAttachments) {
@@ -842,13 +952,39 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           groupId: activeGroupId,
           requesterId: trackUserId,
           promptMessageId: messageId,
-          question: attachmentBody,
+          question: messageBody,
         })
       }
       setComposer('')
       setComposerCursor(0)
       clearPendingAttachments()
+      shouldFollowLatestRef.current = true
+      requestThreadScrollToLatest('smooth')
+      requestAnimationFrame(() => {
+        composerRef.current?.focus({ preventScroll: true })
+      })
     })
+  }
+
+  function scrollThreadToLatest(behavior: ScrollBehavior = 'smooth') {
+    const scrollElement = threadScrollRef.current
+    if (!scrollElement) return
+    scrollElement.scrollTo({
+      top: scrollElement.scrollHeight,
+      behavior,
+    })
+    shouldFollowLatestRef.current = true
+    setShowJumpToLatest(false)
+  }
+
+  function handleThreadScroll() {
+    const scrollElement = threadScrollRef.current
+    if (!scrollElement) return
+    const distanceFromBottom =
+      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight
+    const isAwayFromLatest = distanceFromBottom > 220
+    shouldFollowLatestRef.current = distanceFromBottom < 180
+    setShowJumpToLatest(isAwayFromLatest)
   }
 
   function handleComposerSelection() {
@@ -1382,7 +1518,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           <WorkspaceRouteLoader label={view === 'group' ? 'Opening group conversation' : view === 'records' ? 'Loading project records' : view === 'settings' ? 'Loading project settings' : 'Loading project groups'} />
         ) : view === 'group' ? (
           <>
-            <div className="track-thread-scroll">
+            <div
+              className="track-thread-scroll"
+              onScroll={handleThreadScroll}
+              ref={threadScrollRef}
+            >
               <div className="track-thread">
                 {activeGroup && messages !== undefined && visibleMessages.length === 0 ? (
                   <div className="track-empty-conversation">
@@ -1414,6 +1554,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                         }
                         key={threadItem.key}
                         item={threadItem.item}
+                        mentionGroups={mentionGroups}
+                        onOpenGroup={navigateToGroup}
                       />
                     )
                   }
@@ -1421,7 +1563,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     return (
                       <AssistantAnswer
                         key={threadItem.key}
+                        mentionGroups={mentionGroups}
                         messageCitations={messageCitations}
+                        onOpenGroup={navigateToGroup}
                         stream={threadItem.stream}
                       />
                     )
@@ -1436,6 +1580,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   )
                 })}
               </div>
+              {showJumpToLatest ? (
+                <Button
+                  aria-label="Jump to latest message"
+                  className="track-jump-latest"
+                  onClick={() => scrollThreadToLatest()}
+                  type="button"
+                >
+                  <ChevronDown aria-hidden="true" size={18} />
+                </Button>
+              ) : null}
             </div>
 
             <div className="track-composer-wrap">
@@ -1448,7 +1602,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                           <img alt="" src={attachment.previewUrl} />
                         ) : (
                           <span className="track-composer-file-icon">
-                            <FileText size={18} />
+                            <AttachmentTypeIcon
+                              contentType={attachment.file.type}
+                              filename={attachment.file.name}
+                              size={18}
+                            />
                           </span>
                         )}
                         <span className="track-composer-attachment-meta">
@@ -1515,30 +1673,47 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   onSelect={handleComposerSelection}
                   placeholder={composerPlaceholder}
                   ref={composerRef}
+                  autoFocus
                   value={composer}
                 />
                 {showMentionMenu ? (
                   <div className="track-mention-menu" role="listbox" aria-label="Mention someone">
-                    {filteredMentionOptions.map((option, index) => (
-                      <button
-                        aria-selected={index === mentionIndex}
-                        className={index === mentionIndex ? 'track-mention-option active' : 'track-mention-option'}
-                        key={option.id}
-                        onMouseDown={(event) => {
-                          event.preventDefault()
-                          handleMentionSelect(option)
-                        }}
-                        role="option"
-                        type="button"
-                      >
-                        <Avatar className={option.tone === 'bot' ? 'track-mention-avatar bot' : `track-mention-avatar ${option.tone}`}>
-                          <AvatarFallback>{option.kind === 'assistant' ? <Bot size={13} /> : getInitials(option.label)}</AvatarFallback>
-                        </Avatar>
-                        <span>
-                          <strong>@{option.handle}</strong>
-                          <small>{option.label} · {option.sublabel}</small>
-                        </span>
-                      </button>
+                    {mentionSections.map((section) => (
+                      <div className="track-mention-section" key={section.label}>
+                        <p className="track-mention-section-label">{section.label}</p>
+                        {section.options.map((option) => {
+                          const index = filteredMentionOptions.findIndex((item) => item.id === option.id)
+                          return (
+                            <button
+                              aria-selected={index === mentionIndex}
+                              className={index === mentionIndex ? 'track-mention-option active' : 'track-mention-option'}
+                              key={option.id}
+                              onMouseDown={(event) => {
+                                event.preventDefault()
+                                handleMentionSelect(option)
+                              }}
+                              role="option"
+                              type="button"
+                            >
+                              <Avatar className={option.tone === 'bot' ? 'track-mention-avatar bot' : `track-mention-avatar ${option.tone}`}>
+                                <AvatarFallback>
+                                  {option.kind === 'assistant' ? (
+                                    <Bot size={13} />
+                                  ) : option.kind === 'group' ? (
+                                    <MessagesSquare size={13} />
+                                  ) : (
+                                    getInitials(option.label)
+                                  )}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span>
+                                <strong>@{option.handle}</strong>
+                                <small>{option.label} · {option.sublabel}</small>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     ))}
                   </div>
                 ) : null}
@@ -1573,7 +1748,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     className="icon-button"
                     disabled={!activeGroupId || busyAction === 'send-message'}
                     onClick={() => fileInputRef.current?.click()}
-                    title="Attach evidence"
+                    title="Add attachment"
                     type="button"
                   >
                     <Paperclip size={15} />

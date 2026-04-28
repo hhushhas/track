@@ -1,4 +1,4 @@
-import { Bot, Check, Paperclip, Sparkles } from 'lucide-react'
+import { Bot, Check, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
@@ -9,13 +9,16 @@ import { Card } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Textarea } from '#/components/ui/textarea'
+import { AttachmentTypeIcon, formatFileSize } from './attachment-ui'
 import { draftClassifications, draftStatuses } from './constants'
+import { getGroupAvatar } from './group-avatar'
 import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
 
 export function MessageRow({
-  authorRole,
   item,
+  mentionGroups,
+  onOpenGroup,
 }: {
   authorRole: Doc<'projectMembers'>['role'] | null
   item: {
@@ -24,9 +27,10 @@ export function MessageRow({
     authorRole: Doc<'projectMembers'>['role'] | null
     attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
   }
+  mentionGroups: Map<string, Doc<'groups'>>
+  onOpenGroup: (groupId: Id<'groups'>) => void
 }) {
   const authorName = item.author?.displayName ?? 'Unknown Member'
-  const visibleRole = authorRole ?? 'staff'
   return (
     <article className="track-message-row" id={`message-${item.message._id}`}>
       <Avatar className={`track-message-avatar ${getAvatarTone(item.author?.email ?? authorName)}`}>
@@ -35,27 +39,80 @@ export function MessageRow({
       <Card className="track-message-body" size="sm">
         <div className="track-message-meta">
           <strong>{authorName}</strong>
-          <Badge className="track-role-chip" variant="outline">
+          {/*<Badge className="track-role-chip" variant="outline">
             {visibleRole}
-          </Badge>
+          </Badge>*/}
           <time>{new Date(item.message.createdAt).toLocaleTimeString()}</time>
         </div>
-        <MarkdownText className="track-markdown" text={item.message.body} />
+        <MarkdownText
+          className="track-markdown"
+          renderMention={(handle, index) => (
+            <MentionInline
+              handle={handle}
+              index={index}
+              mentionGroups={mentionGroups}
+              onOpenGroup={onOpenGroup}
+            />
+          )}
+          text={item.message.body}
+        />
         {item.attachments.length > 0 ? (
           <div className="track-attachment-list">
-            {item.attachments.map(({ attachment, url }) =>
-              url ? (
-                <a href={url} key={attachment._id} rel="noreferrer" target="_blank">
-                  <Paperclip size={13} />
-                  {attachment.filename}
+            {item.attachments.map(({ attachment, url }) => {
+              const isImage = attachment.contentType.startsWith('image/')
+              const content = isImage ? (
+                <>
+                  {url ? (
+                    <img alt={attachment.filename} src={url} />
+                  ) : (
+                    <span className="track-attachment-file-icon">
+                      <AttachmentTypeIcon
+                        contentType={attachment.contentType}
+                        filename={attachment.filename}
+                        size={16}
+                      />
+                    </span>
+                  )}
+                  <span>
+                    <strong>{attachment.filename}</strong>
+                    <small>{formatFileSize(attachment.size)}</small>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="track-attachment-file-icon">
+                    <AttachmentTypeIcon
+                      contentType={attachment.contentType}
+                      filename={attachment.filename}
+                      size={16}
+                    />
+                  </span>
+                  <span>
+                    <strong>{attachment.filename}</strong>
+                    <small>{formatFileSize(attachment.size)}</small>
+                  </span>
+                </>
+              )
+
+              return url ? (
+                <a
+                  className={isImage ? 'track-attachment-card image' : 'track-attachment-card file'}
+                  href={url}
+                  key={attachment._id}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {content}
                 </a>
               ) : (
-                <span key={attachment._id}>
-                  <Paperclip size={13} />
-                  {attachment.filename}
+                <span
+                  className={isImage ? 'track-attachment-card image' : 'track-attachment-card file'}
+                  key={attachment._id}
+                >
+                  {content}
                 </span>
-              ),
-            )}
+              )
+            })}
           </div>
         ) : null}
       </Card>
@@ -65,9 +122,13 @@ export function MessageRow({
 
 export function AssistantAnswer({
   messageCitations,
+  mentionGroups,
+  onOpenGroup,
   stream,
 }: {
-  messageCitations: Map<string, { author: string; createdAt: number }>
+  messageCitations: Map<string, { author: string; body: string; createdAt: number }>
+  mentionGroups: Map<string, Doc<'groups'>>
+  onOpenGroup: (groupId: Id<'groups'>) => void
   stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
 }) {
   const answer =
@@ -83,9 +144,6 @@ export function AssistantAnswer({
       <Card className="track-assistant-body" size="sm">
         <div className="track-message-meta">
           <strong>Track Assistant</strong>
-          <Badge className="track-role-chip accent" variant="outline">
-            evidence answer
-          </Badge>
           <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
         </div>
         <MarkdownText
@@ -96,6 +154,14 @@ export function AssistantAnswer({
               index={index}
               key={`${citationId}-${index}`}
               message={messageCitations.get(citationId)}
+            />
+          )}
+          renderMention={(handle, index) => (
+            <MentionInline
+              handle={handle}
+              index={index}
+              mentionGroups={mentionGroups}
+              onOpenGroup={onOpenGroup}
             />
           )}
           text={answer}
@@ -112,7 +178,7 @@ function MessageCitation({
 }: {
   citationId: string
   index: number
-  message?: { author: string; createdAt: number }
+  message?: { author: string; body: string; createdAt: number }
 }) {
   if (!message) {
     return (
@@ -134,12 +200,52 @@ function MessageCitation({
       }}
       type="button"
     >
-      {message.author} ·{' '}
-      {new Date(message.createdAt).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      })}
+      <span className="track-citation-source">
+        {message.author} ·{' '}
+        {new Date(message.createdAt).toLocaleTimeString([], {
+          hour: 'numeric',
+          minute: '2-digit',
+        })}
+      </span>
+      <span className="track-citation-preview">{message.body || 'Attachment message'}</span>
     </button>
+  )
+}
+
+function MentionInline({
+  handle,
+  index,
+  mentionGroups,
+  onOpenGroup,
+}: {
+  handle: string
+  index: number
+  mentionGroups: Map<string, Doc<'groups'>>
+  onOpenGroup: (groupId: Id<'groups'>) => void
+}) {
+  const group = mentionGroups.get(handle)
+  if (group) {
+    const { Icon, tone } = getGroupAvatar(group)
+    return (
+      <button
+        className={`track-mention-inline group ${tone}`}
+        key={`${handle}-${index}`}
+        onClick={() => onOpenGroup(group._id)}
+        type="button"
+      >
+        <Icon size={12} />
+        @{handle}
+      </button>
+    )
+  }
+
+  return (
+    <span
+      className={handle === 'track' ? 'track-mention-inline track' : 'track-mention-inline'}
+      key={`${handle}-${index}`}
+    >
+      @{handle}
+    </span>
   )
 }
 
