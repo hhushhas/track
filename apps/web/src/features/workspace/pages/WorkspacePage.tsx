@@ -137,6 +137,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [authSyncAttempt, setAuthSyncAttempt] = useState(0)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const routeProjectId = projectId as Id<'projects'> | undefined
@@ -374,14 +375,23 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   useEffect(() => {
     if (!session.data || trackUserId) return
+    let retryTimeout: ReturnType<typeof setTimeout> | undefined
     void ensureCurrentUser()
       .then(async (userId) => {
-        if (!userId) return
+        if (!userId) {
+          retryTimeout = setTimeout(() => {
+            setAuthSyncAttempt((attempt) => attempt + 1)
+          }, 500)
+          return
+        }
         setTrackUserId(userId)
         await acceptPendingInvitations({ userId })
       })
       .catch(setActionError)
-  }, [acceptPendingInvitations, ensureCurrentUser, session.data, trackUserId])
+    return () => {
+      if (retryTimeout) clearTimeout(retryTimeout)
+    }
+  }, [acceptPendingInvitations, authSyncAttempt, ensureCurrentUser, session.data, trackUserId])
 
   useEffect(() => {
     if (trackUser?._id && trackUser._id !== trackUserId) {
@@ -546,6 +556,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   if (session.isPending) return <TrackLoading label="Checking your session" />
   if (!session.data) return <Navigate to="/sign-in" />
+  if (!trackUserId) return <TrackLoading label="Connecting your project session" />
 
   function setActionError(error: unknown) {
     setUiError(error instanceof Error ? error.message : 'Something went wrong')
