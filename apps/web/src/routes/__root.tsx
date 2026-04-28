@@ -136,7 +136,17 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
-    void navigator.serviceWorker.register('/service-worker.js')
+    let refreshing = false
+    const handleControllerChange = () => {
+      if (refreshing) return
+      refreshing = true
+      window.location.reload()
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)
+    void navigator.serviceWorker.register('/service-worker.js').then((registration) => registration.update())
+    return () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
+    }
   }, [])
 
   return (
