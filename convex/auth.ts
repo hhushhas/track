@@ -43,7 +43,8 @@ async function getOptionalAuthUser(ctx: GenericCtx<DataModel>) {
   try {
     return await authComponent.getAuthUser(ctx)
   } catch (error) {
-    if (error instanceof Error && error.message.includes('Unauthenticated')) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('Unauthenticated')) {
       return null
     }
     throw error
