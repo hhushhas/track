@@ -142,7 +142,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
 
-  const trackUser = useQuery(api.auth.getCurrentUser)
+  const trackUser = useQuery(
+    api.auth.getCurrentUser,
+    session.data ? {} : 'skip',
+  )
   const projects = useQuery(
     api.projects.list,
     trackUserId ? { userId: trackUserId } : 'skip',
