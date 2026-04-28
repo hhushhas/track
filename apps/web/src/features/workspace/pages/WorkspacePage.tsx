@@ -7,8 +7,13 @@ import {
   Clock3,
   Download,
   FolderKanban,
+  GripVertical,
+  LoaderCircle,
+  LogOut,
   MessageSquarePlus,
   MessagesSquare,
+  PanelRightClose,
+  PanelRightOpen,
   Paperclip,
   Plus,
   Search,
@@ -18,6 +23,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
+import type { CSSProperties } from 'react'
 import type { FormEvent } from 'react'
 import type { ReactNode } from 'react'
 
@@ -39,12 +45,28 @@ import { ProjectGroupGallery } from '#/features/workspace/project-group-gallery'
 import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
+import ThemeToggle from '#/components/ThemeToggle'
 
 type WorkspacePageProps = {
   groupId?: string
   projectId?: string
   view?: 'home' | 'project' | 'group'
 }
+
+const emojiGroups = [
+  {
+    label: 'Recent',
+    emojis: ['👍', '✅', '🔥', '🙏', '👀', '🚀', '💬', '📌', '🎯', '⚠️', '💡', '📝'],
+  },
+  {
+    label: 'Work',
+    emojis: ['📣', '📎', '📄', '📊', '📈', '🧾', '🗓️', '⏱️', '🔍', '🔐', '🛠️', '🏁'],
+  },
+  {
+    label: 'Tone',
+    emojis: ['😀', '😅', '😂', '😊', '🤝', '🙌', '👏', '💪', '🤔', '😬', '😎', '✨'],
+  },
+] as const
 
 export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePageProps) {
   const navigate = useNavigate()
@@ -90,6 +112,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [inviteCanReview, setInviteCanReview] = useState(true)
   const [inviteScope, setInviteScope] = useState<'project' | 'group'>('project')
   const [frequencyMinutesInput, setFrequencyMinutesInput] = useState('30')
+  const [railCollapsed, setRailCollapsed] = useState(false)
+  const [railWidth, setRailWidth] = useState(312)
+  const [railResizing, setRailResizing] = useState(false)
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const routeProjectId = projectId as Id<'projects'> | undefined
@@ -272,6 +298,24 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [activeMention?.query])
 
   useEffect(() => {
+    if (!railResizing) return
+    function handlePointerMove(event: PointerEvent) {
+      setRailWidth(Math.min(460, Math.max(280, window.innerWidth - event.clientX)))
+    }
+    function handlePointerUp() {
+      setRailResizing(false)
+    }
+    document.body.classList.add('track-rail-resizing')
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    return () => {
+      document.body.classList.remove('track-rail-resizing')
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [railResizing])
+
+  useEffect(() => {
     if (routeProjectId && routeProjectId !== activeProjectId) {
       setActiveProjectId(routeProjectId)
     }
@@ -355,6 +399,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
+  const isProjectRouteLoading =
+    trackUserId !== null &&
+    (projects === undefined ||
+      (activeProjectId !== null && (groups === undefined || projectMembers === undefined)))
+  const isGroupRouteLoading =
+    view === 'group' &&
+    activeGroupId !== null &&
+    (groups === undefined || messages === undefined || drafts === undefined || activeGroup === undefined)
   const visibleMessages = useMemo(() => [...groupMessages].reverse(), [groupMessages])
   const pendingDrafts = useMemo(
     () => groupDrafts.filter((draft) => draft.status === 'pending'),
@@ -586,6 +638,18 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
+  function insertComposerText(text: string) {
+    const cursor = composerRef.current?.selectionStart ?? composerCursor
+    const nextComposer = `${composer.slice(0, cursor)}${text}${composer.slice(cursor)}`
+    const nextCursor = cursor + text.length
+    setComposer(nextComposer)
+    setComposerCursor(nextCursor)
+    requestAnimationFrame(() => {
+      composerRef.current?.focus()
+      composerRef.current?.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
   async function handleFileSelected(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
@@ -736,8 +800,20 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
+  async function handleSignOut() {
+    await authClient.signOut()
+    await navigate({ to: '/sign-in' })
+  }
+
   return (
-    <main className="track-app-shell">
+    <main
+      className={[
+        'track-app-shell',
+        view === 'group' ? 'track-app-shell-with-rail' : '',
+        railCollapsed ? 'track-app-shell-rail-collapsed' : '',
+      ].filter(Boolean).join(' ')}
+      style={{ '--track-rail-width': `${railWidth}px` } as CSSProperties}
+    >
       <aside className="track-nav">
         <div className="track-brand">
           <img
@@ -796,6 +872,18 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           <div className="track-nav-copy">
             <span className="track-nav-title">{trackUser?.displayName ?? 'Track User'}</span>
             <span className="track-nav-meta">{activeProject?.membership.role ?? 'owner'}</span>
+          </div>
+          <div className="track-nav-footer-actions">
+            <ThemeToggle />
+            <Button
+              aria-label="Log out"
+              className="track-nav-footer-button"
+              onClick={() => void handleSignOut()}
+              title="Log out"
+              type="button"
+            >
+              <LogOut size={14} />
+            </Button>
           </div>
         </div>
       </aside>
@@ -892,14 +980,22 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
         {uiError ? <div className="track-error">{uiError}</div> : null}
 
-        {view === 'group' ? (
+        {isProjectRouteLoading || isGroupRouteLoading ? (
+          <WorkspaceRouteLoader label={view === 'group' ? 'Opening group conversation' : 'Loading project groups'} />
+        ) : view === 'group' ? (
           <>
             <div className="track-thread-scroll">
               <div className="track-thread">
-                {activeGroup && visibleMessages.length === 0 ? (
-                  <div className="track-empty">
-                    <p className="mono-label m-0">Empty Group</p>
-                    <p>Only members of {activeGroup.name} can see this conversation. Send the first message to start the record.</p>
+                {activeGroup && messages !== undefined && visibleMessages.length === 0 ? (
+                  <div className="track-empty-conversation">
+                    <span className="track-empty-conversation-icon">
+                      <MessagesSquare size={22} />
+                    </span>
+                    <h2>{activeGroup.name} is ready</h2>
+                    <p>
+                      Start this group with a decision, question, scope note, or mention @track to turn the first
+                      useful detail into project memory.
+                    </p>
                   </div>
                 ) : null}
 
@@ -953,8 +1049,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   onChange={(event) => {
                     setComposer(event.currentTarget.value)
                     setComposerCursor(event.currentTarget.selectionStart)
+                    setEmojiPickerOpen(false)
                   }}
                   onKeyDown={(event) => {
+                    if (emojiPickerOpen && event.key === 'Escape') {
+                      event.preventDefault()
+                      setEmojiPickerOpen(false)
+                      return
+                    }
                     if (showMentionMenu) {
                       if (event.key === 'ArrowDown') {
                         event.preventDefault()
@@ -1014,6 +1116,32 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     ))}
                   </div>
                 ) : null}
+                {emojiPickerOpen ? (
+                  <div className="track-emoji-picker" role="dialog" aria-label="Emoji picker">
+                    {emojiGroups.map((group) => (
+                      <div className="track-emoji-group" key={group.label}>
+                        <p className="mono-label m-0">{group.label}</p>
+                        <div className="track-emoji-grid">
+                          {group.emojis.map((emoji) => (
+                            <button
+                              aria-label={`Insert ${emoji}`}
+                              className="track-emoji-option"
+                              key={`${group.label}-${emoji}`}
+                              onMouseDown={(event) => {
+                                event.preventDefault()
+                                insertComposerText(emoji)
+                                setEmojiPickerOpen(false)
+                              }}
+                              type="button"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="track-composer-bar">
                   <Button
                     className="icon-button"
@@ -1028,6 +1156,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     className="icon-button"
                     disabled={!activeGroupId || busyAction === 'send-message'}
                     onClick={() => {
+                      setEmojiPickerOpen(false)
                       const cursor = composerRef.current?.selectionStart ?? composer.length
                       const spacer = cursor > 0 && !/\s$/.test(composer.slice(0, cursor)) ? ' @' : '@'
                       const nextComposer = `${composer.slice(0, cursor)}${spacer}${composer.slice(cursor)}`
@@ -1044,7 +1173,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   >
                     <AtSign size={15} />
                   </Button>
-                  <Button className="icon-button" disabled={!activeGroupId} title="Reaction" type="button">
+                  <Button
+                    className="icon-button"
+                    disabled={!activeGroupId}
+                    onClick={() => {
+                      setComposerCursor(composerRef.current?.selectionStart ?? composerCursor)
+                      setEmojiPickerOpen((open) => !open)
+                    }}
+                    title="Emoji"
+                    type="button"
+                  >
                     <Smile size={15} />
                   </Button>
                   <span className="track-composer-hint">
@@ -1069,29 +1207,51 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         )}
       </section>
 
-      <aside className="track-rail">
-        <Card className="track-rail-section" size="sm">
-          <div className="track-rail-title">
-            <span>
-              <span className="track-rail-heading">AI Review</span>
-              <span className="track-rail-sub">current Group</span>
-            </span>
-            <span className="track-pulse" />
-          </div>
-          <div className="track-review-status">
-            <span>Last run</span>
-            <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
-          </div>
-          <Button
-            className="track-setting-button"
-            disabled={!activeGroupId || busyAction === 'review-frequency'}
-            onClick={handleFrequencyChange}
+      {view === 'group' ? (
+        <aside className={railCollapsed ? 'track-rail collapsed' : 'track-rail'}>
+          <button
+            aria-label={railCollapsed ? 'Expand AI review panel' : 'Collapse AI review panel'}
+            className="track-rail-collapse-button"
+            onClick={() => setRailCollapsed((collapsed) => !collapsed)}
             type="button"
           >
-            Every {activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30} minutes
-          </Button>
-          <p className="track-muted">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
-        </Card>
+            {railCollapsed ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+          </button>
+          {railCollapsed ? null : (
+            <>
+              <button
+                aria-label="Resize AI review panel"
+                className="track-rail-resize-handle"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  setRailResizing(true)
+                }}
+                type="button"
+              >
+                <GripVertical size={14} />
+              </button>
+              <Card className="track-rail-section" size="sm">
+            <div className="track-rail-title">
+              <span>
+                <span className="track-rail-heading">AI Review</span>
+                <span className="track-rail-sub">current Group</span>
+              </span>
+              <span className="track-pulse" />
+            </div>
+            <div className="track-review-status">
+              <span>Last run</span>
+              <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
+            </div>
+            <Button
+              className="track-setting-button"
+              disabled={!activeGroupId || busyAction === 'review-frequency'}
+              onClick={handleFrequencyChange}
+              type="button"
+            >
+              Every {activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30} minutes
+            </Button>
+            <p className="track-muted">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
+              </Card>
 
         <Card className="track-count-grid" size="sm">
           <Metric label="Drafts" value={pendingDrafts.length} />
@@ -1229,7 +1389,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             ))}
           </div>
         </Card>
-      </aside>
+            </>
+          )}
+        </aside>
+      ) : null}
       <WorkspaceDialogs
         activeGroupId={activeGroupId}
         activeGroupName={activeGroup?.name}
@@ -1275,6 +1438,15 @@ function TrackLoading({ label }: { label: string }) {
         <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">{label}...</p>
       </div>
     </main>
+  )
+}
+
+function WorkspaceRouteLoader({ label }: { label: string }) {
+  return (
+    <div className="track-route-loader" role="status" aria-live="polite">
+      <LoaderCircle className="track-route-loader-icon" size={18} />
+      <span>{label}</span>
+    </div>
   )
 }
 

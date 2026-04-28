@@ -247,9 +247,6 @@ export function DraftRecordCard({
           </div>
         </div>
         <div className="track-classify-block">
-          <p className="track-classify-title">
-            Classify <span>AI suggests billable</span>
-          </p>
           <div className="track-classify-row">
             {draftClassifications.map((classification, index) => (
               <Button
@@ -267,12 +264,6 @@ export function DraftRecordCard({
         </div>
       </div>
       <footer>
-        <Button className="track-draft-secondary" disabled={busy} type="button">
-          # View source messages
-        </Button>
-        <Button className="track-draft-secondary" disabled={busy} type="button">
-          Edit details
-        </Button>
         <span className="track-draft-footer-spacer" />
         <Button
           className="track-draft-save"
