@@ -610,6 +610,82 @@ select {
   max-width: 220px;
 }
 
+.track-citation-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin: 0 3px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 0 8px;
+  vertical-align: middle;
+}
+
+button.track-citation-chip {
+  cursor: pointer;
+}
+
+button.track-citation-chip:hover {
+  border-color: var(--ink-4);
+}
+
+.track-markdown {
+  color: var(--ink-2);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.track-markdown p {
+  margin: 0;
+}
+
+.track-markdown p + p,
+.track-markdown p + ul,
+.track-markdown ul + p {
+  margin-top: 8px;
+}
+
+.track-markdown ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.track-markdown li + li {
+  margin-top: 4px;
+}
+
+.track-markdown strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.track-markdown em {
+  font-style: italic;
+}
+
+.track-markdown code {
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 1px 4px;
+}
+
+.track-markdown a {
+  color: var(--info);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .track-draft-content p,
 .track-muted {
   margin: 0;

@@ -247,6 +247,19 @@ function App() {
       ].sort((a, b) => a.at - b.at),
     [groupAssistantStreams, pendingDrafts, visibleMessages],
   )
+  const messageCitations = useMemo(
+    () =>
+      new Map(
+        visibleMessages.map((item) => [
+          String(item.message._id),
+          {
+            author: item.author?.displayName ?? 'Unknown Member',
+            createdAt: item.message.createdAt,
+          },
+        ]),
+      ),
+    [visibleMessages],
+  )
   const groupNotificationMode =
     groupNotificationSettings.find((item) => item.groupId === activeGroupId)?.mode ?? 'inherit'
   const globalNotificationMode = notificationSettings?.global?.globalMode ?? 'mentions'
@@ -618,7 +631,13 @@ function App() {
                 return <MessageRow key={threadItem.key} item={threadItem.item} />
               }
               if (threadItem.kind === 'assistant') {
-                return <AssistantAnswer key={threadItem.key} stream={threadItem.stream} />
+                return (
+                  <AssistantAnswer
+                    key={threadItem.key}
+                    messageCitations={messageCitations}
+                    stream={threadItem.stream}
+                  />
+                )
               }
               return (
                 <DraftRecordCard
@@ -874,7 +893,7 @@ function MessageRow({
 }) {
   const authorName = item.author?.displayName ?? 'Unknown Member'
   return (
-    <article className="track-message-row">
+    <article className="track-message-row" id={`message-${item.message._id}`}>
       <div className="track-message-avatar">{authorName.slice(0, 2).toUpperCase()}</div>
       <div className="track-message-body">
         <div className="track-message-meta">
@@ -882,7 +901,7 @@ function MessageRow({
           <span className="track-role-chip">{item.author?.email ?? 'member'}</span>
           <time>{new Date(item.message.createdAt).toLocaleTimeString()}</time>
         </div>
-        <p>{item.message.body}</p>
+        <MarkdownText className="track-markdown" text={item.message.body} />
         {item.attachments.length > 0 ? (
           <div className="track-attachment-list">
             {item.attachments.map(({ attachment, url }) =>
@@ -906,10 +925,13 @@ function MessageRow({
 }
 
 function AssistantAnswer({
+  messageCitations,
   stream,
 }: {
+  messageCitations: Map<string, { author: string; createdAt: number }>
   stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
 }) {
+  const answer = stream.answer || (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)
   return (
     <article className="track-assistant-row">
       <div className="track-message-avatar bot"><Bot size={14} /></div>
@@ -919,15 +941,161 @@ function AssistantAnswer({
           <span className="track-role-chip accent">evidence answer</span>
           <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
         </div>
-        <p>{stream.answer || (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)}</p>
-        {stream.evidence.length > 0 ? (
-          <div className="track-evidence-note">
-            Evidence: {stream.evidence.map((item) => item.quote).join(' · ')}
-          </div>
-        ) : null}
+        <MarkdownText
+          className="track-markdown"
+          renderCitation={(citationId, index) => (
+            <MessageCitation
+              citationId={citationId}
+              index={index}
+              key={`${citationId}-${index}`}
+              message={messageCitations.get(citationId)}
+            />
+          )}
+          text={answer}
+        />
       </div>
     </article>
   )
+}
+
+function MessageCitation({
+  citationId,
+  index,
+  message,
+}: {
+  citationId: string
+  index: number
+  message?: { author: string; createdAt: number }
+}) {
+  if (!message) {
+    return (
+      <span className="track-citation-chip" key={`${citationId}-${index}`}>
+        source
+      </span>
+    )
+  }
+
+  return (
+    <button
+      className="track-citation-chip"
+      key={`${citationId}-${index}`}
+      onClick={() => {
+        document.getElementById(`message-${citationId}`)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
+      }}
+      type="button"
+    >
+      {message.author} · {new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+    </button>
+  )
+}
+
+function MarkdownText({
+  className,
+  renderCitation,
+  text,
+}: {
+  className?: string
+  renderCitation?: (citationId: string, index: number) => ReactNode
+  text: string
+}) {
+  const lines = text.split(/\r?\n/)
+  const blocks: Array<{ kind: 'list'; items: string[] } | { kind: 'paragraph'; text: string }> = []
+  let paragraph: string[] = []
+  let listItems: string[] = []
+
+  function flushParagraph() {
+    if (paragraph.length > 0) {
+      blocks.push({ kind: 'paragraph', text: paragraph.join('\n') })
+      paragraph = []
+    }
+  }
+
+  function flushList() {
+    if (listItems.length > 0) {
+      blocks.push({ kind: 'list', items: listItems })
+      listItems = []
+    }
+  }
+
+  for (const line of lines) {
+    const listMatch = /^\s*[-*]\s+(.+)$/.exec(line)
+    if (listMatch) {
+      flushParagraph()
+      listItems.push(listMatch[1])
+      continue
+    }
+    if (!line.trim()) {
+      flushParagraph()
+      flushList()
+      continue
+    }
+    flushList()
+    paragraph.push(line)
+  }
+  flushParagraph()
+  flushList()
+
+  return (
+    <div className={className}>
+      {blocks.map((block, blockIndex) =>
+        block.kind === 'list' ? (
+          <ul key={`list-${blockIndex}`}>
+            {block.items.map((item, itemIndex) => (
+              <li key={`${item}-${itemIndex}`}>{renderMarkdownInline(item, renderCitation)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p key={`paragraph-${blockIndex}`}>
+            {block.text.split('\n').map((line, lineIndex) => (
+              <span key={`${line}-${lineIndex}`}>
+                {lineIndex > 0 ? <br /> : null}
+                {renderMarkdownInline(line, renderCitation)}
+              </span>
+            ))}
+          </p>
+        ),
+      )}
+    </div>
+  )
+}
+
+function renderMarkdownInline(
+  text: string,
+  renderCitation?: (citationId: string, index: number) => ReactNode,
+): ReactNode[] {
+  const tokenPattern = /(\[[a-z0-9]+\]|\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/gi
+  const parts = text.split(tokenPattern).filter(Boolean)
+
+  return parts.map((part, index) => {
+    const citationMatch = /^\[([a-z0-9]+)\]$/i.exec(part)
+    if (citationMatch && renderCitation) return renderCitation(citationMatch[1], index)
+
+    const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
+    if (linkMatch) {
+      return (
+        <a href={linkMatch[2]} key={`${part}-${index}`} rel="noreferrer" target="_blank">
+          {linkMatch[1]}
+        </a>
+      )
+    }
+
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>
+    }
+
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={`${part}-${index}`}>{renderMarkdownInline(part.slice(2, -2), renderCitation)}</strong>
+    }
+
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={`${part}-${index}`}>{renderMarkdownInline(part.slice(1, -1), renderCitation)}</em>
+    }
+
+    return <span key={`${part}-${index}`}>{part}</span>
+  })
 }
 
 function DraftRecordCard({
