@@ -67,6 +67,34 @@ type WorkspacePageProps = {
   view?: 'home' | 'project' | 'group' | 'records' | 'settings'
 }
 
+function getSessionUser(sessionData: unknown) {
+  if (!sessionData || typeof sessionData !== 'object') return null
+
+  const data = sessionData as {
+    user?: {
+      id?: string | null
+      email?: string | null
+      name?: string | null
+    } | null
+    session?: {
+      userId?: string | null
+    } | null
+    id?: string | null
+    email?: string | null
+    name?: string | null
+  }
+  const user = data.user ?? data
+  const id = user.id ?? data.session?.userId
+
+  if (!id) return null
+
+  return {
+    id,
+    email: user.email ?? '',
+    name: user.name ?? user.email?.split('@')[0] ?? 'Track User',
+  }
+}
+
 const emojiGroups = [
   {
     label: 'Recent',
@@ -141,7 +169,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
-  const sessionUser = session.data?.user
+  const sessionUser = useMemo(() => getSessionUser(session.data), [session.data])
 
   const projects = useQuery(
     api.projects.list,
@@ -373,8 +401,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (!sessionUser?.id || trackUserId) return
     void syncCurrentUser({
       googleSubject: sessionUser.id,
-      email: sessionUser.email ?? '',
-      displayName: sessionUser.name ?? sessionUser.email?.split('@')[0] ?? 'Track User',
+      email: sessionUser.email,
+      displayName: sessionUser.name,
     })
       .then(async (userId) => {
         setTrackUserId(userId)
@@ -448,8 +476,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
-  const currentUserName = sessionUser?.name ?? sessionUser?.email?.split('@')[0] ?? 'Track User'
-  const currentUserEmail = sessionUser?.email ?? currentUserName
+  const currentUserName = sessionUser?.name ?? 'Track User'
+  const currentUserEmail = sessionUser?.email || currentUserName
   const isProjectRouteLoading =
     trackUserId !== null &&
     (projects === undefined ||
@@ -542,6 +570,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   if (session.isPending) return <TrackLoading label="Checking your session" />
   if (!session.data) return <Navigate to="/sign-in" />
+  if (!sessionUser) return <Navigate to="/sign-in" />
+  if (!trackUserId && uiError) return <TrackLoading label={uiError} />
   if (!trackUserId) return <TrackLoading label="Connecting your project session" />
 
   function setActionError(error: unknown) {
