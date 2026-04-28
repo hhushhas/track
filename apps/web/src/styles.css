@@ -1219,11 +1219,34 @@ button {
 }
 
 .track-avatar-tooltip {
-  border: 1px solid rgba(250, 249, 247, 0.12);
-  background: var(--ink);
-  box-shadow: 0 10px 28px rgba(27, 25, 23, 0.18);
-  color: var(--paper);
+  border: 1px solid rgba(27, 25, 23, 0.14);
+  background: #1f1d1a;
+  box-shadow: 0 10px 28px rgba(27, 25, 23, 0.2);
+  color: #faf9f7;
   padding: 7px 9px;
+}
+
+.track-avatar-tooltip .bg-foreground {
+  background: #1f1d1a;
+}
+
+.track-avatar-tooltip .fill-foreground {
+  fill: #1f1d1a;
+}
+
+.dark .track-avatar-tooltip {
+  border-color: rgba(240, 177, 0, 0.2);
+  background: #211f1b;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+  color: var(--ink);
+}
+
+.dark .track-avatar-tooltip .bg-foreground {
+  background: #211f1b;
+}
+
+.dark .track-avatar-tooltip .fill-foreground {
+  fill: #211f1b;
 }
 
 .track-avatar-tooltip-copy {
@@ -1251,6 +1274,10 @@ button {
   text-overflow: ellipsis;
   text-transform: capitalize;
   white-space: nowrap;
+}
+
+.dark .track-avatar-tooltip-copy small {
+  color: var(--ink-3);
 }
 
 .track-workspace {
