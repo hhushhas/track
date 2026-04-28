@@ -60,6 +60,7 @@ import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
 import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
 import {
+  getWebPushDiagnostics,
   getNotificationPermission,
   notificationPermissionLabels,
   requestNotificationPermission,
@@ -1151,7 +1152,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   async function handleEnableBrowserNotifications() {
     if (!trackUserId) return
     setNotificationStatus(null)
-    await withBusy('notifications', async () => {
+    setBusyAction('notifications')
+    setUiError(null)
+    try {
       const permission = await requestNotificationPermission()
       setNotificationPermission(permission)
       if (permission === 'denied') {
@@ -1170,13 +1173,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         })
         setNotificationStatus('Browser alerts reconnected.')
       }
-    })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Browser alert reconnect failed.'
+      setNotificationStatus(`${message} (${getWebPushDiagnostics()})`)
+      setActionError(error)
+    } finally {
+      setBusyAction(null)
+    }
   }
 
   async function handleSendTestNotification() {
     if (!trackUserId) return
     setNotificationStatus(null)
-    await withBusy('test-notifications', async () => {
+    setBusyAction('test-notifications')
+    setUiError(null)
+    try {
       let permission = getNotificationPermission()
       if (permission === 'default') {
         permission = await requestNotificationPermission()
@@ -1195,7 +1206,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         throw new Error('Track found your browser subscription, but the push service rejected the test alert.')
       }
       setNotificationStatus(`Test alert sent to ${result.sent} browser${result.sent === 1 ? '' : 's'}.`)
-    })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Test alert failed.'
+      setNotificationStatus(`${message} (${getWebPushDiagnostics()})`)
+      setActionError(error)
+    } finally {
+      setBusyAction(null)
+    }
   }
 
   async function registerBrowserPushSubscription(options: { forceRefresh?: boolean } = {}) {

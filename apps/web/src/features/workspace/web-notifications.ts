@@ -31,7 +31,11 @@ export async function subscribeToWebPush(publicKey: string, options: { forceRefr
     throw new Error('This browser does not support web push.')
   }
 
-  const registration = await navigator.serviceWorker.ready
+  let registration = await navigator.serviceWorker.getRegistration('/')
+  if (!registration) {
+    registration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+  }
+  registration = await navigator.serviceWorker.ready
   const existingSubscription = await registration.pushManager.getSubscription()
   if (existingSubscription && !options.forceRefresh) return existingSubscription
   if (existingSubscription) {
@@ -42,6 +46,17 @@ export async function subscribeToWebPush(publicKey: string, options: { forceRefr
     applicationServerKey: urlBase64ToUint8Array(publicKey),
     userVisibleOnly: true,
   })
+}
+
+export function getWebPushDiagnostics() {
+  if (typeof window === 'undefined') return 'browser unavailable'
+  const parts = [
+    `permission=${getNotificationPermission()}`,
+    `serviceWorker=${'serviceWorker' in navigator ? 'yes' : 'no'}`,
+    `pushManager=${'PushManager' in window ? 'yes' : 'no'}`,
+    `controller=${navigator.serviceWorker?.controller ? 'yes' : 'no'}`,
+  ]
+  return parts.join(', ')
 }
 
 export function serializePushSubscription(subscription: PushSubscription) {
