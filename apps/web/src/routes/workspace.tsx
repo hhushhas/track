@@ -1,7 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-
-import { WorkspacePage } from '#/features/workspace/pages/WorkspacePage'
+import { Outlet, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/workspace')({
-  component: WorkspacePage,
+  component: WorkspaceLayoutRoute,
 })
+
+function WorkspaceLayoutRoute() {
+  return <Outlet />
+}

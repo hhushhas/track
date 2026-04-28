@@ -325,18 +325,28 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [activeProjectId, navigate, projectItems, view])
 
   useEffect(() => {
-    if (!visibleGroups.length) {
+    if (view !== 'group') {
       setActiveGroupId(null)
       return
     }
-    if (view !== 'group') {
+    if (routeGroupId) {
+      if (activeGroupId !== routeGroupId) {
+        setActiveGroupId(routeGroupId)
+      }
+      if (groups !== undefined && !visibleGroups.some((group) => group._id === routeGroupId)) {
+        setUiError('This group is not visible in the selected project.')
+      }
+      return
+    }
+    if (groups === undefined) return
+    if (!visibleGroups.length) {
       setActiveGroupId(null)
       return
     }
     if (!routeGroupId && (!activeGroupId || !visibleGroups.some((group) => group._id === activeGroupId))) {
       setActiveGroupId(visibleGroups[0]?._id ?? null)
     }
-  }, [activeGroupId, routeGroupId, view, visibleGroups])
+  }, [activeGroupId, groups, routeGroupId, view, visibleGroups])
 
   useEffect(() => {
     if (!latestCompletedExport || latestExportId) return
