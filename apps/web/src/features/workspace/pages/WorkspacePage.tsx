@@ -17,6 +17,8 @@ import {
   Menu,
   MessageSquarePlus,
   MessagesSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
@@ -269,6 +271,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [inviteCanReview, setInviteCanReview] = useState(true)
   const [inviteScope, setInviteScope] = useState<'project' | 'group'>('project')
   const [frequencyMinutesInput, setFrequencyMinutesInput] = useState('30')
+  const [navCollapsed, setNavCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('track-nav-collapsed') === 'true'
+  })
   const [railCollapsed, setRailCollapsed] = useState(false)
   const [railWidth, setRailWidth] = useState(312)
   const [railResizing, setRailResizing] = useState(false)
@@ -550,6 +556,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (pendingAttachments.length > 0) return 'attaching' as const
     return null
   }, [composerFocused, composerHasTypingText, pendingAttachments.length, voiceRecordingActive])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('track-nav-collapsed', String(navCollapsed))
+  }, [navCollapsed])
+
+  useEffect(() => {
+    setLogoutConfirmOpen(false)
+  }, [navCollapsed])
+
   const groupMessages = useMemo(
     () => (messages ?? []) as Array<GroupMessageItem>,
     [messages],
@@ -1830,6 +1846,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     <main
       className={[
         'track-app-shell',
+        navCollapsed ? 'track-app-shell-nav-collapsed' : '',
         view === 'group' ? 'track-app-shell-with-rail' : '',
         railCollapsed ? 'track-app-shell-rail-collapsed' : '',
       ].filter(Boolean).join(' ')}
@@ -1844,7 +1861,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         />
       ) : null}
 
-      <aside className={mobileNavOpen ? 'track-nav mobile-open' : 'track-nav'}>
+      <aside
+        className={[
+          'track-nav',
+          mobileNavOpen ? 'mobile-open' : '',
+          navCollapsed ? 'collapsed' : '',
+        ].filter(Boolean).join(' ')}
+      >
         <div className="track-brand">
           <img
             alt=""
@@ -1854,21 +1877,33 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             width={35}
           />
           <span className="track-brand-word">Track</span>
+          <button
+            aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            aria-pressed={navCollapsed}
+            className="track-nav-collapse-button"
+            onClick={() => setNavCollapsed((isCollapsed) => !isCollapsed)}
+            title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            type="button"
+          >
+            {navCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+          </button>
         </div>
 
         <div className="track-current-project">
           <span className="track-nav-section-label">Project</span>
           <DropdownMenu>
             <DropdownMenuTrigger
+              aria-label={`Switch project: ${activeProject?.project.name ?? 'Select a project'}`}
               className="track-current-project-card"
               disabled={!projectItems.length}
+              title={navCollapsed ? activeProject?.project.name ?? 'Select a project' : undefined}
             >
               <FolderKanban className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
                 <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No client label'}</span>
               </span>
-              <ChevronDown className="track-nav-icon" size={14} />
+              <ChevronDown className="track-nav-icon track-project-chevron" size={14} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="track-project-switcher-menu" side="right" sideOffset={8}>
               <DropdownMenuGroup>
@@ -1906,6 +1941,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   className="track-nav-action"
                   disabled={busyAction === 'create-group'}
                   onClick={handleCreateGroup}
+                  title={navCollapsed ? 'Create group' : undefined}
                   type="button"
                 >
                   <Plus aria-hidden="true" size={13} />
@@ -1923,6 +1959,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                         onClick={() => navigateToGroup(group._id)}
                         onPointerEnter={() => preloadGroupRoute(group._id)}
                         onTouchStart={() => preloadGroupRoute(group._id)}
+                        title={navCollapsed ? group.name : undefined}
                         type="button"
                       >
                         <span className={`track-nav-group-icon ${tone}`}>
@@ -1952,6 +1989,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   setMobileNavOpen(false)
                   setProjectSearchOpen(true)
                 }}
+                title={navCollapsed ? 'Search' : undefined}
                 type="button"
               >
                 <Search className="track-nav-icon" size={14} />
@@ -1966,6 +2004,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 onClick={navigateToProjectRecords}
                 onPointerEnter={preloadProjectRecordsRoute}
                 onTouchStart={preloadProjectRecordsRoute}
+                title={navCollapsed ? `Records, ${projectRecords.length}` : undefined}
                 type="button"
               >
                 <FileCheck2 className="track-nav-icon" size={14} />
@@ -1981,6 +2020,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 onClick={navigateToProjectSettings}
                 onPointerEnter={preloadProjectSettingsRoute}
                 onTouchStart={preloadProjectSettingsRoute}
+                title={navCollapsed ? 'Settings' : undefined}
                 type="button"
               >
                 <Settings2 className="track-nav-icon" size={14} />
@@ -1994,53 +2034,92 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         ) : null}
 
         <div className="track-nav-footer">
-          <AvatarNameTooltip
-            detail={activeProject?.membership.role ?? 'owner'}
-            name={currentUserName}
-            side="right"
-          >
-            <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
-              <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
-            </Avatar>
-          </AvatarNameTooltip>
+          {navCollapsed ? (
+            <>
+              <Button
+                aria-expanded={logoutConfirmOpen}
+                aria-label={`Account menu for ${currentUserName}`}
+                className="track-nav-account-button"
+                onClick={() => setLogoutConfirmOpen((isOpen) => !isOpen)}
+                title={`${currentUserName} account`}
+                type="button"
+              >
+                <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
+                  <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
+                </Avatar>
+              </Button>
+              {logoutConfirmOpen ? (
+                <div className="track-account-menu" role="dialog" aria-label="Account menu">
+                  <div className="track-account-menu-user">
+                    <strong>{currentUserName}</strong>
+                    <span>{activeProject?.membership.role ?? 'owner'}</span>
+                  </div>
+                  <div className="track-account-menu-actions">
+                    <ThemeToggle />
+                    <Button
+                      aria-label="Log out"
+                      className="track-nav-footer-button"
+                      onClick={() => void handleSignOut()}
+                      title="Log out"
+                      type="button"
+                    >
+                      <LogOut size={14} />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <AvatarNameTooltip
+              detail={activeProject?.membership.role ?? 'owner'}
+              name={currentUserName}
+              side="right"
+            >
+              <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
+                <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
+              </Avatar>
+            </AvatarNameTooltip>
+          )}
           <div className="track-nav-copy">
             <span className="track-nav-title">{currentUserName}</span>
             <span className="track-nav-meta">{activeProject?.membership.role ?? 'owner'}</span>
           </div>
-          <div className="track-nav-footer-actions">
-            <ThemeToggle />
-            <Button
-              aria-expanded={logoutConfirmOpen}
-              aria-label="Log out"
-              className="track-nav-footer-button"
-              onClick={() => setLogoutConfirmOpen((isOpen) => !isOpen)}
-              title="Log out"
-              type="button"
-            >
-              <LogOut size={14} />
-            </Button>
-            {logoutConfirmOpen ? (
-              <div className="track-logout-confirm" role="dialog" aria-label="Confirm logout">
-                <p>Log out of Track?</p>
-                <div className="track-logout-confirm-actions">
-                  <Button
-                    className="track-button subtle"
-                    onClick={() => setLogoutConfirmOpen(false)}
-                    type="button"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    className="track-button track-button-primary"
-                    onClick={() => void handleSignOut()}
-                    type="button"
-                  >
-                    Log out
-                  </Button>
+          {!navCollapsed ? (
+            <div className="track-nav-footer-actions">
+              <ThemeToggle />
+              <Button
+                aria-expanded={logoutConfirmOpen}
+                aria-label="Log out"
+                className="track-nav-footer-button"
+                onClick={() => setLogoutConfirmOpen((isOpen) => !isOpen)}
+                title="Log out"
+                type="button"
+              >
+                <LogOut size={14} />
+              </Button>
+              {logoutConfirmOpen ? (
+                <div className="track-logout-confirm" role="dialog" aria-label="Confirm logout">
+                  <p>Log out of Track?</p>
+                  <div className="track-logout-confirm-actions">
+                    <Button
+                      className="track-button subtle"
+                      onClick={() => setLogoutConfirmOpen(false)}
+                      type="button"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="track-button track-button-primary"
+                      onClick={() => void handleSignOut()}
+                      type="button"
+                    >
+                      Log out
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </aside>
 
