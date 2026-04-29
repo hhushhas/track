@@ -25,6 +25,7 @@ import {
   Plus,
   Search,
   Settings2,
+  ShieldCheck,
   Smile,
   Upload,
   UserRound,
@@ -55,6 +56,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
@@ -101,6 +110,8 @@ type WorkspacePageProps = {
 }
 
 type ProjectSearchFilter = 'all' | 'messages' | 'records' | 'files' | 'groups'
+type StepUpMethod = 'totp' | 'backup_code'
+type StepUpAction = 'export_project_record'
 
 type ProjectSearchResult = {
   attachmentId?: Id<'attachments'>
@@ -246,6 +257,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const setGroupNotificationMode = useMutation(api.notifications.setGroupMode)
   const registerNotificationSubscription = useMutation(api.notifications.registerSubscription)
   const requestExport = useMutation(api.exports.request)
+  const verifyStepUpTotp = useMutation(api.auth.verifyStepUpTotp)
   const heartbeatTypingIndicator = useMutation(api.typingIndicators.heartbeat)
   const clearTypingIndicator = useMutation(api.typingIndicators.clear)
 
@@ -256,6 +268,12 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [activeProjectId, setActiveProjectId] = useState<Id<'projects'> | null>(null)
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
   const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null)
+  const [stepUpDialogOpen, setStepUpDialogOpen] = useState(false)
+  const [stepUpAction, setStepUpAction] = useState<StepUpAction | null>(null)
+  const [stepUpCode, setStepUpCode] = useState('')
+  const [stepUpMethod, setStepUpMethod] = useState<StepUpMethod>('totp')
+  const [stepUpMessage, setStepUpMessage] = useState('')
+  const [pendingExportFormat, setPendingExportFormat] = useState<'csv' | 'pdf' | null>(null)
   const [composer, setComposer] = useState('')
   const [replyToMessage, setReplyToMessage] = useState<GroupMessageItem | null>(null)
   const [composerFocused, setComposerFocused] = useState(false)
@@ -451,6 +469,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const exportDownloadUrl = useQuery(
     api.exports.getDownloadUrl,
     trackUserId && latestExportId ? { userId: trackUserId, exportId: latestExportId } : 'skip',
+  )
+  const exportStepUpFresh = useQuery(
+    api.auth.hasFreshStepUp,
+    trackUserId ? { userId: trackUserId, action: 'export_project_record' } : 'skip',
   )
 
   const projectItems = useMemo(
@@ -1673,7 +1695,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
-  async function handleRequestExport(format: 'csv' | 'pdf') {
+  async function performRequestExport(format: 'csv' | 'pdf') {
     if (!trackUserId || !activeProjectId) return
     await withBusy(`export-${format}`, async () => {
       const exportId = await requestExport({
@@ -1683,6 +1705,49 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         preset: format === 'pdf' ? 'full_audit_packet' : 'client_summary',
       })
       setLatestExportId(exportId)
+    })
+  }
+
+  async function handleRequestExport(format: 'csv' | 'pdf') {
+    if (!trackUserId || !activeProjectId) return
+    if (currentTrackUser?.twoFactorEnabled && !exportStepUpFresh) {
+      setPendingExportFormat(format)
+      setStepUpAction('export_project_record')
+      setStepUpCode('')
+      setStepUpMethod('totp')
+      setStepUpMessage('')
+      setStepUpDialogOpen(true)
+      return
+    }
+    await performRequestExport(format)
+  }
+
+  async function handleVerifyStepUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!trackUserId || !stepUpAction) return
+    if (!stepUpCode.trim()) {
+      setStepUpMessage('Enter an authenticator or backup code.')
+      return
+    }
+
+    await withBusy('step-up', async () => {
+      try {
+        await verifyStepUpTotp({
+          userId: trackUserId,
+          action: stepUpAction,
+          code: stepUpCode.trim(),
+          method: stepUpMethod,
+        })
+        const exportFormat = pendingExportFormat
+        setStepUpDialogOpen(false)
+        setStepUpCode('')
+        setStepUpMessage('')
+        setStepUpAction(null)
+        setPendingExportFormat(null)
+        if (exportFormat) await performRequestExport(exportFormat)
+      } catch (error) {
+        setStepUpMessage(error instanceof Error ? error.message : 'Invalid verification code.')
+      }
     })
   }
 
@@ -2978,6 +3043,63 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         sections={projectSearchSections}
         total={projectSearchTotal}
       />
+      <Dialog open={stepUpDialogOpen} onOpenChange={setStepUpDialogOpen}>
+        <DialogContent className="track-dialog track-step-up-dialog">
+          <DialogHeader>
+            <div className="track-step-up-icon">
+              <ShieldCheck size={18} />
+            </div>
+            <DialogTitle>Verify this action</DialogTitle>
+            <DialogDescription>
+              Exporting project records requires a fresh two-factor check. Verification stays trusted for 10 minutes.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => void handleVerifyStepUp(event)}>
+            <div className="track-two-factor-methods">
+              <Button
+                className={stepUpMethod === 'totp' ? 'track-button track-button-primary' : 'track-button'}
+                onClick={() => setStepUpMethod('totp')}
+                type="button"
+              >
+                Authenticator
+              </Button>
+              <Button
+                className={stepUpMethod === 'backup_code' ? 'track-button track-button-primary' : 'track-button'}
+                onClick={() => setStepUpMethod('backup_code')}
+                type="button"
+              >
+                Backup code
+              </Button>
+            </div>
+            <Input
+              aria-label={stepUpMethod === 'backup_code' ? 'Backup code' : 'Authenticator code'}
+              autoComplete="one-time-code"
+              inputMode={stepUpMethod === 'backup_code' ? 'text' : 'numeric'}
+              onChange={(event) => setStepUpCode(event.currentTarget.value)}
+              placeholder={stepUpMethod === 'backup_code' ? 'XXXX-XXXXXX' : '123456'}
+              value={stepUpCode}
+            />
+            {stepUpMessage ? <p className="track-auth-error">{stepUpMessage}</p> : null}
+            <DialogFooter>
+              <Button
+                className="track-button"
+                onClick={() => {
+                  setStepUpDialogOpen(false)
+                  setPendingExportFormat(null)
+                  setStepUpAction(null)
+                  setStepUpMessage('')
+                }}
+                type="button"
+              >
+                Cancel
+              </Button>
+              <Button className="track-button track-button-primary" disabled={busyAction === 'step-up'} type="submit">
+                Verify and continue
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <WorkspaceDialogs
         activeGroupId={activeGroupId}
         busyAction={busyAction}

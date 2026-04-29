@@ -369,7 +369,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   }
 
   return (
-    <main className="track-profile-page">
+    <main className={mode === 'onboarding' ? 'track-profile-page onboarding' : 'track-profile-page'}>
       <section className="track-profile-shell">
         <aside className="track-profile-sidebar" aria-label="Profile settings sections">
           {mode === 'settings' ? (
