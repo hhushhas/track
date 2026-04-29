@@ -1,4 +1,14 @@
-import { Check, Sparkles } from 'lucide-react'
+import {
+  Check,
+  CornerUpLeft,
+  CornerUpRight,
+  ExternalLink,
+  MoreHorizontal,
+  Paperclip,
+  Search,
+  Sparkles,
+  X,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
@@ -6,8 +16,23 @@ import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '#/components/ui/popover'
 import { Textarea } from '#/components/ui/textarea'
 import { AttachmentTypeIcon, formatFileSize } from './attachment-ui'
 import { AvatarNameTooltip } from './avatar-tooltip'
@@ -17,26 +42,79 @@ import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
 import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
 
+export type ReplyToMessagePreview = {
+  messageId: Id<'messages'>
+  authorName: string
+  body: string
+  createdAt: number
+}
+
+export type ForwardedMessagePreview = {
+  originalAuthorName: string
+  originalBody: string
+  originalCreatedAt: number
+  attachmentSnapshots: Array<{
+    filename: string
+    contentType: string
+    size: number
+    kind?: Doc<'attachments'>['kind']
+    durationMs?: number
+  }>
+  forwardedAt: number
+  canOpenSource: boolean
+  sourceGroupId: Id<'groups'> | null
+  sourceMessageId: Id<'messages'> | null
+  sourceGroupName: string | null
+}
+
+export type GroupMessageItem = {
+  message: Doc<'messages'>
+  author: Doc<'users'> | null
+  authorRole: Doc<'projectMembers'>['role'] | null
+  attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
+  replyTo: ReplyToMessagePreview | null
+  forwardedFrom: ForwardedMessagePreview | null
+}
+
+export function getForwardedSourceLabel(forwarded: Pick<ForwardedMessagePreview, 'sourceGroupName'>) {
+  return forwarded.sourceGroupName ? `Forwarded from ${forwarded.sourceGroupName}` : 'Forwarded message'
+}
+
+export function formatCopiedAttachmentCount(count: number) {
+  return `${count} attachment${count === 1 ? '' : 's'} copied`
+}
+
 export function MessageRow({
+  activeGroupId,
+  busyAction,
+  groups,
   isFlashing,
   item,
   mentionGroups,
+  onForwardMessage,
   onOpenGroup,
+  onOpenMessageSource,
+  onReplyMessage,
   searchQuery,
 }: {
-  authorRole: Doc<'projectMembers'>['role'] | null
+  activeGroupId: Id<'groups'> | null
+  busyAction: string | null
+  groups: Array<Doc<'groups'>>
   isFlashing?: boolean
-  item: {
-    message: Doc<'messages'>
-    author: Doc<'users'> | null
-    authorRole: Doc<'projectMembers'>['role'] | null
-    attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
-  }
+  item: GroupMessageItem
   mentionGroups: Map<string, Doc<'groups'>>
+  onForwardMessage: (input: {
+    sourceMessageId: Id<'messages'>
+    targetGroupId: Id<'groups'>
+    body: string
+  }) => Promise<boolean>
   onOpenGroup: (groupId: Id<'groups'>) => void
+  onOpenMessageSource: (groupId: Id<'groups'>, messageId: Id<'messages'>) => void
+  onReplyMessage: (item: GroupMessageItem) => void
   searchQuery?: string
 }) {
   const authorName = item.author?.displayName ?? 'Unknown Member'
+  const canForward = groups.some((group) => group._id !== item.message.groupId)
   return (
     <article
       className={isFlashing ? 'track-message-row flashing' : 'track-message-row'}
@@ -53,6 +131,15 @@ export function MessageRow({
         </Avatar>
       </AvatarNameTooltip>
       <Card className="track-message-body" size="sm">
+        <MessageActions
+          activeGroupId={activeGroupId}
+          busyAction={busyAction}
+          canForward={canForward}
+          groups={groups}
+          item={item}
+          onForwardMessage={onForwardMessage}
+          onReplyMessage={onReplyMessage}
+        />
         <div className="track-message-meta">
           <strong>{authorName}</strong>
           {/*<Badge className="track-role-chip" variant="outline">
@@ -60,6 +147,13 @@ export function MessageRow({
           </Badge>*/}
           <time>{new Date(item.message.createdAt).toLocaleTimeString()}</time>
         </div>
+        {item.replyTo ? <QuotedMessageBlock quote={item.replyTo} /> : null}
+        {item.forwardedFrom ? (
+          <ForwardedMessageBlock
+            forwarded={item.forwardedFrom}
+            onOpenSource={onOpenMessageSource}
+          />
+        ) : null}
         <MarkdownText
           className="track-markdown"
           highlightQuery={searchQuery}
@@ -147,6 +241,257 @@ export function MessageRow({
         ) : null}
       </Card>
     </article>
+  )
+}
+
+function MessageActions({
+  activeGroupId,
+  busyAction,
+  canForward,
+  groups,
+  item,
+  onForwardMessage,
+  onReplyMessage,
+}: {
+  activeGroupId: Id<'groups'> | null
+  busyAction: string | null
+  canForward: boolean
+  groups: Array<Doc<'groups'>>
+  item: GroupMessageItem
+  onForwardMessage: (input: {
+    sourceMessageId: Id<'messages'>
+    targetGroupId: Id<'groups'>
+    body: string
+  }) => Promise<boolean>
+  onReplyMessage: (item: GroupMessageItem) => void
+}) {
+  return (
+    <div className="track-message-actions" aria-label="Message actions">
+      <Button
+        aria-label="Reply to message"
+        className="icon-button track-message-action-button"
+        onClick={() => onReplyMessage(item)}
+        title="Reply"
+        type="button"
+      >
+        <CornerUpLeft size={14} />
+      </Button>
+      <ForwardMessagePopover
+        activeGroupId={activeGroupId}
+        busyAction={busyAction}
+        canForward={canForward}
+        groups={groups}
+        item={item}
+        onForwardMessage={onForwardMessage}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              aria-label="More message actions"
+              className="icon-button track-message-action-button"
+              title="More"
+              type="button"
+            />
+          }
+        >
+          <MoreHorizontal size={14} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="track-message-menu">
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              onClick={() => {
+                const text = item.message.body || item.forwardedFrom?.originalBody || ''
+                if (text) void navigator.clipboard?.writeText(text)
+              }}
+            >
+              Copy text
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+function ForwardMessagePopover({
+  activeGroupId,
+  busyAction,
+  canForward,
+  groups,
+  item,
+  onForwardMessage,
+}: {
+  activeGroupId: Id<'groups'> | null
+  busyAction: string | null
+  canForward: boolean
+  groups: Array<Doc<'groups'>>
+  item: GroupMessageItem
+  onForwardMessage: (input: {
+    sourceMessageId: Id<'messages'>
+    targetGroupId: Id<'groups'>
+    body: string
+  }) => Promise<boolean>
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [note, setNote] = useState('')
+  const targetGroups = groups
+    .filter((group) => group._id !== item.message.groupId)
+    .filter((group) => group.name.toLowerCase().includes(query.trim().toLowerCase()))
+  const isForwarding = busyAction === `forward-${item.message._id}`
+  async function handleForward(targetGroupId: Id<'groups'>) {
+    const forwarded = await onForwardMessage({
+      sourceMessageId: item.message._id,
+      targetGroupId,
+      body: note,
+    })
+    if (!forwarded) return
+    setOpen(false)
+    setQuery('')
+    setNote('')
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        disabled={!activeGroupId || !canForward}
+        render={
+          <Button
+            aria-label="Forward message"
+            className="icon-button track-message-action-button"
+            title="Forward"
+            type="button"
+          />
+        }
+      >
+        <CornerUpRight size={14} />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="track-forward-popover" side="top" sideOffset={8}>
+        <PopoverHeader>
+          <PopoverTitle>Forward to Group</PopoverTitle>
+          <PopoverDescription>Send a copied snapshot with an optional note.</PopoverDescription>
+        </PopoverHeader>
+        <div className="track-forward-search">
+          <Search size={13} />
+          <Input
+            aria-label="Search Groups"
+            autoComplete="off"
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search groups..."
+            value={query}
+          />
+        </div>
+        <ForwardPreview item={item} />
+        <Textarea
+          aria-label="Optional forwarding note"
+          className="track-forward-note"
+          onChange={(event) => setNote(event.currentTarget.value)}
+          placeholder="Add context..."
+          value={note}
+        />
+        <div className="track-forward-targets">
+          {targetGroups.length > 0 ? (
+            targetGroups.map((group) => {
+              const { Icon, tone } = getGroupAvatar(group)
+              return (
+                <button
+                  className="track-forward-target"
+                  disabled={isForwarding}
+                  key={group._id}
+                  onClick={() => void handleForward(group._id)}
+                  type="button"
+                >
+                  <span className={`track-nav-group-icon ${tone}`}>
+                    <Icon size={14} />
+                  </span>
+                  <span>
+                    <strong>{group.name}</strong>
+                    <small>{group.kind.replaceAll('_', ' ')} Group</small>
+                  </span>
+                  <CornerUpRight size={13} />
+                </button>
+              )
+            })
+          ) : (
+            <div className="track-forward-empty">
+              <strong>No Groups available</strong>
+              <span>You need access to another Group where you can send messages.</span>
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function QuotedMessageBlock({ quote }: { quote: ReplyToMessagePreview }) {
+  return (
+    <div className="track-message-quote">
+      <span>{quote.authorName}</span>
+      <p>{quote.body || 'Attachment message'}</p>
+    </div>
+  )
+}
+
+function ForwardPreview({ item }: { item: GroupMessageItem }) {
+  const authorName = item.author?.displayName ?? 'Unknown Member'
+  const attachmentCount = item.attachments.length
+  return (
+    <div className="track-forward-preview">
+      <span>{authorName}</span>
+      <p>{item.message.body || 'Attachment message'}</p>
+      {attachmentCount > 0 ? (
+        <small>
+          <Paperclip size={12} />
+            {attachmentCount} attachment{attachmentCount === 1 ? '' : 's'} will be copied
+        </small>
+      ) : null}
+    </div>
+  )
+}
+
+function ForwardedMessageBlock({
+  forwarded,
+  onOpenSource,
+}: {
+  forwarded: ForwardedMessagePreview
+  onOpenSource: (groupId: Id<'groups'>, messageId: Id<'messages'>) => void
+}) {
+  const attachmentCount = forwarded.attachmentSnapshots.length
+  const sourceLabel = getForwardedSourceLabel(forwarded)
+  return (
+    <div className="track-forwarded-block">
+      <div className="track-forwarded-label">
+        <CornerUpRight size={13} />
+        <span>{sourceLabel}</span>
+      </div>
+      <div className="track-forwarded-card">
+        <span>{forwarded.originalAuthorName} · {new Date(forwarded.originalCreatedAt).toLocaleTimeString()}</span>
+        <p>{forwarded.originalBody || 'Attachment message'}</p>
+        {attachmentCount > 0 ? (
+          <small>
+            <Paperclip size={12} />
+            {formatCopiedAttachmentCount(attachmentCount)}
+          </small>
+        ) : null}
+      </div>
+      {forwarded.canOpenSource && forwarded.sourceGroupId && forwarded.sourceMessageId ? (
+        <button
+          className="track-forwarded-source"
+          onClick={() => onOpenSource(forwarded.sourceGroupId as Id<'groups'>, forwarded.sourceMessageId as Id<'messages'>)}
+          type="button"
+        >
+          <ExternalLink size={12} />
+          View source
+        </button>
+      ) : (
+        <span className="track-forwarded-source muted">
+          <X size={12} />
+          Source restricted
+        </span>
+      )}
+    </div>
   )
 }
 

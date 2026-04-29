@@ -242,12 +242,40 @@ export const collectContext = query({
     )
     const userNames = new Map(users.filter((user) => user !== null).map((user) => [user._id, user.displayName]))
 
-    const formattedMessages = orderedMessages.map((message) => ({
-      id: String(message._id),
-      author: userNames.get(message.authorId) ?? String(message.authorId),
-      body: message.body,
-      createdAt: message.createdAt,
-    }))
+    const formattedMessages = await Promise.all(
+      orderedMessages.map(async (message) => {
+        const bodyParts = [message.body]
+        if (message.replyToMessageId) {
+          const replyToMessage = await ctx.db.get(message.replyToMessageId)
+          if (replyToMessage && replyToMessage.groupId === message.groupId) {
+            const replyAuthor = await ctx.db.get(replyToMessage.authorId)
+            bodyParts.unshift(
+              `Replying to ${replyAuthor?.displayName ?? 'Unknown Member'}: ${replyToMessage.body || 'Attachment message'}`,
+            )
+          }
+        }
+        const forwardedFrom = message.forwardedFrom
+        if (forwardedFrom) {
+          const sourceMembership = await ctx.db
+            .query('groupMembers')
+            .withIndex('by_group_user', (q) =>
+              q.eq('groupId', forwardedFrom.sourceGroupId).eq('userId', args.requesterId),
+            )
+            .unique()
+          const sourceGroup = sourceMembership ? await ctx.db.get(forwardedFrom.sourceGroupId) : null
+          const sourceLabel = sourceGroup ? ` from ${sourceGroup.name}` : ' from another Group'
+          bodyParts.push(
+            `Forwarded/copied evidence${sourceLabel}. Original author ${forwardedFrom.originalAuthorName}: ${forwardedFrom.originalBody || 'Attachment message'}`,
+          )
+        }
+        return {
+          id: String(message._id),
+          author: userNames.get(message.authorId) ?? String(message.authorId),
+          body: bodyParts.filter(Boolean).join('\n'),
+          createdAt: message.createdAt,
+        }
+      }),
+    )
     const formattedRecords = records.map((record) => ({
       id: String(record._id),
       title: record.title,
@@ -267,11 +295,13 @@ export const collectContext = query({
       records: formattedRecords,
       drafts: formattedDrafts,
       evidence: [
-        ...orderedMessages.map((message) => ({
+        ...orderedMessages.map((message, index) => ({
           ref: String(message._id),
           messageId: message._id,
-          quote: message.body.slice(0, 220),
-          reason: 'Current Group message.',
+          quote: formattedMessages[index]?.body.slice(0, 220) ?? message.body.slice(0, 220),
+          reason: message.forwardedFrom
+            ? 'Current Group message containing forwarded/copied evidence.'
+            : 'Current Group message.',
         })),
         ...records.map((record) => ({
           ref: String(record._id),

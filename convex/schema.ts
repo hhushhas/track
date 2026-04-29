@@ -71,6 +71,26 @@ const evidenceItem = v.object({
   reason: v.optional(v.string()),
 })
 
+const forwardedAttachmentSnapshot = v.object({
+  filename: v.string(),
+  contentType: v.string(),
+  size: v.number(),
+  kind: v.optional(attachmentKind),
+  durationMs: v.optional(v.number()),
+})
+
+const forwardedMessageSnapshot = v.object({
+  sourceProjectId: v.id('projects'),
+  sourceGroupId: v.id('groups'),
+  sourceMessageId: v.id('messages'),
+  originalAuthorId: v.id('users'),
+  originalAuthorName: v.string(),
+  originalBody: v.string(),
+  originalCreatedAt: v.number(),
+  attachmentSnapshots: v.array(forwardedAttachmentSnapshot),
+  forwardedAt: v.number(),
+})
+
 export default defineSchema({
   users: defineTable({
     googleSubject: v.string(),
@@ -164,6 +184,8 @@ export default defineSchema({
     body: v.string(),
     mentions: v.array(v.id('users')),
     attachmentIds: v.array(v.id('attachments')),
+    replyToMessageId: v.optional(v.id('messages')),
+    forwardedFrom: v.optional(forwardedMessageSnapshot),
     notificationPreview: v.optional(v.string()),
     trackInvocationId: v.optional(v.id('assistantStreams')),
     createdAt: v.number(),

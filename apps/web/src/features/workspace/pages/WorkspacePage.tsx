@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  CornerUpLeft,
   Download,
   FileCheck2,
   FolderKanban,
@@ -61,6 +62,7 @@ import { draftClassifications, draftStatuses, notificationModes } from '#/featur
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
 import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
+import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import {
   TYPING_INDICATOR_HEARTBEAT_MS,
   TypingIndicatorLine,
@@ -214,6 +216,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const acceptPendingInvitations = useMutation(api.invitations.acceptPendingForCurrentUser)
   const updateGroupAiReviewSettings = useMutation(api.groups.updateAiReviewSettings)
   const sendMessageMutation = useMutation(api.messages.send)
+  const forwardMessageMutation = useMutation(api.messages.forwardMessage)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const attachFileMutation = useMutation(api.messages.attachFile)
   const runReviewAction = useAction(api.ai.runReviewNow)
@@ -233,6 +236,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
   const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null)
   const [composer, setComposer] = useState('')
+  const [replyToMessage, setReplyToMessage] = useState<GroupMessageItem | null>(null)
   const [composerFocused, setComposerFocused] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<Array<ReturnType<typeof createPendingAttachment>>>([])
   const [busyAction, setBusyAction] = useState<string | null>(null)
@@ -540,13 +544,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     return null
   }, [composerFocused, composerHasTypingText, pendingAttachments.length, voiceRecordingActive])
   const groupMessages = useMemo(
-    () =>
-      (messages ?? []) as Array<{
-        message: Doc<'messages'>
-        author: Doc<'users'> | null
-        authorRole: Doc<'projectMembers'>['role'] | null
-        attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
-      }>,
+    () => (messages ?? []) as Array<GroupMessageItem>,
     [messages],
   )
   const activeTypingIndicators = useMemo(
@@ -615,6 +613,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     }, TYPING_INDICATOR_HEARTBEAT_MS)
     return () => window.clearInterval(intervalId)
   }, [activeGroupId, view])
+
+  useEffect(() => {
+    setReplyToMessage(null)
+  }, [activeGroupId])
 
   useEffect(() => {
     function handleVisibilityChange() {
@@ -1282,6 +1284,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         authorId: trackUserId,
         body: messageBody,
         mentions: mentionedUserIds,
+        replyToMessageId: replyToMessage?.message._id,
         notificationPreview: messageBody
           ? undefined
           : hasVoiceNote
@@ -1315,6 +1318,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       }
       setComposer('')
       setComposerCursor(0)
+      setReplyToMessage(null)
       clearPendingAttachments()
       shouldFollowLatestRef.current = true
       requestThreadScrollToLatest('smooth')
@@ -1322,6 +1326,63 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         composerRef.current?.focus({ preventScroll: true })
       })
     })
+  }
+
+  function handleReplyMessage(item: GroupMessageItem) {
+    if (item.message.groupId !== activeGroupId) return
+    setReplyToMessage(item)
+    requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
+  }
+
+  async function handleForwardMessage(input: {
+    sourceMessageId: Id<'messages'>
+    targetGroupId: Id<'groups'>
+    body: string
+  }) {
+    if (!trackUserId || !activeProjectId || !activeGroupId) return false
+    setBusyAction(`forward-${input.sourceMessageId}`)
+    setUiError(null)
+    try {
+      const body = input.body.trim()
+      const mentionHandles = parseMentions(body)
+      const mentionedUserIds: Array<Id<'users'>> = []
+      for (const handle of mentionHandles) {
+        const option = mentionOptions.find((item) => item.kind === 'member' && item.handle === handle)
+        if (option?.kind === 'member') mentionedUserIds.push(option.id)
+      }
+      const messageId = await forwardMessageMutation({
+        projectId: activeProjectId,
+        sourceMessageId: input.sourceMessageId,
+        targetGroupId: input.targetGroupId,
+        actorId: trackUserId,
+        body,
+        mentions: mentionedUserIds,
+      })
+      if (mentionHandles.includes('track')) {
+        await askTrackAction({
+          projectId: activeProjectId,
+          groupId: input.targetGroupId,
+          requesterId: trackUserId,
+          promptMessageId: messageId,
+          question: body,
+        })
+      }
+      return true
+    } catch (error) {
+      setActionError(error)
+      return false
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  function handleOpenMessageSource(groupIdToOpen: Id<'groups'>, messageIdToOpen: Id<'messages'>) {
+    if (!activeProjectId) return
+    navigateToGroup(groupIdToOpen)
+    setPendingFocusMessageId(messageIdToOpen)
+    if (groupIdToOpen === activeGroupId) {
+      requestMessageFocus(messageIdToOpen)
+    }
   }
 
   function scrollThreadToLatest(behavior: ScrollBehavior = 'smooth') {
@@ -2124,14 +2185,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                           <ThreadDaySeparator label={formatThreadDayLabel(threadItem.at)} />
                         ) : null}
                         <MessageRow
-                          authorRole={
-                            projectMemberRoleByUserId.get(threadItem.item.author?._id ?? '') ??
-                            threadItem.item.authorRole
-                          }
+                          activeGroupId={activeGroupId}
+                          busyAction={busyAction}
+                          groups={visibleGroups}
                           isFlashing={flashingMessageId === threadItem.item.message._id}
-                          item={threadItem.item}
+                          item={{
+                            ...threadItem.item,
+                            authorRole:
+                              projectMemberRoleByUserId.get(threadItem.item.author?._id ?? '') ??
+                              threadItem.item.authorRole,
+                          }}
                           mentionGroups={mentionGroups}
+                          onForwardMessage={handleForwardMessage}
                           onOpenGroup={navigateToGroup}
+                          onOpenMessageSource={handleOpenMessageSource}
+                          onReplyMessage={handleReplyMessage}
                           searchQuery={searchQuery}
                         />
                       </Fragment>
@@ -2186,6 +2254,22 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             <div className="track-composer-wrap">
               <TypingIndicatorLine indicators={activeTypingIndicators} />
               <div className={voiceRecordingActive ? 'track-composer recording' : 'track-composer'}>
+                {!voiceRecordingActive && replyToMessage ? (
+                  <div className="track-composer-quote" aria-label="Replying to message">
+                    <CornerUpLeft size={14} />
+                    <span>
+                      <strong>Replying to {replyToMessage.author?.displayName ?? 'Unknown Member'}</strong>
+                      <small>{replyToMessage.message.body || 'Attachment message'}</small>
+                    </span>
+                    <button
+                      aria-label="Cancel reply"
+                      onClick={() => setReplyToMessage(null)}
+                      type="button"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : null}
                 {!voiceRecordingActive && pendingAttachments.length > 0 ? (
                   <div className="track-composer-attachments" aria-label="Pending attachments">
                     {pendingAttachments.map((attachment) => (
