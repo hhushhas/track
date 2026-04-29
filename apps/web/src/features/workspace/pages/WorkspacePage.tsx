@@ -126,6 +126,14 @@ function ignoreTypingIndicatorError() {
   return undefined
 }
 
+export function findVisibleRouteGroupId(
+  routeGroupId: string | undefined,
+  visibleGroups: Array<Pick<Doc<'groups'>, '_id'>>,
+) {
+  if (!routeGroupId) return null
+  return visibleGroups.find((group) => group._id === routeGroupId)?._id ?? null
+}
+
 function getSessionUser(sessionData: unknown) {
   if (!sessionData || typeof sessionData !== 'object') return null
 
@@ -729,12 +737,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [activeProjectId, routeProjectId])
 
   useEffect(() => {
-    if (routeGroupId && routeGroupId !== activeGroupId) {
-      setActiveGroupId(routeGroupId)
-    }
-  }, [activeGroupId, routeGroupId])
-
-  useEffect(() => {
     if (!sessionUser?.id || trackUserId) return
     if (devAuthBypass.enabled && !session.data) {
       void syncDevUser()
@@ -800,10 +802,27 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       return
     }
     if (routeGroupId) {
-      if (activeGroupId !== routeGroupId) {
-        setActiveGroupId(routeGroupId)
+      if (groups === undefined) return
+      const visibleRouteGroupId = findVisibleRouteGroupId(routeGroupId, visibleGroups)
+      if (visibleRouteGroupId) {
+        if (activeGroupId !== visibleRouteGroupId) {
+          setActiveGroupId(visibleRouteGroupId)
+        }
+        return
       }
-      if (groups !== undefined && !visibleGroups.some((group) => group._id === routeGroupId)) {
+      if (activeGroupId !== null) {
+        setActiveGroupId(null)
+      }
+      if (visibleGroups.length) {
+        const firstGroupId = visibleGroups[0]?._id
+        const projectIdToOpen = activeProjectId ?? routeProjectId
+        if (firstGroupId && projectIdToOpen) {
+          void navigate({
+            to: '/workspace/projects/$projectId/groups/$groupId',
+            params: { groupId: firstGroupId, projectId: projectIdToOpen },
+          })
+        }
+      } else {
         setUiError('This group is not visible in the selected project.')
       }
       return
@@ -816,7 +835,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (!routeGroupId && (!activeGroupId || !visibleGroups.some((group) => group._id === activeGroupId))) {
       setActiveGroupId(visibleGroups[0]?._id ?? null)
     }
-  }, [activeGroupId, groups, routeGroupId, view, visibleGroups])
+  }, [activeGroupId, activeProjectId, groups, navigate, routeGroupId, routeProjectId, view, visibleGroups])
 
   useEffect(() => {
     const firstGroupId = visibleGroups[0]?._id
