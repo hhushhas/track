@@ -290,17 +290,24 @@ export function VoiceNotePlayer({
     function syncPaused() {
       setPlaying(false)
     }
+    function syncEnded() {
+      const finalDuration = Number.isFinite(audio?.duration) && audio?.duration
+        ? audio.duration
+        : durationSeconds
+      setCurrentTime(finalDuration)
+      setPlaying(false)
+    }
     audio.addEventListener('timeupdate', syncTime)
     audio.addEventListener('loadedmetadata', syncDuration)
     audio.addEventListener('pause', syncPaused)
-    audio.addEventListener('ended', syncPaused)
+    audio.addEventListener('ended', syncEnded)
     return () => {
       audio.removeEventListener('timeupdate', syncTime)
       audio.removeEventListener('loadedmetadata', syncDuration)
       audio.removeEventListener('pause', syncPaused)
-      audio.removeEventListener('ended', syncPaused)
+      audio.removeEventListener('ended', syncEnded)
     }
-  }, [url])
+  }, [durationSeconds, url])
 
   async function togglePlayback() {
     const audio = audioRef.current

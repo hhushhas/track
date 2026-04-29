@@ -403,7 +403,6 @@ button {
 .group-button:focus-visible,
 .track-nav-action:focus-visible,
 .track-nav-item:focus-visible,
-.track-setting-button:focus-visible,
 .track-chip:focus-visible,
 .track-mini-button:focus-visible,
 .track-draft-save:focus-visible,
@@ -4051,9 +4050,9 @@ button.track-mention-inline.group:focus-visible {
   grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: transparent;
-  padding: 12px;
+  padding: 12px 14px;
 }
 
 .track-voice-recorder-main {
@@ -4068,6 +4067,10 @@ button.track-mention-inline.group:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.track-voice-recorder-actions .track-button {
+  min-height: 36px;
 }
 
 .track-recording-dot {
@@ -4539,26 +4542,10 @@ button.track-mention-inline.group:focus-visible {
   color: var(--ink-2);
 }
 
-.track-setting-button {
-  min-height: 28px;
-  margin: 0;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 5px;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease;
-}
-
 .track-rail-inline-actions {
   display: flex;
   align-items: center;
+  gap: 6px;
   margin: 6px 0;
 }
 
@@ -4662,13 +4649,6 @@ button.track-mention-inline.group:focus-visible {
 .track-rail-compact-copy {
   font-size: 12px;
   line-height: 1.35;
-}
-
-.track-setting-button:hover {
-  border-color: var(--ink-4);
-  background: var(--paper);
-  box-shadow: 0 1px 0 rgba(27, 25, 23, 0.08);
-  transform: translateY(-1px);
 }
 
 .track-count-grid {
@@ -5487,14 +5467,27 @@ button:disabled:hover {
   }
 
   .track-voice-recorder {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .track-voice-recorder-main {
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    row-gap: 10px;
   }
 
   .track-recording-meter {
-    order: 4;
-    flex-basis: 100%;
+    grid-column: 1 / -1;
+    min-height: 28px;
     justify-content: flex-start;
+  }
+
+  .track-voice-recorder-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
 
   .track-composer-hint {

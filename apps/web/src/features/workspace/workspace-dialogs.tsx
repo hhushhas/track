@@ -30,6 +30,7 @@ export function WorkspaceDialogs({
   projectClientLabel,
   projectDialogOpen,
   projectName,
+  reviewEnabledInput,
   setFrequencyDialogOpen,
   setFrequencyMinutesInput,
   setGroupDialogOpen,
@@ -42,6 +43,7 @@ export function WorkspaceDialogs({
   setProjectClientLabel,
   setProjectDialogOpen,
   setProjectName,
+  setReviewEnabledInput,
   onCreateGroupSubmit,
   onCreateProjectSubmit,
   onFrequencySubmit,
@@ -62,6 +64,7 @@ export function WorkspaceDialogs({
   projectClientLabel: string
   projectDialogOpen: boolean
   projectName: string
+  reviewEnabledInput: boolean
   setFrequencyDialogOpen: (open: boolean) => void
   setFrequencyMinutesInput: (value: string) => void
   setGroupDialogOpen: (open: boolean) => void
@@ -74,6 +77,7 @@ export function WorkspaceDialogs({
   setProjectClientLabel: (value: string) => void
   setProjectDialogOpen: (open: boolean) => void
   setProjectName: (value: string) => void
+  setReviewEnabledInput: (value: boolean) => void
   onCreateGroupSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCreateProjectSubmit: (event: FormEvent<HTMLFormElement>) => void
   onFrequencySubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -223,6 +227,10 @@ export function WorkspaceDialogs({
               <DialogDescription>Set how often Track reviews the current group.</DialogDescription>
             </DialogHeader>
             <div className="track-dialog-fields">
+              <label className="track-switch-row">
+                <span>AI review enabled</span>
+                <Switch checked={reviewEnabledInput} onCheckedChange={setReviewEnabledInput} />
+              </label>
               <label className="track-dialog-field">
                 <span>Minutes</span>
                 <Input

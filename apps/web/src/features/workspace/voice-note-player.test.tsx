@@ -67,4 +67,28 @@ describe('VoiceNotePlayer', () => {
     expect(screen.getByLabelText('Play voice note')).toHaveProperty('disabled', true)
     expect(screen.getByLabelText('Voice note progress')).toHaveProperty('disabled', true)
   })
+
+  it('fills the progress control when playback ends', () => {
+    const { container } = render(
+      <VoiceNotePlayer
+        contentType="audio/webm"
+        durationMs={3_000}
+        filename="voice-note.webm"
+        kind="voice_note"
+        size={142_000}
+        url="blob:voice-note"
+      />,
+    )
+    const audio = container.querySelector('audio')
+    expect(audio).toBeTruthy()
+
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      value: 3,
+    })
+    fireEvent.ended(audio as HTMLAudioElement)
+
+    expect(screen.getByLabelText('Voice note progress')).toHaveProperty('value', '100')
+    expect(screen.getByText('0:03 / 0:03')).toBeTruthy()
+  })
 })

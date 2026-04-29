@@ -26,7 +26,6 @@ import {
   Search,
   Settings2,
   Smile,
-  Sparkles,
   Upload,
   X,
 } from 'lucide-react'
@@ -231,7 +230,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const forwardMessageMutation = useMutation(api.messages.forwardMessage)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const attachFileMutation = useMutation(api.messages.attachFile)
-  const runReviewAction = useAction(api.ai.runReviewNow)
   const classifyDraftMutation = useMutation(api.records.classifyDraft)
   const updateRecordStatus = useMutation(api.records.updateStatus)
   const askTrackAction = useAction(api.assistant.ask)
@@ -271,6 +269,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
   const [frequencyDialogOpen, setFrequencyDialogOpen] = useState(false)
+  const [reviewEnabledInput, setReviewEnabledInput] = useState(true)
   const [projectName, setProjectName] = useState('')
   const [projectClientLabel, setProjectClientLabel] = useState('')
   const [groupName, setGroupName] = useState('')
@@ -1250,6 +1249,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   function handleFrequencyChange() {
     const current = activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30
+    setReviewEnabledInput(activeGroup?.aiReviewSettings?.enabled ?? true)
     setFrequencyMinutesInput(String(current))
     setFrequencyDialogOpen(true)
   }
@@ -1533,6 +1533,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (!activeGroupId) return
     const files = Array.from(event.clipboardData.files)
     if (files.length === 0) return
+    event.preventDefault()
     addPendingAttachments(files)
   }
 
@@ -1575,17 +1576,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     })
   }
 
-  async function handleRunReview() {
-    if (!trackUserId || !activeProjectId || !activeGroupId) return
-    await withBusy('run-review', async () => {
-      await runReviewAction({
-        projectId: activeProjectId,
-        groupId: activeGroupId,
-        reviewerId: trackUserId,
-      })
-    })
-  }
-
   async function handleFrequencySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!trackUserId || !activeProjectId || !activeGroupId || !activeGroup) return
@@ -1599,7 +1589,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         projectId: activeProjectId,
         groupId: activeGroupId,
         userId: trackUserId,
-        enabled: activeGroup.aiReviewSettings?.enabled ?? true,
+        enabled: reviewEnabledInput,
         frequencyMinutes,
       })
       setFrequencyDialogOpen(false)
@@ -2232,15 +2222,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
               </Button>
             ) : null}
             {view === 'group' ? (
-              <Button
-                className="track-button track-button-accent"
-                disabled={!activeGroupId || busyAction === 'run-review'}
-                onClick={handleRunReview}
-                type="button"
-              >
-                <Sparkles size={14} />
-                Run AI Review
-              </Button>
+              null
             ) : view === 'project' ? (
               <Button
                 className="track-button track-button-accent"
@@ -2759,6 +2741,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                         ) : null}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    <button
+                      aria-label="AI review settings"
+                      className="track-rail-icon-button"
+                      disabled={!activeGroupId || busyAction === 'review-frequency'}
+                      onClick={handleFrequencyChange}
+                      type="button"
+                    >
+                      <Settings2 size={14} />
+                    </button>
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         aria-label="Notification settings"
@@ -2804,16 +2795,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <div className="track-review-status">
                   <span>Last run</span>
                   <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
-                </div>
-                <div className="track-rail-inline-actions">
-                  <Button
-                    className="track-setting-button"
-                    disabled={!activeGroupId || busyAction === 'review-frequency'}
-                    onClick={handleFrequencyChange}
-                    type="button"
-                  >
-                    Every {activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30} minutes
-                  </Button>
                 </div>
                 <p className="track-muted track-rail-compact-copy">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
               </Card>
@@ -2926,6 +2907,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         projectClientLabel={projectClientLabel}
         projectDialogOpen={projectDialogOpen}
         projectName={projectName}
+        reviewEnabledInput={reviewEnabledInput}
         setFrequencyDialogOpen={setFrequencyDialogOpen}
         setFrequencyMinutesInput={setFrequencyMinutesInput}
         setGroupDialogOpen={setGroupDialogOpen}
@@ -2938,6 +2920,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         setProjectClientLabel={setProjectClientLabel}
         setProjectDialogOpen={setProjectDialogOpen}
         setProjectName={setProjectName}
+        setReviewEnabledInput={setReviewEnabledInput}
       />
     </main>
   )
