@@ -1,5 +1,7 @@
 import { shouldNotifyForMessage } from '@track/shared'
 
+const PUSH_SUBSCRIBE_TIMEOUT_MS = 45_000
+
 export const notificationPermissionLabels = {
   default: 'Not enabled',
   denied: 'Blocked',
@@ -26,13 +28,13 @@ function urlBase64ToUint8Array(value: string) {
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
 }
 
-async function withTimeout<T>(label: string, promise: Promise<T>, timeoutMs = 8000) {
+async function withTimeout<T>(label: string, promise: Promise<T>, timeoutMs = 8000, timeoutMessage?: string) {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
   try {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(`${label} timed out.`)), timeoutMs)
+        timeoutId = setTimeout(() => reject(new Error(timeoutMessage ?? `${label} timed out.`)), timeoutMs)
       }),
     ])
   } finally {
@@ -97,6 +99,8 @@ export async function subscribeToWebPush(
       applicationServerKey: urlBase64ToUint8Array(publicKey),
       userVisibleOnly: true,
     }),
+    PUSH_SUBSCRIBE_TIMEOUT_MS,
+    'The browser push service did not finish creating a subscription. Restart the browser or PWA, disable VPN/content blockers for Track, then try again.',
   )
 }
 
