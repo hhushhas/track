@@ -27,7 +27,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, ClipboardEvent } from 'react'
 import type { CSSProperties } from 'react'
 import type { FormEvent } from 'react'
@@ -81,6 +81,7 @@ import {
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
 import ThemeToggle from '#/components/ThemeToggle'
+import TrackLoader from '#/components/TrackLoader'
 
 type WorkspacePageProps = {
   groupId?: string
@@ -169,6 +170,27 @@ function createPendingAttachment(
 
 function formatRailLabel(value: string) {
   return value.replaceAll('_', ' ')
+}
+
+function getThreadDayKey(timestamp: number) {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
+function formatThreadDayLabel(timestamp: number) {
+  const date = new Date(timestamp)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+
+  if (getThreadDayKey(timestamp) === getThreadDayKey(today.getTime())) return 'Today'
+  if (getThreadDayKey(timestamp) === getThreadDayKey(yesterday.getTime())) return 'Yesterday'
+
+  return date.toLocaleDateString([], {
+    day: 'numeric',
+    month: 'short',
+    year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+  })
 }
 
 export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePageProps) {
@@ -1971,47 +1993,63 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   </div>
                 ) : null}
 
-                {threadItems.map((threadItem) => {
+                {threadItems.map((threadItem, index) => {
+                  const previousThreadItem = threadItems[index - 1]
+                  const dayKey = getThreadDayKey(threadItem.at)
+                  const shouldShowDaySeparator =
+                    !previousThreadItem || getThreadDayKey(previousThreadItem.at) !== dayKey
                   const searchQuery = chatSearchMatchKeys.has(threadItem.key) ? chatSearchTerm : undefined
                   if (threadItem.kind === 'message') {
                     return (
-                      <MessageRow
-                        authorRole={
-                          projectMemberRoleByUserId.get(threadItem.item.author?._id ?? '') ??
-                          threadItem.item.authorRole
-                        }
-                        key={threadItem.key}
-                        isFlashing={flashingMessageId === threadItem.item.message._id}
-                        item={threadItem.item}
-                        mentionGroups={mentionGroups}
-                        onOpenGroup={navigateToGroup}
-                        searchQuery={searchQuery}
-                      />
+                      <Fragment key={threadItem.key}>
+                        {shouldShowDaySeparator ? (
+                          <ThreadDaySeparator label={formatThreadDayLabel(threadItem.at)} />
+                        ) : null}
+                        <MessageRow
+                          authorRole={
+                            projectMemberRoleByUserId.get(threadItem.item.author?._id ?? '') ??
+                            threadItem.item.authorRole
+                          }
+                          isFlashing={flashingMessageId === threadItem.item.message._id}
+                          item={threadItem.item}
+                          mentionGroups={mentionGroups}
+                          onOpenGroup={navigateToGroup}
+                          searchQuery={searchQuery}
+                        />
+                      </Fragment>
                     )
                   }
                   if (threadItem.kind === 'assistant') {
                     return (
-                      <AssistantAnswer
-                        key={threadItem.key}
-                        mentionGroups={mentionGroups}
-                        messageCitations={messageCitations}
-                        onOpenGroup={navigateToGroup}
-                        onOpenMessageCitation={requestMessageFocus}
-                        searchQuery={searchQuery}
-                        stream={threadItem.stream}
-                        threadItemKey={threadItem.key}
-                      />
+                      <Fragment key={threadItem.key}>
+                        {shouldShowDaySeparator ? (
+                          <ThreadDaySeparator label={formatThreadDayLabel(threadItem.at)} />
+                        ) : null}
+                        <AssistantAnswer
+                          mentionGroups={mentionGroups}
+                          messageCitations={messageCitations}
+                          onOpenGroup={navigateToGroup}
+                          onOpenMessageCitation={requestMessageFocus}
+                          searchQuery={searchQuery}
+                          stream={threadItem.stream}
+                          threadItemKey={threadItem.key}
+                        />
+                      </Fragment>
                     )
                   }
                   return (
-                    <DraftRecordCard
-                      busy={busyAction === `classify-${threadItem.draft._id}`}
-                      draft={threadItem.draft}
-                      isSearchActive={chatSearchMatchKeys.has(threadItem.key)}
-                      key={threadItem.key}
-                      onClassify={handleClassifyDraft}
-                      searchQuery={searchQuery}
-                    />
+                    <Fragment key={threadItem.key}>
+                      {shouldShowDaySeparator ? (
+                        <ThreadDaySeparator label={formatThreadDayLabel(threadItem.at)} />
+                      ) : null}
+                      <DraftRecordCard
+                        busy={busyAction === `classify-${threadItem.draft._id}`}
+                        draft={threadItem.draft}
+                        isSearchActive={chatSearchMatchKeys.has(threadItem.key)}
+                        onClassify={handleClassifyDraft}
+                        searchQuery={searchQuery}
+                      />
+                    </Fragment>
                   )
                 })}
               </div>
@@ -3123,15 +3161,16 @@ function ProjectSettingsPage({
   )
 }
 
-function TrackLoading({ label }: { label: string }) {
+function ThreadDaySeparator({ label }: { label: string }) {
   return (
-    <main className="track-loading">
-      <div className="track-surface rounded-md p-4 text-center">
-        <p className="mono-label m-0">Track Access</p>
-        <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">{label}...</p>
-      </div>
-    </main>
+    <div className="track-thread-day-separator" role="separator" aria-label={label}>
+      <span>{label}</span>
+    </div>
   )
+}
+
+function TrackLoading({ label }: { label: string }) {
+  return <TrackLoader label={label} />
 }
 
 function WorkspaceRouteLoader({ label }: { label: string }) {

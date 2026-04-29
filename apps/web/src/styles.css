@@ -392,10 +392,68 @@ button {
 .track-loading {
   display: flex;
   min-height: 100vh;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--paper);
   padding: 16px;
+  color: var(--ink-3);
+  gap: 14px;
+}
+
+.track-loading p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.track-loader-mark {
+  position: relative;
+  width: 46px;
+  height: 46px;
+}
+
+.track-loader-mark::before {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  content: "";
+}
+
+.track-loader-mark span {
+  position: absolute;
+  inset: 0;
+  animation: track-loader-orbit 1.15s linear infinite;
+}
+
+.track-loader-mark span::before {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.track-loader-mark span:nth-child(2) {
+  animation-delay: -0.38s;
+  opacity: 0.55;
+}
+
+.track-loader-mark span:nth-child(3) {
+  animation-delay: -0.76s;
+  opacity: 0.3;
+}
+
+@keyframes track-loader-orbit {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .track-auth-page {
@@ -2037,6 +2095,29 @@ button {
   margin: 0 auto;
 }
 
+.track-thread-day-separator {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  margin: 2px 0;
+  pointer-events: none;
+}
+
+.track-thread-day-separator span {
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  box-shadow: 0 6px 18px rgba(27, 25, 23, 0.08);
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 6px 9px;
+  backdrop-filter: blur(10px);
+}
+
 .track-message-row,
 .track-assistant-row {
   display: flex;
@@ -2069,8 +2150,15 @@ button {
 }
 
 .track-message-avatar.bot {
-  background: var(--accent);
-  color: var(--ink);
+  border: 1px solid var(--hairline-strong);
+  background:
+    linear-gradient(135deg, rgba(240, 177, 0, 0.18), transparent 54%),
+    var(--paper-2);
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .track-message-body,
@@ -2083,6 +2171,10 @@ button {
   color: var(--ink) !important;
   box-shadow: none !important;
   padding: 0;
+}
+
+.track-assistant-row {
+  margin-top: -2px;
 }
 
 .track-message-meta {
@@ -2108,6 +2200,43 @@ button {
   color: var(--ink-2);
   font-size: 14px;
   line-height: 1.55;
+}
+
+.track-text-shimmer {
+  display: inline-block;
+  color: transparent;
+  background:
+    linear-gradient(
+      110deg,
+      var(--ink-4) 0%,
+      var(--ink-4) 34%,
+      var(--accent) 48%,
+      var(--ink) 52%,
+      var(--accent) 56%,
+      var(--ink-4) 70%,
+      var(--ink-4) 100%
+    );
+  background-size: 220% 100%;
+  background-clip: text;
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 1.55;
+  -webkit-background-clip: text;
+  animation: track-text-shimmer 3.6s linear infinite;
+}
+
+@keyframes track-text-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  62% {
+    background-position: -120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .track-search-highlight {

@@ -1,4 +1,4 @@
-import { Bot, Check, Sparkles } from 'lucide-react'
+import { Check, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
@@ -167,47 +167,56 @@ export function AssistantAnswer({
   stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
   threadItemKey: string
 }) {
-  const answer =
-    stream.answer ||
-    (stream.status === 'running' ? 'Track is reviewing the evidence...' : stream.status)
+  const isThinking = stream.status === 'running' && !stream.answer
+  const answer = stream.answer || stream.status
   return (
     <article className="track-assistant-row" data-thread-item-key={threadItemKey}>
       <AvatarNameTooltip detail="AI review" name="Track Assistant" side="right">
         <Avatar className="track-message-avatar bot">
-          <AvatarFallback>
-            <Bot size={14} />
-          </AvatarFallback>
+          <AvatarFallback>T</AvatarFallback>
         </Avatar>
       </AvatarNameTooltip>
-      <Card className="track-assistant-body" size="sm">
+      <div className="track-assistant-body">
         <div className="track-message-meta">
           <strong>Track Assistant</strong>
           <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
         </div>
-        <MarkdownText
-          className="track-markdown"
-          highlightQuery={searchQuery}
-          renderCitation={(citationId, index) => (
-            <MessageCitation
-              citationId={citationId}
-              index={index}
-              key={`${citationId}-${index}`}
-              message={messageCitations.get(citationId)}
-              onOpen={onOpenMessageCitation}
-            />
-          )}
-          renderMention={(handle, index) => (
-            <MentionInline
-              handle={handle}
-              index={index}
-              mentionGroups={mentionGroups}
-              onOpenGroup={onOpenGroup}
-            />
-          )}
-          text={answer}
-        />
-      </Card>
+        {isThinking ? (
+          <TextShimmer>Thinking</TextShimmer>
+        ) : (
+          <MarkdownText
+            className="track-markdown"
+            highlightQuery={searchQuery}
+            renderCitation={(citationId, index) => (
+              <MessageCitation
+                citationId={citationId}
+                index={index}
+                key={`${citationId}-${index}`}
+                message={messageCitations.get(citationId)}
+                onOpen={onOpenMessageCitation}
+              />
+            )}
+            renderMention={(handle, index) => (
+              <MentionInline
+                handle={handle}
+                index={index}
+                mentionGroups={mentionGroups}
+                onOpenGroup={onOpenGroup}
+              />
+            )}
+            text={answer}
+          />
+        )}
+      </div>
     </article>
+  )
+}
+
+function TextShimmer({ children }: { children: string }) {
+  return (
+    <span className="track-text-shimmer" aria-label={children}>
+      {children}
+    </span>
   )
 }
 
