@@ -8,4 +8,5 @@
 - Polished profile settings UI with workspace navigation, provider icons, a custom timezone picker, 2FA status summaries, and richer teammate hover cards.
 - Refined profile settings polish with flatter navigation, cleaner tab styling, top-aligned 2FA actions, member avatar URLs in hover cards, and avatar-derived card banners.
 - Flattened profile onboarding into a single form surface and wired project export actions through a reusable two-factor step-up prompt.
+- Reworked protected-action verification into a non-blocking floating 2FA panel and added a security-settings reset for the 10-minute grace period.
 - Updated privacy language for email/password auth, two-factor data, and expanded profile fields.

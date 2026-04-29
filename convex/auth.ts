@@ -499,3 +499,19 @@ export const hasFreshStepUp = query({
     return Boolean(stepUp && stepUp.expiresAt > Date.now())
   },
 })
+
+export const resetStepUps = mutation({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    await assertCanManageTrackUser(ctx, args.userId)
+    const stepUps = await ctx.db
+      .query('securityStepUps')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .collect()
+
+    await Promise.all(stepUps.map((stepUp) => ctx.db.delete(stepUp._id)))
+    return { removed: stepUps.length }
+  },
+})

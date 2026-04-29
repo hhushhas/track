@@ -56,14 +56,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group'
@@ -3043,63 +3035,77 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         sections={projectSearchSections}
         total={projectSearchTotal}
       />
-      <Dialog open={stepUpDialogOpen} onOpenChange={setStepUpDialogOpen}>
-        <DialogContent className="track-dialog track-step-up-dialog">
-          <DialogHeader>
+      {stepUpDialogOpen ? (
+        <aside aria-label="Two-factor verification" className="track-step-up-float">
+          <div className="track-step-up-panel">
+            <button
+              aria-label="Dismiss verification"
+              className="track-step-up-close"
+              onClick={() => {
+                setStepUpDialogOpen(false)
+                setPendingExportFormat(null)
+                setStepUpAction(null)
+                setStepUpMessage('')
+              }}
+              type="button"
+            >
+              <X size={16} />
+            </button>
             <div className="track-step-up-icon">
               <ShieldCheck size={18} />
             </div>
-            <DialogTitle>Verify this action</DialogTitle>
-            <DialogDescription>
-              Exporting project records requires a fresh two-factor check. Verification stays trusted for 10 minutes.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={(event) => void handleVerifyStepUp(event)}>
-            <div className="track-two-factor-methods">
-              <Button
-                className={stepUpMethod === 'totp' ? 'track-button track-button-primary' : 'track-button'}
-                onClick={() => setStepUpMethod('totp')}
-                type="button"
-              >
-                Authenticator
-              </Button>
-              <Button
-                className={stepUpMethod === 'backup_code' ? 'track-button track-button-primary' : 'track-button'}
-                onClick={() => setStepUpMethod('backup_code')}
-                type="button"
-              >
-                Backup code
-              </Button>
+            <div className="track-step-up-copy">
+              <strong>Verify this action</strong>
+              <span>Export project records</span>
+              <p>Use two-factor once. It stays trusted for 10 minutes.</p>
             </div>
-            <Input
-              aria-label={stepUpMethod === 'backup_code' ? 'Backup code' : 'Authenticator code'}
-              autoComplete="one-time-code"
-              inputMode={stepUpMethod === 'backup_code' ? 'text' : 'numeric'}
-              onChange={(event) => setStepUpCode(event.currentTarget.value)}
-              placeholder={stepUpMethod === 'backup_code' ? 'XXXX-XXXXXX' : '123456'}
-              value={stepUpCode}
-            />
-            {stepUpMessage ? <p className="track-auth-error">{stepUpMessage}</p> : null}
-            <DialogFooter>
-              <Button
-                className="track-button"
-                onClick={() => {
-                  setStepUpDialogOpen(false)
-                  setPendingExportFormat(null)
-                  setStepUpAction(null)
-                  setStepUpMessage('')
-                }}
-                type="button"
-              >
-                Cancel
-              </Button>
-              <Button className="track-button track-button-primary" disabled={busyAction === 'step-up'} type="submit">
-                Verify and continue
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+            <form onSubmit={(event) => void handleVerifyStepUp(event)}>
+              <div className="track-two-factor-methods">
+                <Button
+                  className={stepUpMethod === 'totp' ? 'track-button track-button-primary' : 'track-button'}
+                  onClick={() => setStepUpMethod('totp')}
+                  type="button"
+                >
+                  Authenticator
+                </Button>
+                <Button
+                  className={stepUpMethod === 'backup_code' ? 'track-button track-button-primary' : 'track-button'}
+                  onClick={() => setStepUpMethod('backup_code')}
+                  type="button"
+                >
+                  Backup code
+                </Button>
+              </div>
+              <Input
+                aria-label={stepUpMethod === 'backup_code' ? 'Backup code' : 'Authenticator code'}
+                autoComplete="one-time-code"
+                inputMode={stepUpMethod === 'backup_code' ? 'text' : 'numeric'}
+                onChange={(event) => setStepUpCode(event.currentTarget.value)}
+                placeholder={stepUpMethod === 'backup_code' ? 'XXXX-XXXXXX' : '123456'}
+                value={stepUpCode}
+              />
+              {stepUpMessage ? <p className="track-auth-error">{stepUpMessage}</p> : null}
+              <div className="track-step-up-actions">
+                <Button
+                  className="track-button"
+                  onClick={() => {
+                    setStepUpDialogOpen(false)
+                    setPendingExportFormat(null)
+                    setStepUpAction(null)
+                    setStepUpMessage('')
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </Button>
+                <Button className="track-button track-button-primary" disabled={busyAction === 'step-up'} type="submit">
+                  Verify and continue
+                </Button>
+              </div>
+            </form>
+          </div>
+        </aside>
+      ) : null}
       <WorkspaceDialogs
         activeGroupId={activeGroupId}
         busyAction={busyAction}

@@ -137,6 +137,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const generateAvatarUploadUrl = useMutation(api.auth.generateAvatarUploadUrl)
   const setAvatar = useMutation(api.auth.setAvatar)
   const setTwoFactorEnabled = useMutation(api.auth.setTwoFactorEnabled)
+  const resetStepUps = useMutation(api.auth.resetStepUps)
 
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null)
   const profileStatus = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip')
@@ -177,6 +178,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const twoFactorEnabled = Boolean(user?.twoFactorEnabled)
   const visibleAvatarUrl = avatarPreview ?? avatarUrl ?? undefined
   const canManageTwoFactor = Boolean(session.data)
+  const canResetStepUpGracePeriod = Boolean(session.data || devAuthBypass.enabled)
 
   useEffect(() => {
     if (session.isPending && !devAuthBypass.enabled) return
@@ -364,6 +366,24 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
     }
   }
 
+  async function resetTwoFactorGracePeriod() {
+    if (!trackUserId) return
+    setBusySecurity(true)
+    setSecurityMessage('')
+    try {
+      const result = await resetStepUps({ userId: trackUserId })
+      setSecurityMessage(
+        result.removed
+          ? 'Two-factor grace period reset. The next protected action will ask again.'
+          : 'No active two-factor grace period was found.',
+      )
+    } catch (error) {
+      setSecurityMessage(getSecurityMessage(error, 'Could not reset the two-factor grace period.'))
+    } finally {
+      setBusySecurity(false)
+    }
+  }
+
   if ((session.isPending && !devAuthBypass.enabled) || !trackUserId || profileStatus === undefined) {
     return <TrackLoader label="Loading profile" />
   }
@@ -517,14 +537,23 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                       <QrCode size={15} /> Set up authenticator app
                     </Button>
                   ) : null}
-                  {twoFactorEnabled && canManageTwoFactor ? (
+                  {twoFactorEnabled && (canManageTwoFactor || canResetStepUpGracePeriod) ? (
                     <>
-                      <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
-                        Generate backup codes
-                      </Button>
-                      <Button className="track-button track-button-danger" disabled={busySecurity} onClick={() => void disableTwoFactor()} type="button">
-                        Turn off 2FA
-                      </Button>
+                      {canManageTwoFactor ? (
+                        <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
+                          Generate backup codes
+                        </Button>
+                      ) : null}
+                      {canResetStepUpGracePeriod ? (
+                        <Button className="track-button" disabled={busySecurity} onClick={() => void resetTwoFactorGracePeriod()} type="button">
+                          Reset grace period
+                        </Button>
+                      ) : null}
+                      {canManageTwoFactor ? (
+                        <Button className="track-button track-button-danger" disabled={busySecurity} onClick={() => void disableTwoFactor()} type="button">
+                          Turn off 2FA
+                        </Button>
+                      ) : null}
                     </>
                   ) : null}
                 </div>

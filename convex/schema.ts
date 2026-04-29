@@ -381,6 +381,7 @@ export default defineSchema({
     expiresAt: v.number(),
     createdAt: v.number(),
   })
+    .index('by_user', ['userId'])
     .index('by_user_action', ['userId', 'action'])
     .index('by_auth_user_action', ['authUserId', 'action']),
 })

@@ -1108,11 +1108,6 @@ button {
   font-size: 12px;
 }
 
-.track-step-up-dialog form {
-  display: grid;
-  gap: 12px;
-}
-
 .track-step-up-icon {
   display: inline-flex;
   width: 38px;
@@ -1123,6 +1118,80 @@ button {
   border-radius: 8px;
   background: var(--accent-tint);
   color: var(--accent-strong);
+}
+
+.track-step-up-float {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 50;
+  width: min(380px, calc(100vw - 28px));
+  pointer-events: none;
+}
+
+.track-step-up-panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 12px 14px;
+  padding: 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.22);
+  pointer-events: auto;
+}
+
+.track-step-up-panel form {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+}
+
+.track-step-up-copy {
+  display: grid;
+  gap: 4px;
+  padding-right: 26px;
+}
+
+.track-step-up-copy strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.track-step-up-copy span,
+.track-step-up-copy p {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.track-step-up-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+}
+
+.track-step-up-close:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.track-step-up-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .track-dialog {
@@ -6026,6 +6095,19 @@ button:disabled:hover {
   .track-timezone-menu {
     position: fixed;
     inset: auto 12px 12px;
+  }
+
+  .track-step-up-float {
+    top: auto;
+    right: 14px;
+    bottom: 14px;
+    left: 14px;
+    width: auto;
+  }
+
+  .track-step-up-panel {
+    grid-template-columns: 34px 1fr;
+    padding: 14px;
   }
 
   .track-app-shell {
