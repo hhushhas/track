@@ -89,6 +89,7 @@ import {
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
 import { disableDevAuthBypass, useDevAuthBypass } from '#/lib/dev-auth-bypass'
+import { useOAuthCallbackPending } from '#/lib/oauth-callback'
 import ThemeToggle from '#/components/ThemeToggle'
 import TrackLoader from '#/components/TrackLoader'
 
@@ -328,6 +329,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     [devAuthBypass.sessionData, session.data],
   )
   const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled)
+  const oauthCallbackPending = useOAuthCallbackPending(hasSessionAccess)
 
   const projects = useQuery(
     api.projects.list,
@@ -1206,6 +1208,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     visibleMessages,
   ])
 
+  if (oauthCallbackPending) return <TrackLoading label="Finishing Google sign-in" />
   if (session.isPending && !devAuthBypass.enabled) return <TrackLoading label="Checking your session" />
   if (!hasSessionAccess) return <Navigate to="/sign-in" />
   if (!sessionUser) return <Navigate to="/sign-in" />
