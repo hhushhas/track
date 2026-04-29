@@ -1,9 +1,12 @@
 import type { ComponentProps, ReactNode } from 'react'
 
+import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { getAvatarTone, getInitials } from './identity'
 
 type AvatarNameTooltipProps = {
   align?: ComponentProps<typeof TooltipContent>['align']
+  avatarUrl?: string | null
   bio?: string | null
   children: ReactNode
   detail?: string | null
@@ -14,6 +17,7 @@ type AvatarNameTooltipProps = {
 
 export function AvatarNameTooltip({
   align = 'center',
+  avatarUrl,
   bio,
   children,
   detail,
@@ -41,12 +45,21 @@ export function AvatarNameTooltip({
         side={side}
         sideOffset={8}
       >
-        <span className="track-avatar-tooltip-copy">
-          <strong>{name}</strong>
-          {detail ? <small>{detail}</small> : null}
-          {localTime ? <small>{localTime}</small> : null}
-          {bio ? <span>{bio}</span> : null}
-        </span>
+        <div className="track-avatar-card">
+          <div className="track-avatar-card-banner" />
+          <div className="track-avatar-card-body">
+            <Avatar className={`track-avatar-card-avatar ${getAvatarTone(name)}`}>
+              <AvatarImage src={avatarUrl ?? undefined} />
+              <AvatarFallback>{getInitials(name)}</AvatarFallback>
+            </Avatar>
+            <div className="track-avatar-card-copy">
+              <strong>{name}</strong>
+              {detail ? <small>{detail}</small> : null}
+              {localTime ? <small>{localTime}</small> : null}
+              {bio ? <p>{bio}</p> : null}
+            </div>
+          </div>
+        </div>
       </TooltipContent>
     </Tooltip>
   )

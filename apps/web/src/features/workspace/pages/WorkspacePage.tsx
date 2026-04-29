@@ -2147,6 +2147,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             </>
           ) : (
             <AvatarNameTooltip
+              avatarUrl={currentAvatarUrl}
               detail={currentUserDesignation}
               name={currentUserName}
               side="right"

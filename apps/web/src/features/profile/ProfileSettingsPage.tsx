@@ -1,5 +1,17 @@
 import { useMutation, useQuery } from 'convex/react'
-import { Camera, CheckCircle2, KeyRound, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
+import {
+  ArrowLeft,
+  Camera,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  KeyRound,
+  Mail,
+  QrCode,
+  ShieldCheck,
+  Smartphone,
+  UserRound,
+} from 'lucide-react'
 import { toDataURL } from 'qrcode'
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
@@ -109,6 +121,14 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+function getSecurityMessage(error: unknown, fallback: string) {
+  const message = getErrorMessage(error, fallback)
+  if (message.includes('CONVEX') || message.includes('unauthenticated')) {
+    return 'Track could not sync the security change. Refresh and try again from a normal signed-in session.'
+  }
+  return message
+}
+
 export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const session = authClient.useSession()
   const devAuthBypass = useDevAuthBypass()
@@ -141,14 +161,24 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const [backupCodesVisible, setBackupCodesVisible] = useState(false)
   const [busySecurity, setBusySecurity] = useState(false)
   const [activePanel, setActivePanel] = useState<'profile' | 'security' | 'methods'>('profile')
+  const [timezoneOpen, setTimezoneOpen] = useState(false)
+  const [timezoneSearch, setTimezoneSearch] = useState('')
 
   const timezoneOptions = useMemo(getTimezoneOptions, [])
+  const filteredTimezoneOptions = useMemo(() => {
+    const query = timezoneSearch.trim().toLowerCase()
+    const matches = query
+      ? timezoneOptions.filter((option) => option.toLowerCase().includes(query))
+      : timezoneOptions
+    return matches.slice(0, 80)
+  }, [timezoneOptions, timezoneSearch])
   const user = profileStatus?.user ?? null
   const profileComplete = profileStatus?.complete ?? false
   const canSaveProfile = isProfileComplete({ displayName, profileDesignation: designation, timezone })
   const hasCredentialAccount = accounts.some((account) => account.providerId === 'credential')
   const twoFactorEnabled = Boolean(user?.twoFactorEnabled)
   const visibleAvatarUrl = avatarPreview ?? avatarUrl ?? undefined
+  const canManageTwoFactor = Boolean(session.data)
 
   useEffect(() => {
     if (session.isPending && !devAuthBypass.enabled) return
@@ -265,7 +295,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
       setBackupCodesVisible(false)
       setSecurityMessage('Scan the code, then enter one authenticator code to finish setup.')
     } catch (error) {
-      setSecurityMessage(getErrorMessage(error, 'Could not start two-factor setup.'))
+      setSecurityMessage(getSecurityMessage(error, 'Could not start two-factor setup.'))
     } finally {
       setBusySecurity(false)
     }
@@ -288,7 +318,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
       setSetupQrUrl('')
       setSecurityMessage('Two-factor authentication is on.')
     } catch (error) {
-      setSecurityMessage(getErrorMessage(error, 'Could not verify two-factor setup.'))
+      setSecurityMessage(getSecurityMessage(error, 'Could not verify two-factor setup.'))
     } finally {
       setBusySecurity(false)
     }
@@ -310,7 +340,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
       setBackupCodesVisible(true)
       setSecurityMessage('New backup codes generated. Store them somewhere safe.')
     } catch (error) {
-      setSecurityMessage(getErrorMessage(error, 'Could not generate backup codes.'))
+      setSecurityMessage(getSecurityMessage(error, 'Could not generate backup codes.'))
     } finally {
       setBusySecurity(false)
     }
@@ -330,7 +360,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
       await setTwoFactorEnabled({ userId: trackUserId, enabled: false })
       setSecurityMessage('Two-factor authentication is off.')
     } catch (error) {
-      setSecurityMessage(getErrorMessage(error, 'Could not disable two-factor authentication.'))
+      setSecurityMessage(getSecurityMessage(error, 'Could not disable two-factor authentication.'))
     } finally {
       setBusySecurity(false)
     }
@@ -344,6 +374,12 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
     <main className="track-profile-page">
       <section className="track-profile-shell">
         <aside className="track-profile-sidebar" aria-label="Profile settings sections">
+          {mode === 'settings' ? (
+            <a className="track-profile-back-link" href="/workspace">
+              <ArrowLeft size={14} />
+              Back to workspace
+            </a>
+          ) : null}
           <div>
             <p className="mono-label m-0">Track</p>
             <h1>{mode === 'onboarding' ? 'Complete your profile' : 'Profile Settings'}</h1>
@@ -408,11 +444,47 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                 </label>
                 <label>
                   <span>Timezone</span>
-                  <select value={timezone} onChange={(event) => setTimezone(event.currentTarget.value)}>
-                    {timezoneOptions.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
+                  <div className="track-timezone-picker">
+                    <button
+                      aria-expanded={timezoneOpen}
+                      className="track-timezone-trigger"
+                      onClick={() => {
+                        setTimezoneOpen((open) => !open)
+                        setTimezoneSearch('')
+                      }}
+                      type="button"
+                    >
+                      <span>{timezone}</span>
+                      <ChevronDown size={15} />
+                    </button>
+                    {timezoneOpen ? (
+                      <div className="track-timezone-menu">
+                        <Input
+                          autoFocus
+                          onChange={(event) => setTimezoneSearch(event.currentTarget.value)}
+                          placeholder="Search timezone"
+                          value={timezoneSearch}
+                        />
+                        <div className="track-timezone-options">
+                          {filteredTimezoneOptions.map((option) => (
+                            <button
+                              className={option === timezone ? 'active' : ''}
+                              key={option}
+                              onClick={() => {
+                                setTimezone(option)
+                                setTimezoneOpen(false)
+                                setTimezoneSearch('')
+                              }}
+                              type="button"
+                            >
+                              <span>{option}</span>
+                              <small>{getLocalTimeLabel(option)}</small>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                   <small>{getLocalTimeLabel(timezone)}</small>
                 </label>
                 <label>
@@ -443,12 +515,36 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                   <h2>Two-factor authentication</h2>
                 </div>
                 <span className={twoFactorEnabled ? 'track-profile-status' : 'track-profile-status muted'}>
-                  <LockKeyhole size={14} /> {twoFactorEnabled ? 'On' : 'Off'}
+                  <ShieldCheck size={14} /> {twoFactorEnabled ? 'On' : 'Off'}
                 </span>
               </div>
               <p className="track-profile-muted">
                 Normal sign-in can use one factor. Destructive actions require a fresh step-up and stay trusted for 10 minutes. Trusted devices last 30 days.
               </p>
+
+              <div className="track-security-summary">
+                <div>
+                  <span><Smartphone size={16} /></span>
+                  <strong>Authenticator app</strong>
+                  <small>{twoFactorEnabled ? 'Required for protected actions' : 'Not configured yet'}</small>
+                </div>
+                <div>
+                  <span><KeyRound size={16} /></span>
+                  <strong>Backup codes</strong>
+                  <small>{setupBackupCodes.length ? 'Available to view' : 'Generate after setup'}</small>
+                </div>
+                <div>
+                  <span><Clock3 size={16} /></span>
+                  <strong>Trusted device</strong>
+                  <small>30-day remember window</small>
+                </div>
+              </div>
+
+              {!canManageTwoFactor ? (
+                <div className="track-security-note">
+                  Sign in with Google or email/password to manage two-factor authentication from this browser session.
+                </div>
+              ) : null}
 
               {hasCredentialAccount ? (
                 <label className="track-profile-password">
@@ -463,11 +559,11 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                 </label>
               ) : null}
 
-              {!twoFactorEnabled ? (
+              {!twoFactorEnabled && canManageTwoFactor ? (
                 <div className="track-profile-security-box">
                   {!setupQrUrl ? (
                     <Button className="track-button track-button-primary" disabled={busySecurity} onClick={() => void startTwoFactorSetup()} type="button">
-                      Set up authenticator app
+                      <QrCode size={15} /> Set up authenticator app
                     </Button>
                   ) : (
                     <>
@@ -487,7 +583,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                     </>
                   )}
                 </div>
-              ) : (
+              ) : twoFactorEnabled && canManageTwoFactor ? (
                 <div className="track-profile-security-box">
                   <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
                     Generate backup codes
@@ -496,7 +592,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                     Turn off 2FA
                   </Button>
                 </div>
-              )}
+              ) : null}
 
               {setupBackupCodes.length ? (
                 <div className="track-profile-backup-codes">
@@ -525,12 +621,24 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
               <div className="track-profile-method-list">
                 {accounts.length ? accounts.map((account) => (
                   <div key={`${account.providerId}-${account.id ?? account.providerId}`}>
-                    <strong>{getProviderLabel(account.providerId)}</strong>
+                    <span className="track-profile-method-identity">
+                      <span className="track-profile-method-icon">
+                        {account.providerId === 'google'
+                          ? <img alt="" src="/google-g.svg" />
+                          : account.providerId === 'credential'
+                            ? <Mail size={17} />
+                            : <KeyRound size={17} />}
+                      </span>
+                      <strong>{getProviderLabel(account.providerId)}</strong>
+                    </span>
                     <span>Connected</span>
                   </div>
                 )) : (
                   <div>
-                    <strong>{user?.email ?? 'Current account'}</strong>
+                    <span className="track-profile-method-identity">
+                      <span className="track-profile-method-icon"><Mail size={17} /></span>
+                      <strong>{user?.email ?? 'Current account'}</strong>
+                    </span>
                     <span>Connected</span>
                   </div>
                 )}
