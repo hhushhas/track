@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react'
 
-import type { Id } from '../../../../../convex/_generated/dataModel'
+import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import {
   Dialog,
@@ -11,12 +11,19 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
-import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+} from '#/components/ui/select'
 import { Switch } from '#/components/ui/switch'
+import { getGroupAvatar } from './group-avatar'
 
 export function WorkspaceDialogs({
   activeGroupId,
-  activeGroupName,
   busyAction,
   frequencyDialogOpen,
   frequencyMinutesInput,
@@ -26,9 +33,10 @@ export function WorkspaceDialogs({
   inviteDialogOpen,
   inviteEmail,
   inviteRole,
-  inviteScope,
+  inviteAccess,
   projectClientLabel,
   projectDialogOpen,
+  projectGroups,
   projectName,
   reviewEnabledInput,
   setFrequencyDialogOpen,
@@ -39,7 +47,7 @@ export function WorkspaceDialogs({
   setInviteDialogOpen,
   setInviteEmail,
   setInviteRole,
-  setInviteScope,
+  setInviteAccess,
   setProjectClientLabel,
   setProjectDialogOpen,
   setProjectName,
@@ -50,7 +58,6 @@ export function WorkspaceDialogs({
   onInviteSubmit,
 }: {
   activeGroupId: Id<'groups'> | null
-  activeGroupName?: string
   busyAction: string | null
   frequencyDialogOpen: boolean
   frequencyMinutesInput: string
@@ -60,9 +67,10 @@ export function WorkspaceDialogs({
   inviteDialogOpen: boolean
   inviteEmail: string
   inviteRole: 'admin' | 'staff' | 'client'
-  inviteScope: 'project' | 'group'
+  inviteAccess: string
   projectClientLabel: string
   projectDialogOpen: boolean
+  projectGroups: Array<Doc<'groups'>>
   projectName: string
   reviewEnabledInput: boolean
   setFrequencyDialogOpen: (open: boolean) => void
@@ -73,7 +81,7 @@ export function WorkspaceDialogs({
   setInviteDialogOpen: (open: boolean) => void
   setInviteEmail: (value: string) => void
   setInviteRole: (value: 'admin' | 'staff' | 'client') => void
-  setInviteScope: (value: 'project' | 'group') => void
+  setInviteAccess: (value: string) => void
   setProjectClientLabel: (value: string) => void
   setProjectDialogOpen: (open: boolean) => void
   setProjectName: (value: string) => void
@@ -83,6 +91,12 @@ export function WorkspaceDialogs({
   onFrequencySubmit: (event: FormEvent<HTMLFormElement>) => void
   onInviteSubmit: (event: FormEvent<HTMLFormElement>) => void
 }) {
+  const selectedInviteGroup = inviteAccess.startsWith('group:')
+    ? projectGroups.find((group) => `group:${group._id}` === inviteAccess)
+    : null
+  const selectedInviteGroupAvatar = selectedInviteGroup ? getGroupAvatar(selectedInviteGroup) : null
+  const SelectedInviteGroupIcon = selectedInviteGroupAvatar?.Icon
+
   return (
     <>
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
@@ -177,29 +191,81 @@ export function WorkspaceDialogs({
               </label>
               <label className="track-dialog-field">
                 <span>Role</span>
-                <NativeSelect
-                  onChange={(event) => setInviteRole(event.currentTarget.value as typeof inviteRole)}
+                <Select
+                  onValueChange={(value) => setInviteRole((value ?? 'staff') as typeof inviteRole)}
                   value={inviteRole}
                 >
-                  <NativeSelectOption value="admin">admin</NativeSelectOption>
-                  <NativeSelectOption value="staff">staff</NativeSelectOption>
-                  <NativeSelectOption value="client">client</NativeSelectOption>
-                </NativeSelect>
+                  <SelectTrigger className="track-dialog-select-trigger">
+                    <span className="track-dialog-select-value">{inviteRole}</span>
+                  </SelectTrigger>
+                  <SelectContent className="track-dialog-select-content">
+                    <SelectGroup>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="client">Client</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </label>
               <label className="track-dialog-field">
                 <span>Access</span>
-                <NativeSelect
-                  onChange={(event) => setInviteScope(event.currentTarget.value as typeof inviteScope)}
-                  value={inviteScope}
+                <Select
+                  onValueChange={(value) => setInviteAccess(value ?? 'project')}
+                  value={inviteAccess}
                 >
-                  <NativeSelectOption value="project">Project</NativeSelectOption>
-                  <NativeSelectOption disabled={!activeGroupId} value="group">
-                    Current group: {activeGroupName ?? 'none'}
-                  </NativeSelectOption>
-                </NativeSelect>
+                  <SelectTrigger className="track-dialog-select-trigger">
+                    {selectedInviteGroup && selectedInviteGroupAvatar && SelectedInviteGroupIcon ? (
+                      <span className="track-invite-access-trigger">
+                        <span className={`track-nav-group-icon ${selectedInviteGroupAvatar.tone}`}>
+                          <SelectedInviteGroupIcon size={14} />
+                        </span>
+                        <span className="track-dialog-select-value">{selectedInviteGroup.name}</span>
+                      </span>
+                    ) : (
+                      <span className="track-dialog-select-value">Entire project</span>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent className="track-dialog-select-content">
+                    <SelectGroup>
+                      <SelectItem value="project">Entire project</SelectItem>
+                    </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel>Groups</SelectLabel>
+                      {projectGroups.length > 0 ? (
+                        projectGroups.map((group) => {
+                          const { Icon, tone } = getGroupAvatar(group)
+                          return (
+                            <SelectItem
+                              key={group._id}
+                              label={group.name}
+                              value={`group:${group._id}`}
+                            >
+                              <span className={`track-nav-group-icon ${tone}`}>
+                                <Icon size={14} />
+                              </span>
+                              <span className="track-invite-access-option">
+                                <strong>{group.name}</strong>
+                                <small>
+                                  {group._id === activeGroupId ? 'Current group' : `${group.kind.replaceAll('_', ' ')} group`}
+                                </small>
+                              </span>
+                            </SelectItem>
+                          )
+                        })
+                      ) : (
+                        <SelectItem disabled value="no-groups">
+                          No groups yet
+                        </SelectItem>
+                      )}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               </label>
               <label className="track-switch-row">
-                <span>Can review draft records</span>
+                <span>
+                  <span className="track-switch-title-muted">Can review draft records</span>
+                  <small>Allows this member to accept, edit, or ignore AI draft records.</small>
+                </span>
                 <Switch checked={inviteCanReview} onCheckedChange={setInviteCanReview} />
               </label>
             </div>

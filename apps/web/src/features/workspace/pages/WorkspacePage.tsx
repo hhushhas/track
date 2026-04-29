@@ -277,7 +277,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<'admin' | 'staff' | 'client'>('staff')
   const [inviteCanReview, setInviteCanReview] = useState(true)
-  const [inviteScope, setInviteScope] = useState<'project' | 'group'>('project')
+  const [inviteAccess, setInviteAccess] = useState('project')
   const [frequencyMinutesInput, setFrequencyMinutesInput] = useState('30')
   const [navCollapsed, setNavCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -1246,7 +1246,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     setInviteEmail('')
     setInviteRole('staff')
     setInviteCanReview(true)
-    setInviteScope(activeGroupId ? 'group' : 'project')
+    setInviteAccess(activeGroupId ? `group:${activeGroupId}` : 'project')
     setInviteDialogOpen(true)
   }
 
@@ -1299,11 +1299,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (!trackUserId || !activeProjectId) return
     const email = inviteEmail.trim()
     if (!email) return
+    const inviteGroupId = inviteAccess.startsWith('group:')
+      ? (inviteAccess.slice('group:'.length) as Id<'groups'>)
+      : undefined
 
     await withBusy('invite', async () => {
       await createInvitation({
         projectId: activeProjectId,
-        groupId: inviteScope === 'group' && activeGroupId ? activeGroupId : undefined,
+        groupId: inviteGroupId,
         invitedBy: trackUserId,
         email,
         role: inviteRole,
@@ -2892,7 +2895,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       />
       <WorkspaceDialogs
         activeGroupId={activeGroupId}
-        activeGroupName={activeGroup?.name}
         busyAction={busyAction}
         frequencyDialogOpen={frequencyDialogOpen}
         frequencyMinutesInput={frequencyMinutesInput}
@@ -2902,7 +2904,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         inviteDialogOpen={inviteDialogOpen}
         inviteEmail={inviteEmail}
         inviteRole={inviteRole}
-        inviteScope={inviteScope}
+        inviteAccess={inviteAccess}
         onCreateGroupSubmit={handleCreateGroupSubmit}
         onCreateProjectSubmit={handleCreateProjectSubmit}
         onFrequencySubmit={handleFrequencySubmit}
@@ -2910,6 +2912,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         projectClientLabel={projectClientLabel}
         projectDialogOpen={projectDialogOpen}
         projectName={projectName}
+        projectGroups={visibleGroups}
         reviewEnabledInput={reviewEnabledInput}
         setFrequencyDialogOpen={setFrequencyDialogOpen}
         setFrequencyMinutesInput={setFrequencyMinutesInput}
@@ -2919,7 +2922,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         setInviteDialogOpen={setInviteDialogOpen}
         setInviteEmail={setInviteEmail}
         setInviteRole={setInviteRole}
-        setInviteScope={setInviteScope}
+        setInviteAccess={setInviteAccess}
         setProjectClientLabel={setProjectClientLabel}
         setProjectDialogOpen={setProjectDialogOpen}
         setProjectName={setProjectName}
@@ -3498,9 +3501,8 @@ function TrackLoading({ label }: { label: string }) {
 
 function WorkspaceRouteLoader({ label }: { label: string }) {
   return (
-    <div className="track-route-loader" role="status" aria-live="polite">
+    <div className="track-route-loader" role="status" aria-label={label} aria-live="polite">
       <LoaderCircle className="track-route-loader-icon" size={18} />
-      <span>{label}</span>
     </div>
   )
 }

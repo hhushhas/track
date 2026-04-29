@@ -273,16 +273,21 @@ export function VoiceNotePlayer({
   const [currentTime, setCurrentTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [measuredDuration, setMeasuredDuration] = useState(0)
-  const effectiveDurationMs = durationMs || measuredDuration * 1000
-  const durationSeconds = Math.max(effectiveDurationMs / 1000, measuredDuration, 0)
-  const progress = durationSeconds > 0 ? Math.min(currentTime / durationSeconds, 1) : 0
+  const metadataDurationSeconds = durationMs && durationMs > 0 ? durationMs / 1000 : 0
+  const durationSeconds = Math.max(metadataDurationSeconds, measuredDuration, 0)
+  const displayCurrentTime = durationSeconds > 0 && durationSeconds - currentTime <= 0.35
+    ? durationSeconds
+    : Math.min(currentTime, durationSeconds || currentTime)
+  const progress = durationSeconds > 0 ? Math.min(displayCurrentTime / durationSeconds, 1) : 0
   const label = isVoiceNoteAttachment({ contentType, filename, kind }) ? 'Voice note' : 'Audio'
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
     function syncTime() {
-      setCurrentTime(audio?.currentTime ?? 0)
+      const nextTime = audio?.currentTime ?? 0
+      const nextDuration = Number.isFinite(audio?.duration) ? (audio?.duration ?? 0) : durationSeconds
+      setCurrentTime(nextDuration > 0 && nextDuration - nextTime <= 0.35 ? nextDuration : nextTime)
     }
     function syncDuration() {
       setMeasuredDuration(Number.isFinite(audio?.duration) ? (audio?.duration ?? 0) : 0)
@@ -357,7 +362,7 @@ export function VoiceNotePlayer({
           value={Math.round(progress * 100)}
         />
         <span className="track-voice-duration">
-          {formatVoiceDuration(currentTime * 1000)} / {formatVoiceDuration(effectiveDurationMs)}
+          {formatVoiceDuration(displayCurrentTime * 1000)} / {formatVoiceDuration(durationSeconds * 1000)}
         </span>
       </div>
     </div>

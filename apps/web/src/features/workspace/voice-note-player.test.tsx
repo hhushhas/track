@@ -91,4 +91,33 @@ describe('VoiceNotePlayer', () => {
     expect(screen.getByLabelText('Voice note progress')).toHaveProperty('value', '100')
     expect(screen.getByText('0:03 / 0:03')).toBeTruthy()
   })
+
+  it('uses measured media duration when it is longer than metadata', () => {
+    const { container } = render(
+      <VoiceNotePlayer
+        contentType="audio/webm"
+        durationMs={2_000}
+        filename="voice-note.webm"
+        kind="voice_note"
+        size={142_000}
+        url="blob:voice-note"
+      />,
+    )
+    const audio = container.querySelector('audio')
+    expect(audio).toBeTruthy()
+
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      value: 2.6,
+    })
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      value: 2.4,
+    })
+    fireEvent.loadedMetadata(audio as HTMLAudioElement)
+    fireEvent.timeUpdate(audio as HTMLAudioElement)
+
+    expect(screen.getByLabelText('Voice note progress')).toHaveProperty('value', '100')
+    expect(screen.getByText('0:03 / 0:03')).toBeTruthy()
+  })
 })

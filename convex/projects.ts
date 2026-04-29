@@ -145,7 +145,7 @@ export const ensureStarter = mutation({
 
     const now = Date.now()
     const projectId = await ctx.db.insert('projects', {
-      name: 'Q9 Track',
+      name: 'Default',
       clientLabel: 'Internal product build',
       createdBy: args.userId,
       createdAt: now,
@@ -190,7 +190,7 @@ export const ensureStarter = mutation({
       entityType: 'project',
       entityId: projectId,
       action: 'project.created',
-      after: { name: 'Q9 Track', clientLabel: 'Internal product build' },
+      after: { name: 'Default', clientLabel: 'Internal product build' },
     })
 
     return projectId
