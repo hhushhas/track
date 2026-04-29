@@ -122,6 +122,12 @@ type ChatSearchMatch = {
   messageId?: Id<'messages'>
 }
 
+const resolvedTrackUserIds = new Map<string, Id<'users'>>()
+
+function clearResolvedTrackUserIds() {
+  resolvedTrackUserIds.clear()
+}
+
 function ignoreTypingIndicatorError() {
   return undefined
 }
@@ -242,7 +248,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const heartbeatTypingIndicator = useMutation(api.typingIndicators.heartbeat)
   const clearTypingIndicator = useMutation(api.typingIndicators.clear)
 
-  const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null)
+  const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(() => {
+    const sessionUser = getSessionUser(authClient.getSessionData?.())
+    return sessionUser ? resolvedTrackUserIds.get(sessionUser.id) ?? null : null
+  })
   const [activeProjectId, setActiveProjectId] = useState<Id<'projects'> | null>(null)
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
   const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null)
@@ -742,10 +751,20 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [activeProjectId, routeProjectId])
 
   useEffect(() => {
-    if (!sessionUser?.id || trackUserId) return
+    if (!sessionUser?.id) {
+      setTrackUserId(null)
+      return
+    }
+    const cachedTrackUserId = resolvedTrackUserIds.get(sessionUser.id)
+    if (cachedTrackUserId) {
+      if (trackUserId !== cachedTrackUserId) setTrackUserId(cachedTrackUserId)
+      return
+    }
+    if (trackUserId) return
     if (devAuthBypass.enabled && !session.data) {
       void syncDevUser()
         .then(async (userId) => {
+          resolvedTrackUserIds.set(sessionUser.id, userId)
           setTrackUserId(userId)
           await acceptPendingInvitations({ userId })
         })
@@ -759,6 +778,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       displayName: sessionUser.name,
     })
       .then(async (userId) => {
+        resolvedTrackUserIds.set(sessionUser.id, userId)
         setTrackUserId(userId)
         await acceptPendingInvitations({ userId })
       })
@@ -1857,8 +1877,12 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   async function handleSignOut() {
     setLogoutConfirmOpen(false)
     disableDevAuthBypass()
+    clearResolvedTrackUserIds()
+    setTrackUserId(null)
+    setActiveProjectId(null)
+    setActiveGroupId(null)
     await authClient.signOut()
-    await navigate({ to: '/sign-in' })
+    await navigate({ replace: true, to: '/sign-in' })
   }
 
   return (

@@ -54,7 +54,7 @@ function SignIn() {
             onClick={() =>
               void authClient.signIn.social({
                 provider: 'google',
-                callbackURL: '/workspace',
+                callbackURL: '/auth/callback',
               })
             }
             type="button"

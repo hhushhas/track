@@ -16,6 +16,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as WorkspaceProjectsProjectIdRouteImport } from './routes/workspace.projects.$projectId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as WorkspaceProjectsProjectIdIndexRouteImport } from './routes/workspace.projects.$projectId.index'
@@ -57,6 +58,11 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WorkspaceRoute,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspaceProjectsProjectIdRoute =
   WorkspaceProjectsProjectIdRouteImport.update({
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
+  '/auth/callback': typeof AuthCallbackRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/workspace': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
+  '/auth/callback': typeof AuthCallbackRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/two-factor'
     | '/workspace'
+    | '/auth/callback'
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/sign-in'
     | '/two-factor'
+    | '/auth/callback'
     | '/workspace'
     | '/api/auth/$'
     | '/workspace/projects/$projectId/records'
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/two-factor'
     | '/workspace'
+    | '/auth/callback'
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
@@ -191,6 +203,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   TwoFactorRoute: typeof TwoFactorRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
+  AuthCallbackRoute: typeof AuthCallbackRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -244,6 +257,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/'
       preLoaderRoute: typeof WorkspaceIndexRouteImport
       parentRoute: typeof WorkspaceRoute
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/workspace/projects/$projectId': {
       id: '/workspace/projects/$projectId'
@@ -334,6 +354,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   TwoFactorRoute: TwoFactorRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
+  AuthCallbackRoute: AuthCallbackRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
