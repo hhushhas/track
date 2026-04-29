@@ -230,6 +230,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [flashingMessageId, setFlashingMessageId] = useState<string | null>(null)
   const [pendingFocusMessageId, setPendingFocusMessageId] = useState<string | null>(null)
@@ -1591,6 +1592,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }
 
   async function handleSignOut() {
+    setLogoutConfirmOpen(false)
     await authClient.signOut()
     await navigate({ to: '/sign-in' })
   }
@@ -1779,14 +1781,36 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           <div className="track-nav-footer-actions">
             <ThemeToggle />
             <Button
+              aria-expanded={logoutConfirmOpen}
               aria-label="Log out"
               className="track-nav-footer-button"
-              onClick={() => void handleSignOut()}
+              onClick={() => setLogoutConfirmOpen((isOpen) => !isOpen)}
               title="Log out"
               type="button"
             >
               <LogOut size={14} />
             </Button>
+            {logoutConfirmOpen ? (
+              <div className="track-logout-confirm" role="dialog" aria-label="Confirm logout">
+                <p>Log out of Track?</p>
+                <div className="track-logout-confirm-actions">
+                  <Button
+                    className="track-button subtle"
+                    onClick={() => setLogoutConfirmOpen(false)}
+                    type="button"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="track-button track-button-primary"
+                    onClick={() => void handleSignOut()}
+                    type="button"
+                  >
+                    Log out
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </aside>

@@ -1120,6 +1120,7 @@ button {
 }
 
 .track-nav-footer-actions {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1151,6 +1152,34 @@ button {
   background: var(--accent-tint);
   color: var(--ink);
   transform: translateY(-1px);
+}
+
+.track-logout-confirm {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: 190px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 12px 28px rgba(27, 25, 23, 0.16);
+  color: var(--ink);
+  padding: 10px;
+}
+
+.track-logout-confirm p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.track-logout-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .track-avatar,
