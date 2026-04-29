@@ -29,6 +29,7 @@ import type * as projects from "../projects.js";
 import type * as pushNotifications from "../pushNotifications.js";
 import type * as records from "../records.js";
 import type * as search from "../search.js";
+import type * as typingIndicators from "../typingIndicators.js";
 
 import type {
   ApiFromModules,
@@ -58,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   pushNotifications: typeof pushNotifications;
   records: typeof records;
   search: typeof search;
+  typingIndicators: typeof typingIndicators;
 }>;
 
 /**

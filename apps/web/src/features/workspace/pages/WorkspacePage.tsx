@@ -62,6 +62,11 @@ import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getActiveMention, getAvatarTone, getInitials, getMentionHandle } from '#/features/workspace/identity'
 import { AssistantAnswer, DraftRecordCard, MessageRow, Metric } from '#/features/workspace/thread-items'
 import {
+  TYPING_INDICATOR_HEARTBEAT_MS,
+  TypingIndicatorLine,
+  filterActiveTypingIndicators,
+} from '#/features/workspace/typing-indicators'
+import {
   getWebPushDiagnostics,
   getNotificationPermission,
   notificationPermissionLabels,
@@ -110,6 +115,10 @@ type ChatSearchMatch = {
   key: string
   kind: 'assistant' | 'draft' | 'message'
   messageId?: Id<'messages'>
+}
+
+function ignoreTypingIndicatorError() {
+  return undefined
 }
 
 function getSessionUser(sessionData: unknown) {
@@ -216,16 +225,23 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const setGroupNotificationMode = useMutation(api.notifications.setGroupMode)
   const registerNotificationSubscription = useMutation(api.notifications.registerSubscription)
   const requestExport = useMutation(api.exports.request)
+  const heartbeatTypingIndicator = useMutation(api.typingIndicators.heartbeat)
+  const clearTypingIndicator = useMutation(api.typingIndicators.clear)
 
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null)
   const [activeProjectId, setActiveProjectId] = useState<Id<'projects'> | null>(null)
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
   const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null)
   const [composer, setComposer] = useState('')
+  const [composerFocused, setComposerFocused] = useState(false)
   const [pendingAttachments, setPendingAttachments] = useState<Array<ReturnType<typeof createPendingAttachment>>>([])
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [uiError, setUiError] = useState<string | null>(null)
   const [composerCursor, setComposerCursor] = useState(0)
+  const [typingNow, setTypingNow] = useState(() => Date.now())
+  const [browserOnline, setBrowserOnline] = useState(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine,
+  )
   const [mentionIndex, setMentionIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
@@ -309,6 +325,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     api.messages.listDetailed,
     trackUserId && activeGroupId
       ? { userId: trackUserId, groupId: activeGroupId, limit: 80 }
+      : 'skip',
+  )
+  const typingIndicators = useQuery(
+    api.typingIndicators.list,
+    trackUserId && activeGroupId
+      ? {
+          groupId: activeGroupId,
+          userId: trackUserId,
+        }
       : 'skip',
   )
   const drafts = useQuery(
@@ -507,6 +532,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     [filteredMentionOptions],
   )
   const showMentionMenu = activeMention !== null && filteredMentionOptions.length > 0
+  const composerHasTypingText = composer.trim().length > 0
+  const composingActivity = useMemo<'typing' | 'attaching' | 'recording' | null>(() => {
+    if (voiceRecordingActive) return 'recording' as const
+    if (composerFocused && composerHasTypingText) return 'typing' as const
+    if (pendingAttachments.length > 0) return 'attaching' as const
+    return null
+  }, [composerFocused, composerHasTypingText, pendingAttachments.length, voiceRecordingActive])
   const groupMessages = useMemo(
     () =>
       (messages ?? []) as Array<{
@@ -516,6 +548,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
       }>,
     [messages],
+  )
+  const activeTypingIndicators = useMemo(
+    () => filterActiveTypingIndicators(typingIndicators ?? [], typingNow),
+    [typingIndicators, typingNow],
   )
   const groupDrafts = useMemo(() => (drafts ?? []) as Array<Doc<'draftRecords'>>, [drafts])
   const projectRecords = useMemo(() => (records ?? []) as Array<Doc<'records'>>, [records])
@@ -570,6 +606,78 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       block: 'nearest',
     })
   }, [mentionIndex, showMentionMenu])
+
+  useEffect(() => {
+    if (view !== 'group' || !activeGroupId) return
+    setTypingNow(Date.now())
+    const intervalId = window.setInterval(() => {
+      setTypingNow(Date.now())
+    }, TYPING_INDICATOR_HEARTBEAT_MS)
+    return () => window.clearInterval(intervalId)
+  }, [activeGroupId, view])
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.hidden) setComposerFocused(false)
+    }
+    function handleOnline() {
+      setBrowserOnline(true)
+    }
+    function handleOffline() {
+      setBrowserOnline(false)
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (
+      view !== 'group' ||
+      !trackUserId ||
+      !activeProjectId ||
+      !activeGroupId ||
+      !browserOnline ||
+      document.hidden ||
+      !composingActivity
+    ) {
+      return
+    }
+
+    const heartbeatArgs = {
+      projectId: activeProjectId,
+      groupId: activeGroupId,
+      userId: trackUserId,
+      activity: composingActivity,
+    }
+    const clearArgs = {
+      groupId: activeGroupId,
+      userId: trackUserId,
+    }
+    void heartbeatTypingIndicator(heartbeatArgs).catch(ignoreTypingIndicatorError)
+    const intervalId = window.setInterval(() => {
+      void heartbeatTypingIndicator(heartbeatArgs).catch(ignoreTypingIndicatorError)
+    }, TYPING_INDICATOR_HEARTBEAT_MS)
+
+    return () => {
+      window.clearInterval(intervalId)
+      void clearTypingIndicator(clearArgs).catch(ignoreTypingIndicatorError)
+    }
+  }, [
+    activeGroupId,
+    activeProjectId,
+    browserOnline,
+    clearTypingIndicator,
+    composingActivity,
+    heartbeatTypingIndicator,
+    trackUserId,
+    view,
+  ])
 
   useEffect(() => {
     if (!railResizing) return
@@ -1250,6 +1358,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   function handleComposerSelection() {
     setComposerCursor(composerRef.current?.selectionStart ?? composer.length)
+  }
+
+  function handleComposerFocus() {
+    setComposerFocused(true)
+    handleComposerSelection()
+  }
+
+  function handleComposerBlur() {
+    handleComposerSelection()
+    setComposerFocused(false)
   }
 
   function handleMentionSelect(option: (typeof mentionOptions)[number]) {
@@ -2066,6 +2184,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             </div>
 
             <div className="track-composer-wrap">
+              <TypingIndicatorLine indicators={activeTypingIndicators} />
               <div className={voiceRecordingActive ? 'track-composer recording' : 'track-composer'}>
                 {!voiceRecordingActive && pendingAttachments.length > 0 ? (
                   <div className="track-composer-attachments" aria-label="Pending attachments">
@@ -2128,12 +2247,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                   <Textarea
                     aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
                     disabled={!activeGroupId || busyAction === 'send-message'}
-                    onBlur={handleComposerSelection}
+                    onBlur={handleComposerBlur}
                     onChange={(event) => {
                       setComposer(event.currentTarget.value)
                       setComposerCursor(event.currentTarget.selectionStart)
                       setEmojiPickerOpen(false)
                     }}
+                    onFocus={handleComposerFocus}
                     onKeyDown={(event) => {
                       if (emojiPickerOpen && event.key === 'Escape') {
                         event.preventDefault()

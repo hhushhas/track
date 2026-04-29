@@ -3115,6 +3115,120 @@ button.track-mention-inline.group:focus-visible {
   padding: 12px 32px 16px;
 }
 
+.track-typing-indicator {
+  display: flex;
+  min-height: 22px;
+  max-width: 760px;
+  align-items: center;
+  margin: 0 auto 4px;
+  color: var(--ink-4);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.track-typing-indicator-content {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  opacity: 0.78;
+  transform: translateY(0);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.track-typing-indicator.leaving .track-typing-indicator-content {
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+.track-typing-avatar-stack {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.track-typing-avatar,
+.track-typing-avatar-more {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--paper);
+  border-radius: 999px;
+  box-shadow: 0 1px 5px rgba(27, 25, 23, 0.08);
+  font-size: 7px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.track-typing-avatar {
+  margin-left: -7px;
+}
+
+.track-typing-avatar:first-child {
+  margin-left: 0;
+}
+
+.track-typing-avatar-more {
+  margin-left: -7px;
+  background: var(--paper-2);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+}
+
+.track-typing-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-4);
+  font-size: 12px;
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.track-typing-dots span {
+  display: block;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: track-typing-dot 900ms ease-in-out infinite;
+}
+
+.track-typing-dots span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.track-typing-dots span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes track-typing-dot {
+  0%,
+  70%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  35% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
 .track-composer {
   position: relative;
   max-width: 760px;
@@ -4580,6 +4694,20 @@ button:disabled:hover {
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
 
+  .track-typing-indicator {
+    min-height: 0;
+    margin-bottom: 0;
+  }
+
+  .track-typing-indicator.active {
+    min-height: 20px;
+    margin-bottom: 5px;
+  }
+
+  .track-typing-text {
+    max-width: min(62vw, 280px);
+  }
+
   .track-composer-bar {
     flex-wrap: wrap;
   }
@@ -4625,7 +4753,8 @@ button:disabled:hover {
   .track-assistant-row,
   .track-message-row.flashing .track-message-body,
   .track-chat-search-popover,
-  .track-project-search {
+  .track-project-search,
+  .track-typing-dots span {
     animation: none;
   }
 
@@ -4637,6 +4766,7 @@ button:disabled:hover {
   .track-attachment-card,
   .track-avatar-tooltip-trigger,
   .track-mention-option,
+  .track-typing-indicator-content,
   .track-project-search-filters button,
   .track-project-search-result {
     transition: none;

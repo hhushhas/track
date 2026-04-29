@@ -175,6 +175,20 @@ export default defineSchema({
       filterFields: ['projectId'],
     }),
 
+  typingIndicators: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    activity: v.optional(
+      v.union(v.literal('typing'), v.literal('attaching'), v.literal('recording')),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_group_updated_at', ['groupId', 'updatedAt'])
+    .index('by_group_user', ['groupId', 'userId'])
+    .index('by_user', ['userId']),
+
   attachments: defineTable({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
