@@ -122,9 +122,11 @@ export function MessageRow({
       id={`message-${item.message._id}`}
     >
       <AvatarNameTooltip
-        detail={item.authorRole ? item.authorRole.replaceAll('_', ' ') : null}
+        bio={item.author?.profileBio}
+        detail={item.author?.profileDesignation ?? (item.authorRole ? item.authorRole.replaceAll('_', ' ') : null)}
         name={authorName}
         side="right"
+        timezone={item.author?.timezone}
       >
         <Avatar className={`track-message-avatar ${getAvatarTone(item.author?.email ?? authorName)}`}>
           <AvatarFallback>{getInitials(authorName)}</AvatarFallback>

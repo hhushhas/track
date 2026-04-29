@@ -3,9 +3,10 @@ import { createClient, type GenericCtx } from '@convex-dev/better-auth'
 import { convex, crossDomain } from '@convex-dev/better-auth/plugins'
 import { betterAuth } from 'better-auth/minimal'
 import { twoFactor } from 'better-auth/plugins'
+import type { GenericDatabaseReader, GenericDatabaseWriter } from 'convex/server'
 
 import { components } from './_generated/api'
-import type { DataModel } from './_generated/dataModel'
+import type { DataModel, Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
 
@@ -14,9 +15,16 @@ const devAuthBypassUser = {
   googleSubject: 'demo:hasan-shoaib',
   email: 'shasanshoaib@gmail.com',
   displayName: 'Hasan Shoaib',
+  profileDesignation: 'Founder / Product Lead',
+  timezone: 'Asia/Karachi',
 } as const
 
+const stepUpFreshMs = 10 * 60 * 1000
+
 export const authComponent = createClient<DataModel>(components.betterAuth)
+
+type ReadCtx = GenericCtx<DataModel> & { db: GenericDatabaseReader<DataModel> }
+type WriteCtx = GenericCtx<DataModel> & { db: GenericDatabaseWriter<DataModel> }
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
@@ -24,6 +32,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     baseURL: siteUrl,
     trustedOrigins: [siteUrl, 'http://localhost:3000', 'https://track.q9labs.ai'],
     database: authComponent.adapter(ctx),
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 10,
+      maxPasswordLength: 256,
+      requireEmailVerification: false,
+    },
     socialProviders: {
       google: {
         clientId: process.env.GOOGLE_CLIENT_ID_WEB ?? '',
@@ -33,7 +47,17 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
     plugins: [
       crossDomain({ siteUrl }),
       convex({ authConfig }),
-      twoFactor({ issuer: 'Track' }),
+      twoFactor({
+        issuer: 'Track',
+        allowPasswordless: true,
+        twoFactorCookieMaxAge: 10 * 60,
+        trustDeviceMaxAge: 30 * 24 * 60 * 60,
+        backupCodeOptions: {
+          amount: 10,
+          length: 10,
+          storeBackupCodes: 'encrypted',
+        },
+      }),
     ],
   })
 
@@ -63,9 +87,142 @@ function getAuthUserDisplayName(authUser: {
   return authUser.name ?? authUser.email?.split('@')[0] ?? 'Track User'
 }
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase()
+}
+
+function isProfileComplete(user: {
+  displayName?: string | null
+  profileDesignation?: string | null
+  timezone?: string | null
+}) {
+  return Boolean(
+    user.displayName?.trim() &&
+      user.profileDesignation?.trim() &&
+      user.timezone?.trim(),
+  )
+}
+
 function isDevAuthBypassEnabled() {
   return process.env.DEV_AUTH_BYPASS === '1' && siteUrl !== 'https://track.q9labs.ai'
 }
+
+async function assertCanManageTrackUser(ctx: WriteCtx, userId: string) {
+  const authUser = await getOptionalAuthUser(ctx)
+  if (!authUser) {
+    if (isDevAuthBypassEnabled()) {
+      const trackUser = await ctx.db.get(userId as Id<'users'>)
+      if (trackUser?.googleSubject === devAuthBypassUser.googleSubject) {
+        return { authUser: null, trackUser }
+      }
+    }
+    throw new Error('unauthenticated')
+  }
+
+  const trackUser = await findTrackUserByAuth(ctx, authUser)
+  if (!trackUser || trackUser._id !== userId) throw new Error('forbidden')
+
+  return { authUser, trackUser }
+}
+
+async function findTrackUserByAuth(
+  ctx: ReadCtx,
+  authUser: { _id: string; email?: string | null },
+) {
+  const byAuthId = await ctx.db
+    .query('users')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUser._id))
+    .unique()
+  if (byAuthId) return byAuthId
+
+  const byLegacyAuthId = await ctx.db
+    .query('users')
+    .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))
+    .unique()
+  if (byLegacyAuthId) return byLegacyAuthId
+
+  const normalizedEmail = normalizeEmail(authUser.email ?? '')
+  if (!normalizedEmail) return null
+
+  return await ctx.db
+    .query('users')
+    .withIndex('by_normalized_email', (q) => q.eq('normalizedEmail', normalizedEmail))
+    .unique()
+}
+
+async function upsertTrackUserFromAuth(
+  ctx: WriteCtx,
+  authUser: {
+    _id: string
+    email?: string | null
+    name?: string | null
+    twoFactorEnabled?: boolean | null
+  },
+) {
+  const now = Date.now()
+  const normalizedEmail = normalizeEmail(authUser.email ?? '')
+  const displayName = getAuthUserDisplayName(authUser)
+  const existing = await findTrackUserByAuth(ctx, authUser)
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      authUserId: authUser._id,
+      normalizedEmail,
+      googleSubject: existing.googleSubject || authUser._id,
+      email: authUser.email ?? existing.email,
+      displayName: existing.displayName?.trim() ? existing.displayName : displayName,
+      twoFactorEnabled: Boolean(authUser.twoFactorEnabled),
+      updatedAt: now,
+    })
+    return existing._id
+  }
+
+  return await ctx.db.insert('users', {
+    googleSubject: authUser._id,
+    authUserId: authUser._id,
+    normalizedEmail,
+    email: authUser.email ?? '',
+    displayName,
+    twoFactorEnabled: Boolean(authUser.twoFactorEnabled),
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+export const getEmailAuthHint = query({
+  args: {
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = normalizeEmail(args.email)
+    if (!email.includes('@')) return { status: 'invalid' as const }
+
+    const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: 'user',
+      where: [{ field: 'email', value: email }],
+      select: ['_id', 'email'],
+    })
+
+    if (!authUser?._id) return { status: 'new' as const }
+
+    const accounts = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+      model: 'account',
+      where: [{ field: 'userId', value: authUser._id }],
+      select: ['providerId', 'password'],
+      paginationOpts: { cursor: null, numItems: 20 },
+    })
+    const page = (Array.isArray(accounts?.page) ? accounts.page : []) as Array<{
+      password?: string | null
+      providerId?: string | null
+    }>
+    const hasCredential = page.some((account) => account.providerId === 'credential' && account.password)
+    const hasGoogle = page.some((account) => account.providerId === 'google')
+
+    if (hasCredential) return { status: 'credential' as const }
+    if (hasGoogle) return { status: 'google_only' as const }
+    return { status: 'existing_without_password' as const }
+  },
+})
 
 export const ensureCurrentUser = mutation({
   args: {},
@@ -73,29 +230,7 @@ export const ensureCurrentUser = mutation({
     const authUser = await getOptionalAuthUser(ctx)
     if (!authUser) return null
 
-    const now = Date.now()
-    const existing = await ctx.db
-      .query('users')
-      .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))
-      .unique()
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        email: authUser.email ?? existing.email,
-        displayName: getAuthUserDisplayName(authUser),
-        updatedAt: now,
-      })
-      return existing._id
-    }
-
-    return await ctx.db.insert('users', {
-      googleSubject: authUser._id,
-      email: authUser.email ?? '',
-      displayName: getAuthUserDisplayName(authUser),
-      twoFactorEnabled: false,
-      createdAt: now,
-      updatedAt: now,
-    })
+    return await upsertTrackUserFromAuth(ctx, authUser)
   },
 })
 
@@ -105,10 +240,7 @@ export const getCurrentUser = query({
     const authUser = await getOptionalAuthUser(ctx)
     if (!authUser) return null
 
-    return await ctx.db
-      .query('users')
-      .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))
-      .unique()
+    return await findTrackUserByAuth(ctx, authUser)
   },
 })
 
@@ -119,30 +251,10 @@ export const syncGoogleUser = mutation({
     displayName: v.string(),
   },
   handler: async (ctx, args) => {
-    const now = Date.now()
-    const existing = await ctx.db
-      .query('users')
-      .withIndex('by_google_subject', (q) =>
-        q.eq('googleSubject', args.googleSubject),
-      )
-      .unique()
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        email: args.email,
-        displayName: args.displayName,
-        updatedAt: now,
-      })
-      return existing._id
-    }
-
-    return await ctx.db.insert('users', {
-      googleSubject: args.googleSubject,
+    return await upsertTrackUserFromAuth(ctx, {
+      _id: args.googleSubject,
       email: args.email,
-      displayName: args.displayName,
-      twoFactorEnabled: false,
-      createdAt: now,
-      updatedAt: now,
+      name: args.displayName,
     })
   },
 })
@@ -164,8 +276,13 @@ export const syncDevUser = mutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
+        authUserId: devAuthBypassUser.googleSubject,
+        normalizedEmail: normalizeEmail(devAuthBypassUser.email),
         email: devAuthBypassUser.email,
         displayName: devAuthBypassUser.displayName,
+        profileDesignation: existing.profileDesignation ?? devAuthBypassUser.profileDesignation,
+        timezone: existing.timezone ?? devAuthBypassUser.timezone,
+        profileCompletedAt: existing.profileCompletedAt ?? now,
         updatedAt: now,
       })
       return existing._id
@@ -173,8 +290,13 @@ export const syncDevUser = mutation({
 
     return await ctx.db.insert('users', {
       googleSubject: devAuthBypassUser.googleSubject,
+      authUserId: devAuthBypassUser.googleSubject,
+      normalizedEmail: normalizeEmail(devAuthBypassUser.email),
       email: devAuthBypassUser.email,
       displayName: devAuthBypassUser.displayName,
+      profileDesignation: devAuthBypassUser.profileDesignation,
+      timezone: devAuthBypassUser.timezone,
+      profileCompletedAt: now,
       twoFactorEnabled: false,
       createdAt: now,
       updatedAt: now,
@@ -197,10 +319,21 @@ export const setTwoFactorEnabled = mutation({
     enabled: v.boolean(),
   },
   handler: async (ctx, args) => {
+    await assertCanManageTrackUser(ctx, args.userId)
     await ctx.db.patch(args.userId, {
       twoFactorEnabled: args.enabled,
       updatedAt: Date.now(),
     })
+  },
+})
+
+export const generateAvatarUploadUrl = mutation({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    await assertCanManageTrackUser(ctx, args.userId)
+    return await ctx.storage.generateUploadUrl()
   },
 })
 
@@ -210,9 +343,143 @@ export const setAvatar = mutation({
     avatarStorageId: v.id('_storage'),
   },
   handler: async (ctx, args) => {
+    await assertCanManageTrackUser(ctx, args.userId)
     await ctx.db.patch(args.userId, {
       avatarStorageId: args.avatarStorageId,
       updatedAt: Date.now(),
     })
+  },
+})
+
+export const getAvatarUrl = query({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId)
+    if (!user?.avatarStorageId) return null
+    return await ctx.storage.getUrl(user.avatarStorageId)
+  },
+})
+
+export const updateProfile = mutation({
+  args: {
+    userId: v.id('users'),
+    displayName: v.string(),
+    profileDesignation: v.string(),
+    profileBio: v.optional(v.string()),
+    timezone: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await assertCanManageTrackUser(ctx, args.userId)
+    const displayName = args.displayName.trim()
+    const profileDesignation = args.profileDesignation.trim()
+    const profileBio = args.profileBio?.trim()
+    const timezone = args.timezone.trim()
+
+    if (!displayName) throw new Error('display_name_required')
+    if (!profileDesignation) throw new Error('designation_required')
+    if (!timezone) throw new Error('timezone_required')
+    if (profileDesignation.length > 60) throw new Error('designation_too_long')
+    if ((profileBio?.length ?? 0) > 180) throw new Error('bio_too_long')
+
+    await ctx.db.patch(args.userId, {
+      displayName,
+      profileDesignation,
+      profileBio: profileBio || undefined,
+      timezone,
+      profileCompletedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const getProfileStatus = query({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId)
+    if (!user) return null
+    return {
+      complete: isProfileComplete(user),
+      user,
+    }
+  },
+})
+
+export const verifyStepUpTotp = mutation({
+  args: {
+    userId: v.id('users'),
+    action: v.string(),
+    code: v.string(),
+    method: v.union(v.literal('totp'), v.literal('backup_code')),
+  },
+  handler: async (ctx, args) => {
+    await assertCanManageTrackUser(ctx, args.userId)
+    const user = await ctx.db.get(args.userId)
+    if (!user?.authUserId) throw new Error('user_not_found')
+
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx)
+    const api = auth.api as {
+      verifyTOTP: (input: { body: { code: string }; headers: Headers }) => Promise<unknown>
+      verifyBackupCode: (input: {
+        body: { code: string; disableSession: boolean }
+        headers: Headers
+      }) => Promise<unknown>
+    }
+
+    if (args.method === 'backup_code') {
+      await api.verifyBackupCode({
+        body: { code: args.code, disableSession: true },
+        headers,
+      })
+    } else {
+      await api.verifyTOTP({
+        body: { code: args.code },
+        headers,
+      })
+    }
+
+    const now = Date.now()
+    const existing = await ctx.db
+      .query('securityStepUps')
+      .withIndex('by_user_action', (q) =>
+        q.eq('userId', args.userId).eq('action', args.action),
+      )
+      .unique()
+    const payload = {
+      authUserId: user.authUserId,
+      action: args.action,
+      expiresAt: now + stepUpFreshMs,
+      createdAt: now,
+    }
+    if (existing) {
+      await ctx.db.patch(existing._id, payload)
+    } else {
+      await ctx.db.insert('securityStepUps', {
+        userId: args.userId,
+        ...payload,
+      })
+    }
+
+    return { expiresAt: payload.expiresAt }
+  },
+})
+
+export const hasFreshStepUp = query({
+  args: {
+    userId: v.id('users'),
+    action: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const stepUp = await ctx.db
+      .query('securityStepUps')
+      .withIndex('by_user_action', (q) =>
+        q.eq('userId', args.userId).eq('action', args.action),
+      )
+      .unique()
+
+    return Boolean(stepUp && stepUp.expiresAt > Date.now())
   },
 })

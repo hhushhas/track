@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
 import TrackLoader from '#/components/TrackLoader'
@@ -9,13 +9,14 @@ export const Route = createFileRoute('/auth/callback')({
 })
 
 function AuthCallback() {
-  const navigate = useNavigate()
   const session = authClient.useSession()
+  const search = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
+  const next = search.get('next') || '/workspace'
 
   useEffect(() => {
     if (!session.data) return
-    void navigate({ replace: true, to: '/workspace' })
-  }, [navigate, session.data])
+    window.location.replace(next.startsWith('/') ? next : '/workspace')
+  }, [next, session.data])
 
   return (
     <main className="track-auth-page">

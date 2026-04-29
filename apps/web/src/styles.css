@@ -597,12 +597,306 @@ button {
   margin-top: 28px;
 }
 
+.track-auth-email-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.track-auth-email-form label,
+.track-profile-form label,
+.track-profile-password {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.track-auth-email-form input,
+.track-profile-form input,
+.track-profile-form textarea,
+.track-profile-form select,
+.track-profile-password input {
+  border: 1px solid var(--hairline-strong);
+  background: var(--paper);
+}
+
+.track-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.track-auth-divider::before,
+.track-auth-divider::after {
+  width: 100%;
+  height: 1px;
+  background: var(--hairline);
+  content: "";
+}
+
+.track-auth-error {
+  color: var(--danger) !important;
+  font-size: 12px !important;
+}
+
+.track-button.track-button-danger {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--hairline-strong));
+  color: var(--danger);
+}
+
 .track-auth-note {
   margin-top: 14px;
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: var(--accent-tint);
   padding: 11px;
+}
+
+.track-profile-page {
+  min-height: 100vh;
+  background: var(--paper);
+  padding: 24px;
+}
+
+.track-profile-shell {
+  display: grid;
+  width: min(100%, 1080px);
+  min-height: calc(100vh - 48px);
+  margin: 0 auto;
+  grid-template-columns: 280px minmax(0, 1fr);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.track-profile-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  border-right: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: 28px;
+}
+
+.track-profile-sidebar h1,
+.track-profile-section h2 {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.track-profile-sidebar p:not(.mono-label),
+.track-profile-muted,
+.track-profile-actions p,
+.track-profile-message,
+.track-profile-avatar-row p {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.track-profile-tabs {
+  display: grid;
+  gap: 8px;
+}
+
+.track-profile-tabs button {
+  justify-content: flex-start;
+  gap: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.track-profile-tabs button.active {
+  border-color: var(--hairline-strong);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.track-profile-content {
+  padding: 28px;
+}
+
+.track-profile-section {
+  display: grid;
+  gap: 22px;
+  max-width: 680px;
+}
+
+.track-profile-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.track-profile-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--accent-tint);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.track-profile-status.muted {
+  background: var(--paper-2);
+  color: var(--ink-3);
+}
+
+.track-profile-avatar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.track-profile-avatar {
+  width: 72px;
+  height: 72px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.track-profile-avatar-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 9px 12px;
+}
+
+.track-profile-avatar-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.track-profile-form {
+  display: grid;
+  gap: 16px;
+}
+
+.track-profile-form small {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 520;
+}
+
+.track-profile-form select {
+  min-height: 40px;
+  border-radius: 6px;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.track-profile-actions,
+.track-profile-security-box,
+.track-profile-inline-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.track-profile-password {
+  max-width: 360px;
+}
+
+.track-profile-qr {
+  width: 180px;
+  height: 180px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.track-profile-inline-form input {
+  width: 150px;
+}
+
+.track-profile-backup-codes {
+  display: grid;
+  gap: 12px;
+}
+
+.track-profile-backup-codes div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.track-profile-backup-codes code {
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 12px;
+  padding: 8px;
+  text-align: center;
+}
+
+.track-profile-method-list {
+  display: grid;
+  gap: 10px;
+}
+
+.track-profile-method-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.track-profile-method-list strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.track-profile-method-list span {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.track-two-factor-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.track-two-factor-trust {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
 .track-dialog {
@@ -1850,8 +2144,19 @@ button {
   white-space: nowrap;
 }
 
+.track-avatar-tooltip-copy span {
+  max-width: 220px;
+  color: rgba(250, 249, 247, 0.78);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .dark .track-avatar-tooltip-copy small {
   color: var(--ink-3);
+}
+
+.dark .track-avatar-tooltip-copy span {
+  color: var(--ink-2);
 }
 
 .track-workspace {
@@ -5399,6 +5704,40 @@ button:disabled:hover {
   .track-auth-panel {
     justify-content: flex-start;
     padding: 28px;
+  }
+
+  .track-profile-page {
+    padding: 0;
+  }
+
+  .track-profile-shell {
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .track-profile-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--hairline);
+    padding: 24px;
+  }
+
+  .track-profile-tabs {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .track-profile-tabs button {
+    flex: 0 0 auto;
+  }
+
+  .track-profile-content {
+    padding: 24px;
+  }
+
+  .track-profile-section-header {
+    display: grid;
   }
 
   .track-app-shell {

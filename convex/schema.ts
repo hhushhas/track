@@ -94,13 +94,22 @@ const forwardedMessageSnapshot = v.object({
 export default defineSchema({
   users: defineTable({
     googleSubject: v.string(),
+    authUserId: v.optional(v.string()),
+    normalizedEmail: v.optional(v.string()),
     email: v.string(),
     displayName: v.string(),
+    profileDesignation: v.optional(v.string()),
+    profileBio: v.optional(v.string()),
+    timezone: v.optional(v.string()),
     avatarStorageId: v.optional(v.id('_storage')),
+    profileCompletedAt: v.optional(v.number()),
     twoFactorEnabled: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_google_subject', ['googleSubject']),
+  })
+    .index('by_google_subject', ['googleSubject'])
+    .index('by_auth_user_id', ['authUserId'])
+    .index('by_normalized_email', ['normalizedEmail']),
 
   projects: defineTable({
     name: v.string(),
@@ -364,4 +373,14 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_group_created_at', ['groupId', 'createdAt']),
+
+  securityStepUps: defineTable({
+    userId: v.id('users'),
+    authUserId: v.string(),
+    action: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_user_action', ['userId', 'action'])
+    .index('by_auth_user_action', ['authUserId', 'action']),
 })

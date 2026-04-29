@@ -12,10 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
+import { Route as OnboardingProfileRouteImport } from './routes/onboarding.profile'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as WorkspaceProjectsProjectIdRouteImport } from './routes/workspace.projects.$projectId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -39,6 +41,11 @@ const SignInRoute = SignInRouteImport.update({
   path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -58,6 +65,11 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WorkspaceRoute,
+} as any)
+const OnboardingProfileRoute = OnboardingProfileRouteImport.update({
+  id: '/onboarding/profile',
+  path: '/onboarding/profile',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
@@ -104,10 +116,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/privacy': typeof PrivacyRoute
+  '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/onboarding/profile': typeof OnboardingProfileRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
@@ -120,9 +134,11 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/privacy': typeof PrivacyRoute
+  '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
   '/auth/callback': typeof AuthCallbackRoute
+  '/onboarding/profile': typeof OnboardingProfileRoute
   '/workspace': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
@@ -135,10 +151,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/privacy': typeof PrivacyRoute
+  '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
+  '/onboarding/profile': typeof OnboardingProfileRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
@@ -153,10 +171,12 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/privacy'
+    | '/profile'
     | '/sign-in'
     | '/two-factor'
     | '/workspace'
     | '/auth/callback'
+    | '/onboarding/profile'
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
@@ -169,9 +189,11 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/privacy'
+    | '/profile'
     | '/sign-in'
     | '/two-factor'
     | '/auth/callback'
+    | '/onboarding/profile'
     | '/workspace'
     | '/api/auth/$'
     | '/workspace/projects/$projectId/records'
@@ -183,10 +205,12 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/privacy'
+    | '/profile'
     | '/sign-in'
     | '/two-factor'
     | '/workspace'
     | '/auth/callback'
+    | '/onboarding/profile'
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
@@ -200,10 +224,12 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   PrivacyRoute: typeof PrivacyRoute
+  ProfileRoute: typeof ProfileRoute
   SignInRoute: typeof SignInRoute
   TwoFactorRoute: typeof TwoFactorRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
   AuthCallbackRoute: typeof AuthCallbackRoute
+  OnboardingProfileRoute: typeof OnboardingProfileRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -228,6 +254,13 @@ declare module '@tanstack/react-router' {
       path: '/sign-in'
       fullPath: '/sign-in'
       preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -257,6 +290,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace/'
       preLoaderRoute: typeof WorkspaceIndexRouteImport
       parentRoute: typeof WorkspaceRoute
+    }
+    '/onboarding/profile': {
+      id: '/onboarding/profile'
+      path: '/onboarding/profile'
+      fullPath: '/onboarding/profile'
+      preLoaderRoute: typeof OnboardingProfileRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/callback': {
       id: '/auth/callback'
@@ -351,10 +391,12 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   PrivacyRoute: PrivacyRoute,
+  ProfileRoute: ProfileRoute,
   SignInRoute: SignInRoute,
   TwoFactorRoute: TwoFactorRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
   AuthCallbackRoute: AuthCallbackRoute,
+  OnboardingProfileRoute: OnboardingProfileRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

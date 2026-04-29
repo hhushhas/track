@@ -1,19 +1,171 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useConvex } from 'convex/react'
 import { FileCheck2, KeyRound, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
 
+import { api } from '../../../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import { enableDevAuthBypass, isDevAuthBypassAllowed } from '#/lib/dev-auth-bypass'
 import { authClient } from '../lib/auth-client'
 
+const pendingSetPasswordEmailKey = 'track-pending-set-password-email'
+const supportEmail = 'q9labs.ai@gmail.com'
+
+type AuthMode = 'continue' | 'confirm-new' | 'google-proof' | 'set-password'
+
 export const Route = createFileRoute('/sign-in')({ component: SignIn })
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase()
+}
+
+function getPasswordMessage(error: unknown) {
+  if (!error) return ''
+  if (typeof error === 'object' && 'message' in error) {
+    const message = String(error.message)
+    if (message) return message
+  }
+  return 'Could not continue. Check the details and try again.'
+}
+
 function SignIn() {
+  const convex = useConvex()
   const navigate = useNavigate()
+  const session = authClient.useSession()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [mode, setMode] = useState<AuthMode>(() => {
+    if (typeof window === 'undefined') return 'continue'
+    return window.localStorage.getItem(pendingSetPasswordEmailKey) ? 'set-password' : 'continue'
+  })
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const pendingSetPasswordEmail = useMemo(() => {
+    if (typeof window === 'undefined') return ''
+    return window.localStorage.getItem(pendingSetPasswordEmailKey) ?? ''
+  }, [mode])
 
   function handleDevBypass() {
     enableDevAuthBypass()
     void navigate({ to: '/workspace' })
   }
+
+  async function continueWithGoogle() {
+    setMessage('')
+    if (mode === 'google-proof') {
+      window.localStorage.setItem(pendingSetPasswordEmailKey, normalizeEmail(email))
+    }
+    await authClient.signIn.social({
+      provider: 'google',
+      callbackURL: mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
+    })
+  }
+
+  async function handleEmailSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const normalizedEmail = normalizeEmail(email || pendingSetPasswordEmail)
+    const passwordValue = password.trim()
+    setMessage('')
+
+    if (!normalizedEmail.includes('@')) {
+      setMessage('Enter a valid email address.')
+      return
+    }
+    if (passwordValue.length < 10) {
+      setMessage('Password must be at least 10 characters.')
+      return
+    }
+    if ((mode === 'confirm-new' || mode === 'set-password') && passwordValue !== confirmPassword.trim()) {
+      setMessage('Passwords do not match.')
+      return
+    }
+
+    setBusy(true)
+    try {
+      if (mode === 'set-password') {
+        if (!session.data) {
+          setMessage('Continue with Google first, then add a password.')
+          setMode('google-proof')
+          return
+        }
+        const client = authClient as typeof authClient & {
+          setPassword: (input: { newPassword: string }) => Promise<{ error?: { message?: string } | null }>
+        }
+        const result = await client.setPassword({ newPassword: passwordValue })
+        if (result.error) {
+          setMessage(getPasswordMessage(result.error))
+          return
+        }
+        window.localStorage.removeItem(pendingSetPasswordEmailKey)
+        await navigate({ to: '/workspace' })
+        return
+      }
+
+      if (mode === 'confirm-new') {
+        const result = await authClient.signUp.email({
+          email: normalizedEmail,
+          password: passwordValue,
+          name: normalizedEmail.split('@')[0] || 'Track User',
+          callbackURL: '/workspace',
+        })
+        if (result.error) {
+          setMessage(getPasswordMessage(result.error))
+          return
+        }
+        await navigate({ to: '/workspace' })
+        return
+      }
+
+      const hint = await convex.query(api.auth.getEmailAuthHint, { email: normalizedEmail })
+      if (hint.status === 'new') {
+        setMode('confirm-new')
+        setConfirmPassword('')
+        return
+      }
+      if (hint.status === 'google_only' || hint.status === 'existing_without_password') {
+        setMode('google-proof')
+        return
+      }
+      if (hint.status === 'invalid') {
+        setMessage('Enter a valid email address.')
+        return
+      }
+
+      window.localStorage.setItem('track-login-return-to', window.location.pathname + window.location.search)
+      const result = await authClient.signIn.email({
+        email: normalizedEmail,
+        password: passwordValue,
+        callbackURL: '/workspace',
+      })
+      if (result.error) {
+        setMessage('Email or password is incorrect.')
+      }
+    } catch (error) {
+      setMessage(getPasswordMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const title =
+    mode === 'confirm-new'
+      ? 'Create your Track account'
+      : mode === 'google-proof'
+        ? 'Confirm this Google account'
+        : mode === 'set-password'
+          ? 'Add email password'
+          : 'Sign in to continue'
+  const copy =
+    mode === 'confirm-new'
+      ? `${normalizeEmail(email)} is new. Confirm your password before we create it.`
+      : mode === 'google-proof'
+        ? 'This email already uses Google. Continue with Google first, then add a password to the same Track profile.'
+        : mode === 'set-password'
+          ? `Set a password for ${pendingSetPasswordEmail || 'this email'} after confirming your Google account.`
+          : 'Use email and password, or continue with Google. New email accounts are created after confirmation.'
 
   return (
     <main className="track-auth-page">
@@ -43,25 +195,98 @@ function SignIn() {
 
         <div className="track-auth-panel">
           <p className="mono-label m-0">Track Access</p>
-          <h2>Sign in to continue</h2>
-          <p>
-            Use the Google account invited to your Track project. Two-factor
-            verification appears next when enabled.
-          </p>
+          <h2>{title}</h2>
+          <p>{copy}</p>
 
-          <Button
-            className="track-button track-button-primary track-auth-button"
-            onClick={() =>
-              void authClient.signIn.social({
-                provider: 'google',
-                callbackURL: '/auth/callback',
-              })
-            }
-            type="button"
-          >
-            <img alt="" height={18} src="/google-g.svg" width={18} />
-            Continue with Google
-          </Button>
+          {mode === 'google-proof' ? (
+            <Button
+              className="track-button track-button-primary track-auth-button"
+              disabled={busy}
+              onClick={() => void continueWithGoogle()}
+              type="button"
+            >
+              <img alt="" height={18} src="/google-g.svg" width={18} />
+              Continue with Google
+            </Button>
+          ) : (
+            <form className="track-auth-email-form" onSubmit={(event) => void handleEmailSubmit(event)}>
+              {mode !== 'set-password' ? (
+                <label>
+                  <span>Email</span>
+                  <Input
+                    autoComplete="email"
+                    onChange={(event) => setEmail(event.currentTarget.value)}
+                    placeholder="you@example.com"
+                    type="email"
+                    value={email}
+                  />
+                </label>
+              ) : null}
+              <label>
+                <span>Password</span>
+                <Input
+                  autoComplete={mode === 'continue' ? 'current-password' : 'new-password'}
+                  onChange={(event) => setPassword(event.currentTarget.value)}
+                  placeholder="At least 10 characters"
+                  type="password"
+                  value={password}
+                />
+              </label>
+              {mode === 'confirm-new' || mode === 'set-password' ? (
+                <label>
+                  <span>Confirm password</span>
+                  <Input
+                    autoComplete="new-password"
+                    onChange={(event) => setConfirmPassword(event.currentTarget.value)}
+                    placeholder="Repeat password"
+                    type="password"
+                    value={confirmPassword}
+                  />
+                </label>
+              ) : null}
+              <button
+                className="track-button track-button-primary track-auth-button"
+                disabled={busy}
+                type="submit"
+              >
+                {mode === 'confirm-new'
+                  ? 'Create account'
+                  : mode === 'set-password'
+                    ? 'Add password'
+                    : 'Continue with Email'}
+              </button>
+            </form>
+          )}
+
+          {mode === 'continue' ? (
+            <>
+              <div className="track-auth-divider">or</div>
+              <Button
+                className="track-button track-auth-button"
+                disabled={busy}
+                onClick={() => void continueWithGoogle()}
+                type="button"
+                variant="outline"
+              >
+                <img alt="" height={18} src="/google-g.svg" width={18} />
+                Continue with Google
+              </Button>
+            </>
+          ) : (
+            <Button
+              className="track-button track-auth-button"
+              disabled={busy}
+              onClick={() => {
+                setMode('continue')
+                setMessage('')
+                window.localStorage.removeItem(pendingSetPasswordEmailKey)
+              }}
+              type="button"
+              variant="outline"
+            >
+              Back
+            </Button>
+          )}
 
           {isDevAuthBypassAllowed ? (
             <Button
@@ -76,9 +301,11 @@ function SignIn() {
             </Button>
           ) : null}
 
+          {message ? <p className="track-auth-error">{message}</p> : null}
+
           <div className="track-auth-note">
             <ShieldCheck size={16} />
-            <span>Project and group membership control what you can see.</span>
+            <span>Need access or password help? Contact {supportEmail}.</span>
           </div>
         </div>
       </section>

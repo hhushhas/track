@@ -27,6 +27,7 @@ import {
   Settings2,
   Smile,
   Upload,
+  UserRound,
   X,
 } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
@@ -37,7 +38,7 @@ import type { FormEvent } from 'react'
 import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { parseMentions } from '@track/shared'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import {
@@ -339,6 +340,20 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   )
   const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled)
   const oauthCallbackPending = useOAuthCallbackPending(hasSessionAccess)
+  const currentTrackUser = useQuery(
+    api.auth.getUser,
+    trackUserId ? { userId: trackUserId } : 'skip',
+  )
+  const currentAvatarUrl = useQuery(
+    api.auth.getAvatarUrl,
+    trackUserId ? { userId: trackUserId } : 'skip',
+  )
+  const currentTrackProfileIncomplete = Boolean(
+    currentTrackUser &&
+      (!currentTrackUser.displayName?.trim() ||
+        !currentTrackUser.profileDesignation?.trim() ||
+        !currentTrackUser.timezone?.trim()),
+  )
 
   const projects = useQuery(
     api.projects.list,
@@ -797,6 +812,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   useEffect(() => {
     if (!trackUserId || projects === undefined || projectItems.length > 0) return
+    if (currentTrackProfileIncomplete) return
     void ensureStarterProject({ userId: trackUserId })
       .then((starterProjectId) => {
         setActiveProjectId(starterProjectId)
@@ -806,7 +822,13 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         })
       })
       .catch(setActionError)
-  }, [ensureStarterProject, navigate, projectItems.length, projects, trackUserId])
+  }, [currentTrackProfileIncomplete, ensureStarterProject, navigate, projectItems.length, projects, trackUserId])
+
+  useEffect(() => {
+    if (!trackUserId || currentTrackUser === undefined || !currentTrackProfileIncomplete) return
+    const next = `${window.location.pathname}${window.location.search}`
+    window.location.href = `/onboarding/profile?next=${encodeURIComponent(next)}`
+  }, [currentTrackProfileIncomplete, currentTrackUser, trackUserId])
 
   useEffect(() => {
     if (!projectItems.length || activeProjectId) return
@@ -878,8 +900,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
-  const currentUserName = sessionUser?.name ?? 'Track User'
-  const currentUserEmail = sessionUser?.email || currentUserName
+  const currentUserName = currentTrackUser?.displayName ?? sessionUser?.name ?? 'Track User'
+  const currentUserEmail = currentTrackUser?.email ?? sessionUser?.email ?? currentUserName
+  const currentUserDesignation = currentTrackUser?.profileDesignation ?? activeProject?.membership.role ?? 'owner'
   const isProjectRouteLoading =
     trackUserId !== null &&
     (projects === undefined ||
@@ -2088,6 +2111,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 type="button"
               >
                 <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
+                  <AvatarImage src={currentAvatarUrl ?? undefined} />
                   <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
                 </Avatar>
               </Button>
@@ -2095,9 +2119,18 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 <div className="track-account-menu" role="dialog" aria-label="Account menu">
                   <div className="track-account-menu-user">
                     <strong>{currentUserName}</strong>
-                    <span>{activeProject?.membership.role ?? 'owner'}</span>
+                    <span>{currentUserDesignation}</span>
                   </div>
                   <div className="track-account-menu-actions">
+                    <Button
+                      aria-label="Profile settings"
+                      className="track-nav-footer-button"
+                      onClick={() => { window.location.href = '/profile' }}
+                      title="Profile settings"
+                      type="button"
+                    >
+                      <UserRound size={14} />
+                    </Button>
                     <ThemeToggle />
                     <Button
                       aria-label="Log out"
@@ -2114,21 +2147,31 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             </>
           ) : (
             <AvatarNameTooltip
-              detail={activeProject?.membership.role ?? 'owner'}
+              detail={currentUserDesignation}
               name={currentUserName}
               side="right"
             >
               <Avatar className={`track-avatar ${getAvatarTone(currentUserEmail)}`}>
+                <AvatarImage src={currentAvatarUrl ?? undefined} />
                 <AvatarFallback>{getInitials(currentUserName)}</AvatarFallback>
               </Avatar>
             </AvatarNameTooltip>
           )}
           <div className="track-nav-copy">
             <span className="track-nav-title">{currentUserName}</span>
-            <span className="track-nav-meta">{activeProject?.membership.role ?? 'owner'}</span>
+            <span className="track-nav-meta">{currentUserDesignation}</span>
           </div>
           {!navCollapsed ? (
             <div className="track-nav-footer-actions">
+              <Button
+                aria-label="Profile settings"
+                className="track-nav-footer-button"
+                onClick={() => { window.location.href = '/profile' }}
+                title="Profile settings"
+                type="button"
+              >
+                <UserRound size={14} />
+              </Button>
               <ThemeToggle />
               <Button
                 aria-expanded={logoutConfirmOpen}
@@ -2195,9 +2238,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 const user = item.user as Doc<'users'>
                 return (
                   <AvatarNameTooltip
-                    detail={item.membership.role.replaceAll('_', ' ')}
+                    bio={user.profileBio}
+                    detail={user.profileDesignation ?? item.membership.role.replaceAll('_', ' ')}
                     key={user._id}
                     name={user.displayName}
+                    timezone={user.timezone}
                   >
                     <Avatar className={`track-avatar ${getAvatarTone(user.email)}`}>
                       <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>

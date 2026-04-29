@@ -9,7 +9,9 @@ const sections = [
     title: 'Information We Collect',
     body: [
       'Google account profile data used for sign-in, including name, email address, and Google account identifier.',
-      'Profile details you add to Track, such as display name, avatar, role, project membership, and notification settings.',
+      'Email/password account data used for sign-in. Passwords are handled by the authentication system and are not stored by Track in plain text.',
+      'Optional two-factor authentication data, including authenticator app setup state and encrypted backup codes.',
+      'Profile details you add to Track, such as display name, avatar, designation, bio, timezone, project membership, and notification settings.',
       'Project content created in Track, including messages, mentions, attachments, AI review drafts, accepted records, audit events, exports, and Track Assistant interactions.',
       'Operational data needed to keep Track reliable, including device, browser, app version, push notification tokens, request metadata, and diagnostic logs.',
     ],
@@ -17,7 +19,7 @@ const sections = [
   {
     title: 'How We Use Information',
     body: [
-      'To authenticate users and control access to projects and groups.',
+      'To authenticate users with Google or email/password, protect sensitive actions with two-factor step-up, and control access to projects and groups.',
       'To provide the core Track workflow: group conversation, AI-assisted review, evidence records, audit history, notifications, and exports.',
       'To improve reliability, investigate abuse or errors, and maintain security.',
       'To comply with legal, contractual, and audit obligations connected to the projects managed in Track.',
@@ -82,7 +84,7 @@ function Privacy() {
           <section>
             <h2 className="m-0 text-lg font-semibold">Security</h2>
             <p className="m-0 mt-3 text-sm leading-6 text-[var(--ink-3)]">
-              We use access controls, secure authentication, encrypted transport,
+              We use access controls, secure authentication, optional two-factor authentication, encrypted transport,
               managed hosting, and operational monitoring to protect Track data.
               No internet service can be guaranteed to be perfectly secure.
             </p>
@@ -99,8 +101,8 @@ function Privacy() {
             <h2 className="m-0 text-lg font-semibold">Contact</h2>
             <p className="m-0 mt-3 text-sm leading-6 text-[var(--ink-3)]">
               For privacy requests, contact{' '}
-              <a className="font-semibold text-[var(--ink)]" href="mailto:support@q9labs.ai">
-                support@q9labs.ai
+              <a className="font-semibold text-[var(--ink)]" href="mailto:q9labs.ai@gmail.com">
+                q9labs.ai@gmail.com
               </a>
               .
             </p>
