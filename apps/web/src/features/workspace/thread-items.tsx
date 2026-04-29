@@ -9,7 +9,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
@@ -336,10 +336,18 @@ function ForwardMessagePopover({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [note, setNote] = useState('')
+  const [activeTargetIndex, setActiveTargetIndex] = useState(0)
+  const targetButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
   const targetGroups = groups
     .filter((group) => group._id !== item.message.groupId)
     .filter((group) => group.name.toLowerCase().includes(query.trim().toLowerCase()))
   const isForwarding = busyAction === `forward-${item.message._id}`
+  useEffect(() => {
+    setActiveTargetIndex(0)
+  }, [query, open])
+  useEffect(() => {
+    targetButtonRefs.current = targetButtonRefs.current.slice(0, targetGroups.length)
+  }, [targetGroups.length])
   async function handleForward(targetGroupId: Id<'groups'>) {
     const forwarded = await onForwardMessage({
       sourceMessageId: item.message._id,
@@ -350,6 +358,12 @@ function ForwardMessagePopover({
     setOpen(false)
     setQuery('')
     setNote('')
+  }
+  function focusTargetAt(index: number) {
+    if (targetGroups.length === 0) return
+    const nextIndex = (index + targetGroups.length) % targetGroups.length
+    setActiveTargetIndex(nextIndex)
+    targetButtonRefs.current[nextIndex]?.focus()
   }
 
   return (
@@ -378,6 +392,12 @@ function ForwardMessagePopover({
             aria-label="Search Groups"
             autoComplete="off"
             onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                focusTargetAt(0)
+              }
+            }}
             placeholder="Search groups..."
             value={query}
           />
@@ -387,19 +407,52 @@ function ForwardMessagePopover({
           aria-label="Optional forwarding note"
           className="track-forward-note"
           onChange={(event) => setNote(event.currentTarget.value)}
-          placeholder="Add context..."
+          placeholder="Add a note for this Group..."
           value={note}
         />
-        <div className="track-forward-targets">
+        <div
+          aria-label="Groups you can forward to"
+          className="track-forward-targets"
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              focusTargetAt(activeTargetIndex + 1)
+              return
+            }
+            if (event.key === 'ArrowUp') {
+              event.preventDefault()
+              focusTargetAt(activeTargetIndex - 1)
+              return
+            }
+            if (event.key === 'Home') {
+              event.preventDefault()
+              focusTargetAt(0)
+              return
+            }
+            if (event.key === 'End') {
+              event.preventDefault()
+              focusTargetAt(targetGroups.length - 1)
+            }
+          }}
+          role="listbox"
+        >
           {targetGroups.length > 0 ? (
-            targetGroups.map((group) => {
+            targetGroups.map((group, index) => {
               const { Icon, tone } = getGroupAvatar(group)
               return (
                 <button
+                  aria-label={`Forward to ${group.name}`}
+                  aria-selected={activeTargetIndex === index}
                   className="track-forward-target"
                   disabled={isForwarding}
                   key={group._id}
                   onClick={() => void handleForward(group._id)}
+                  onFocus={() => setActiveTargetIndex(index)}
+                  ref={(node) => {
+                    targetButtonRefs.current[index] = node
+                  }}
+                  role="option"
+                  tabIndex={index === activeTargetIndex ? 0 : -1}
                   type="button"
                 >
                   <span className={`track-nav-group-icon ${tone}`}>
