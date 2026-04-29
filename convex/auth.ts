@@ -165,15 +165,18 @@ async function upsertTrackUserFromAuth(
   const existing = await findTrackUserByAuth(ctx, authUser)
 
   if (existing) {
-    await ctx.db.patch(existing._id, {
+    const patch: Partial<typeof existing> = {
       authUserId: authUser._id,
       normalizedEmail,
       googleSubject: existing.googleSubject || authUser._id,
       email: authUser.email ?? existing.email,
       displayName: existing.displayName?.trim() ? existing.displayName : displayName,
-      twoFactorEnabled: Boolean(authUser.twoFactorEnabled),
       updatedAt: now,
-    })
+    }
+    if (typeof authUser.twoFactorEnabled === 'boolean') {
+      patch.twoFactorEnabled = authUser.twoFactorEnabled
+    }
+    await ctx.db.patch(existing._id, patch)
     return existing._id
   }
 

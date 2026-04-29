@@ -32,6 +32,18 @@ export const request = mutation({
   },
   handler: async (ctx, args) => {
     await requireProjectMember(ctx, args.projectId, args.userId)
+    const user = await ctx.db.get(args.userId)
+    if (user?.twoFactorEnabled) {
+      const stepUp = await ctx.db
+        .query('securityStepUps')
+        .withIndex('by_user_action', (q) =>
+          q.eq('userId', args.userId).eq('action', 'export_project_record'),
+        )
+        .unique()
+      if (!stepUp || stepUp.expiresAt <= Date.now()) {
+        throw new Error('step_up_required')
+      }
+    }
     await rateLimiter.limit(ctx, 'requestExport', {
       key: args.userId,
       throws: true,

@@ -1726,7 +1726,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       setStepUpDialogOpen(true)
       return
     }
-    await performRequestExport(format)
+    try {
+      await performRequestExport(format)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes('step_up_required')) {
+        setPendingExportFormat(format)
+        setStepUpAction('export_project_record')
+        setStepUpCode('')
+        setStepUpMethod('totp')
+        setStepUpMessage('')
+        setStepUpDialogOpen(true)
+        return
+      }
+      throw error
+    }
   }
 
   async function handleVerifyStepUp(event: FormEvent<HTMLFormElement>) {

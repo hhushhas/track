@@ -10,4 +10,5 @@
 - Flattened profile onboarding into a single form surface and wired project export actions through a reusable two-factor step-up prompt.
 - Reworked protected-action verification into a non-blocking floating 2FA panel and added a security-settings reset for the 10-minute grace period.
 - Cleaned up the security settings hierarchy and showed stored profile photos in message row avatars.
+- Enforced export 2FA step-up on the server and preserved 2FA state during workspace auth sync so CSV/PDF exports cannot bypass the prompt.
 - Updated privacy language for email/password auth, two-factor data, and expanded profile fields.
