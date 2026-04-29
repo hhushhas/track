@@ -1,7 +1,5 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import { TanStackDevtools } from '@tanstack/react-devtools'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import AppProviders from '../components/AppProviders'
 import PwaInstallPrompt from '../components/PwaInstallPrompt'
 
@@ -13,6 +11,8 @@ const SITE_DESCRIPTION =
   'Track turns project conversations into reviewable records, evidence trails, action items, and exportable audit packets.'
 
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`
+const enableDevtools = import.meta.env.DEV && import.meta.env.VITE_DEVTOOLS === '1'
+const enableReactGrab = import.meta.env.DEV && import.meta.env.VITE_REACT_GRAB !== '0'
 
 export const Route = createRootRoute({
   head: () => ({
@@ -30,6 +30,10 @@ export const Route = createRootRoute({
       {
         name: 'description',
         content: SITE_DESCRIPTION,
+      },
+      {
+        name: 'robots',
+        content: 'index, follow',
       },
       {
         name: 'application-name',
@@ -80,6 +84,18 @@ export const Route = createRootRoute({
         content: `${SITE_URL}/logo512.png`,
       },
       {
+        property: 'og:image:width',
+        content: '512',
+      },
+      {
+        property: 'og:image:height',
+        content: '512',
+      },
+      {
+        property: 'og:image:alt',
+        content: 'Track project memory workspace logo',
+      },
+      {
         name: 'twitter:card',
         content: 'summary',
       },
@@ -94,6 +110,10 @@ export const Route = createRootRoute({
       {
         name: 'twitter:image',
         content: `${SITE_URL}/logo512.png`,
+      },
+      {
+        name: 'twitter:image:alt',
+        content: 'Track project memory workspace logo',
       },
     ],
     links: [
@@ -130,7 +150,7 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    if (import.meta.env.DEV) {
+    if (enableReactGrab) {
       void import('react-grab')
     }
   }, [])
@@ -162,20 +182,44 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <AppProviders>
           {children}
           <PwaInstallPrompt />
+          {enableDevtools ? <TrackDevtools /> : null}
         </AppProviders>
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'Tanstack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
         <Scripts />
       </body>
     </html>
   )
+}
+
+function TrackDevtools() {
+  const [Devtools, setDevtools] = useState<React.ComponentType | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    void Promise.all([
+      import('@tanstack/react-devtools'),
+      import('@tanstack/react-router-devtools'),
+    ]).then(([reactDevtools, routerDevtools]) => {
+      if (!mounted) return
+      setDevtools(() => function TrackDevtoolsPanel() {
+        return (
+          <reactDevtools.TanStackDevtools
+            config={{
+              position: 'bottom-right',
+            }}
+            plugins={[
+              {
+                name: 'Tanstack Router',
+                render: <routerDevtools.TanStackRouterDevtoolsPanel />,
+              },
+            ]}
+          />
+        )
+      })
+    })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  return Devtools ? <Devtools /> : null
 }
