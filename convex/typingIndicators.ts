@@ -20,7 +20,14 @@ export const list = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const membership = await ctx.db
+      .query('groupMembers')
+      .withIndex('by_group_user', (q) =>
+        q.eq('groupId', args.groupId).eq('userId', args.userId),
+      )
+      .unique()
+    if (!membership) return []
+
     const indicators = await ctx.db
       .query('typingIndicators')
       .withIndex('by_group_updated_at', (q) => q.eq('groupId', args.groupId))

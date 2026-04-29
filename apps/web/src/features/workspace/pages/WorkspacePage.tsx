@@ -346,25 +346,30 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       ? { userId: trackUserId, projectId: activeProjectId }
       : 'skip',
   )
+  const visibleGroups = useMemo(() => (groups ?? []) as Array<Doc<'groups'>>, [groups])
+  const confirmedActiveGroupId =
+    groups !== undefined && activeGroupId && visibleGroups.some((group) => group._id === activeGroupId)
+      ? activeGroupId
+      : null
   const messages = useQuery(
     api.messages.listDetailed,
-    trackUserId && activeGroupId
-      ? { userId: trackUserId, groupId: activeGroupId, limit: 80 }
+    trackUserId && confirmedActiveGroupId
+      ? { userId: trackUserId, groupId: confirmedActiveGroupId, limit: 80 }
       : 'skip',
   )
   const typingIndicators = useQuery(
     api.typingIndicators.list,
-    trackUserId && activeGroupId
+    trackUserId && confirmedActiveGroupId
       ? {
-          groupId: activeGroupId,
+          groupId: confirmedActiveGroupId,
           userId: trackUserId,
         }
       : 'skip',
   )
   const drafts = useQuery(
     api.records.listDrafts,
-    trackUserId && activeProjectId && activeGroupId
-      ? { userId: trackUserId, projectId: activeProjectId, groupId: activeGroupId }
+    trackUserId && activeProjectId && confirmedActiveGroupId
+      ? { userId: trackUserId, projectId: activeProjectId, groupId: confirmedActiveGroupId }
       : 'skip',
   )
   const records = useQuery(
@@ -387,12 +392,12 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   )
   const latestReview = useQuery(
     api.ai.latestForGroup,
-    trackUserId && activeGroupId ? { userId: trackUserId, groupId: activeGroupId } : 'skip',
+    trackUserId && confirmedActiveGroupId ? { userId: trackUserId, groupId: confirmedActiveGroupId } : 'skip',
   )
   const assistantStreams = useQuery(
     api.assistant.listForGroup,
-    trackUserId && activeGroupId
-      ? { userId: trackUserId, groupId: activeGroupId, limit: 20 }
+    trackUserId && confirmedActiveGroupId
+      ? { userId: trackUserId, groupId: confirmedActiveGroupId, limit: 20 }
       : 'skip',
   )
   const notificationSettings = useQuery(
@@ -431,7 +436,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       }>,
     [projects],
   )
-  const visibleGroups = useMemo(() => (groups ?? []) as Array<Doc<'groups'>>, [groups])
   const activeProjectMembers = useMemo(
     () =>
       (projectMembers ?? []) as Array<{
