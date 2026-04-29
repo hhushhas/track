@@ -2,7 +2,6 @@ import { useMutation, useQuery } from 'convex/react'
 import {
   ArrowLeft,
   Camera,
-  CheckCircle2,
   ChevronDown,
   Clock3,
   KeyRound,
@@ -173,7 +172,6 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
     return matches.slice(0, 80)
   }, [timezoneOptions, timezoneSearch])
   const user = profileStatus?.user ?? null
-  const profileComplete = profileStatus?.complete ?? false
   const canSaveProfile = isProfileComplete({ displayName, profileDesignation: designation, timezone })
   const hasCredentialAccount = accounts.some((account) => account.providerId === 'credential')
   const twoFactorEnabled = Boolean(user?.twoFactorEnabled)
@@ -377,11 +375,10 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
           {mode === 'settings' ? (
             <a className="track-profile-back-link" href="/workspace">
               <ArrowLeft size={14} />
-              Back to workspace
+              <span>Back to workspace</span>
             </a>
           ) : null}
           <div>
-            <p className="mono-label m-0">Track</p>
             <h1>{mode === 'onboarding' ? 'Complete your profile' : 'Profile Settings'}</h1>
             <p>
               {mode === 'onboarding'
@@ -409,10 +406,8 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
             <section className="track-profile-section">
               <div className="track-profile-section-header">
                 <div>
-                  <p className="mono-label m-0">Profile</p>
                   <h2>Teammate card</h2>
                 </div>
-                {profileComplete ? <span className="track-profile-status"><CheckCircle2 size={14} /> Complete</span> : null}
               </div>
 
               <div className="track-profile-avatar-row">
@@ -511,12 +506,28 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
             <section className="track-profile-section">
               <div className="track-profile-section-header">
                 <div>
-                  <p className="mono-label m-0">Security</p>
                   <h2>Two-factor authentication</h2>
                 </div>
-                <span className={twoFactorEnabled ? 'track-profile-status' : 'track-profile-status muted'}>
-                  <ShieldCheck size={14} /> {twoFactorEnabled ? 'On' : 'Off'}
-                </span>
+                <div className="track-profile-header-actions">
+                  <span className={twoFactorEnabled ? 'track-profile-status' : 'track-profile-status muted'}>
+                    <ShieldCheck size={14} /> {twoFactorEnabled ? 'On' : 'Off'}
+                  </span>
+                  {!twoFactorEnabled && canManageTwoFactor && !setupQrUrl ? (
+                    <Button className="track-button track-button-primary" disabled={busySecurity} onClick={() => void startTwoFactorSetup()} type="button">
+                      <QrCode size={15} /> Set up authenticator app
+                    </Button>
+                  ) : null}
+                  {twoFactorEnabled && canManageTwoFactor ? (
+                    <>
+                      <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
+                        Generate backup codes
+                      </Button>
+                      <Button className="track-button track-button-danger" disabled={busySecurity} onClick={() => void disableTwoFactor()} type="button">
+                        Turn off 2FA
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
               </div>
               <p className="track-profile-muted">
                 Normal sign-in can use one factor. Destructive actions require a fresh step-up and stay trusted for 10 minutes. Trusted devices last 30 days.
@@ -562,9 +573,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
               {!twoFactorEnabled && canManageTwoFactor ? (
                 <div className="track-profile-security-box">
                   {!setupQrUrl ? (
-                    <Button className="track-button track-button-primary" disabled={busySecurity} onClick={() => void startTwoFactorSetup()} type="button">
-                      <QrCode size={15} /> Set up authenticator app
-                    </Button>
+                    <p className="track-profile-muted">Use the setup action above to add an authenticator app.</p>
                   ) : (
                     <>
                       <img alt="Authenticator QR code" className="track-profile-qr" src={setupQrUrl} />
@@ -582,15 +591,6 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                       </form>
                     </>
                   )}
-                </div>
-              ) : twoFactorEnabled && canManageTwoFactor ? (
-                <div className="track-profile-security-box">
-                  <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
-                    Generate backup codes
-                  </Button>
-                  <Button className="track-button track-button-danger" disabled={busySecurity} onClick={() => void disableTwoFactor()} type="button">
-                    Turn off 2FA
-                  </Button>
                 </div>
               ) : null}
 
@@ -614,7 +614,6 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
             <section className="track-profile-section">
               <div className="track-profile-section-header">
                 <div>
-                  <p className="mono-label m-0">Account</p>
                   <h2>Login methods</h2>
                 </div>
               </div>

@@ -680,7 +680,7 @@ button {
 .track-profile-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 26px;
   border-right: 1px solid var(--hairline);
   background: var(--paper-2);
   padding: 24px;
@@ -690,25 +690,30 @@ button {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
   color: var(--ink-2);
   font-size: 12px;
   font-weight: 650;
-  padding: 7px 10px;
+  padding: 0;
   text-decoration: none;
 }
 
 .track-profile-back-link:hover {
-  border-color: var(--hairline-strong);
-  background: var(--paper);
   color: var(--ink);
 }
 
-.track-profile-sidebar h1,
+.track-profile-sidebar h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
 .track-profile-section h2 {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--ink);
   font-size: 24px;
   font-weight: 650;
@@ -728,22 +733,27 @@ button {
 
 .track-profile-tabs {
   display: grid;
-  gap: 8px;
+  gap: 2px;
 }
 
 .track-profile-tabs button {
+  min-height: 36px;
   justify-content: flex-start;
-  gap: 8px;
-  border: 1px solid transparent;
+  gap: 10px;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   color: var(--ink-2);
+  font-size: 14px;
+  padding-inline: 0;
 }
 
 .track-profile-tabs button.active {
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--hairline-strong));
-  background: var(--paper);
+  border-color: transparent;
+  background: transparent;
   color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 10px;
 }
 
 .track-profile-content {
@@ -761,6 +771,14 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.track-profile-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .track-profile-status {
@@ -933,11 +951,11 @@ button {
 
 .track-security-summary div {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: var(--paper-2);
-  padding: 12px;
+  padding: 16px;
 }
 
 .track-security-summary span {
@@ -2298,6 +2316,9 @@ button {
 }
 
 .track-avatar-card {
+  --track-avatar-card-primary: rgba(240, 177, 0, 0.34);
+  --track-avatar-card-secondary: #2a251b;
+
   width: 280px;
   overflow: hidden;
   border-radius: inherit;
@@ -2307,8 +2328,8 @@ button {
 .track-avatar-card-banner {
   height: 58px;
   background:
-    linear-gradient(135deg, rgba(240, 177, 0, 0.34), transparent 52%),
-    #2a251b;
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 76%, white) 0%, transparent 56%),
+    linear-gradient(90deg, var(--track-avatar-card-primary), var(--track-avatar-card-secondary));
 }
 
 .track-avatar-card-body {
@@ -5943,8 +5964,8 @@ button:disabled:hover {
   }
 
   .track-profile-back-link {
-    width: 100%;
-    justify-content: center;
+    width: fit-content;
+    justify-content: flex-start;
   }
 
   .track-profile-tabs {

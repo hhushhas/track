@@ -362,6 +362,22 @@ export const getAvatarUrl = query({
   },
 })
 
+export const getAvatarUrls = query({
+  args: {
+    userIds: v.array(v.id('users')),
+  },
+  handler: async (ctx, args) => {
+    const uniqueUserIds = Array.from(new Set(args.userIds))
+    return await Promise.all(uniqueUserIds.map(async (userId) => {
+      const user = await ctx.db.get(userId)
+      return {
+        userId,
+        url: user?.avatarStorageId ? await ctx.storage.getUrl(user.avatarStorageId) : null,
+      }
+    }))
+  },
+})
+
 export const updateProfile = mutation({
   args: {
     userId: v.id('users'),

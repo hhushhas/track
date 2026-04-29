@@ -1113,6 +1113,19 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     () => activeProjectMembers.filter((item) => item.user).slice(0, 5),
     [activeProjectMembers],
   )
+  const headerMemberAvatarUrls = useQuery(
+    api.auth.getAvatarUrls,
+    headerMembers.length
+      ? { userIds: headerMembers.map((item) => (item.user as Doc<'users'>)._id) }
+      : 'skip',
+  )
+  const headerMemberAvatarUrlById = useMemo(() => {
+    const urls = new Map<string, string>()
+    for (const item of headerMemberAvatarUrls ?? []) {
+      if (item.url) urls.set(item.userId, item.url)
+    }
+    return urls
+  }, [headerMemberAvatarUrls])
   const hiddenHeaderMembers = useMemo(
     () => activeProjectMembers.filter((item) => item.user).slice(headerMembers.length),
     [activeProjectMembers, headerMembers.length],
@@ -2239,6 +2252,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                 const user = item.user as Doc<'users'>
                 return (
                   <AvatarNameTooltip
+                    avatarUrl={headerMemberAvatarUrlById.get(user._id)}
                     bio={user.profileBio}
                     detail={user.profileDesignation ?? item.membership.role.replaceAll('_', ' ')}
                     key={user._id}
@@ -2246,6 +2260,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                     timezone={user.timezone}
                   >
                     <Avatar className={`track-avatar ${getAvatarTone(user.email)}`}>
+                      <AvatarImage src={headerMemberAvatarUrlById.get(user._id)} />
                       <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
                     </Avatar>
                   </AvatarNameTooltip>
