@@ -12,7 +12,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
@@ -90,6 +90,7 @@ export function MessageRow({
   groups,
   isFlashing,
   item,
+  avatarUrl,
   mentionGroups,
   onForwardMessage,
   onOpenGroup,
@@ -102,6 +103,7 @@ export function MessageRow({
   groups: Array<Doc<'groups'>>
   isFlashing?: boolean
   item: GroupMessageItem
+  avatarUrl?: string | null
   mentionGroups: Map<string, Doc<'groups'>>
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
@@ -122,6 +124,7 @@ export function MessageRow({
       id={`message-${item.message._id}`}
     >
       <AvatarNameTooltip
+        avatarUrl={avatarUrl}
         bio={item.author?.profileBio}
         detail={item.author?.profileDesignation ?? (item.authorRole ? item.authorRole.replaceAll('_', ' ') : null)}
         name={authorName}
@@ -129,6 +132,7 @@ export function MessageRow({
         timezone={item.author?.timezone}
       >
         <Avatar className={`track-message-avatar ${getAvatarTone(item.author?.email ?? authorName)}`}>
+          <AvatarImage src={avatarUrl ?? undefined} />
           <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
         </Avatar>
       </AvatarNameTooltip>

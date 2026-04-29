@@ -179,6 +179,10 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const visibleAvatarUrl = avatarPreview ?? avatarUrl ?? undefined
   const canManageTwoFactor = Boolean(session.data)
   const canResetStepUpGracePeriod = Boolean(session.data || devAuthBypass.enabled)
+  const showSecurityActionBar = Boolean(
+    (!twoFactorEnabled && canManageTwoFactor && !setupQrUrl) ||
+      (twoFactorEnabled && (canManageTwoFactor || canResetStepUpGracePeriod)),
+  )
 
   useEffect(() => {
     if (session.isPending && !devAuthBypass.enabled) return
@@ -524,43 +528,43 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
 
           {mode === 'settings' && activePanel === 'security' ? (
             <section className="track-profile-section">
-              <div className="track-profile-section-header">
+              <div className="track-profile-section-header track-security-header">
                 <div>
                   <h2>Two-factor authentication</h2>
+                  <p className="track-profile-muted">
+                    Normal sign-in can use one factor. Protected actions require a fresh step-up and stay trusted for 10 minutes.
+                    Trusted devices last 30 days.
+                  </p>
                 </div>
-                <div className="track-profile-header-actions">
-                  <span className={twoFactorEnabled ? 'track-profile-status' : 'track-profile-status muted'}>
-                    <ShieldCheck size={14} /> {twoFactorEnabled ? 'On' : 'Off'}
-                  </span>
+                <span className={twoFactorEnabled ? 'track-profile-status' : 'track-profile-status muted'}>
+                  <ShieldCheck size={14} /> {twoFactorEnabled ? 'On' : 'Off'}
+                </span>
+              </div>
+
+              {showSecurityActionBar ? (
+                <div className="track-security-action-bar">
                   {!twoFactorEnabled && canManageTwoFactor && !setupQrUrl ? (
                     <Button className="track-button track-button-primary" disabled={busySecurity} onClick={() => void startTwoFactorSetup()} type="button">
                       <QrCode size={15} /> Set up authenticator app
                     </Button>
                   ) : null}
-                  {twoFactorEnabled && (canManageTwoFactor || canResetStepUpGracePeriod) ? (
-                    <>
-                      {canManageTwoFactor ? (
-                        <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
-                          Generate backup codes
-                        </Button>
-                      ) : null}
-                      {canResetStepUpGracePeriod ? (
-                        <Button className="track-button" disabled={busySecurity} onClick={() => void resetTwoFactorGracePeriod()} type="button">
-                          Reset grace period
-                        </Button>
-                      ) : null}
-                      {canManageTwoFactor ? (
-                        <Button className="track-button track-button-danger" disabled={busySecurity} onClick={() => void disableTwoFactor()} type="button">
-                          Turn off 2FA
-                        </Button>
-                      ) : null}
-                    </>
+                  {twoFactorEnabled && canManageTwoFactor ? (
+                    <Button className="track-button" disabled={busySecurity} onClick={() => void regenerateBackupCodes()} type="button">
+                      Generate backup codes
+                    </Button>
+                  ) : null}
+                  {twoFactorEnabled && canResetStepUpGracePeriod ? (
+                    <Button className="track-button" disabled={busySecurity} onClick={() => void resetTwoFactorGracePeriod()} type="button">
+                      Reset grace period
+                    </Button>
+                  ) : null}
+                  {twoFactorEnabled && canManageTwoFactor ? (
+                    <Button className="track-button track-button-danger" disabled={busySecurity} onClick={() => void disableTwoFactor()} type="button">
+                      Turn off 2FA
+                    </Button>
                   ) : null}
                 </div>
-              </div>
-              <p className="track-profile-muted">
-                Normal sign-in can use one factor. Destructive actions require a fresh step-up and stay trusted for 10 minutes. Trusted devices last 30 days.
-              </p>
+              ) : null}
 
               <div className="track-security-summary">
                 <div>

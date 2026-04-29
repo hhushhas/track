@@ -1140,6 +1140,21 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     }
     return urls
   }, [headerMemberAvatarUrls])
+  const messageAuthorIds = useMemo(
+    () => Array.from(new Set(visibleMessages.flatMap((item) => item.author ? [item.author._id] : []))),
+    [visibleMessages],
+  )
+  const messageAuthorAvatarUrls = useQuery(
+    api.auth.getAvatarUrls,
+    messageAuthorIds.length ? { userIds: messageAuthorIds } : 'skip',
+  )
+  const messageAuthorAvatarUrlById = useMemo(() => {
+    const urls = new Map<string, string>()
+    for (const item of messageAuthorAvatarUrls ?? []) {
+      if (item.url) urls.set(item.userId, item.url)
+    }
+    return urls
+  }, [messageAuthorAvatarUrls])
   const hiddenHeaderMembers = useMemo(
     () => activeProjectMembers.filter((item) => item.user).slice(headerMembers.length),
     [activeProjectMembers, headerMembers.length],
@@ -2446,6 +2461,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                         ) : null}
                         <MessageRow
                           activeGroupId={activeGroupId}
+                          avatarUrl={messageAuthorAvatarUrlById.get(threadItem.item.author?._id ?? '')}
                           busyAction={busyAction}
                           groups={visibleGroups}
                           isFlashing={flashingMessageId === threadItem.item.message._id}

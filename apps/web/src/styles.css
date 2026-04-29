@@ -667,10 +667,10 @@ button {
 
 .track-profile-shell {
   display: grid;
-  width: min(100%, 1180px);
+  width: min(100%, 1280px);
   min-height: calc(100vh - 36px);
   margin: 0 auto;
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   background: color-mix(in srgb, var(--paper) 94%, black);
@@ -774,13 +774,13 @@ button {
 }
 
 .track-profile-content {
-  padding: 34px 36px;
+  padding: 42px 46px;
 }
 
 .track-profile-section {
   display: grid;
   gap: 20px;
-  max-width: 740px;
+  max-width: 940px;
 }
 
 .track-profile-section-header {
@@ -796,6 +796,20 @@ button {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.track-security-header {
+  align-items: flex-start;
+}
+
+.track-security-header > div {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+}
+
+.track-security-header .track-profile-muted {
+  margin: 0;
 }
 
 .track-profile-status {
@@ -815,6 +829,21 @@ button {
 .track-profile-status.muted {
   background: var(--paper-2);
   color: var(--ink-3);
+}
+
+.track-security-action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper-2) 72%, transparent);
+  padding: 10px;
+}
+
+.track-security-action-bar .track-button-danger {
+  margin-left: auto;
 }
 
 .track-profile-avatar-row {
@@ -963,16 +992,16 @@ button {
 .track-security-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .track-security-summary div {
   display: grid;
-  gap: 8px;
+  gap: 9px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: var(--paper-2);
-  padding: 16px;
+  background: color-mix(in srgb, var(--paper-2) 68%, transparent);
+  padding: 18px;
 }
 
 .track-security-summary span {
@@ -6090,6 +6119,10 @@ button:disabled:hover {
 
   .track-security-summary {
     grid-template-columns: 1fr;
+  }
+
+  .track-security-action-bar .track-button-danger {
+    margin-left: 0;
   }
 
   .track-timezone-menu {
