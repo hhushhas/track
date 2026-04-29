@@ -10,11 +10,13 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { authClient } from '@/lib/auth-client';
+import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
 
 export default function RecordScreen() {
   const theme = useTheme();
   const session = authClient.useSession();
   const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
+  const syncDevUser = useMutation(api.auth.syncDevUser);
   const requestExport = useMutation(api.exports.request);
   const updateRecordStatus = useMutation(api.records.updateStatus);
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null);
@@ -22,6 +24,8 @@ export default function RecordScreen() {
   const [latestExportId, setLatestExportId] = useState<Id<'exports'> | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
+  const devAuthBypass = useDevAuthBypass();
+  const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled);
 
   const trackUser = useQuery(api.auth.getCurrentUser);
   const projects = useQuery(api.projects.list, trackUserId ? { userId: trackUserId } : 'skip');
@@ -57,9 +61,10 @@ export default function RecordScreen() {
   const latestCompletedExport = projectExports.find((exportJob) => exportJob.status === 'completed') ?? null;
 
   useEffect(() => {
-    if (!session.data || trackUserId) return;
-    void ensureCurrentUser().then(setTrackUserId).catch(setActionError);
-  }, [ensureCurrentUser, session.data, trackUserId]);
+    if (!hasSessionAccess || trackUserId) return;
+    const syncUser = devAuthBypass.enabled && !session.data ? syncDevUser : ensureCurrentUser;
+    void syncUser().then(setTrackUserId).catch(setActionError);
+  }, [devAuthBypass.enabled, ensureCurrentUser, hasSessionAccess, session.data, syncDevUser, trackUserId]);
 
   useEffect(() => {
     if (trackUser?._id && trackUser._id !== trackUserId) setTrackUserId(trackUser._id);
@@ -114,13 +119,15 @@ export default function RecordScreen() {
     });
   }
 
-  if (session.isPending) return <CenteredState label="Checking your session" />;
-  if (!session.data) {
+  if (session.isPending && !devAuthBypass.enabled) return <CenteredState label="Checking your session" />;
+  if (!hasSessionAccess) {
     return (
       <CenteredState
         actionLabel="Continue with Google"
         label="Sign in to view the Project Record"
         onAction={() => void authClient.signIn.social({ provider: 'google', callbackURL: '/' })}
+        onSecondaryAction={devAuthBypass.enable}
+        secondaryActionLabel={devAuthBypass.allowed ? 'Use Hasan Demo' : undefined}
       />
     );
   }
@@ -270,10 +277,14 @@ function CenteredState({
   actionLabel,
   label,
   onAction,
+  onSecondaryAction,
+  secondaryActionLabel,
 }: {
   actionLabel?: string;
   label: string;
   onAction?: () => void;
+  onSecondaryAction?: () => void;
+  secondaryActionLabel?: string;
 }) {
   const theme = useTheme();
   return (
@@ -287,6 +298,11 @@ function CenteredState({
           <ThemedText type="smallBold" style={{ color: '#1b1917' }}>
             {actionLabel}
           </ThemedText>
+        </Pressable>
+      ) : null}
+      {secondaryActionLabel ? (
+        <Pressable onPress={onSecondaryAction} style={[styles.exportButton, { borderColor: theme.hairline, borderWidth: 1 }]}>
+          <ThemedText type="smallBold">{secondaryActionLabel}</ThemedText>
         </Pressable>
       ) : null}
     </ThemedView>

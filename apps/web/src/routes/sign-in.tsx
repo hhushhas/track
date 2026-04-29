@@ -1,12 +1,20 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { FileCheck2, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { FileCheck2, KeyRound, MessageSquareText, ShieldCheck } from 'lucide-react'
 
 import { Button } from '#/components/ui/button'
+import { enableDevAuthBypass, isDevAuthBypassAllowed } from '#/lib/dev-auth-bypass'
 import { authClient } from '../lib/auth-client'
 
 export const Route = createFileRoute('/sign-in')({ component: SignIn })
 
 function SignIn() {
+  const navigate = useNavigate()
+
+  function handleDevBypass() {
+    enableDevAuthBypass()
+    void navigate({ to: '/workspace' })
+  }
+
   return (
     <main className="track-auth-page">
       <section className="track-auth-shell">
@@ -54,6 +62,19 @@ function SignIn() {
             <img alt="" height={18} src="/google-g.svg" width={18} />
             Continue with Google
           </Button>
+
+          {isDevAuthBypassAllowed ? (
+            <Button
+              className="track-button track-auth-button"
+              onClick={handleDevBypass}
+              style={{ marginTop: 10 }}
+              type="button"
+              variant="outline"
+            >
+              <KeyRound size={16} />
+              Use Hasan Demo
+            </Button>
+          ) : null}
 
           <div className="track-auth-note">
             <ShieldCheck size={16} />

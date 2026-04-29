@@ -10,6 +10,11 @@ import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
 
 const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+const devAuthBypassUser = {
+  googleSubject: 'demo:hasan-shoaib',
+  email: 'shasanshoaib@gmail.com',
+  displayName: 'Hasan Shoaib',
+} as const
 
 export const authComponent = createClient<DataModel>(components.betterAuth)
 
@@ -56,6 +61,10 @@ function getAuthUserDisplayName(authUser: {
   email?: string | null
 }) {
   return authUser.name ?? authUser.email?.split('@')[0] ?? 'Track User'
+}
+
+function isDevAuthBypassEnabled() {
+  return process.env.DEV_AUTH_BYPASS === '1' && siteUrl !== 'https://track.q9labs.ai'
 }
 
 export const ensureCurrentUser = mutation({
@@ -131,6 +140,41 @@ export const syncGoogleUser = mutation({
       googleSubject: args.googleSubject,
       email: args.email,
       displayName: args.displayName,
+      twoFactorEnabled: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+  },
+})
+
+export const syncDevUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (!isDevAuthBypassEnabled()) {
+      throw new Error('dev_auth_bypass_disabled')
+    }
+
+    const now = Date.now()
+    const existing = await ctx.db
+      .query('users')
+      .withIndex('by_google_subject', (q) =>
+        q.eq('googleSubject', devAuthBypassUser.googleSubject),
+      )
+      .unique()
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        email: devAuthBypassUser.email,
+        displayName: devAuthBypassUser.displayName,
+        updatedAt: now,
+      })
+      return existing._id
+    }
+
+    return await ctx.db.insert('users', {
+      googleSubject: devAuthBypassUser.googleSubject,
+      email: devAuthBypassUser.email,
+      displayName: devAuthBypassUser.displayName,
       twoFactorEnabled: false,
       createdAt: now,
       updatedAt: now,

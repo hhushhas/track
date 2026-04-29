@@ -87,6 +87,7 @@ import {
 } from '#/features/workspace/voice-notes'
 import { WorkspaceDialogs } from '#/features/workspace/workspace-dialogs'
 import { authClient } from '#/lib/auth-client'
+import { disableDevAuthBypass, useDevAuthBypass } from '#/lib/dev-auth-bypass'
 import ThemeToggle from '#/components/ThemeToggle'
 import TrackLoader from '#/components/TrackLoader'
 
@@ -209,6 +210,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const router = useRouter()
   const session = authClient.useSession()
   const syncCurrentUser = useMutation(api.auth.syncGoogleUser)
+  const syncDevUser = useMutation(api.auth.syncDevUser)
   const ensureStarterProject = useMutation(api.projects.ensureStarter)
   const createProject = useMutation(api.projects.create)
   const createGroup = useMutation(api.groups.create)
@@ -307,7 +309,12 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   }, [pendingAttachments])
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
-  const sessionUser = useMemo(() => getSessionUser(session.data), [session.data])
+  const devAuthBypass = useDevAuthBypass()
+  const sessionUser = useMemo(
+    () => getSessionUser(session.data ?? devAuthBypass.sessionData),
+    [devAuthBypass.sessionData, session.data],
+  )
+  const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled)
 
   const projects = useQuery(
     api.projects.list,
@@ -713,6 +720,16 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   useEffect(() => {
     if (!sessionUser?.id || trackUserId) return
+    if (devAuthBypass.enabled && !session.data) {
+      void syncDevUser()
+        .then(async (userId) => {
+          setTrackUserId(userId)
+          await acceptPendingInvitations({ userId })
+        })
+        .catch(setActionError)
+      return
+    }
+
     void syncCurrentUser({
       googleSubject: sessionUser.id,
       email: sessionUser.email,
@@ -723,7 +740,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         await acceptPendingInvitations({ userId })
       })
       .catch(setActionError)
-  }, [acceptPendingInvitations, sessionUser?.email, sessionUser?.id, sessionUser?.name, syncCurrentUser, trackUserId])
+  }, [
+    acceptPendingInvitations,
+    devAuthBypass.enabled,
+    session.data,
+    sessionUser?.email,
+    sessionUser?.id,
+    sessionUser?.name,
+    syncCurrentUser,
+    syncDevUser,
+    trackUserId,
+  ])
 
   useEffect(() => {
     if (!trackUserId || projects === undefined || projectItems.length > 0) return
@@ -1141,8 +1168,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     visibleMessages,
   ])
 
-  if (session.isPending) return <TrackLoading label="Checking your session" />
-  if (!session.data) return <Navigate to="/sign-in" />
+  if (session.isPending && !devAuthBypass.enabled) return <TrackLoading label="Checking your session" />
+  if (!hasSessionAccess) return <Navigate to="/sign-in" />
   if (!sessionUser) return <Navigate to="/sign-in" />
   if (!trackUserId && uiError) return <TrackLoading label={uiError} />
   if (!trackUserId) return <TrackLoading label="Connecting your project session" />
@@ -1794,6 +1821,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
 
   async function handleSignOut() {
     setLogoutConfirmOpen(false)
+    disableDevAuthBypass()
     await authClient.signOut()
     await navigate({ to: '/sign-in' })
   }

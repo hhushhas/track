@@ -12,6 +12,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { authClient } from '@/lib/auth-client';
+import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
 
 const notificationModes = ['inherit', 'all', 'mentions', 'none'] as const;
 const draftClassifications = [
@@ -27,6 +28,7 @@ export default function ThreadScreen() {
   const theme = useTheme();
   const session = authClient.useSession();
   const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
+  const syncDevUser = useMutation(api.auth.syncDevUser);
   const acceptInvites = useMutation(api.invitations.acceptPendingForCurrentUser);
   const ensureStarterProject = useMutation(api.projects.ensureStarter);
   const createProject = useMutation(api.projects.create);
@@ -50,6 +52,8 @@ export default function ThreadScreen() {
   const [newGroupName, setNewGroupName] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
+  const devAuthBypass = useDevAuthBypass();
+  const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled);
 
   const trackUser = useQuery(api.auth.getCurrentUser);
   const projects = useQuery(api.projects.list, trackUserId ? { userId: trackUserId } : 'skip');
@@ -149,15 +153,16 @@ export default function ThreadScreen() {
   const globalNotificationMode = notificationSettings?.global?.globalMode ?? 'mentions';
 
   useEffect(() => {
-    if (!session.data || trackUserId) return;
-    void ensureCurrentUser()
+    if (!hasSessionAccess || trackUserId) return;
+    const syncUser = devAuthBypass.enabled && !session.data ? syncDevUser : ensureCurrentUser;
+    void syncUser()
       .then(async (userId) => {
         if (!userId) return;
         setTrackUserId(userId);
         await acceptInvites({ userId });
       })
       .catch(setActionError);
-  }, [acceptInvites, ensureCurrentUser, session.data, trackUserId]);
+  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasSessionAccess, session.data, syncDevUser, trackUserId]);
 
   useEffect(() => {
     if (trackUser?._id && trackUser._id !== trackUserId) setTrackUserId(trackUser._id);
@@ -343,16 +348,18 @@ export default function ThreadScreen() {
     });
   }
 
-  if (session.isPending) {
+  if (session.isPending && !devAuthBypass.enabled) {
     return <CenteredState label="Checking your session" />;
   }
 
-  if (!session.data) {
+  if (!hasSessionAccess) {
     return (
       <CenteredState
         actionLabel="Continue with Google"
         label="Sign in to Track"
         onAction={() => void authClient.signIn.social({ provider: 'google', callbackURL: '/' })}
+        onSecondaryAction={devAuthBypass.enable}
+        secondaryActionLabel={devAuthBypass.allowed ? 'Use Hasan Demo' : undefined}
       />
     );
   }
@@ -529,10 +536,14 @@ function CenteredState({
   actionLabel,
   label,
   onAction,
+  onSecondaryAction,
+  secondaryActionLabel,
 }: {
   actionLabel?: string;
   label: string;
   onAction?: () => void;
+  onSecondaryAction?: () => void;
+  secondaryActionLabel?: string;
 }) {
   const theme = useTheme();
   return (
@@ -546,6 +557,11 @@ function CenteredState({
           <ThemedText type="smallBold" style={styles.reviewText}>
             {actionLabel}
           </ThemedText>
+        </Pressable>
+      ) : null}
+      {secondaryActionLabel ? (
+        <Pressable onPress={onSecondaryAction} style={[styles.signInButton, { borderColor: theme.hairline, borderWidth: 1 }]}>
+          <ThemedText type="smallBold">{secondaryActionLabel}</ThemedText>
         </Pressable>
       ) : null}
     </ThemedView>
