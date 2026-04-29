@@ -2771,11 +2771,14 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
                           <DropdownMenuGroup>
                           <DropdownMenuLabel>Notifications</DropdownMenuLabel>
                           <p className="track-rail-menu-note">Browser: {notificationPermissionLabels[notificationPermission]}</p>
-                          <DropdownMenuItem onClick={() => void handleEnableBrowserNotifications()}>
+                          <DropdownMenuItem
+                            disabled={busyAction === 'notifications' || busyAction === 'test-notifications'}
+                            onClick={() => void handleEnableBrowserNotifications()}
+                          >
                             {notificationPermission === 'granted' ? 'Reconnect browser alerts' : 'Enable browser alerts'}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            disabled={busyAction === 'test-notifications'}
+                            disabled={busyAction === 'notifications' || busyAction === 'test-notifications'}
                             onClick={() => void handleSendTestNotification()}
                           >
                             Send test alert

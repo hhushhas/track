@@ -98,13 +98,63 @@ describe('shouldNotifyForIncomingMessage', () => {
     await vi.advanceTimersByTimeAsync(45_000)
     await assertion
     expect(registration.pushManager.permissionState).toHaveBeenCalledWith({
-      applicationServerKey: expect.any(ArrayBuffer),
+      applicationServerKey: expect.any(Uint8Array),
       userVisibleOnly: true,
     })
     expect(registration.pushManager.subscribe).toHaveBeenCalledWith({
-      applicationServerKey: expect.any(ArrayBuffer),
+      applicationServerKey: expect.any(Uint8Array),
       userVisibleOnly: true,
     })
+  })
+
+  it('shares one active native push subscription attempt across callers', async () => {
+    const subscription = {
+      endpoint: 'https://push.example.test/subscription',
+      expirationTime: null,
+      toJSON: () => ({
+        endpoint: 'https://push.example.test/subscription',
+        keys: {
+          auth: 'auth',
+          p256dh: 'p256dh',
+        },
+      }),
+    }
+    let resolveSubscribe: (value: typeof subscription) => void = () => undefined
+    const registration = {
+      pushManager: {
+        getSubscription: vi.fn().mockResolvedValue(null),
+        permissionState: vi.fn().mockResolvedValue('granted'),
+        subscribe: vi.fn(() => new Promise<typeof subscription>((resolve) => {
+          resolveSubscribe = resolve
+        })),
+      },
+    }
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: {},
+        getRegistration: vi.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration),
+      },
+    })
+    Object.defineProperty(window, 'PushManager', {
+      configurable: true,
+      value: class PushManager {},
+    })
+
+    const { subscribeToWebPush } = await import('./web-notifications')
+    const publicKey = 'BJfhJ9zxJ-CjTvkJylrr-Eoxax__6OQfO3JD2Q4wRblwP-9USQDGQmcJA2jZdHfyOhvIF0trybuTzrup0C1qV-4'
+    const first = subscribeToWebPush(publicKey)
+    await vi.waitFor(() => expect(registration.pushManager.subscribe).toHaveBeenCalledTimes(1))
+
+    const onStep = vi.fn()
+    const second = subscribeToWebPush(publicKey, { onStep })
+    await vi.waitFor(() => expect(onStep).toHaveBeenCalledWith('Waiting for active push subscription...'))
+    expect(registration.pushManager.subscribe).toHaveBeenCalledTimes(1)
+
+    resolveSubscribe(subscription)
+    await expect(first).resolves.toBe(subscription)
+    await expect(second).resolves.toBe(subscription)
   })
 
   it('stops before subscription creation when browser push permission is denied', async () => {

@@ -3,6 +3,7 @@ import { shouldNotifyForMessage } from '@track/shared'
 const PUSH_SUBSCRIBE_TIMEOUT_MS = 45_000
 type TrackPushPermissionState = 'denied' | 'granted' | 'prompt'
 let lastPushPermissionState: TrackPushPermissionState | null = null
+let activeSubscriptionFlow: { promise: Promise<PushSubscription>; publicKey: string } | null = null
 
 export const notificationPermissionLabels = {
   default: 'Not enabled',
@@ -28,13 +29,6 @@ function urlBase64ToUint8Array(value: string) {
   const base64 = `${value}${padding}`.replaceAll('-', '+').replaceAll('_', '/')
   const rawData = window.atob(base64)
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
-}
-
-function urlBase64ToArrayBuffer(value: string) {
-  const bytes = urlBase64ToUint8Array(value)
-  const buffer = new ArrayBuffer(bytes.byteLength)
-  new Uint8Array(buffer).set(bytes)
-  return buffer
 }
 
 function logWebPushDebug(event: string, details: Record<string, unknown> = {}) {
@@ -108,6 +102,30 @@ export async function subscribeToWebPush(
   publicKey: string,
   options: { forceRefresh?: boolean; onStep?: (step: string) => void } = {},
 ) {
+  if (activeSubscriptionFlow) {
+    options.onStep?.('Waiting for active push subscription...')
+    logWebPushDebug('joined active subscription flow', {
+      forceRefresh: Boolean(options.forceRefresh),
+      publicKeyChanged: activeSubscriptionFlow.publicKey !== publicKey,
+    })
+    return await activeSubscriptionFlow.promise
+  }
+
+  const promise = createWebPushSubscription(publicKey, options)
+  activeSubscriptionFlow = { promise, publicKey }
+  try {
+    return await promise
+  } finally {
+    if (activeSubscriptionFlow?.promise === promise) {
+      activeSubscriptionFlow = null
+    }
+  }
+}
+
+async function createWebPushSubscription(
+  publicKey: string,
+  options: { forceRefresh?: boolean; onStep?: (step: string) => void } = {},
+) {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     throw new Error('This browser does not support web push.')
   }
@@ -169,7 +187,7 @@ export async function subscribeToWebPush(
     })
   }
 
-  const applicationServerKey = urlBase64ToArrayBuffer(publicKey)
+  const applicationServerKey = urlBase64ToUint8Array(publicKey)
   logWebPushDebug('prepared application server key', {
     decodedBytes: applicationServerKey.byteLength,
   })
