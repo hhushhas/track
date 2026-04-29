@@ -75,6 +75,7 @@ describe('shouldNotifyForIncomingMessage', () => {
     const registration = {
       pushManager: {
         getSubscription: vi.fn().mockResolvedValue(null),
+        permissionState: vi.fn().mockResolvedValue('granted'),
         subscribe: vi.fn(() => new Promise(() => undefined)),
       },
     }
@@ -96,5 +97,41 @@ describe('shouldNotifyForIncomingMessage', () => {
     const assertion = expect(promise).rejects.toThrow('browser push service did not finish')
     await vi.advanceTimersByTimeAsync(45_000)
     await assertion
+    expect(registration.pushManager.permissionState).toHaveBeenCalledWith({
+      applicationServerKey: expect.any(ArrayBuffer),
+      userVisibleOnly: true,
+    })
+    expect(registration.pushManager.subscribe).toHaveBeenCalledWith({
+      applicationServerKey: expect.any(ArrayBuffer),
+      userVisibleOnly: true,
+    })
+  })
+
+  it('stops before subscription creation when browser push permission is denied', async () => {
+    const registration = {
+      pushManager: {
+        getSubscription: vi.fn().mockResolvedValue(null),
+        permissionState: vi.fn().mockResolvedValue('denied'),
+        subscribe: vi.fn(),
+      },
+    }
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        controller: {},
+        getRegistration: vi.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration),
+      },
+    })
+    Object.defineProperty(window, 'PushManager', {
+      configurable: true,
+      value: class PushManager {},
+    })
+
+    const { subscribeToWebPush } = await import('./web-notifications')
+    await expect(
+      subscribeToWebPush('BJfhJ9zxJ-CjTvkJylrr-Eoxax__6OQfO3JD2Q4wRblwP-9USQDGQmcJA2jZdHfyOhvIF0trybuTzrup0C1qV-4'),
+    ).rejects.toThrow('Browser push permission is blocked')
+    expect(registration.pushManager.subscribe).not.toHaveBeenCalled()
   })
 })

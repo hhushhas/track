@@ -1,6 +1,8 @@
 import { shouldNotifyForMessage } from '@track/shared'
 
 const PUSH_SUBSCRIBE_TIMEOUT_MS = 45_000
+type TrackPushPermissionState = 'denied' | 'granted' | 'prompt'
+let lastPushPermissionState: TrackPushPermissionState | null = null
 
 export const notificationPermissionLabels = {
   default: 'Not enabled',
@@ -26,6 +28,50 @@ function urlBase64ToUint8Array(value: string) {
   const base64 = `${value}${padding}`.replaceAll('-', '+').replaceAll('_', '/')
   const rawData = window.atob(base64)
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
+}
+
+function urlBase64ToArrayBuffer(value: string) {
+  const bytes = urlBase64ToUint8Array(value)
+  const buffer = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(buffer).set(bytes)
+  return buffer
+}
+
+function logWebPushDebug(event: string, details: Record<string, unknown> = {}) {
+  console.info(`[Track push] ${event}`, {
+    ...details,
+    diagnostics: getWebPushDiagnostics(),
+    timestamp: new Date().toISOString(),
+  })
+}
+
+function logWebPushWarning(event: string, details: Record<string, unknown> = {}) {
+  console.warn(`[Track push] ${event}`, {
+    ...details,
+    diagnostics: getWebPushDiagnostics(),
+    timestamp: new Date().toISOString(),
+  })
+}
+
+async function readManifestDebug() {
+  try {
+    const response = await fetch('/manifest.json', { cache: 'no-store' })
+    const manifest = await response.json()
+    return {
+      gcmSenderId: typeof manifest.gcm_sender_id === 'string' ? manifest.gcm_sender_id : null,
+      ok: response.ok,
+      startUrl: typeof manifest.start_url === 'string' ? manifest.start_url : null,
+      status: response.status,
+    }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+      gcmSenderId: null,
+      ok: false,
+      startUrl: null,
+      status: null,
+    }
+  }
 }
 
 async function withTimeout<T>(label: string, promise: Promise<T>, timeoutMs = 8000, timeoutMessage?: string) {
@@ -66,42 +112,112 @@ export async function subscribeToWebPush(
     throw new Error('This browser does not support web push.')
   }
 
+  logWebPushDebug('subscription flow started', {
+    manifest: await readManifestDebug(),
+    userAgent: navigator.userAgent,
+  })
+
   options.onStep?.('Checking service worker...')
   let registration = await navigator.serviceWorker.getRegistration('/')
+  logWebPushDebug('service worker registration lookup completed', {
+    found: Boolean(registration),
+    scope: registration?.scope ?? null,
+    scriptURL: registration?.active?.scriptURL ?? registration?.waiting?.scriptURL ?? registration?.installing?.scriptURL ?? null,
+    state: registration?.active?.state ?? registration?.waiting?.state ?? registration?.installing?.state ?? null,
+  })
   if (!registration) {
     options.onStep?.('Registering service worker...')
     registration = await withTimeout(
       'Service worker registration',
       navigator.serviceWorker.register('/service-worker.js', { scope: '/' }),
     )
+    logWebPushDebug('service worker registered', {
+      scope: registration.scope,
+      scriptURL: registration.active?.scriptURL ?? registration.waiting?.scriptURL ?? registration.installing?.scriptURL ?? null,
+      state: registration.active?.state ?? registration.waiting?.state ?? registration.installing?.state ?? null,
+    })
   }
   options.onStep?.('Waiting for service worker...')
   registration = await withTimeout('Service worker readiness', navigator.serviceWorker.ready)
+  logWebPushDebug('service worker ready', {
+    controller: Boolean(navigator.serviceWorker.controller),
+    scope: registration.scope,
+    scriptURL: registration.active?.scriptURL ?? null,
+    state: registration.active?.state ?? null,
+  })
 
   if (!navigator.serviceWorker.controller) {
     options.onStep?.('Claiming service worker...')
     registration.active?.postMessage({ type: 'CLAIM_CLIENTS' })
     await waitForServiceWorkerController()
+    logWebPushDebug('service worker claimed current page')
   }
 
   options.onStep?.('Checking push subscription...')
   const existingSubscription = await withTimeout('Push subscription lookup', registration.pushManager.getSubscription())
+  logWebPushDebug('existing push subscription checked', {
+    hasSubscription: Boolean(existingSubscription),
+    endpointPrefix: existingSubscription?.endpoint.slice(0, 80) ?? null,
+    forceRefresh: Boolean(options.forceRefresh),
+  })
   if (existingSubscription && !options.forceRefresh) return existingSubscription
   if (existingSubscription) {
     options.onStep?.('Refreshing push subscription...')
     await withTimeout('Push subscription refresh', existingSubscription.unsubscribe())
+    logWebPushDebug('existing push subscription unsubscribed', {
+      endpointPrefix: existingSubscription.endpoint.slice(0, 80),
+    })
+  }
+
+  const applicationServerKey = urlBase64ToArrayBuffer(publicKey)
+  logWebPushDebug('prepared application server key', {
+    decodedBytes: applicationServerKey.byteLength,
+  })
+  if ('permissionState' in registration.pushManager) {
+    options.onStep?.('Checking push permission...')
+    const permissionState = await withTimeout(
+      'Push permission check',
+      registration.pushManager.permissionState({
+        applicationServerKey,
+        userVisibleOnly: true,
+      }),
+    )
+    lastPushPermissionState = permissionState
+    options.onStep?.(`Push permission: ${permissionState}`)
+    logWebPushDebug('push permission state checked', {
+      pushPermission: permissionState,
+    })
+    if (permissionState === 'denied') {
+      throw new Error('Browser push permission is blocked for Track.')
+    }
   }
 
   options.onStep?.('Creating push subscription...')
-  return await withTimeout(
-    'Push subscription creation',
-    registration.pushManager.subscribe({
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-      userVisibleOnly: true,
-    }),
-    PUSH_SUBSCRIBE_TIMEOUT_MS,
-    'The browser push service did not finish creating a subscription. Restart the browser or PWA, disable VPN/content blockers for Track, then try again.',
-  )
+  logWebPushDebug('push subscription creation started', {
+    timeoutMs: PUSH_SUBSCRIBE_TIMEOUT_MS,
+  })
+  try {
+    const subscription = await withTimeout(
+      'Push subscription creation',
+      registration.pushManager.subscribe({
+        applicationServerKey,
+        userVisibleOnly: true,
+      }),
+      PUSH_SUBSCRIBE_TIMEOUT_MS,
+      'The browser push service did not finish creating a subscription. Restart the browser or PWA, disable VPN/content blockers for Track, then try again.',
+    )
+    logWebPushDebug('push subscription creation succeeded', {
+      endpointPrefix: subscription.endpoint.slice(0, 80),
+      expirationTime: subscription.expirationTime ?? null,
+    })
+    return subscription
+  } catch (error) {
+    logWebPushWarning('push subscription creation failed', {
+      errorName: error instanceof Error ? error.name : null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 export function getWebPushDiagnostics() {
@@ -112,6 +228,7 @@ export function getWebPushDiagnostics() {
     `pushManager=${'PushManager' in window ? 'yes' : 'no'}`,
     `controller=${navigator.serviceWorker?.controller ? 'yes' : 'no'}`,
   ]
+  if (lastPushPermissionState) parts.push(`pushPermission=${lastPushPermissionState}`)
   return parts.join(', ')
 }
 

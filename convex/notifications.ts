@@ -125,6 +125,11 @@ export const registerSubscription = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    console.info('[Track push] registerSubscription called', {
+      endpointPrefix: args.endpoint.slice(0, 80),
+      platform: args.platform,
+      userId: args.userId,
+    })
     const tokenOrEndpoint = JSON.stringify({
       endpoint: args.endpoint,
       expirationTime: args.expirationTime ?? null,
@@ -149,6 +154,12 @@ export const registerSubscription = mutation({
         tokenOrEndpoint,
         updatedAt: Date.now(),
       })
+      console.info('[Track push] registerSubscription updated existing subscription', {
+        endpointPrefix: args.endpoint.slice(0, 80),
+        platform: args.platform,
+        subscriptionId: existing._id,
+        userId: args.userId,
+      })
       return existing._id
     }
 
@@ -167,6 +178,13 @@ export const registerSubscription = mutation({
       entityId: subscriptionId,
       action: 'notification_subscription.registered',
       after: { platform: args.platform },
+    })
+
+    console.info('[Track push] registerSubscription created subscription', {
+      endpointPrefix: args.endpoint.slice(0, 80),
+      platform: args.platform,
+      subscriptionId,
+      userId: args.userId,
     })
 
     return subscriptionId
