@@ -11,4 +11,5 @@
 - Reworked protected-action verification into a non-blocking floating 2FA panel and added a security-settings reset for the 10-minute grace period.
 - Cleaned up the security settings hierarchy and showed stored profile photos in message row avatars.
 - Enforced export 2FA step-up on the server and preserved 2FA state during workspace auth sync so CSV/PDF exports cannot bypass the prompt.
+- Refined the sign-in screen into a flatter split layout with cleaner inputs, password visibility toggles, a single-line divider, clearer branding, and an icon-led email action.
 - Updated privacy language for email/password auth, two-factor data, and expanded profile fields.

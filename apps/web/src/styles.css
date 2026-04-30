@@ -494,19 +494,17 @@ button {
   min-height: 100vh;
   align-items: center;
   justify-content: center;
-  background: var(--paper);
-  padding: 24px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 42%),
+    var(--paper);
+  padding: 48px;
 }
 
 .track-auth-shell {
   display: grid;
-  width: min(100%, 920px);
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--paper);
-  box-shadow: 0 22px 70px rgba(27, 25, 23, 0.08);
+  width: min(100%, 1120px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  gap: clamp(48px, 8vw, 112px);
 }
 
 .track-auth-story,
@@ -516,15 +514,24 @@ button {
 }
 
 .track-auth-story {
-  justify-content: space-between;
-  min-height: 560px;
-  border-right: 1px solid var(--hairline);
-  background: var(--paper-2);
-  padding: 42px;
+  justify-content: center;
+  min-height: 640px;
 }
 
-.track-auth-logo {
-  width: 150px;
+.track-auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  width: fit-content;
+  margin-bottom: 128px;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.track-auth-brand img {
+  width: 38px;
   height: auto;
 }
 
@@ -537,8 +544,7 @@ button {
 
 .track-auth-story h1 {
   max-width: 430px;
-  margin-top: 14px;
-  font-size: 40px;
+  font-size: 44px;
   font-weight: 650;
   line-height: 1.04;
 }
@@ -553,7 +559,9 @@ button {
 
 .track-auth-proof {
   display: grid;
+  width: min(100%, 310px);
   gap: 8px;
+  margin-top: 96px;
 }
 
 .track-auth-proof span,
@@ -566,10 +574,10 @@ button {
 }
 
 .track-auth-proof span {
-  width: fit-content;
-  border: 1px solid var(--hairline);
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--hairline-strong) 74%, transparent);
   border-radius: 6px;
-  background: var(--paper);
+  background: color-mix(in srgb, var(--paper-2) 72%, transparent);
   padding: 9px 11px;
 }
 
@@ -581,11 +589,10 @@ button {
 
 .track-auth-panel {
   justify-content: center;
-  padding: 42px;
+  min-height: 640px;
 }
 
 .track-auth-panel h2 {
-  margin-top: 10px;
   font-size: 26px;
   font-weight: 650;
 }
@@ -593,14 +600,15 @@ button {
 .track-auth-button {
   justify-content: center;
   width: 100%;
-  min-height: 44px;
-  margin-top: 28px;
+  min-height: 46px;
+  margin-top: 22px;
+  font-size: 14px;
 }
 
 .track-auth-email-form {
   display: grid;
-  gap: 12px;
-  margin-top: 22px;
+  gap: 14px;
+  margin-top: 26px;
 }
 
 .track-auth-email-form label,
@@ -613,6 +621,10 @@ button {
   font-weight: 620;
 }
 
+.track-auth-email-form label {
+  position: relative;
+}
+
 .track-auth-email-form input,
 .track-profile-form input,
 .track-profile-form textarea,
@@ -622,6 +634,58 @@ button {
   background: var(--paper);
 }
 
+.track-auth-email-form input {
+  height: 44px;
+  border-color: color-mix(in srgb, var(--hairline-strong) 82%, var(--ink-4));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paper-2) 44%, var(--paper));
+  padding: 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 560;
+  box-shadow: inset 0 1px 0 rgba(27, 25, 23, 0.05);
+}
+
+.track-auth-email-form input::placeholder {
+  color: var(--ink-4);
+}
+
+.track-auth-email-form input:hover {
+  border-color: color-mix(in srgb, var(--ink-4) 70%, var(--hairline-strong));
+}
+
+.track-auth-email-form input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.track-auth-input-with-action {
+  padding-right: 44px !important;
+}
+
+.track-auth-input-action {
+  position: absolute;
+  right: 7px;
+  bottom: 5px;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.track-auth-input-action:hover,
+.track-auth-input-action:focus-visible {
+  background: var(--paper-3);
+  color: var(--ink);
+  outline: none;
+}
+
 .track-auth-divider {
   display: flex;
   align-items: center;
@@ -629,6 +693,7 @@ button {
   margin-top: 18px;
   color: var(--ink-3);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .track-auth-divider::before,
@@ -653,7 +718,7 @@ button {
   margin-top: 14px;
   border: 1px solid var(--hairline);
   border-radius: 6px;
-  background: var(--accent-tint);
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper-2));
   padding: 11px;
 }
 
@@ -6056,25 +6121,29 @@ button:disabled:hover {
   .track-auth-shell {
     min-height: 100vh;
     grid-template-columns: 1fr;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
+    gap: 0;
   }
 
   .track-auth-story {
     min-height: auto;
-    gap: 32px;
-    border-right: 0;
-    border-bottom: 1px solid var(--hairline);
     padding: 28px;
+  }
+
+  .track-auth-brand {
+    margin-bottom: 54px;
   }
 
   .track-auth-story h1 {
     font-size: 32px;
   }
 
+  .track-auth-proof {
+    margin-top: 42px;
+  }
+
   .track-auth-panel {
     justify-content: flex-start;
+    min-height: auto;
     padding: 28px;
   }
 

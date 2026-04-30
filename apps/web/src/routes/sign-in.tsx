@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvex } from 'convex/react'
-import { FileCheck2, KeyRound, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, FileCheck2, KeyRound, Mail, MessageSquareText, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 
@@ -37,6 +37,8 @@ function SignIn() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordVisible, setPasswordVisible] = useState(false)
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false)
   const [mode, setMode] = useState<AuthMode>(() => {
     if (typeof window === 'undefined') return 'continue'
     return window.localStorage.getItem(pendingSetPasswordEmailKey) ? 'set-password' : 'continue'
@@ -166,20 +168,22 @@ function SignIn() {
         : mode === 'set-password'
           ? `Set a password for ${pendingSetPasswordEmail || 'this email'} after confirming your Google account.`
           : 'Use email and password, or continue with Google. New email accounts are created after confirmation.'
+  const emailButtonLabel =
+    mode === 'confirm-new'
+      ? 'Create account'
+      : mode === 'set-password'
+        ? 'Add password'
+        : 'Continue with Email'
 
   return (
     <main className="track-auth-page">
       <section className="track-auth-shell">
         <div className="track-auth-story">
-          <img
-            alt="Track"
-            className="track-auth-logo"
-            height={70}
-            src="/track-logo.svg"
-            width={160}
-          />
+          <div className="track-auth-brand">
+            <img alt="" height={40} src="/track-logo-mark.svg" width={40} />
+            <span>Track</span>
+          </div>
           <div>
-            <p className="mono-label m-0">Project record workspace</p>
             <h1>Turn project conversations into accountable records.</h1>
             <p>
               Track keeps client and vendor teams aligned around decisions,
@@ -194,7 +198,6 @@ function SignIn() {
         </div>
 
         <div className="track-auth-panel">
-          <p className="mono-label m-0">Track Access</p>
           <h2>{title}</h2>
           <p>{copy}</p>
 
@@ -226,22 +229,40 @@ function SignIn() {
                 <span>Password</span>
                 <Input
                   autoComplete={mode === 'continue' ? 'current-password' : 'new-password'}
+                  className="track-auth-input-with-action"
                   onChange={(event) => setPassword(event.currentTarget.value)}
                   placeholder="At least 10 characters"
-                  type="password"
+                  type={passwordVisible ? 'text' : 'password'}
                   value={password}
                 />
+                <button
+                  aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                  className="track-auth-input-action"
+                  onClick={() => setPasswordVisible((visible) => !visible)}
+                  type="button"
+                >
+                  {passwordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </label>
               {mode === 'confirm-new' || mode === 'set-password' ? (
                 <label>
                   <span>Confirm password</span>
                   <Input
                     autoComplete="new-password"
+                    className="track-auth-input-with-action"
                     onChange={(event) => setConfirmPassword(event.currentTarget.value)}
                     placeholder="Repeat password"
-                    type="password"
+                    type={confirmPasswordVisible ? 'text' : 'password'}
                     value={confirmPassword}
                   />
+                  <button
+                    aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
+                    className="track-auth-input-action"
+                    onClick={() => setConfirmPasswordVisible((visible) => !visible)}
+                    type="button"
+                  >
+                    {confirmPasswordVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </label>
               ) : null}
               <button
@@ -249,11 +270,8 @@ function SignIn() {
                 disabled={busy}
                 type="submit"
               >
-                {mode === 'confirm-new'
-                  ? 'Create account'
-                  : mode === 'set-password'
-                    ? 'Add password'
-                    : 'Continue with Email'}
+                <Mail size={16} />
+                {emailButtonLabel}
               </button>
             </form>
           )}
