@@ -16,7 +16,7 @@ const supportEmail = 'q9labs.ai@gmail.com'
 type AuthMode = 'continue' | 'confirm-new' | 'google-proof' | 'set-password'
 type SignInVariant = 'default' | 'conversation-a' | 'conversation-b'
 
-export const Route = createFileRoute('/sign-in')({ component: () => <SignInExperience variant="default" /> })
+export const Route = createFileRoute('/sign-in')({ component: () => <SignInExperience variant="conversation-b" /> })
 
 const previewMessages = [
   {
