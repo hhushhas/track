@@ -13,4 +13,5 @@
 - Enforced export 2FA step-up on the server and preserved 2FA state during workspace auth sync so CSV/PDF exports cannot bypass the prompt.
 - Refined the sign-in screen into a flatter split layout with cleaner inputs, password visibility toggles, a single-line divider, clearer branding, and an icon-led email action.
 - Added two interactive sign-in comparison routes with animated Track conversation previews for evaluating live-message entrance treatments.
+- Improved the option B sign-in preview with transparent logo artwork, a higher page anchor, more conversation rows, and an infinite masked feed animation.
 - Updated privacy language for email/password auth, two-factor data, and expanded profile fields.

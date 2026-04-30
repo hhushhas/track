@@ -502,7 +502,9 @@ button {
 
 .track-auth-page-conversation-a,
 .track-auth-page-conversation-b {
+  align-items: flex-start;
   overflow: hidden;
+  padding: 32px 48px;
   background:
     linear-gradient(90deg, rgba(243, 183, 11, 0.04), transparent 38%),
     var(--paper);
@@ -519,6 +521,7 @@ button {
 .track-auth-page-conversation-b .track-auth-shell {
   width: min(100%, 1240px);
   grid-template-columns: minmax(0, 1.15fr) minmax(360px, 430px);
+  min-height: calc(100vh - 96px);
 }
 
 .track-auth-story,
@@ -541,7 +544,6 @@ button {
   width: 156px;
   height: auto;
   margin-bottom: 128px;
-  border-radius: 7px;
 }
 
 .track-auth-story-conversation .track-auth-logo {
@@ -853,33 +855,38 @@ button {
 }
 
 .track-auth-conversation-conversation-b {
+  height: min(66vh, 650px);
   overflow: hidden;
   padding-block: 14px;
   mask-image: linear-gradient(to bottom, transparent, black 11%, black 84%, transparent);
 }
 
 .track-auth-conversation-conversation-b .track-auth-conversation-thread {
-  gap: 28px;
-  transform: translateY(-16px);
-  animation: track-auth-thread-drift 8500ms ease-in-out infinite alternate;
+  gap: 30px;
+  transform: translateY(0);
+  animation: track-auth-thread-marquee 36000ms linear infinite;
+  will-change: transform;
 }
 
 .track-auth-conversation-conversation-b .track-auth-preview-row {
-  animation-delay: calc(var(--row-index) * 115ms);
+  opacity: 1;
+  transform: none;
+  animation: none;
 }
 
 .track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(-n + 2),
-.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(n + 6) {
-  filter: opacity(0.42);
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(n + 9):nth-child(-n + 11),
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(n + 20) {
+  opacity: 0.42;
 }
 
-.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(3) {
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(3),
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(14) {
   border-left: 2px solid color-mix(in srgb, var(--accent) 68%, var(--hairline));
   background: color-mix(in srgb, var(--paper-2) 34%, transparent);
   border-radius: 0 8px 8px 0;
   margin-left: -16px;
   padding: 10px 12px 10px 14px;
-  transform: translateY(14px) translateX(-14px);
 }
 
 @keyframes track-auth-row-enter {
@@ -902,9 +909,20 @@ button {
   }
 }
 
-@keyframes track-auth-thread-drift {
+@keyframes track-auth-thread-marquee {
+  from {
+    transform: translateY(0);
+  }
+
   to {
-    transform: translateY(-44px);
+    transform: translateY(calc(-50% - 15px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-auth-conversation-conversation-b .track-auth-conversation-thread {
+    animation-duration: 1ms;
+    animation-iteration-count: 1;
   }
 }
 

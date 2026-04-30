@@ -62,6 +62,41 @@ const previewMessages = [
     time: '5:27:45 PM',
     body: 'Let us also show reorder as a core workflow. People managing diabetes should not rebuild the same cart every month.',
   },
+  {
+    initials: 'SK',
+    name: 'Sara Khan',
+    tone: 's-2',
+    time: '5:34:45 PM',
+    body: 'I am adding quick reorder, saved supply lists, and reminders as the main retention loop.',
+  },
+  {
+    initials: 'RH',
+    name: 'Reem Haddad',
+    tone: 's-2',
+    time: '5:41:45 PM',
+    body: 'Can the client summary show which requests are billable versus included? That would help me share it internally.',
+  },
+  {
+    initials: 'OF',
+    name: 'Omar Farooq',
+    tone: 's-4',
+    time: '5:48:45 PM',
+    body: 'Let us keep the delivery promise precise and avoid implying that cold-chain items are available in every city from day one.',
+  },
+  {
+    initials: 'HS',
+    name: 'Hasan Shoaib',
+    tone: 's-2',
+    time: '5:52:45 PM',
+    body: 'Agreed. Keep the launch copy factual and make the review promise easy for ops to defend.',
+  },
+  {
+    initials: 'TA',
+    name: 'Track Assistant',
+    tone: 's-3',
+    time: '5:59:45 PM',
+    body: 'I am keeping the vendor review, delivery promise, and reorder workflow in this thread for the next pass.',
+  },
 ]
 
 function normalizeEmail(email: string) {
@@ -394,6 +429,10 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
 }
 
 function ConversationPreview({ variant }: { variant: Exclude<SignInVariant, 'default'> }) {
+  const baseMessages = variant === 'conversation-a' ? previewMessages.slice(0, 6) : previewMessages
+  const messages = variant === 'conversation-b' ? [...baseMessages, ...baseMessages] : baseMessages
+  const repeatedMessageCount = variant === 'conversation-b' ? baseMessages.length : messages.length
+
   return (
     <div className={`track-auth-conversation track-auth-conversation-${variant}`}>
       {variant === 'conversation-a' ? (
@@ -403,11 +442,12 @@ function ConversationPreview({ variant }: { variant: Exclude<SignInVariant, 'def
         </div>
       ) : null}
       <div className="track-auth-conversation-thread">
-        {previewMessages.map((message, index) => (
+        {messages.map((message, index) => (
           <article
+            aria-hidden={index >= repeatedMessageCount}
             className="track-auth-preview-row"
-            key={`${message.name}-${message.time}`}
-            style={{ '--row-index': index } as CSSProperties}
+            key={`${message.name}-${message.time}-${index}`}
+            style={{ '--row-index': index % repeatedMessageCount } as CSSProperties}
           >
             <div className={`track-message-avatar ${message.tone}`}>{message.initials}</div>
             <div className="track-auth-preview-body">
