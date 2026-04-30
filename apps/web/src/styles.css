@@ -500,11 +500,25 @@ button {
   padding: 48px;
 }
 
+.track-auth-page-conversation-a,
+.track-auth-page-conversation-b {
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(243, 183, 11, 0.04), transparent 38%),
+    var(--paper);
+}
+
 .track-auth-shell {
   display: grid;
   width: min(100%, 1120px);
   grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
   gap: clamp(48px, 8vw, 112px);
+}
+
+.track-auth-page-conversation-a .track-auth-shell,
+.track-auth-page-conversation-b .track-auth-shell {
+  width: min(100%, 1240px);
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 430px);
 }
 
 .track-auth-story,
@@ -518,21 +532,20 @@ button {
   min-height: 640px;
 }
 
-.track-auth-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 11px;
-  width: fit-content;
-  margin-bottom: 128px;
-  color: var(--ink);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0;
+.track-auth-story-conversation {
+  position: relative;
+  justify-content: flex-start;
 }
 
-.track-auth-brand img {
-  width: 38px;
+.track-auth-logo {
+  width: 156px;
   height: auto;
+  margin-bottom: 128px;
+  border-radius: 7px;
+}
+
+.track-auth-story-conversation .track-auth-logo {
+  margin-bottom: 58px;
 }
 
 .track-auth-story h1,
@@ -657,10 +670,22 @@ button {
 .track-auth-email-form input:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+.track-auth-input-with-icon {
+  padding-left: 44px !important;
 }
 
 .track-auth-input-with-action {
   padding-right: 44px !important;
+}
+
+.track-auth-field-icon {
+  position: absolute;
+  left: 14px;
+  bottom: 13px;
+  color: var(--ink-3);
+  pointer-events: none;
 }
 
 .track-auth-input-action {
@@ -720,6 +745,167 @@ button {
   border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 10%, var(--paper-2));
   padding: 11px;
+}
+
+.track-auth-conversation {
+  position: relative;
+  min-height: 430px;
+}
+
+.track-auth-conversation-thread {
+  display: grid;
+  gap: 24px;
+  max-width: 760px;
+}
+
+.track-auth-preview-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  opacity: 0;
+  transform: translateY(14px);
+  animation: track-auth-row-enter 520ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: calc(var(--row-index) * 170ms);
+}
+
+.track-auth-preview-row .track-message-avatar {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  font-size: 10.5px;
+}
+
+.track-auth-preview-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.track-auth-preview-body .track-message-meta {
+  margin-bottom: 5px;
+  padding-right: 0;
+}
+
+.track-auth-preview-body .track-message-meta strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.track-auth-preview-body .track-message-meta time {
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+.track-auth-preview-body p {
+  max-width: 880px;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: clamp(17px, 1.55vw, 22px);
+  line-height: 1.48;
+}
+
+.track-auth-mention {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--paper-3));
+  color: var(--accent);
+  padding: 0 6px 2px;
+  font-weight: 700;
+}
+
+.track-auth-live-status {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 22px;
+  margin-right: 18px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.track-auth-live-status span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 44%, transparent);
+  animation: track-auth-live-pulse 1500ms ease-out infinite;
+}
+
+.track-auth-conversation-conversation-a .track-auth-preview-row:last-child {
+  position: relative;
+}
+
+.track-auth-conversation-conversation-a .track-auth-preview-row:last-child::before {
+  position: absolute;
+  top: 14px;
+  left: -18px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+  animation: track-auth-new-dot 700ms ease-out 1050ms forwards;
+}
+
+.track-auth-conversation-conversation-b {
+  overflow: hidden;
+  padding-block: 14px;
+  mask-image: linear-gradient(to bottom, transparent, black 11%, black 84%, transparent);
+}
+
+.track-auth-conversation-conversation-b .track-auth-conversation-thread {
+  gap: 28px;
+  transform: translateY(-16px);
+  animation: track-auth-thread-drift 8500ms ease-in-out infinite alternate;
+}
+
+.track-auth-conversation-conversation-b .track-auth-preview-row {
+  animation-delay: calc(var(--row-index) * 115ms);
+}
+
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(-n + 2),
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(n + 6) {
+  filter: opacity(0.42);
+}
+
+.track-auth-conversation-conversation-b .track-auth-preview-row:nth-child(3) {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 68%, var(--hairline));
+  background: color-mix(in srgb, var(--paper-2) 34%, transparent);
+  border-radius: 0 8px 8px 0;
+  margin-left: -16px;
+  padding: 10px 12px 10px 14px;
+  transform: translateY(14px) translateX(-14px);
+}
+
+@keyframes track-auth-row-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes track-auth-live-pulse {
+  70% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+
+@keyframes track-auth-new-dot {
+  to {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes track-auth-thread-drift {
+  to {
+    transform: translateY(-44px);
+  }
 }
 
 .track-profile-page {
@@ -6129,7 +6315,7 @@ button:disabled:hover {
     padding: 28px;
   }
 
-  .track-auth-brand {
+  .track-auth-logo {
     margin-bottom: 54px;
   }
 

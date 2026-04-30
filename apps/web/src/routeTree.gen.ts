@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
+import { Route as SignInOptionBRouteImport } from './routes/sign-in-option-b'
+import { Route as SignInOptionARouteImport } from './routes/sign-in-option-a'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -34,6 +36,16 @@ const WorkspaceRoute = WorkspaceRouteImport.update({
 const TwoFactorRoute = TwoFactorRouteImport.update({
   id: '/two-factor',
   path: '/two-factor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignInOptionBRoute = SignInOptionBRouteImport.update({
+  id: '/sign-in-option-b',
+  path: '/sign-in-option-b',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignInOptionARoute = SignInOptionARouteImport.update({
+  id: '/sign-in-option-a',
+  path: '/sign-in-option-a',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -118,6 +130,8 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
+  '/sign-in-option-a': typeof SignInOptionARoute
+  '/sign-in-option-b': typeof SignInOptionBRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
@@ -136,6 +150,8 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
+  '/sign-in-option-a': typeof SignInOptionARoute
+  '/sign-in-option-b': typeof SignInOptionBRoute
   '/two-factor': typeof TwoFactorRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/onboarding/profile': typeof OnboardingProfileRoute
@@ -153,6 +169,8 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
+  '/sign-in-option-a': typeof SignInOptionARoute
+  '/sign-in-option-b': typeof SignInOptionBRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
@@ -173,6 +191,8 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/sign-in'
+    | '/sign-in-option-a'
+    | '/sign-in-option-b'
     | '/two-factor'
     | '/workspace'
     | '/auth/callback'
@@ -191,6 +211,8 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/sign-in'
+    | '/sign-in-option-a'
+    | '/sign-in-option-b'
     | '/two-factor'
     | '/auth/callback'
     | '/onboarding/profile'
@@ -207,6 +229,8 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/sign-in'
+    | '/sign-in-option-a'
+    | '/sign-in-option-b'
     | '/two-factor'
     | '/workspace'
     | '/auth/callback'
@@ -226,6 +250,8 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   SignInRoute: typeof SignInRoute
+  SignInOptionARoute: typeof SignInOptionARoute
+  SignInOptionBRoute: typeof SignInOptionBRoute
   TwoFactorRoute: typeof TwoFactorRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -247,6 +273,20 @@ declare module '@tanstack/react-router' {
       path: '/two-factor'
       fullPath: '/two-factor'
       preLoaderRoute: typeof TwoFactorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in-option-b': {
+      id: '/sign-in-option-b'
+      path: '/sign-in-option-b'
+      fullPath: '/sign-in-option-b'
+      preLoaderRoute: typeof SignInOptionBRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in-option-a': {
+      id: '/sign-in-option-a'
+      path: '/sign-in-option-a'
+      fullPath: '/sign-in-option-a'
+      preLoaderRoute: typeof SignInOptionARouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -393,6 +433,8 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   SignInRoute: SignInRoute,
+  SignInOptionARoute: SignInOptionARoute,
+  SignInOptionBRoute: SignInOptionBRoute,
   TwoFactorRoute: TwoFactorRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
   AuthCallbackRoute: AuthCallbackRoute,

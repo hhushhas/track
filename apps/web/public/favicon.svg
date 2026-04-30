@@ -1,8 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 274 274" role="img" aria-labelledby="title desc">
   <title id="title">Track favicon</title>
-  <desc id="desc">Track mark for browser favicon use.</desc>
-  <rect x="24" y="24" width="464" height="464" rx="92" fill="#faf7f2" />
-  <g transform="translate(83 137) scale(1.26)">
+  <desc id="desc">Tightly framed Track mark for browser favicon use.</desc>
+  <g transform="translate(0 41)">
     <svg width="274" height="192" viewBox="0 0 274 192">
       <rect fill="#8f8a83" x="8" y="28" width="25" height="12" rx="6" />
       <rect fill="#8f8a83" x="51" y="28" width="35" height="12" rx="6" />
@@ -15,7 +14,7 @@
       <rect fill="#8f8a83" x="50" y="112" width="80" height="12" rx="6" />
       <rect fill="#8f8a83" x="35" y="154" width="31" height="12" rx="6" />
       <rect fill="#1b1917" x="156" y="154" width="87" height="12" rx="6" />
-      <path fill="none" stroke="#f0b100" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" d="M76 148 H126 C143 148 146 118 164 118 H238" />
+      <path fill="none" stroke="#f0b100" stroke-linecap="round" stroke-linejoin="round" stroke-width="17" d="M76 148 H126 C143 148 146 118 164 118 H238" />
       <circle fill="#f0b100" cx="252" cy="118" r="22" />
       <circle fill="#faf7f2" cx="252" cy="118" r="11" />
     </svg>

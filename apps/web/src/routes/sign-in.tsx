@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvex } from 'convex/react'
-import { Eye, EyeOff, FileCheck2, KeyRound, Mail, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, FileCheck2, KeyRound, Lock, Mail, MessageSquareText, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
 import { Button } from '#/components/ui/button'
@@ -14,8 +14,55 @@ const pendingSetPasswordEmailKey = 'track-pending-set-password-email'
 const supportEmail = 'q9labs.ai@gmail.com'
 
 type AuthMode = 'continue' | 'confirm-new' | 'google-proof' | 'set-password'
+type SignInVariant = 'default' | 'conversation-a' | 'conversation-b'
 
-export const Route = createFileRoute('/sign-in')({ component: SignIn })
+export const Route = createFileRoute('/sign-in')({ component: () => <SignInExperience variant="default" /> })
+
+const previewMessages = [
+  {
+    initials: 'RH',
+    name: 'Reem Haddad',
+    tone: 's-2',
+    time: '4:45:45 PM',
+    body: 'Please make vendor verification visible. Our promise is that every seller and product is reviewed before it reaches shoppers.',
+  },
+  {
+    initials: 'SK',
+    name: 'Sara Khan',
+    tone: 's-2',
+    time: '4:52:45 PM',
+    body: 'capture vendor verification and product review as an official launch requirement.',
+    mention: '@track',
+  },
+  {
+    initials: 'TA',
+    name: 'Track Assistant',
+    tone: 's-3',
+    time: '4:59:45 PM',
+    body: 'Noted. I will keep that visible in the launch conversation and preserve the exact wording for review.',
+  },
+  {
+    initials: 'FR',
+    name: 'Faisal Rahman',
+    tone: 's-3',
+    time: '5:06:45 PM',
+    body: 'Delivery messaging should mention Dubai, Abu Dhabi, Sharjah, Ajman, and the rest of the Emirates without promising impossible same-day coverage everywhere.',
+  },
+  {
+    initials: 'OF',
+    name: 'Omar Farooq',
+    tone: 's-4',
+    time: '5:13:45 PM',
+    body: 'Good call. I will write it as fast UAE-wide delivery with emirate-level expectations in checkout.',
+  },
+  {
+    initials: 'HS',
+    name: 'Hasan Shoaib',
+    tone: 's-2',
+    time: '5:27:45 PM',
+    body: 'Let us also show reorder as a core workflow. People managing diabetes should not rebuild the same cart every month.',
+  },
+]
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
@@ -30,7 +77,7 @@ function getPasswordMessage(error: unknown) {
   return 'Could not continue. Check the details and try again.'
 }
 
-function SignIn() {
+export function SignInExperience({ variant }: { variant: SignInVariant }) {
   const convex = useConvex()
   const navigate = useNavigate()
   const session = authClient.useSession()
@@ -175,26 +222,37 @@ function SignIn() {
         ? 'Add password'
         : 'Continue with Email'
 
+  const isConversationVariant = variant !== 'default'
+
   return (
-    <main className="track-auth-page">
+    <main className={isConversationVariant ? `track-auth-page track-auth-page-${variant}` : 'track-auth-page'}>
       <section className="track-auth-shell">
-        <div className="track-auth-story">
-          <div className="track-auth-brand">
-            <img alt="" height={40} src="/track-logo-mark.svg" width={40} />
-            <span>Track</span>
-          </div>
-          <div>
-            <h1>Turn project conversations into accountable records.</h1>
-            <p>
-              Track keeps client and vendor teams aligned around decisions,
-              evidence, action items, and audit-ready exports.
-            </p>
-          </div>
-          <div className="track-auth-proof">
-            <span><MessageSquareText size={16} /> Shared conversation</span>
-            <span><FileCheck2 size={16} /> Accepted records</span>
-            <span><ShieldCheck size={16} /> Permissioned access</span>
-          </div>
+        <div className={isConversationVariant ? 'track-auth-story track-auth-story-conversation' : 'track-auth-story'}>
+          <img
+            alt="Track"
+            className="track-auth-logo"
+            height={70}
+            src="/track-logo-reversed.svg"
+            width={160}
+          />
+          {isConversationVariant ? (
+            <ConversationPreview variant={variant} />
+          ) : (
+            <>
+              <div>
+                <h1>Turn project conversations into accountable records.</h1>
+                <p>
+                  Track keeps client and vendor teams aligned around decisions,
+                  evidence, action items, and audit-ready exports.
+                </p>
+              </div>
+              <div className="track-auth-proof">
+                <span><MessageSquareText size={16} /> Shared conversation</span>
+                <span><FileCheck2 size={16} /> Accepted records</span>
+                <span><ShieldCheck size={16} /> Permissioned access</span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="track-auth-panel">
@@ -218,23 +276,26 @@ function SignIn() {
                   <span>Email</span>
                   <Input
                     autoComplete="email"
+                    className="track-auth-input-with-icon"
                     onChange={(event) => setEmail(event.currentTarget.value)}
                     placeholder="you@example.com"
                     type="email"
                     value={email}
                   />
+                  <Mail className="track-auth-field-icon" size={17} />
                 </label>
               ) : null}
               <label>
                 <span>Password</span>
                 <Input
                   autoComplete={mode === 'continue' ? 'current-password' : 'new-password'}
-                  className="track-auth-input-with-action"
+                  className="track-auth-input-with-icon track-auth-input-with-action"
                   onChange={(event) => setPassword(event.currentTarget.value)}
                   placeholder="At least 10 characters"
                   type={passwordVisible ? 'text' : 'password'}
                   value={password}
                 />
+                <Lock className="track-auth-field-icon" size={17} />
                 <button
                   aria-label={passwordVisible ? 'Hide password' : 'Show password'}
                   className="track-auth-input-action"
@@ -249,12 +310,13 @@ function SignIn() {
                   <span>Confirm password</span>
                   <Input
                     autoComplete="new-password"
-                    className="track-auth-input-with-action"
+                    className="track-auth-input-with-icon track-auth-input-with-action"
                     onChange={(event) => setConfirmPassword(event.currentTarget.value)}
                     placeholder="Repeat password"
                     type={confirmPasswordVisible ? 'text' : 'password'}
                     value={confirmPassword}
                   />
+                  <Lock className="track-auth-field-icon" size={17} />
                   <button
                     aria-label={confirmPasswordVisible ? 'Hide password' : 'Show password'}
                     className="track-auth-input-action"
@@ -328,5 +390,39 @@ function SignIn() {
         </div>
       </section>
     </main>
+  )
+}
+
+function ConversationPreview({ variant }: { variant: Exclude<SignInVariant, 'default'> }) {
+  return (
+    <div className={`track-auth-conversation track-auth-conversation-${variant}`}>
+      {variant === 'conversation-a' ? (
+        <div className="track-auth-live-status">
+          <span />
+          Live conversation
+        </div>
+      ) : null}
+      <div className="track-auth-conversation-thread">
+        {previewMessages.map((message, index) => (
+          <article
+            className="track-auth-preview-row"
+            key={`${message.name}-${message.time}`}
+            style={{ '--row-index': index } as CSSProperties}
+          >
+            <div className={`track-message-avatar ${message.tone}`}>{message.initials}</div>
+            <div className="track-auth-preview-body">
+              <div className="track-message-meta">
+                <strong>{message.name}</strong>
+                <time>{message.time}</time>
+              </div>
+              <p>
+                {message.mention ? <span className="track-auth-mention">{message.mention}</span> : null}
+                {message.body}
+              </p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
   )
 }
