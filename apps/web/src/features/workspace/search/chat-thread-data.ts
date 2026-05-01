@@ -1,0 +1,66 @@
+import type { Doc } from '../../../../../../convex/_generated/dataModel'
+import type { GroupMessageItem } from '#/features/workspace/thread-items'
+
+export type WorkspaceThreadItem =
+  | {
+      at: number
+      item: GroupMessageItem
+      kind: 'message'
+      key: string
+    }
+  | {
+      at: number
+      stream: Doc<'assistantStreams'>
+      kind: 'assistant'
+      key: string
+    }
+  | {
+      at: number
+      draft: Doc<'draftRecords'>
+      kind: 'draft'
+      key: string
+    }
+
+export function buildWorkspaceThreadItems({
+  assistantStreams,
+  draftRecords,
+  messages,
+}: {
+  assistantStreams: Array<Doc<'assistantStreams'>>
+  draftRecords: Array<Doc<'draftRecords'>>
+  messages: Array<GroupMessageItem>
+}): Array<WorkspaceThreadItem> {
+  return [
+    ...messages.map((item) => ({
+      at: item.message.createdAt,
+      item,
+      kind: 'message' as const,
+      key: item.message._id,
+    })),
+    ...assistantStreams.map((stream) => ({
+      at: stream.createdAt,
+      stream,
+      kind: 'assistant' as const,
+      key: stream._id,
+    })),
+    ...draftRecords.map((draft) => ({
+      at: draft.createdAt,
+      draft,
+      kind: 'draft' as const,
+      key: draft._id,
+    })),
+  ].sort((a, b) => a.at - b.at)
+}
+
+export function buildMessageCitations(messages: Array<GroupMessageItem>) {
+  return new Map(
+    messages.map((item) => [
+      String(item.message._id),
+      {
+        author: item.author?.displayName ?? 'Unknown Member',
+        body: item.message.body.slice(0, 90),
+        createdAt: item.message.createdAt,
+      },
+    ]),
+  )
+}

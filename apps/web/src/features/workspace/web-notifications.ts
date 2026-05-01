@@ -280,6 +280,18 @@ export function shouldNotifyForIncomingMessage(input: {
   })
 }
 
+export function getIncomingMessageNotificationBody(input: {
+  body: string
+  attachments: Array<{ attachment: { kind?: string } }>
+}) {
+  return input.body ||
+    (input.attachments.some(({ attachment }) => attachment.kind === 'voice_note')
+      ? 'Sent a voice note.'
+      : input.attachments.length > 0
+        ? 'Sent an attachment.'
+        : 'New message.')
+}
+
 export async function showMessageNotification(input: {
   title: string
   body: string

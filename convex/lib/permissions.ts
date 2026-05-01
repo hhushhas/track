@@ -40,6 +40,18 @@ export async function requireProjectManager(
   return member
 }
 
+export async function requireProjectOwner(
+  ctx: AppCtx,
+  projectId: Id<'projects'>,
+  userId: Id<'users'>,
+) {
+  const member = await requireProjectMember(ctx, projectId, userId)
+  if (member.role !== 'owner') {
+    throw new Error('not_project_owner')
+  }
+  return member
+}
+
 export async function requireReviewer(
   ctx: AppCtx,
   projectId: Id<'projects'>,

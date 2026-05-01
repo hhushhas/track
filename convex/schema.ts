@@ -100,6 +100,7 @@ export default defineSchema({
     displayName: v.string(),
     profileDesignation: v.optional(v.string()),
     profileBio: v.optional(v.string()),
+    profileBannerStyle: v.optional(v.string()),
     timezone: v.optional(v.string()),
     avatarStorageId: v.optional(v.id('_storage')),
     profileCompletedAt: v.optional(v.number()),

@@ -12,7 +12,7 @@
     "docs": "turbo run docs",
     "convex:dev": "convex dev",
     "convex:deploy:dev": "convex deploy",
-    "convex:deploy:prod": "convex deploy --prod",
+    "convex:deploy:prod": "convex deploy --env-file convex.prod.env",
     "test:atlas": "playwright test scratchpad/track-atlas.spec.js --reporter=line"
   },
   "devDependencies": {

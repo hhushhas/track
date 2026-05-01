@@ -16,6 +16,7 @@ const devAuthBypassUser = {
   email: 'shasanshoaib@gmail.com',
   displayName: 'Hasan Shoaib',
   profileDesignation: 'Founder / Product Lead',
+  profileBannerStyle: 'silk',
   timezone: 'Asia/Karachi',
 } as const
 
@@ -284,6 +285,7 @@ export const syncDevUser = mutation({
         email: devAuthBypassUser.email,
         displayName: devAuthBypassUser.displayName,
         profileDesignation: existing.profileDesignation ?? devAuthBypassUser.profileDesignation,
+        profileBannerStyle: existing.profileBannerStyle ?? devAuthBypassUser.profileBannerStyle,
         timezone: existing.timezone ?? devAuthBypassUser.timezone,
         profileCompletedAt: existing.profileCompletedAt ?? now,
         updatedAt: now,
@@ -298,6 +300,7 @@ export const syncDevUser = mutation({
       email: devAuthBypassUser.email,
       displayName: devAuthBypassUser.displayName,
       profileDesignation: devAuthBypassUser.profileDesignation,
+      profileBannerStyle: devAuthBypassUser.profileBannerStyle,
       timezone: devAuthBypassUser.timezone,
       profileCompletedAt: now,
       twoFactorEnabled: false,
@@ -386,6 +389,7 @@ export const updateProfile = mutation({
     userId: v.id('users'),
     displayName: v.string(),
     profileDesignation: v.string(),
+    profileBannerStyle: v.optional(v.string()),
     profileBio: v.optional(v.string()),
     timezone: v.string(),
   },
@@ -393,18 +397,36 @@ export const updateProfile = mutation({
     await assertCanManageTrackUser(ctx, args.userId)
     const displayName = args.displayName.trim()
     const profileDesignation = args.profileDesignation.trim()
+    const profileBannerStyle = args.profileBannerStyle?.trim() || 'silk'
     const profileBio = args.profileBio?.trim()
     const timezone = args.timezone.trim()
+    const validBannerStyles = new Set([
+      'silk',
+      'velvet-flow',
+      'midnight-veil',
+      'luminous-beams',
+      'aurora-wash',
+      'soft-aurora',
+      'grain-haze',
+      'signal-glitch',
+      'grid-scan',
+      'pearl-shift',
+      'light-rays',
+      'storm-flash',
+      'crystal-prism',
+    ])
 
     if (!displayName) throw new Error('display_name_required')
     if (!profileDesignation) throw new Error('designation_required')
     if (!timezone) throw new Error('timezone_required')
     if (profileDesignation.length > 60) throw new Error('designation_too_long')
     if ((profileBio?.length ?? 0) > 180) throw new Error('bio_too_long')
+    if (!validBannerStyles.has(profileBannerStyle)) throw new Error('banner_style_invalid')
 
     await ctx.db.patch(args.userId, {
       displayName,
       profileDesignation,
+      profileBannerStyle,
       profileBio: profileBio || undefined,
       timezone,
       profileCompletedAt: Date.now(),

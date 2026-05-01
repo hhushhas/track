@@ -80,6 +80,107 @@ export const create = mutation({
   },
 })
 
+export const update = mutation({
+  args: {
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectManager(ctx, args.projectId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
+    const name = args.name.trim()
+    if (!name) throw new Error('group_name_required')
+
+    await ctx.db.patch(args.groupId, {
+      name,
+      updatedAt: Date.now(),
+    })
+
+    await appendAuditEvent(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      actorId: args.userId,
+      entityType: 'group',
+      entityId: args.groupId,
+      action: 'group.updated',
+      before: { name: group.name },
+      after: { name },
+    })
+  },
+})
+
+export const remove = mutation({
+  args: {
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectManager(ctx, args.projectId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
+
+    const [
+      groupMembers,
+      messages,
+      attachments,
+      typingIndicators,
+      aiReviews,
+      draftRecords,
+      records,
+      assistantStreams,
+      groupNotificationSettings,
+      invitations,
+    ] = await Promise.all([
+      ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('messages').withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('attachments').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('typingIndicators').withIndex('by_group_updated_at', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('aiReviews').withIndex('by_group_started_at', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('draftRecords').withIndex('by_group_status', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('records').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('assistantStreams').withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('groupNotificationSettings').collect(),
+      Promise.all(
+        (['pending', 'accepted', 'revoked', 'expired'] as const).map((status) =>
+          ctx.db.query('invitations').withIndex('by_project_status', (q) => q.eq('projectId', args.projectId).eq('status', status)).collect(),
+        ),
+      ).then((rows) => rows.flat()),
+    ])
+
+    await appendAuditEvent(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      actorId: args.userId,
+      entityType: 'group',
+      entityId: args.groupId,
+      action: 'group.deleted',
+      before: { name: group.name, kind: group.kind },
+    })
+
+    await Promise.all(attachments.map((attachment) => ctx.storage.delete(attachment.storageId).catch(() => undefined)))
+
+    for (const row of groupNotificationSettings) {
+      if (row.groupId === args.groupId) await ctx.db.delete(row._id)
+    }
+    for (const row of invitations) {
+      if (row.groupId === args.groupId) await ctx.db.delete(row._id)
+    }
+    for (const row of assistantStreams) await ctx.db.delete(row._id)
+    for (const row of records) await ctx.db.delete(row._id)
+    for (const row of draftRecords) await ctx.db.delete(row._id)
+    for (const row of aiReviews) await ctx.db.delete(row._id)
+    for (const row of typingIndicators) await ctx.db.delete(row._id)
+    for (const row of attachments) await ctx.db.delete(row._id)
+    for (const row of messages) await ctx.db.delete(row._id)
+    for (const row of groupMembers) await ctx.db.delete(row._id)
+    await ctx.db.delete(args.groupId)
+  },
+})
+
 export const updateAiReviewSettings = mutation({
   args: {
     projectId: v.id('projects'),

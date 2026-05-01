@@ -371,6 +371,19 @@ button {
   color: var(--ink);
 }
 
+.track-button.danger,
+.track-nav-footer-button.danger {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--hairline));
+  color: var(--danger);
+}
+
+.track-button.danger:hover,
+.track-nav-footer-button.danger:hover {
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--hairline-strong));
+  background: color-mix(in srgb, var(--danger) 9%, var(--paper));
+  color: var(--danger);
+}
+
 .track-button:hover,
 .icon-button:hover,
 .group-button:hover {
@@ -544,6 +557,18 @@ button {
   width: 156px;
   height: auto;
   margin-bottom: 128px;
+}
+
+.track-auth-logo-dark {
+  display: none;
+}
+
+.dark .track-auth-logo-light {
+  display: none;
+}
+
+.dark .track-auth-logo-dark {
+  display: block;
 }
 
 .track-auth-story-conversation .track-auth-logo {
@@ -1157,10 +1182,139 @@ button {
   gap: 16px;
 }
 
+.track-profile-input-shell {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--hairline-strong) 82%, var(--ink-4));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--paper-2) 44%, var(--paper));
+  color: var(--ink-3);
+  padding: 0 11px;
+  box-shadow: inset 0 1px 0 rgba(27, 25, 23, 0.05);
+}
+
+.track-profile-input-shell svg {
+  width: 15px;
+  height: 15px;
+}
+
+.track-profile-input-shell:focus-within {
+  border-color: var(--ring);
+  box-shadow:
+    inset 0 1px 0 rgba(27, 25, 23, 0.05),
+    0 0 0 2px color-mix(in srgb, var(--ring) 24%, transparent);
+}
+
+.track-profile-input-shell input,
+.track-profile-input-shell textarea {
+  min-height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 620;
+  outline: none;
+  padding: 0;
+  box-shadow: none;
+}
+
+.track-profile-input-shell textarea {
+  min-height: 76px;
+  padding: 10px 0;
+}
+
+.track-profile-input-shell.textarea {
+  align-items: flex-start;
+}
+
+.track-profile-input-shell.textarea svg {
+  margin-top: 12px;
+}
+
+.track-profile-input-shell input::placeholder,
+.track-profile-input-shell textarea::placeholder {
+  color: var(--ink-4);
+}
+
 .track-profile-form small {
   color: var(--ink-3);
   font-size: 11px;
   font-weight: 520;
+}
+
+.track-profile-card-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.track-profile-card-preview > span,
+.track-profile-banner-fieldset legend {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.track-profile-card-preview .track-avatar-card {
+  width: min(100%, 360px);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.track-profile-card-preview .track-avatar-card-banner {
+  height: 78px;
+}
+
+.track-profile-banner-fieldset {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.track-profile-banner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.track-profile-banner-grid button {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  padding: 7px;
+  text-align: left;
+}
+
+.track-profile-banner-grid button:hover,
+.track-profile-banner-grid button.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.track-profile-banner-option-preview {
+  position: relative;
+  min-height: 66px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--paper-2);
+}
+
+.track-profile-banner-option-label {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .track-timezone-picker {
@@ -1170,18 +1324,21 @@ button {
 .track-timezone-trigger {
   display: flex;
   width: 100%;
-  min-height: 42px;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 6px;
-  background: var(--paper);
+  border: 1px solid color-mix(in srgb, var(--hairline-strong) 82%, var(--ink-4));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--paper-2) 44%, var(--paper));
   color: var(--ink);
   cursor: pointer;
   font: inherit;
-  padding: 0 10px 0 12px;
+  font-size: 14px;
+  font-weight: 620;
+  padding: 0 11px;
   text-align: left;
+  box-shadow: inset 0 1px 0 rgba(27, 25, 23, 0.05);
 }
 
 .track-timezone-trigger span {
@@ -1192,7 +1349,10 @@ button {
 
 .track-timezone-trigger:hover,
 .track-timezone-trigger[aria-expanded="true"] {
-  border-color: var(--ink-4);
+  border-color: var(--ring);
+  box-shadow:
+    inset 0 1px 0 rgba(27, 25, 23, 0.05),
+    0 0 0 2px color-mix(in srgb, var(--ring) 24%, transparent);
 }
 
 .track-timezone-menu {
@@ -2633,7 +2793,7 @@ button {
 .track-avatar.s-1,
 .track-message-avatar.s-1,
 .track-avatar-card-avatar.s-1 {
-  background: #1b1917;
+  background: #8f6a1f;
 }
 
 .track-avatar.s-2,
@@ -2685,20 +2845,20 @@ button {
 }
 
 .track-avatar-tooltip {
-  border: 1px solid rgba(27, 25, 23, 0.14);
-  background: #1f1d1a;
-  box-shadow: 0 10px 28px rgba(27, 25, 23, 0.2);
-  color: #faf9f7;
+  border: 1px solid color-mix(in srgb, var(--hairline-strong) 84%, var(--ink-4));
+  background: var(--paper);
+  box-shadow: 0 12px 30px rgba(27, 25, 23, 0.15);
+  color: var(--ink);
   overflow: hidden;
   padding: 0;
 }
 
 .track-avatar-tooltip .bg-foreground {
-  background: #1f1d1a;
+  background: var(--paper);
 }
 
 .track-avatar-tooltip .fill-foreground {
-  fill: #1f1d1a;
+  fill: var(--paper);
 }
 
 .dark .track-avatar-tooltip {
@@ -2717,20 +2877,192 @@ button {
 }
 
 .track-avatar-card {
-  --track-avatar-card-primary: rgba(240, 177, 0, 0.34);
-  --track-avatar-card-secondary: #2a251b;
+  --track-avatar-card-primary: rgba(240, 177, 0, 0.28);
+  --track-avatar-card-secondary: #f2dfaa;
+  --track-avatar-card-radius: inherit;
 
   width: 280px;
   overflow: hidden;
-  border-radius: inherit;
-  background: #1f1d1a;
+  border-radius: var(--track-avatar-card-radius);
+  background: var(--paper);
 }
 
 .track-avatar-card-banner {
+  position: relative;
   height: 58px;
+  overflow: hidden;
+  border-radius: var(--track-avatar-card-radius) var(--track-avatar-card-radius) 0 0;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 76%, white) 0%, transparent 56%),
     linear-gradient(90deg, var(--track-avatar-card-primary), var(--track-avatar-card-secondary));
+}
+
+.track-dither-banner {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: inherit;
+  opacity: 1;
+}
+
+.track-avatar-card-banner::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, white 18%, transparent), transparent 48%),
+    linear-gradient(0deg, color-mix(in srgb, var(--paper) 18%, transparent), transparent 58%);
+  content: "";
+  pointer-events: none;
+}
+
+.track-profile-banner-background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 22% 18%, color-mix(in srgb, var(--track-avatar-card-primary) 74%, white), transparent 34%),
+    linear-gradient(135deg, var(--track-avatar-card-primary), var(--track-avatar-card-secondary));
+  opacity: 1;
+}
+
+.track-profile-banner-background span {
+  position: absolute;
+  inset: -35%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--track-avatar-card-primary) 58%, transparent);
+  opacity: 0.55;
+  transform-origin: center;
+}
+
+.track-profile-banner-background span:nth-child(1) {
+  animation: track-banner-drift 9s ease-in-out infinite alternate;
+}
+
+.track-profile-banner-background span:nth-child(2) {
+  animation: track-banner-drift 12s ease-in-out infinite alternate-reverse;
+}
+
+.track-profile-banner-background span:nth-child(3) {
+  animation: track-banner-pulse 7s ease-in-out infinite;
+}
+
+.track-profile-banner-background.reduced-motion span {
+  animation: none;
+}
+
+.track-profile-banner-background-silk {
+  background:
+    radial-gradient(circle at 78% 18%, color-mix(in srgb, white 48%, transparent), transparent 22%),
+    repeating-linear-gradient(115deg, color-mix(in srgb, var(--track-avatar-card-primary) 22%, transparent) 0 2px, transparent 2px 9px),
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 45%, white), color-mix(in srgb, var(--track-avatar-card-secondary) 70%, var(--paper)));
+}
+
+.track-profile-banner-background-silk span:nth-child(1) {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 32%, transparent), transparent);
+}
+
+.track-profile-banner-background-velvet-flow {
+  background:
+    radial-gradient(circle at 20% 78%, color-mix(in srgb, var(--track-avatar-card-primary) 70%, black), transparent 36%),
+    radial-gradient(circle at 80% 22%, color-mix(in srgb, var(--track-avatar-card-secondary) 70%, white), transparent 30%),
+    linear-gradient(130deg, color-mix(in srgb, var(--track-avatar-card-primary) 60%, #16130d), color-mix(in srgb, var(--track-avatar-card-secondary) 76%, #151412));
+}
+
+.track-profile-banner-background-midnight-veil {
+  background:
+    radial-gradient(circle at 70% 32%, color-mix(in srgb, var(--track-avatar-card-primary) 74%, white), transparent 22%),
+    linear-gradient(120deg, #090908, color-mix(in srgb, var(--track-avatar-card-primary) 42%, #111), #050505);
+}
+
+.track-profile-banner-background-luminous-beams {
+  background:
+    repeating-linear-gradient(102deg, transparent 0 14px, color-mix(in srgb, white 30%, transparent) 14px 17px, transparent 17px 34px),
+    radial-gradient(circle at 12% 12%, color-mix(in srgb, var(--track-avatar-card-primary) 70%, white), transparent 28%),
+    linear-gradient(135deg, var(--track-avatar-card-primary), color-mix(in srgb, var(--track-avatar-card-secondary) 72%, black));
+}
+
+.track-profile-banner-background-aurora-wash,
+.track-profile-banner-background-soft-aurora {
+  background:
+    radial-gradient(ellipse at 18% 72%, color-mix(in srgb, var(--track-avatar-card-primary) 76%, #7ea7ff), transparent 42%),
+    radial-gradient(ellipse at 78% 22%, color-mix(in srgb, var(--track-avatar-card-secondary) 72%, #5bbf74), transparent 38%),
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 34%, white), color-mix(in srgb, var(--track-avatar-card-secondary) 50%, var(--paper)));
+}
+
+.track-profile-banner-background-soft-aurora {
+  filter: saturate(0.82) brightness(1.08);
+}
+
+.track-profile-banner-background-grain-haze {
+  background:
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, white 28%, transparent), transparent 24%),
+    repeating-radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--track-avatar-card-primary) 16%, transparent) 0 1px, transparent 1px 4px),
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 54%, white), color-mix(in srgb, var(--track-avatar-card-secondary) 66%, var(--paper)));
+}
+
+.track-profile-banner-background-signal-glitch {
+  background:
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--track-avatar-card-primary) 55%, black) 0 2px, transparent 2px 8px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, white 18%, transparent) 0 1px, transparent 1px 10px),
+    #111;
+}
+
+.track-profile-banner-background-grid-scan {
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--track-avatar-card-primary) 40%, transparent), transparent),
+    repeating-linear-gradient(0deg, color-mix(in srgb, white 24%, transparent) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, white 18%, transparent) 0 1px, transparent 1px 12px),
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 58%, black), color-mix(in srgb, var(--track-avatar-card-secondary) 65%, black));
+}
+
+.track-profile-banner-background-pearl-shift {
+  background:
+    conic-gradient(from 140deg at 50% 50%, color-mix(in srgb, var(--track-avatar-card-primary) 60%, white), #f5f0ff, color-mix(in srgb, var(--track-avatar-card-secondary) 70%, #b5fff1), color-mix(in srgb, var(--track-avatar-card-primary) 60%, white));
+}
+
+.track-profile-banner-background-light-rays {
+  background:
+    conic-gradient(from 215deg at 8% 0%, color-mix(in srgb, white 62%, transparent), transparent 12deg, color-mix(in srgb, var(--track-avatar-card-primary) 44%, transparent) 18deg, transparent 30deg),
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 60%, white), color-mix(in srgb, var(--track-avatar-card-secondary) 65%, var(--paper)));
+}
+
+.track-profile-banner-background-storm-flash {
+  background:
+    linear-gradient(110deg, transparent 0 45%, color-mix(in srgb, white 72%, var(--track-avatar-card-primary)) 46% 49%, transparent 50%),
+    radial-gradient(circle at 70% 20%, color-mix(in srgb, var(--track-avatar-card-primary) 88%, white), transparent 22%),
+    linear-gradient(135deg, #101010, color-mix(in srgb, var(--track-avatar-card-primary) 52%, #111));
+}
+
+.track-profile-banner-background-crystal-prism {
+  background:
+    linear-gradient(125deg, color-mix(in srgb, var(--track-avatar-card-primary) 62%, white) 0 18%, transparent 18% 31%, color-mix(in srgb, var(--track-avatar-card-secondary) 70%, #d7c5ff) 31% 52%, transparent 52% 65%, color-mix(in srgb, var(--track-avatar-card-primary) 58%, #9ff) 65%),
+    linear-gradient(135deg, color-mix(in srgb, var(--track-avatar-card-primary) 42%, var(--paper)), color-mix(in srgb, var(--track-avatar-card-secondary) 58%, white));
+}
+
+@keyframes track-banner-drift {
+  from {
+    transform: translate3d(-8%, -6%, 0) rotate(0deg) scale(1);
+  }
+
+  to {
+    transform: translate3d(8%, 7%, 0) rotate(12deg) scale(1.12);
+  }
+}
+
+@keyframes track-banner-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 0.62;
+    transform: scale(1.14);
+  }
 }
 
 .track-avatar-card-body {
@@ -2744,7 +3076,7 @@ button {
   width: 58px;
   height: 58px;
   margin-top: -28px;
-  border: 4px solid #1f1d1a;
+  border: 4px solid var(--paper);
   color: #faf9f7;
   font-size: 16px;
   font-weight: 760;
@@ -2758,7 +3090,7 @@ button {
 
 .track-avatar-card-copy strong {
   overflow: hidden;
-  color: #faf9f7;
+  color: var(--ink);
   font-size: 17px;
   font-weight: 760;
   line-height: 1.05;
@@ -2768,7 +3100,7 @@ button {
 
 .track-avatar-card-copy small {
   overflow: hidden;
-  color: rgba(250, 249, 247, 0.64);
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -2778,7 +3110,7 @@ button {
 
 .track-avatar-card-copy p {
   margin: 8px 0 0;
-  color: rgba(250, 249, 247, 0.82);
+  color: var(--ink-2);
   font-size: 13px;
   line-height: 1.35;
 }
@@ -2786,6 +3118,11 @@ button {
 .dark .track-avatar-card,
 .dark .track-avatar-tooltip .bg-foreground {
   background: #211f1b;
+}
+
+.dark .track-avatar-card {
+  --track-avatar-card-primary: rgba(240, 177, 0, 0.34);
+  --track-avatar-card-secondary: #2a251b;
 }
 
 .dark .track-avatar-card-avatar {
@@ -6041,16 +6378,14 @@ button.track-mention-inline.group:focus-visible {
   font-family: var(--font-mono);
 }
 
-.track-records-page,
-.track-settings-page {
+.track-records-page {
   display: flex;
   min-height: 0;
   overflow: hidden;
   background: var(--paper);
 }
 
-.track-records-main,
-.track-settings-page {
+.track-records-main {
   min-height: 0;
   overflow: auto;
 }
@@ -6213,26 +6548,32 @@ button.track-mention-inline.group:focus-visible {
   min-width: 132px;
 }
 
+.track-settings-actions .track-button.danger {
+  min-width: 148px;
+}
+
 .track-settings-page {
-  background: var(--paper-2);
-  padding: 18px;
+  min-height: 0;
+  overflow: auto;
+  background: var(--paper);
+  padding: 18px 24px 32px;
 }
 
 .track-settings-panel {
   width: 100%;
-  max-width: 760px;
+  max-width: 980px;
   margin: 0 auto;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--paper);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .track-settings-section {
-  padding: 18px;
+  padding: 22px 0;
 }
 
 .track-settings-section + .track-settings-section {
-  border-top: 1px solid var(--hairline);
+  border-top: 1px solid color-mix(in srgb, var(--hairline) 86%, transparent);
 }
 
 .track-settings-section-head,
@@ -6262,7 +6603,7 @@ button.track-mention-inline.group:focus-visible {
 
 .track-settings-row {
   min-height: 34px;
-  border-top: 1px solid var(--hairline);
+  border-top: 1px solid color-mix(in srgb, var(--hairline) 86%, transparent);
   color: var(--ink-3);
   font-size: 13px;
 }
@@ -6272,6 +6613,60 @@ button.track-mention-inline.group:focus-visible {
   font-size: 13px;
   font-weight: 600;
   text-align: right;
+}
+
+.track-settings-group-list {
+  display: grid;
+  gap: 8px;
+}
+
+.track-settings-group-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 30px 30px;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border-top: 1px solid color-mix(in srgb, var(--hairline) 86%, transparent);
+  padding-top: 8px;
+}
+
+.track-settings-group-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.track-settings-group-copy strong,
+.track-settings-group-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-settings-group-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.track-settings-group-copy small,
+.track-settings-empty {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.track-settings-page .track-chip {
+  background: var(--paper);
+}
+
+.track-settings-page .track-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+.dark .track-settings-page .track-chip.active {
+  color: var(--accent);
 }
 
 button:disabled {

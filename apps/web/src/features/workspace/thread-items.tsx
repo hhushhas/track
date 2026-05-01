@@ -125,10 +125,12 @@ export function MessageRow({
     >
       <AvatarNameTooltip
         avatarUrl={avatarUrl}
+        bannerStyle={item.author?.profileBannerStyle}
         bio={item.author?.profileBio}
         detail={item.author?.profileDesignation ?? (item.authorRole ? item.authorRole.replaceAll('_', ' ') : null)}
         name={authorName}
         side="right"
+        toneSource={item.author?.email ?? authorName}
         timezone={item.author?.timezone}
       >
         <Avatar className={`track-message-avatar ${getAvatarTone(item.author?.email ?? authorName)}`}>
@@ -575,8 +577,16 @@ export function AssistantAnswer({
   const answer = stream.answer || stream.status
   return (
     <article className="track-assistant-row" data-thread-item-key={threadItemKey}>
-      <AvatarNameTooltip detail="AI review" name="Track Assistant" side="right">
+      <AvatarNameTooltip
+        avatarUrl="/track-assistant-avatar.png"
+        bannerStyle="silk"
+        bio="Project memory teammate that turns decisions, evidence, risks, and follow-ups into reviewable records."
+        detail="AI project memory teammate"
+        name="Track Assistant"
+        side="right"
+      >
         <Avatar className="track-message-avatar bot">
+          <AvatarImage src="/track-assistant-avatar.png" />
           <AvatarFallback>T</AvatarFallback>
         </Avatar>
       </AvatarNameTooltip>

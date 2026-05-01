@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-01
+
+- Decomposed the workspace page into focused chat, sidebar, header, rail, search, records, settings, and hook modules.
+- Added regression coverage for route state, record filtering, search result shaping, mentions, message sending, and notification body copy.
+- Improved workspace notification diagnostics, pending attachment handling, project record export flows, and assistant/chat data shaping.
+- Added a committed Convex production deploy selector so `pnpm convex:deploy:prod` targets `fleet-manatee-941` even when local dev env files are present.
+
 ## 2026-04-29
 
 - Added email/password access next to Google sign-in, including new-email account creation and the Google-proof flow for adding a password to an existing Google account.

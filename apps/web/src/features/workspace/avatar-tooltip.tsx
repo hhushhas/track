@@ -3,31 +3,51 @@ import type { ComponentProps, CSSProperties, ReactNode } from 'react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
-import { getAvatarTone, getInitials } from './identity'
+import { getAvatarTone, getAvatarToneColor, getInitials } from './identity'
+import {
+  ProfileBannerBackground,
+  type ProfileBannerStyle,
+  normalizeProfileBannerStyle,
+  usePrefersReducedMotion,
+} from './profile-banners'
 
-type AvatarNameTooltipProps = {
-  align?: ComponentProps<typeof TooltipContent>['align']
+type ImagePalette = { primary: string; secondary: string } | null
+
+const avatarPaletteCache = new Map<string, ImagePalette>()
+const pendingAvatarPaletteLoads = new Map<string, Promise<ImagePalette>>()
+
+type TeamMemberCardProps = {
   avatarUrl?: string | null
+  bannerStyle?: string | null
   bio?: string | null
-  children: ReactNode
   detail?: string | null
   name: string
-  side?: ComponentProps<typeof TooltipContent>['side']
+  toneSource?: string | null
   timezone?: string | null
 }
 
-export function AvatarNameTooltip({
-  align = 'center',
+type AvatarNameTooltipProps = TeamMemberCardProps & {
+  align?: ComponentProps<typeof TooltipContent>['align']
+  children: ReactNode
+  side?: ComponentProps<typeof TooltipContent>['side']
+}
+
+export function TeamMemberCard({
   avatarUrl,
+  bannerStyle,
   bio,
-  children,
   detail,
   name,
-  side = 'top',
+  toneSource,
   timezone,
-}: AvatarNameTooltipProps) {
+}: TeamMemberCardProps) {
   const localTime = timezone ? getLocalTimeLabel(timezone) : null
-  const [imagePalette, setImagePalette] = useState<{ primary: string; secondary: string } | null>(null)
+  const [imagePalette, setImagePalette] = useState<ImagePalette>(() =>
+    avatarUrl ? avatarPaletteCache.get(avatarUrl) ?? null : null,
+  )
+  const avatarTone = getAvatarTone(toneSource ?? name)
+  const fallbackPrimary = getAvatarToneColor(avatarTone)
+  const reducedMotion = usePrefersReducedMotion()
 
   useEffect(() => {
     if (!avatarUrl || typeof window === 'undefined') {
@@ -35,30 +55,54 @@ export function AvatarNameTooltip({
       return
     }
 
+    const cachedPalette = avatarPaletteCache.get(avatarUrl)
+    if (avatarPaletteCache.has(avatarUrl)) {
+      setImagePalette(cachedPalette ?? null)
+      return
+    }
+
     let cancelled = false
-    const image = new Image()
-    image.crossOrigin = 'anonymous'
-    image.onload = () => {
-      if (cancelled) return
-      const palette = getImagePalette(image)
-      if (palette) setImagePalette(palette)
-    }
-    image.onerror = () => {
-      if (!cancelled) setImagePalette(null)
-    }
-    image.src = avatarUrl
+    void loadAvatarPalette(avatarUrl).then((palette) => {
+      if (!cancelled) setImagePalette(palette)
+    })
     return () => {
       cancelled = true
     }
   }, [avatarUrl])
 
-  const cardStyle = imagePalette
-    ? ({
-        '--track-avatar-card-primary': imagePalette.primary,
-        '--track-avatar-card-secondary': imagePalette.secondary,
-      } as CSSProperties)
-    : undefined
+  const cardStyle = {
+    '--track-avatar-card-primary': imagePalette?.primary ?? fallbackPrimary,
+    '--track-avatar-card-secondary': imagePalette?.secondary ?? fallbackPrimary,
+  } as CSSProperties
+  const selectedBannerStyle: ProfileBannerStyle = normalizeProfileBannerStyle(bannerStyle)
 
+  return (
+    <div className="track-avatar-card" style={cardStyle}>
+      <div className="track-avatar-card-banner">
+        <ProfileBannerBackground reducedMotion={reducedMotion} style={selectedBannerStyle} />
+      </div>
+      <div className="track-avatar-card-body">
+        <Avatar className={`track-avatar-card-avatar ${avatarTone}`}>
+          <AvatarImage src={avatarUrl ?? undefined} />
+          <AvatarFallback>{getInitials(name)}</AvatarFallback>
+        </Avatar>
+        <div className="track-avatar-card-copy">
+          <strong>{name}</strong>
+          {detail ? <small>{detail}</small> : null}
+          {localTime ? <small>{localTime}</small> : null}
+          {bio ? <p>{bio}</p> : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function AvatarNameTooltip({
+  align = 'center',
+  children,
+  side = 'top',
+  ...cardProps
+}: AvatarNameTooltipProps) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -78,21 +122,7 @@ export function AvatarNameTooltip({
         side={side}
         sideOffset={8}
       >
-        <div className="track-avatar-card" style={cardStyle}>
-          <div className="track-avatar-card-banner" />
-          <div className="track-avatar-card-body">
-            <Avatar className={`track-avatar-card-avatar ${getAvatarTone(name)}`}>
-              <AvatarImage src={avatarUrl ?? undefined} />
-              <AvatarFallback>{getInitials(name)}</AvatarFallback>
-            </Avatar>
-            <div className="track-avatar-card-copy">
-              <strong>{name}</strong>
-              {detail ? <small>{detail}</small> : null}
-              {localTime ? <small>{localTime}</small> : null}
-              {bio ? <p>{bio}</p> : null}
-            </div>
-          </div>
-        </div>
+        <TeamMemberCard {...cardProps} />
       </TooltipContent>
     </Tooltip>
   )
@@ -128,6 +158,31 @@ function getImagePalette(image: HTMLImageElement) {
   } catch {
     return null
   }
+}
+
+function loadAvatarPalette(avatarUrl: string) {
+  const pendingLoad = pendingAvatarPaletteLoads.get(avatarUrl)
+  if (pendingLoad) return pendingLoad
+
+  const load = new Promise<ImagePalette>((resolve) => {
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => {
+      const palette = getImagePalette(image)
+      avatarPaletteCache.set(avatarUrl, palette)
+      pendingAvatarPaletteLoads.delete(avatarUrl)
+      resolve(palette)
+    }
+    image.onerror = () => {
+      avatarPaletteCache.set(avatarUrl, null)
+      pendingAvatarPaletteLoads.delete(avatarUrl)
+      resolve(null)
+    }
+    image.src = avatarUrl
+  })
+
+  pendingAvatarPaletteLoads.set(avatarUrl, load)
+  return load
 }
 
 function getLocalTimeLabel(timezone: string) {

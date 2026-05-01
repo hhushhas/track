@@ -1,4 +1,12 @@
 const avatarToneClasses = ['s-1', 's-2', 's-3', 's-4'] as const
+const avatarToneColors = {
+  's-1': '#8f6a1f',
+  's-2': '#5b6d4a',
+  's-3': '#7a4a3a',
+  's-4': '#3a4a6d',
+} as const
+
+export type AvatarTone = (typeof avatarToneClasses)[number]
 
 export function getAvatarTone(value: string) {
   let hash = 0
@@ -6,6 +14,10 @@ export function getAvatarTone(value: string) {
     hash = (hash * 31 + character.charCodeAt(0)) >>> 0
   }
   return avatarToneClasses[hash % avatarToneClasses.length] ?? avatarToneClasses[0]
+}
+
+export function getAvatarToneColor(tone: AvatarTone) {
+  return avatarToneColors[tone]
 }
 
 export function getInitials(value: string) {

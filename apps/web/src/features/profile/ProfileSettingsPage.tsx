@@ -6,6 +6,7 @@ import {
   Clock3,
   KeyRound,
   Mail,
+  PenLine,
   QrCode,
   ShieldCheck,
   Smartphone,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react'
 import { toDataURL } from 'qrcode'
 import { useEffect, useMemo, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import type { CSSProperties, ChangeEvent, FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -24,7 +25,14 @@ import { Textarea } from '#/components/ui/textarea'
 import TrackLoader from '#/components/TrackLoader'
 import { authClient } from '#/lib/auth-client'
 import { useDevAuthBypass } from '#/lib/dev-auth-bypass'
-import { getInitials } from '#/features/workspace/identity'
+import { getAvatarTone, getAvatarToneColor, getInitials } from '#/features/workspace/identity'
+import { TeamMemberCard } from '#/features/workspace/avatar-tooltip'
+import {
+  ProfileBannerBackground,
+  normalizeProfileBannerStyle,
+  profileBannerStyles,
+  usePrefersReducedMotion,
+} from '#/features/workspace/profile-banners'
 
 type ProfileSettingsPageProps = {
   mode: 'onboarding' | 'settings'
@@ -128,6 +136,38 @@ function getSecurityMessage(error: unknown, fallback: string) {
   return message
 }
 
+function getImagePalette(image: HTMLImageElement) {
+  const canvas = document.createElement('canvas')
+  const size = 24
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) return null
+
+  try {
+    context.drawImage(image, 0, 0, size, size)
+    const pixels = context.getImageData(0, 0, size, size).data
+    let r = 0
+    let g = 0
+    let b = 0
+    let count = 0
+    for (let index = 0; index < pixels.length; index += 16) {
+      const alpha = pixels[index + 3] ?? 0
+      if (alpha < 80) continue
+      r += pixels[index] ?? 0
+      g += pixels[index + 1] ?? 0
+      b += pixels[index + 2] ?? 0
+      count += 1
+    }
+    if (!count) return null
+    const primary = `rgb(${Math.round(r / count)}, ${Math.round(g / count)}, ${Math.round(b / count)})`
+    const secondary = `rgb(${Math.max(0, Math.round(r / count) - 32)}, ${Math.max(0, Math.round(g / count) - 32)}, ${Math.max(0, Math.round(b / count) - 32)})`
+    return { primary, secondary }
+  } catch {
+    return null
+  }
+}
+
 export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const session = authClient.useSession()
   const devAuthBypass = useDevAuthBypass()
@@ -146,6 +186,8 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const [displayName, setDisplayName] = useState('')
   const [designation, setDesignation] = useState('')
   const [bio, setBio] = useState('')
+  const [bannerStyle, setBannerStyle] = useState('silk')
+  const [bannerPalette, setBannerPalette] = useState<{ primary: string; secondary: string } | null>(null)
   const [timezone, setTimezone] = useState(getBrowserTimezone)
   const [hydratedUserId, setHydratedUserId] = useState<string | null>(null)
   const [profileMessage, setProfileMessage] = useState('')
@@ -177,6 +219,12 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const hasCredentialAccount = accounts.some((account) => account.providerId === 'credential')
   const twoFactorEnabled = Boolean(user?.twoFactorEnabled)
   const visibleAvatarUrl = avatarPreview ?? avatarUrl ?? undefined
+  const selectedBannerStyle = normalizeProfileBannerStyle(bannerStyle)
+  const prefersReducedMotion = usePrefersReducedMotion()
+  const profileTone = getAvatarTone(user?.email ?? displayName)
+  const profileToneColor = getAvatarToneColor(profileTone)
+  const bannerPrimary = bannerPalette?.primary ?? profileToneColor
+  const bannerSecondary = bannerPalette?.secondary ?? profileToneColor
   const canManageTwoFactor = Boolean(session.data)
   const canResetStepUpGracePeriod = Boolean(session.data || devAuthBypass.enabled)
   const showSecurityActionBar = Boolean(
@@ -202,6 +250,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
     setDisplayName(user.displayName ?? '')
     setDesignation(user.profileDesignation ?? '')
     setBio(user.profileBio ?? '')
+    setBannerStyle(normalizeProfileBannerStyle(user.profileBannerStyle))
     setTimezone(user.timezone ?? getBrowserTimezone())
     setHydratedUserId(user._id)
   }, [hydratedUserId, user])
@@ -213,6 +262,29 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
       if (!result.error && result.data) setAccounts(result.data)
     })
   }, [session.data])
+
+  useEffect(() => {
+    if (!visibleAvatarUrl || typeof window === 'undefined') {
+      setBannerPalette(null)
+      return
+    }
+
+    let cancelled = false
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => {
+      if (cancelled) return
+      const palette = getImagePalette(image)
+      setBannerPalette(palette)
+    }
+    image.onerror = () => {
+      if (!cancelled) setBannerPalette(null)
+    }
+    image.src = visibleAvatarUrl
+    return () => {
+      cancelled = true
+    }
+  }, [visibleAvatarUrl])
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -229,6 +301,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
         userId: trackUserId,
         displayName,
         profileDesignation: designation,
+        profileBannerStyle: selectedBannerStyle,
         profileBio: bio || undefined,
         timezone,
       })
@@ -450,15 +523,21 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
               <form className="track-profile-form" onSubmit={(event) => void saveProfile(event)}>
                 <label>
                   <span>Display name</span>
-                  <Input value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} />
+                  <span className="track-profile-input-shell">
+                    <UserRound size={18} />
+                    <Input value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} />
+                  </span>
                 </label>
                 <label>
                   <span>Designation</span>
-                  <Input
-                    maxLength={60}
-                    value={designation}
-                    onChange={(event) => setDesignation(event.currentTarget.value)}
-                  />
+                  <span className="track-profile-input-shell">
+                    <PenLine size={18} />
+                    <Input
+                      maxLength={60}
+                      value={designation}
+                      onChange={(event) => setDesignation(event.currentTarget.value)}
+                    />
+                  </span>
                   <small>{designation.length}/60</small>
                 </label>
                 <label>
@@ -508,14 +587,57 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                 </label>
                 <label>
                   <span>Bio</span>
-                  <Textarea
-                    maxLength={180}
-                    rows={4}
-                    value={bio}
-                    onChange={(event) => setBio(event.currentTarget.value)}
-                  />
+                  <span className="track-profile-input-shell textarea">
+                    <PenLine size={18} />
+                    <Textarea
+                      maxLength={180}
+                      rows={4}
+                      value={bio}
+                      onChange={(event) => setBio(event.currentTarget.value)}
+                    />
+                  </span>
                   <small>{bio.length}/180</small>
                 </label>
+                <fieldset
+                  className="track-profile-banner-fieldset"
+                  style={{
+                    '--track-avatar-card-primary': bannerPrimary,
+                    '--track-avatar-card-secondary': bannerSecondary,
+                  } as CSSProperties}
+                >
+                  <legend>Banner style</legend>
+                  <div className="track-profile-banner-grid">
+                    {profileBannerStyles.map((style) => (
+                      <button
+                        aria-pressed={style.id === selectedBannerStyle}
+                        className={style.id === selectedBannerStyle ? 'active' : ''}
+                        key={style.id}
+                        onClick={() => setBannerStyle(style.id)}
+                        type="button"
+                      >
+                        <span className="track-profile-banner-option-preview">
+                          <ProfileBannerBackground
+                            reducedMotion={prefersReducedMotion}
+                            style={style.id}
+                          />
+                        </span>
+                        <span className="track-profile-banner-option-label">{style.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="track-profile-card-preview">
+                  <span>Team card preview</span>
+                  <TeamMemberCard
+                    avatarUrl={visibleAvatarUrl}
+                    bannerStyle={selectedBannerStyle}
+                    bio={bio || null}
+                    detail={designation || null}
+                    name={displayName || user?.email || 'Track User'}
+                    toneSource={user?.email ?? displayName}
+                    timezone={timezone}
+                  />
+                </div>
                 <div className="track-profile-actions">
                   <button className="track-button track-button-primary" disabled={busyProfile || !canSaveProfile} type="submit">
                     {mode === 'onboarding' ? 'Save and enter Track' : 'Save changes'}

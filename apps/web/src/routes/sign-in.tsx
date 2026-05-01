@@ -265,7 +265,15 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         <div className={isConversationVariant ? 'track-auth-story track-auth-story-conversation' : 'track-auth-story'}>
           <img
             alt="Track"
-            className="track-auth-logo"
+            className="track-auth-logo track-auth-logo-light"
+            height={70}
+            src="/track-logo.svg"
+            width={160}
+          />
+          <img
+            alt=""
+            aria-hidden="true"
+            className="track-auth-logo track-auth-logo-dark"
             height={70}
             src="/track-logo-reversed.svg"
             width={160}

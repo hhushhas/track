@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
-import { canRoleJoinDefaultGroup, requireProjectMember } from './lib/permissions'
+import { canRoleJoinDefaultGroup, requireProjectManager, requireProjectMember, requireProjectOwner } from './lib/permissions'
 
 const defaultGroups = [
   { kind: 'general', name: 'General' },
@@ -128,6 +128,119 @@ export const create = mutation({
     })
 
     return projectId
+  },
+})
+
+export const update = mutation({
+  args: {
+    projectId: v.id('projects'),
+    userId: v.id('users'),
+    name: v.string(),
+    clientLabel: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectManager(ctx, args.projectId, args.userId)
+    const project = await ctx.db.get(args.projectId)
+    if (!project) throw new Error('project_not_found')
+    const name = args.name.trim()
+    if (!name) throw new Error('project_name_required')
+    const clientLabel = args.clientLabel?.trim() || undefined
+
+    await ctx.db.patch(args.projectId, {
+      name,
+      clientLabel,
+      updatedAt: Date.now(),
+    })
+
+    await appendAuditEvent(ctx, {
+      projectId: args.projectId,
+      actorId: args.userId,
+      entityType: 'project',
+      entityId: args.projectId,
+      action: 'project.updated',
+      before: { name: project.name, clientLabel: project.clientLabel },
+      after: { name, clientLabel },
+    })
+  },
+})
+
+export const remove = mutation({
+  args: {
+    projectId: v.id('projects'),
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    await requireProjectOwner(ctx, args.projectId, args.userId)
+    const project = await ctx.db.get(args.projectId)
+    if (!project) throw new Error('project_not_found')
+
+    const [
+      groups,
+      projectMembers,
+      invitations,
+      messages,
+      attachments,
+      typingIndicators,
+      aiReviews,
+      draftRecords,
+      records,
+      exports,
+      assistantStreams,
+      auditEvents,
+      groupNotificationSettings,
+    ] = await Promise.all([
+      ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      Promise.all(
+        (['pending', 'accepted', 'revoked', 'expired'] as const).map((status) =>
+          ctx.db.query('invitations').withIndex('by_project_status', (q) => q.eq('projectId', args.projectId).eq('status', status)).collect(),
+        ),
+      ).then((rows) => rows.flat()),
+      ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('attachments').collect(),
+      ctx.db.query('typingIndicators').collect(),
+      ctx.db.query('aiReviews').withIndex('by_project_started_at', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('draftRecords').withIndex('by_project_status', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('records').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('exports').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('assistantStreams').collect(),
+      ctx.db.query('auditEvents').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('groupNotificationSettings').collect(),
+    ])
+    const groupIds = new Set(groups.map((group) => group._id))
+
+    await appendAuditEvent(ctx, {
+      projectId: args.projectId,
+      actorId: args.userId,
+      entityType: 'project',
+      entityId: args.projectId,
+      action: 'project.deleted',
+      before: { name: project.name, clientLabel: project.clientLabel },
+    })
+
+    const projectAttachments = attachments.filter((attachment) => attachment.projectId === args.projectId)
+    await Promise.all(projectAttachments.map((attachment) => ctx.storage.delete(attachment.storageId).catch(() => undefined)))
+
+    for (const row of groupNotificationSettings) {
+      if (groupIds.has(row.groupId)) await ctx.db.delete(row._id)
+    }
+    for (const row of assistantStreams) {
+      if (row.projectId === args.projectId) await ctx.db.delete(row._id)
+    }
+    for (const row of exports) await ctx.db.delete(row._id)
+    for (const row of records) await ctx.db.delete(row._id)
+    for (const row of draftRecords) await ctx.db.delete(row._id)
+    for (const row of aiReviews) await ctx.db.delete(row._id)
+    for (const row of typingIndicators) {
+      if (row.projectId === args.projectId) await ctx.db.delete(row._id)
+    }
+    for (const row of projectAttachments) await ctx.db.delete(row._id)
+    for (const row of messages) await ctx.db.delete(row._id)
+    for (const row of invitations) await ctx.db.delete(row._id)
+    for (const row of projectMembers) await ctx.db.delete(row._id)
+    for (const row of groups) await ctx.db.delete(row._id)
+    for (const row of auditEvents) await ctx.db.delete(row._id)
+    await ctx.db.delete(args.projectId)
   },
 })
 

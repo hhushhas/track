@@ -64,6 +64,8 @@ const demoUsers = [
     googleSubject: 'demo:track-assistant',
     email: 'assistant@track.local',
     displayName: 'Track Assistant',
+    profileBio: 'Project memory teammate that turns decisions, evidence, risks, and follow-ups into reviewable records.',
+    profileDesignation: 'AI project memory teammate',
     role: 'staff',
     canReviewAiRecords: true,
   },
@@ -200,6 +202,8 @@ export const seedDiabMartScreenshot = mutation({
         await ctx.db.patch(existing._id, {
           email: user.email,
           displayName: user.displayName,
+          profileBio: 'profileBio' in user ? user.profileBio : existing.profileBio,
+          profileDesignation: 'profileDesignation' in user ? user.profileDesignation : existing.profileDesignation,
           updatedAt: now,
         })
         userIds[user.key] = existing._id
@@ -208,6 +212,8 @@ export const seedDiabMartScreenshot = mutation({
           googleSubject: user.googleSubject,
           email: user.email,
           displayName: user.displayName,
+          profileBio: 'profileBio' in user ? user.profileBio : undefined,
+          profileDesignation: 'profileDesignation' in user ? user.profileDesignation : undefined,
           twoFactorEnabled: false,
           createdAt: now,
           updatedAt: now,

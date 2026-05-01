@@ -28,6 +28,7 @@ export function WorkspaceDialogs({
   frequencyDialogOpen,
   frequencyMinutesInput,
   groupDialogOpen,
+  groupDialogMode,
   groupName,
   inviteCanReview,
   inviteDialogOpen,
@@ -36,6 +37,7 @@ export function WorkspaceDialogs({
   inviteAccess,
   projectClientLabel,
   projectDialogOpen,
+  projectDialogMode,
   projectGroups,
   projectName,
   reviewEnabledInput,
@@ -62,6 +64,7 @@ export function WorkspaceDialogs({
   frequencyDialogOpen: boolean
   frequencyMinutesInput: string
   groupDialogOpen: boolean
+  groupDialogMode: 'create' | 'edit'
   groupName: string
   inviteCanReview: boolean
   inviteDialogOpen: boolean
@@ -70,6 +73,7 @@ export function WorkspaceDialogs({
   inviteAccess: string
   projectClientLabel: string
   projectDialogOpen: boolean
+  projectDialogMode: 'create' | 'edit'
   projectGroups: Array<Doc<'groups'>>
   projectName: string
   reviewEnabledInput: boolean
@@ -103,8 +107,12 @@ export function WorkspaceDialogs({
         <DialogContent className="track-dialog">
           <form onSubmit={onCreateProjectSubmit}>
             <DialogHeader>
-              <DialogTitle>Create project</DialogTitle>
-              <DialogDescription>Add a workspace for a client/vendor project.</DialogDescription>
+              <DialogTitle>{projectDialogMode === 'edit' ? 'Edit project' : 'Create project'}</DialogTitle>
+              <DialogDescription>
+                {projectDialogMode === 'edit'
+                  ? 'Update the workspace name and client label.'
+                  : 'Add a workspace for a client/vendor project.'}
+              </DialogDescription>
             </DialogHeader>
             <div className="track-dialog-fields">
               <label className="track-dialog-field">
@@ -129,10 +137,10 @@ export function WorkspaceDialogs({
               </Button>
               <Button
                 className="track-button track-button-primary"
-                disabled={!projectName.trim() || busyAction === 'create-project'}
+                disabled={!projectName.trim() || busyAction === 'create-project' || busyAction === 'edit-project'}
                 type="submit"
               >
-                Create
+                {projectDialogMode === 'edit' ? 'Save' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
@@ -143,8 +151,12 @@ export function WorkspaceDialogs({
         <DialogContent className="track-dialog">
           <form onSubmit={onCreateGroupSubmit}>
             <DialogHeader>
-              <DialogTitle>Create group</DialogTitle>
-              <DialogDescription>Add a conversation lane inside the active project.</DialogDescription>
+              <DialogTitle>{groupDialogMode === 'edit' ? 'Edit group' : 'Create group'}</DialogTitle>
+              <DialogDescription>
+                {groupDialogMode === 'edit'
+                  ? 'Rename this project conversation lane.'
+                  : 'Add a conversation lane inside the active project.'}
+              </DialogDescription>
             </DialogHeader>
             <div className="track-dialog-fields">
               <label className="track-dialog-field">
@@ -162,10 +174,10 @@ export function WorkspaceDialogs({
               </Button>
               <Button
                 className="track-button track-button-primary"
-                disabled={!groupName.trim() || busyAction === 'create-group'}
+                disabled={!groupName.trim() || busyAction === 'create-group' || busyAction === 'edit-group'}
                 type="submit"
               >
-                Create
+                {groupDialogMode === 'edit' ? 'Save' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
