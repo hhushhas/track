@@ -36,6 +36,7 @@ describe('workspace chat thread data', () => {
           createdAt: 42,
         },
         author: null,
+        attachments: [],
       },
       {
         message: {
@@ -46,16 +47,37 @@ describe('workspace chat thread data', () => {
         author: {
           displayName: 'Hasan',
         },
+        attachments: [
+          {
+            attachment: {
+              _id: 'attachment-1',
+              contentType: 'application/pdf',
+              filename: 'proposal.pdf',
+              kind: 'file',
+              size: 2048,
+            },
+          },
+        ],
       },
     ] as Parameters<typeof buildMessageCitations>[0])
 
     expect(citations.get('message-1')).toEqual({
       author: 'Unknown Member',
+      attachments: [],
       body: 'a'.repeat(90),
       createdAt: 42,
     })
     expect(citations.get('message-2')).toEqual({
       author: 'Hasan',
+      attachments: [
+        {
+          id: 'attachment-1',
+          contentType: 'application/pdf',
+          filename: 'proposal.pdf',
+          kind: 'file',
+          size: 2048,
+        },
+      ],
       body: 'short body',
       createdAt: 44,
     })

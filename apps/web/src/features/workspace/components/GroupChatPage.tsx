@@ -12,7 +12,7 @@ import type { createPendingAttachment } from '#/features/workspace/attachments/p
 import { getInitials } from '#/features/workspace/identity'
 import { formatThreadDayLabel, getThreadDayKey } from '#/features/workspace/lib/thread-date'
 import { AssistantAnswer, DraftRecordCard, MessageRow } from '#/features/workspace/thread-items'
-import type { GroupMessageItem } from '#/features/workspace/thread-items'
+import type { GroupMessageItem, MessageCitationPreview } from '#/features/workspace/thread-items'
 import { ThreadDaySeparator } from '#/features/workspace/components/ThreadDaySeparator'
 import { TypingIndicatorLine } from '#/features/workspace/typing-indicators'
 import {
@@ -66,7 +66,7 @@ type GroupChatPageProps = {
   mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
   mentionSections: Array<MentionSection>
   messageAuthorAvatarUrlById: Map<string, string>
-  messageCitations: Map<string, { author: string; body: string; createdAt: number }>
+  messageCitations: Map<string, MessageCitationPreview>
   messagesLoaded: boolean
   onClassifyDraft: (
     draftRecordId: Id<'draftRecords'>,

@@ -3,6 +3,7 @@ import {
   CornerUpLeft,
   CornerUpRight,
   ExternalLink,
+  MessageSquare,
   MoreHorizontal,
   Paperclip,
   Search,
@@ -74,6 +75,19 @@ export type GroupMessageItem = {
   attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
   replyTo: ReplyToMessagePreview | null
   forwardedFrom: ForwardedMessagePreview | null
+}
+
+export type MessageCitationPreview = {
+  author: string
+  body: string
+  createdAt: number
+  attachments: Array<{
+    id: string
+    filename: string
+    contentType: string
+    size: number
+    kind?: Doc<'attachments'>['kind']
+  }>
 }
 
 export function getForwardedSourceLabel(forwarded: Pick<ForwardedMessagePreview, 'sourceGroupName'>) {
@@ -565,16 +579,22 @@ export function AssistantAnswer({
   stream,
   threadItemKey,
 }: {
-  messageCitations: Map<string, { author: string; body: string; createdAt: number }>
+  messageCitations: Map<string, MessageCitationPreview>
   mentionGroups: Map<string, Doc<'groups'>>
   onOpenGroup: (groupId: Id<'groups'>) => void
   onOpenMessageCitation: (messageId: Id<'messages'> | string) => void
   searchQuery?: string
-  stream: { answer: string; createdAt: number; evidence: Array<{ quote: string }>; status: string }
+  stream: {
+    answer: string
+    createdAt: number
+    evidence: Array<{ attachmentId?: string; messageId?: string; quote: string; reason?: string }>
+    status: string
+  }
   threadItemKey: string
 }) {
   const isThinking = stream.status === 'running' && !stream.answer
   const answer = stream.answer || stream.status
+  const sources = buildAssistantSourcePreviews(stream.evidence, messageCitations)
   return (
     <article className="track-assistant-row" data-thread-item-key={threadItemKey}>
       <AvatarNameTooltip
@@ -621,8 +641,123 @@ export function AssistantAnswer({
             text={answer}
           />
         )}
+        {!isThinking && sources.length > 0 ? (
+          <AssistantSourceList
+            onOpen={onOpenMessageCitation}
+            sources={sources}
+          />
+        ) : null}
       </div>
     </article>
+  )
+}
+
+type AssistantSourcePreview = {
+  messageId: string
+  key: string
+  title: string
+  meta: string
+  attachment?: MessageCitationPreview['attachments'][number]
+}
+
+function buildAssistantSourcePreviews(
+  evidence: Array<{ attachmentId?: string; messageId?: string; quote: string; reason?: string }>,
+  messageCitations: Map<string, MessageCitationPreview>,
+) {
+  const sources: Array<AssistantSourcePreview> = []
+  const seen = new Set<string>()
+
+  for (const item of evidence) {
+    if (!item.messageId) continue
+
+    const message = messageCitations.get(item.messageId)
+    if (!message) continue
+
+    const attachment = item.attachmentId
+      ? message.attachments.find((candidate) => candidate.id === item.attachmentId)
+      : message.body
+        ? undefined
+        : message.attachments[0]
+    const key = `${item.messageId}:${attachment?.id ?? 'message'}`
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    if (attachment) {
+      sources.push({
+        attachment,
+        key,
+        messageId: item.messageId,
+        meta: formatSourceMeta(message.author, item.quote || attachment.contentType),
+        title: formatAttachmentSourceTitle(attachment, message.attachments.length),
+      })
+      continue
+    }
+
+    const preview = item.quote || message.body
+    sources.push({
+      key,
+      messageId: item.messageId,
+      meta: formatSourceMeta(
+        new Date(message.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+        preview,
+      ),
+      title: `Message from ${message.author}`,
+    })
+  }
+
+  return sources.slice(0, 6)
+}
+
+function formatAttachmentSourceTitle(
+  attachment: MessageCitationPreview['attachments'][number],
+  attachmentCount: number,
+) {
+  const suffix = attachmentCount > 1 ? ` + ${attachmentCount - 1}` : ''
+  return `${attachment.filename}${suffix}`
+}
+
+function formatSourceMeta(label: string, detail: string) {
+  const compactDetail = detail.replace(/\s+/g, ' ').trim()
+  return compactDetail ? `${label} · ${compactDetail}` : label
+}
+
+function AssistantSourceList({
+  onOpen,
+  sources,
+}: {
+  onOpen: (messageId: Id<'messages'> | string) => void
+  sources: Array<AssistantSourcePreview>
+}) {
+  return (
+    <div className="track-assistant-sources" aria-label="Assistant sources">
+      <span className="track-assistant-sources-label">Sources</span>
+      <div className="track-assistant-source-list">
+        {sources.map((source) => (
+          <button
+            className="track-assistant-source-card"
+            key={source.key}
+            onClick={() => onOpen(source.messageId)}
+            type="button"
+          >
+            <span className="track-assistant-source-icon">
+              {source.attachment ? (
+                <AttachmentTypeIcon
+                  contentType={source.attachment.contentType}
+                  filename={source.attachment.filename}
+                  size={15}
+                />
+              ) : (
+                <MessageSquare size={15} />
+              )}
+            </span>
+            <span className="track-assistant-source-main">
+              <strong>{source.title}</strong>
+              <small>{source.meta}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -642,7 +777,7 @@ function MessageCitation({
 }: {
   citationId: string
   index: number
-  message?: { author: string; body: string; createdAt: number }
+  message?: MessageCitationPreview
   onOpen: (messageId: Id<'messages'> | string) => void
 }) {
   if (!message) {
@@ -667,9 +802,15 @@ function MessageCitation({
           minute: '2-digit',
         })}
       </span>
-      <span className="track-citation-preview">{message.body || 'Attachment message'}</span>
+      <span className="track-citation-preview">{message.body || formatCitationAttachmentLabel(message.attachments)}</span>
     </button>
   )
+}
+
+function formatCitationAttachmentLabel(attachments: MessageCitationPreview['attachments']) {
+  if (attachments.length === 0) return 'Attachment message'
+  if (attachments.length === 1) return attachments[0]?.filename ?? 'Attachment message'
+  return `${attachments[0]?.filename ?? 'Attachment'} + ${attachments.length - 1}`
 }
 
 function MentionInline({

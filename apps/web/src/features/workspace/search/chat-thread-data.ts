@@ -1,5 +1,5 @@
 import type { Doc } from '../../../../../../convex/_generated/dataModel'
-import type { GroupMessageItem } from '#/features/workspace/thread-items'
+import type { GroupMessageItem, MessageCitationPreview } from '#/features/workspace/thread-items'
 
 export type WorkspaceThreadItem =
   | {
@@ -52,7 +52,7 @@ export function buildWorkspaceThreadItems({
   ].sort((a, b) => a.at - b.at)
 }
 
-export function buildMessageCitations(messages: Array<GroupMessageItem>) {
+export function buildMessageCitations(messages: Array<GroupMessageItem>): Map<string, MessageCitationPreview> {
   return new Map(
     messages.map((item) => [
       String(item.message._id),
@@ -60,6 +60,13 @@ export function buildMessageCitations(messages: Array<GroupMessageItem>) {
         author: item.author?.displayName ?? 'Unknown Member',
         body: item.message.body.slice(0, 90),
         createdAt: item.message.createdAt,
+        attachments: item.attachments.map(({ attachment }) => ({
+          id: String(attachment._id),
+          contentType: attachment.contentType,
+          filename: attachment.filename,
+          kind: attachment.kind,
+          size: attachment.size,
+        })),
       },
     ]),
   )
