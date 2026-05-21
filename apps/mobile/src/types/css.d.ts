@@ -1,2 +1,7 @@
 declare module '*.css'
 declare module '*.module.css'
+
+declare module '*.png' {
+  const value: number
+  export default value
+}

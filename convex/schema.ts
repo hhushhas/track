@@ -28,6 +28,22 @@ const groupNotificationMode = v.union(
   v.literal('none'),
 )
 
+const contentReportTargetType = v.union(
+  v.literal('message'),
+  v.literal('attachment'),
+  v.literal('voice_note'),
+  v.literal('assistant_answer'),
+)
+
+const contentReportReason = v.union(
+  v.literal('inaccurate'),
+  v.literal('unsafe'),
+  v.literal('spam'),
+  v.literal('harassment'),
+  v.literal('privacy'),
+  v.literal('other'),
+)
+
 const recordType = v.union(
   v.literal('task'),
   v.literal('scope_change'),
@@ -207,6 +223,30 @@ export default defineSchema({
       filterFields: ['projectId'],
     }),
 
+  groupReadStates: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    lastReadMessageId: v.optional(v.id('messages')),
+    lastReadAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_user_group', ['userId', 'groupId'])
+    .index('by_user_project', ['userId', 'projectId'])
+    .index('by_group', ['groupId']),
+
+  lastActiveContexts: defineTable({
+    userId: v.id('users'),
+    projectId: v.optional(v.id('projects')),
+    groupId: v.optional(v.id('groups')),
+    deviceId: v.optional(v.string()),
+    platform: v.optional(v.union(v.literal('web'), v.literal('ios'), v.literal('android'))),
+    updatedAt: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_user_device', ['userId', 'deviceId']),
+
   typingIndicators: defineTable({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
@@ -362,6 +402,39 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
+
+  contentReports: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.optional(v.id('groups')),
+    reporterId: v.id('users'),
+    targetType: contentReportTargetType,
+    targetMessageId: v.optional(v.id('messages')),
+    targetAttachmentId: v.optional(v.id('attachments')),
+    targetAssistantStreamId: v.optional(v.id('assistantStreams')),
+    reason: contentReportReason,
+    note: v.optional(v.string()),
+    status: v.union(
+      v.literal('open'),
+      v.literal('reviewed'),
+      v.literal('dismissed'),
+      v.literal('actioned'),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_project_status', ['projectId', 'status'])
+    .index('by_reporter_created_at', ['reporterId', 'createdAt']),
+
+  accountDeletionRequests: defineTable({
+    userId: v.id('users'),
+    authUserId: v.optional(v.string()),
+    status: v.union(v.literal('requested'), v.literal('completed')),
+    requestedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    retentionNote: v.optional(v.string()),
+  })
+    .index('by_user', ['userId'])
+    .index('by_status', ['status']),
 
   assistantStreams: defineTable({
     projectId: v.id('projects'),

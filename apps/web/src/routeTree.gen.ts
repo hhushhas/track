@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignInOptionBRouteImport } from './routes/sign-in-option-b'
 import { Route as SignInOptionARouteImport } from './routes/sign-in-option-a'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -36,6 +37,11 @@ const WorkspaceRoute = WorkspaceRouteImport.update({
 const TwoFactorRoute = TwoFactorRouteImport.update({
   id: '/two-factor',
   path: '/two-factor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInOptionBRoute = SignInOptionBRouteImport.update({
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-in-option-a': typeof SignInOptionARoute
   '/sign-in-option-b': typeof SignInOptionBRoute
+  '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-in-option-a': typeof SignInOptionARoute
   '/sign-in-option-b': typeof SignInOptionBRoute
+  '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/onboarding/profile': typeof OnboardingProfileRoute
@@ -171,6 +179,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-in-option-a': typeof SignInOptionARoute
   '/sign-in-option-b': typeof SignInOptionBRoute
+  '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/auth/callback': typeof AuthCallbackRoute
@@ -193,6 +202,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-in-option-a'
     | '/sign-in-option-b'
+    | '/terms'
     | '/two-factor'
     | '/workspace'
     | '/auth/callback'
@@ -213,6 +223,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-in-option-a'
     | '/sign-in-option-b'
+    | '/terms'
     | '/two-factor'
     | '/auth/callback'
     | '/onboarding/profile'
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-in-option-a'
     | '/sign-in-option-b'
+    | '/terms'
     | '/two-factor'
     | '/workspace'
     | '/auth/callback'
@@ -252,6 +264,7 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignInOptionARoute: typeof SignInOptionARoute
   SignInOptionBRoute: typeof SignInOptionBRoute
+  TermsRoute: typeof TermsRoute
   TwoFactorRoute: typeof TwoFactorRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -273,6 +286,13 @@ declare module '@tanstack/react-router' {
       path: '/two-factor'
       fullPath: '/two-factor'
       preLoaderRoute: typeof TwoFactorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in-option-b': {
@@ -435,6 +455,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignInOptionARoute: SignInOptionARoute,
   SignInOptionBRoute: SignInOptionBRoute,
+  TermsRoute: TermsRoute,
   TwoFactorRoute: TwoFactorRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
   AuthCallbackRoute: AuthCallbackRoute,

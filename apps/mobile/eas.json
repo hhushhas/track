@@ -8,19 +8,25 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai"
+        "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai",
+        "EXPO_PUBLIC_CONVEX_SITE_URL": "https://fleet-manatee-941.convex.site",
+        "EXPO_PUBLIC_CONVEX_URL": "https://fleet-manatee-941.convex.cloud"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai"
+        "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai",
+        "EXPO_PUBLIC_CONVEX_SITE_URL": "https://fleet-manatee-941.convex.site",
+        "EXPO_PUBLIC_CONVEX_URL": "https://fleet-manatee-941.convex.cloud"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai"
+        "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai",
+        "EXPO_PUBLIC_CONVEX_SITE_URL": "https://fleet-manatee-941.convex.site",
+        "EXPO_PUBLIC_CONVEX_URL": "https://fleet-manatee-941.convex.cloud"
       }
     }
   },

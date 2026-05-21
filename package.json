@@ -33,6 +33,7 @@
     ]
   },
   "dependencies": {
+    "@better-auth/expo": "^1.6.9",
     "@convex-dev/better-auth": "^0.12.0",
     "@convex-dev/rate-limiter": "^0.3.2",
     "@openrouter/ai-sdk-provider": "^2.8.1",

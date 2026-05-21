@@ -87,7 +87,7 @@ Shortcuts are in scope for the web app, but the exact package can be decided dur
 
 Use React Native with Expo.
 
-Mobile and web should have full product parity.
+`scratchpad/mobile-v1-implementation-spec-2026-05-16.md` is the controlling scope for the next mobile implementation. Mobile v1 is conversation-first: Projects, Groups, Conversation, attachments, voice notes, mentions, `@track`, unread counts, native push, lightweight tools, Google sign-in, and Sign in with Apple on iOS. Project Record, Draft Record review, AI Review run, exports, and audit remain web-first for that version.
 
 Mobile should share domain logic, validation, and app semantics with web through `packages/shared`.
 
@@ -95,7 +95,7 @@ Web shadcn/ui components will not directly carry over to React Native, so mobile
 
 Mobile UI component strategy:
 
-- Preserve feature parity with web.
+- Preserve domain semantics and Track design parity with web while following `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` for v1 feature scope.
 - Theme mobile to Track's own design system.
 - Use NativeWind for Tailwind-style mobile styling and shared token language.
 - Use React Native Reusables selectively as a shadcn-like starter, but own the copied components.
@@ -154,9 +154,13 @@ Use `streamdown` for rendering streamed Track Assistant responses in the Convers
 
 ### Auth
 
-Use Google OAuth 2.0 only.
+Use Google OAuth 2.0.
 
-No email/password login.
+Use Sign in with Apple for iOS because mobile offers Google sign-in and Apple App Store policy requires Apple sign-in for comparable third-party login.
+
+Link Google, Apple, and existing email/password accounts by verified email only when the collision is unambiguous. Apple private relay/no-email cases must not be auto-linked unless provider state proves the relationship safely.
+
+Mobile v1 does not add an email/password sign-in button. Existing email/password accounts can still be linked to Google/Apple by verified email through the auth provider behavior.
 
 2FA method:
 
@@ -165,6 +169,10 @@ No email/password login.
 - Optional trusted device can be supported.
 - No SMS/email OTP.
 - WebAuthn/passkeys can be considered as an additional factor later.
+
+Mobile v1 must implement the native 2FA challenge rather than handing 2FA users off to web.
+
+Apps that create accounts must expose account deletion in Account/Profile settings. Deletion must include reauth or 2FA step-up, social credential revocation/disconnection where required, push-token unregister, session cleanup, and clear retention copy for project-owned messages/evidence.
 
 Use Better Auth.
 
@@ -232,7 +240,7 @@ Responsibilities:
 - Inline Draft Record review UI.
 - Project Record views.
 - Member, Group, and AI settings.
-- Google OAuth login and 2FA flows.
+- Google OAuth, Sign in with Apple on iOS, and 2FA flows.
 - Streaming Track Assistant UI.
 - Attachment upload/download UI.
 - Project Record export UI.
@@ -304,7 +312,9 @@ This is conceptual, not final Convex schema code.
 
 ```text
 users
-  google identity
+  auth user id
+  linked providers: google | apple | credential
+  verified email
   profile
   avatarStorageId
   2FA state
@@ -536,7 +546,7 @@ Supported first-pass attachment types:
 - Documents.
 - Plain text files.
 
-Voice notes are preserved as evidence now. Transcription can come later.
+Voice notes are preserved as playable evidence now. Transcription is out of mobile v1 scope and can come later as a separate web/mobile capability.
 
 Attachment rules:
 
@@ -552,7 +562,7 @@ Attachment extraction scope:
 - Semantically index common documents if extraction is straightforward.
 - Preserve screenshots/images as evidence now; OCR can come later.
 - Preserve scanned PDFs as evidence now; OCR can come later.
-- Preserve voice notes as evidence now; transcription can come later.
+- Preserve voice notes as playable evidence now; transcription can come later only as a separately specified capability.
 
 ## Avatars
 
@@ -763,6 +773,10 @@ Mobile:
 - Expo development builds during development.
 - Apple App Store submission is in scope.
 - Google Play Store submission is in scope.
+- Use `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` as the controlling mobile release scope.
+- Use `react`, `better-auth`, and `convex` as implementation aids for mobile UI, auth/security, backend/realtime/storage, and release-critical contracts.
+- Use `mobile-app-provisioning` and `mobile-store-submission-readiness` as release preflight/review aids.
+- Official Apple and Google policy docs are the final authority for sign-in, account deletion, privacy, UGC, AI content, permissions, Data Safety/App Privacy, and target API requirements.
 
 Provisioned mobile/store identity:
 
@@ -866,9 +880,10 @@ Advanced AI
   no cross-Project reasoning
   no hidden access to restricted Groups
 
-Web/mobile parity
-  web and mobile should support the same product capabilities
-  interactions may differ by platform ergonomics
+Web/mobile relationship
+  web remains the complete review/export/admin surface
+  mobile v1 follows scratchpad/mobile-v1-implementation-spec-2026-05-16.md
+  shared semantics and design language matter more than pixel parity
 
 Native app release
   Expo development builds during development
@@ -883,4 +898,4 @@ Native app release
 - Make `@track` available to all Group members, including Clients, but strictly permission-bound.
 - Use current Group as the default assistant search scope.
 - Add explicit "search all accessible groups" UX behind a clear action.
-- Maintain web/mobile feature parity while adapting interaction details per platform.
+- Maintain shared Track semantics across web and mobile while following `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` for mobile v1 scope.

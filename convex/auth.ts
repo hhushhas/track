@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 import { createClient, type GenericCtx } from '@convex-dev/better-auth'
 import { convex, crossDomain } from '@convex-dev/better-auth/plugins'
+import { expo } from '@better-auth/expo'
 import { betterAuth } from 'better-auth/minimal'
 import { twoFactor } from 'better-auth/plugins'
 import type { GenericDatabaseReader, GenericDatabaseWriter } from 'convex/server'
@@ -11,6 +12,16 @@ import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
 
 const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+const trustedOrigins = [
+  siteUrl,
+  'https://track.q9labs.ai',
+  'http://localhost:3000',
+  'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:8083',
+  'track://',
+  'exp://',
+]
 const devAuthBypassUser = {
   googleSubject: 'demo:hasan-shoaib',
   email: 'shasanshoaib@gmail.com',
@@ -31,7 +42,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
     appName: 'Track',
     baseURL: siteUrl,
-    trustedOrigins: [siteUrl, 'http://localhost:3000', 'https://track.q9labs.ai'],
+    trustedOrigins,
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
@@ -39,14 +50,24 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
       maxPasswordLength: 256,
       requireEmailVerification: false,
     },
+    user: {
+      deleteUser: {
+        enabled: true,
+      },
+    },
     socialProviders: {
       google: {
         clientId: process.env.GOOGLE_CLIENT_ID_WEB ?? '',
         clientSecret: process.env.GOOGLE_CLIENT_SECRET_WEB ?? '',
       },
+      apple: {
+        clientId: process.env.APPLE_CLIENT_ID ?? '',
+        clientSecret: process.env.APPLE_CLIENT_SECRET ?? '',
+      },
     },
     plugins: [
       crossDomain({ siteUrl }),
+      expo(),
       convex({ authConfig }),
       twoFactor({
         issuer: 'Track',
@@ -538,5 +559,65 @@ export const resetStepUps = mutation({
 
     await Promise.all(stepUps.map((stepUp) => ctx.db.delete(stepUp._id)))
     return { removed: stepUps.length }
+  },
+})
+
+export const requestAccountDeletion = mutation({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const { authUser, trackUser } = await assertCanManageTrackUser(ctx, args.userId)
+    const now = Date.now()
+    const existing = await ctx.db
+      .query('accountDeletionRequests')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .first()
+    const retentionNote =
+      'Shared project messages, attachments, records, and audit events are retained where needed for other members and project integrity; personal profile fields and push subscriptions are removed.'
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        authUserId: authUser?._id ?? trackUser.authUserId,
+        status: 'requested',
+        requestedAt: now,
+        retentionNote,
+      })
+    } else {
+      await ctx.db.insert('accountDeletionRequests', {
+        userId: args.userId,
+        authUserId: authUser?._id ?? trackUser.authUserId,
+        status: 'requested',
+        requestedAt: now,
+        retentionNote,
+      })
+    }
+
+    const subscriptions = await ctx.db
+      .query('notificationSubscriptions')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .collect()
+    await Promise.all(
+      subscriptions.map((subscription) =>
+        ctx.db.patch(subscription._id, {
+          enabled: false,
+          updatedAt: now,
+        }),
+      ),
+    )
+
+    await ctx.db.patch(args.userId, {
+      displayName: 'Deleted Track user',
+      profileDesignation: undefined,
+      profileBio: undefined,
+      profileBannerStyle: undefined,
+      timezone: undefined,
+      avatarStorageId: undefined,
+      normalizedEmail: undefined,
+      email: `deleted+${args.userId}@track.local`,
+      updatedAt: now,
+    })
+
+    return { requestedAt: now }
   },
 })

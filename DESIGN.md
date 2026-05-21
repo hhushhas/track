@@ -145,7 +145,7 @@ The locked product direction is:
 - Project and Group context are always visible.
 - AI output appears as reviewable work artifacts, not as magic theater.
 - Records, evidence, permissions, and visibility need stronger visual clarity than decorative branding.
-- Web and mobile must have full feature parity, with platform-native ergonomics.
+- Web and mobile must share Track's product identity, information semantics, evidence cues, and permission clarity. Mobile v1 feature scope is controlled by `scratchpad/mobile-v1-implementation-spec-2026-05-16.md`.
 
 ## Colors
 
@@ -332,28 +332,41 @@ Track Assistant answers inline in the Group conversation after `@track`.
 - Error states: use red only for errors/blockers; include exact recovery action and preserve user input.
 - Permission-denied states must explain the boundary: Project membership, Group membership, or reviewer authority.
 
-## Mobile Parity
+## Mobile V1 Parity
 
-Mobile must support the same product capabilities as web:
+Mobile v1 must feel like the same Track product while using native mobile spatial patterns. `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` is the controlling implementation scope.
+
+Mobile v1 includes:
 
 - Project List and switching.
 - Group List and switching.
 - Group Conversation.
-- Messages, attachments, mentions, and presence.
+- Messages, attachments, voice notes, mentions, and presence.
 - `@track` streaming assistant.
-- AI Review status and manual run where authorized.
-- Draft Record review and classification.
-- Project Record viewing, filtering, detail, and export where platform permits.
+- Real unread counts.
+- Native push notifications.
 - Notification settings.
+- Native 2FA challenge when required.
+- Account/Profile with Privacy, Terms, Support, and Delete Account.
+- Report/flag actions for user messages, voice notes, attachments, and assistant answers.
 - Member and Group settings where authorized.
+
+Mobile v1 excludes:
+
+- AI Review run button.
+- Draft Record review and classification.
+- Project Record viewing, filtering, detail, and export.
+- Audit trail.
 
 Mobile design rules:
 
 - Preserve semantics; change interaction shape.
-- Use native navigation patterns: stack headers, back affordance, bottom composer, sheets for classification/detail.
-- Keep Draft Record review possible inline, but allow bottom-sheet detail for evidence-heavy review.
+- Use native navigation patterns: stack headers, back affordance, bottom composer, sheets for tools/detail.
+- Preserve conversation design parity: message anatomy, reply quotes, assistant rows, evidence chips, attachment treatment, and compact Track metadata.
 - Use 36-44px touch targets.
-- Avoid hiding core review or evidence functions behind desktop-only rails.
+- Avoid hiding evidence/source functions behind desktop-only rails.
+- Keep destructive/privacy/security actions findable without making Account feel like a desktop settings console.
+- Permission prompts must be action-triggered and plain: microphone for voice notes, push for mentions/messages, photos/documents only when attaching.
 - Web right rail maps to mobile sheets, tabs, or detail screens.
 
 ## Accessibility
@@ -410,7 +423,7 @@ Avoid synonyms that blur semantics:
 - Do make the UI feel like a normal project chat that remembers important facts.
 - Do keep Records close to the messages and evidence that created them.
 - Do make Group visibility and access boundaries visible in context.
-- Do preserve web/mobile parity even when the layout differs.
+- Do preserve shared web/mobile identity, message grammar, and evidence semantics even when feature scope or layout differs.
 - Do use warm neutral surfaces, hairline borders, compact controls, and mono metadata.
 - Do reserve Signal Yellow for brand signal, AI activity, suggestions, and the single highest attention item.
 - Do use tables and dense lists for operational review surfaces.

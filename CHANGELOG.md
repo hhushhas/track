@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-17
+
+- Replaced the mobile app icon, splash, in-app mark, Android adaptive icon layers, favicon, and sign-in Google icon with assets derived from the official web Track logo set.
+- Polished the mobile sign-in surface, icon buttons, row icons, conversation bubbles, account actions, and scrollable option sheets, including an exposed Sign out action.
+
+## 2026-05-16
+
+- Implemented the mobile v1 conversation scope with native Project/Group navigation, unread counts, conversation composer, attachments, voice notes, Track Assistant answers, reporting, notification preferences, account deletion, Apple sign-in configuration, and store-readiness notes.
+- Added mobile backend contracts for Project/Group lists, read state, native push token registration/delivery, content reports, last active context, and account deletion requests.
+- Added public Terms and in-app Privacy/Terms/Support access for mobile store review readiness.
+
 ## 2026-05-01
 
 - Decomposed the workspace page into focused chat, sidebar, header, rail, search, records, settings, and hook modules.

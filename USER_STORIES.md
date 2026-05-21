@@ -40,20 +40,20 @@ Product boundary:
 ```text
 Autonomous AI actions
 Cross-Project AI reasoning
-Web/mobile feature parity with platform-specific interaction design
+Shared web/mobile product semantics with `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` controlling mobile v1 feature scope
 ```
 
 ## 1. Sign In And Secure Account
 
-### US-001 Google Sign In
+### US-001 Google / Apple Sign In
 
 ```text
-User -> sign in with Google -> enters Track
+User -> sign in with Google or Apple -> enters Track
 
 [Landing/Login]
       |
       v
-[Google OAuth]
+[Google OAuth / Sign in with Apple]
       |
       v
 [2FA Check]
@@ -64,9 +64,40 @@ User -> sign in with Google -> enters Track
 
 Accept:
 
-- Google OAuth is the only login path.
+- Google OAuth is available.
+- Sign in with Apple is available on iOS because Apple policy requires it when comparable third-party login is offered.
 - User cannot access app without passing required 2FA.
+- Mobile users complete required 2FA natively with TOTP or backup/recovery code.
+- Google, Apple, and existing email/password accounts link by verified email only when unambiguous.
 - Profile is created or loaded after first sign-in.
+
+### US-001A Delete Account
+
+```text
+User -> delete account -> access and personal account data are removed
+
+[Account/Profile]
+      |
+      v
+[Delete Account]
+      |
+      v
+[Reauth / 2FA Step-Up]
+      |
+      v
+[Provider Revocation + Push Token Unregister]
+      |
+      v
+[Session Ended]
+```
+
+Accept:
+
+- Delete Account is reachable in the app.
+- User confirms with reauth or 2FA before deletion.
+- Apple/Google credentials are revoked or disconnected where required.
+- Push tokens are unregistered.
+- Retained project evidence follows privacy/retention copy.
 
 ### US-002 Profile Setup
 
@@ -330,6 +361,53 @@ Accept:
 - Images, PDFs, documents, and text files are supported first.
 - Attachment inherits Message/Group visibility.
 - Attachment can be used as evidence if content extraction is available.
+
+### US-012A Send Voice Note
+
+```text
+Member -> record voice note -> message sends with playable audio
+
+[Composer]
+      |
+      v
+[Record Voice Note]
+      |
+      v
+[Preview / Retry / Send]
+      |
+      v
+[Voice Note Attachment]
+```
+
+Accept:
+
+- Microphone permission is requested only when recording starts.
+- Draft text is preserved if upload fails.
+- Voice note duration and size limits are enforced.
+- Voice note inherits Message/Group visibility.
+
+### US-012B Report Conversation Content
+
+```text
+Member -> report unsafe content -> moderation record is created
+
+[Message / Voice Note / Assistant Answer]
+      |
+      v
+[Report]
+      |
+      v
+[Reason + Submit]
+      |
+      v
+[Moderation Queue / Audit]
+```
+
+Accept:
+
+- User can report messages, attachments, voice notes, and Track Assistant answers.
+- Report stores reporter, target IDs, reason, timestamp, and status.
+- Reporting does not grant access to content outside the reporter's Groups.
 
 ## 5. Track Assistant
 

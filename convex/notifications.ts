@@ -191,6 +191,54 @@ export const registerSubscription = mutation({
   },
 })
 
+export const registerNativeToken = mutation({
+  args: {
+    userId: v.id('users'),
+    platform: v.union(v.literal('ios'), v.literal('android')),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const token = args.token.trim()
+    if (!token) throw new Error('push_token_required')
+    const now = Date.now()
+    const subscriptions = await ctx.db
+      .query('notificationSubscriptions')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .collect()
+    const existing = subscriptions.find(
+      (subscription) =>
+        subscription.platform === args.platform && subscription.tokenOrEndpoint === token,
+    )
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        enabled: true,
+        updatedAt: now,
+      })
+      return existing._id
+    }
+
+    const subscriptionId = await ctx.db.insert('notificationSubscriptions', {
+      userId: args.userId,
+      platform: args.platform,
+      tokenOrEndpoint: token,
+      enabled: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await appendAuditEvent(ctx, {
+      actorId: args.userId,
+      entityType: 'notificationSubscription',
+      entityId: subscriptionId,
+      action: 'notification_subscription.registered',
+      after: { platform: args.platform },
+    })
+
+    return subscriptionId
+  },
+})
+
 export const collectMessageNotificationTargets = internalQuery({
   args: {
     messageId: v.id('messages'),
@@ -239,9 +287,10 @@ export const collectMessageNotificationTargets = internalQuery({
         if (!shouldNotify) return []
 
         return subscriptions
-          .filter((subscription) => subscription.enabled && subscription.platform === 'web')
+          .filter((subscription) => subscription.enabled)
           .map((subscription) => ({
             id: subscription._id,
+            platform: subscription.platform,
             tokenOrEndpoint: subscription.tokenOrEndpoint,
           }))
       }),
@@ -249,7 +298,9 @@ export const collectMessageNotificationTargets = internalQuery({
 
     return {
       body: message.body || message.notificationPreview || 'Sent an attachment.',
+      groupId: message.groupId,
       groupName: group.name,
+      projectId: message.projectId,
       projectName: project.name,
       senderName: author?.displayName ?? 'Track',
       targets: targets.flat(),
@@ -269,9 +320,10 @@ export const collectUserNotificationTargets = internalQuery({
       .collect()
 
     return subscriptions
-      .filter((subscription) => subscription.enabled && subscription.platform === 'web')
+      .filter((subscription) => subscription.enabled)
       .map((subscription) => ({
         id: subscription._id,
+        platform: subscription.platform,
         tokenOrEndpoint: subscription.tokenOrEndpoint,
       }))
   },
