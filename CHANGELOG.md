@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-23
+
+- Fixed mobile sign-out and delete-account crashes by removing automatic native notification permission checks from auth startup.
+- Added native auth-session restore handling so the mobile app does not redirect to sign-in while a persisted Better Auth session is still rehydrating.
+
 ## 2026-05-17
 
 - Replaced the mobile app icon, splash, in-app mark, Android adaptive icon layers, favicon, and sign-in Google icon with assets derived from the official web Track logo set.

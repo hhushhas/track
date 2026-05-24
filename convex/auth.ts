@@ -21,6 +21,7 @@ const trustedOrigins = [
   'http://localhost:8083',
   'track://',
   'exp://',
+  'https://appleid.apple.com',
 ]
 const devAuthBypassUser = {
   googleSubject: 'demo:hasan-shoaib',
@@ -63,6 +64,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) =>
       apple: {
         clientId: process.env.APPLE_CLIENT_ID ?? '',
         clientSecret: process.env.APPLE_CLIENT_SECRET ?? '',
+        appBundleIdentifier: process.env.APPLE_APP_BUNDLE_IDENTIFIER ?? process.env.APPLE_CLIENT_ID ?? '',
       },
     },
     plugins: [
@@ -115,14 +117,8 @@ function normalizeEmail(email: string) {
 
 function isProfileComplete(user: {
   displayName?: string | null
-  profileDesignation?: string | null
-  timezone?: string | null
 }) {
-  return Boolean(
-    user.displayName?.trim() &&
-      user.profileDesignation?.trim() &&
-      user.timezone?.trim(),
-  )
+  return Boolean(user.displayName?.trim())
 }
 
 function isDevAuthBypassEnabled() {

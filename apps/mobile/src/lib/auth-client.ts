@@ -5,11 +5,14 @@ import * as SecureStore from 'expo-secure-store';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 
-const scheme = Array.isArray(Constants.expoConfig?.scheme)
-  ? Constants.expoConfig?.scheme[0]
-  : Constants.expoConfig?.scheme;
+import { authStoragePrefix } from '@/lib/auth-storage';
 
-const authBaseURL = process.env.EXPO_PUBLIC_APP_URL ?? process.env.EXPO_PUBLIC_CONVEX_SITE_URL;
+const extraConfig = Constants.expoConfig?.extra as Record<string, string | undefined> | undefined;
+const authBaseURL =
+  process.env.EXPO_PUBLIC_APP_URL ??
+  process.env.EXPO_PUBLIC_CONVEX_SITE_URL ??
+  extraConfig?.EXPO_PUBLIC_APP_URL ??
+  extraConfig?.EXPO_PUBLIC_CONVEX_SITE_URL;
 
 let twoFactorRedirectHandler: ((methods: string[]) => void) | null = null;
 
@@ -21,8 +24,8 @@ export const authClient = createAuthClient({
   baseURL: authBaseURL,
   plugins: [
     expoClient({
-      scheme: scheme ?? 'track',
-      storagePrefix: scheme ?? 'track',
+      scheme: authStoragePrefix,
+      storagePrefix: authStoragePrefix,
       storage: SecureStore,
     }),
     convexClient(),

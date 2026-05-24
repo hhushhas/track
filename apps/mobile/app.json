@@ -10,6 +10,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "ai.q9labs.track",
+      "buildNumber": "14",
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -67,6 +68,9 @@
     },
     "extra": {
       "router": {},
+      "EXPO_PUBLIC_APP_URL": "https://track.q9labs.ai",
+      "EXPO_PUBLIC_CONVEX_SITE_URL": "https://fleet-manatee-941.convex.site",
+      "EXPO_PUBLIC_CONVEX_URL": "https://fleet-manatee-941.convex.cloud",
       "eas": {
         "projectId": "fa6a7ca9-7e23-437b-a641-ae3ced55270e"
       }

@@ -29,18 +29,59 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    sans: 'system-ui',
-    mono: 'ui-monospace',
+    sans: undefined,
+    mono: 'Menlo',
   },
-  default: {
-    sans: 'normal',
+  android: {
+    sans: 'sans-serif',
     mono: 'monospace',
   },
-  web: {
-    sans: 'Inter, ui-sans-serif, system-ui, sans-serif',
-    mono: 'JetBrains Mono, ui-monospace, monospace',
+  default: {
+    sans: 'sans-serif',
+    mono: 'monospace',
   },
 });
+
+export const Typography = {
+  body: {
+    fontFamily: Fonts?.sans,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '400' as const,
+  },
+  bodyBold: {
+    fontFamily: Fonts?.sans,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '600' as const,
+  },
+  title: {
+    fontFamily: Fonts?.sans,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '600' as const,
+  },
+  subtitle: {
+    fontFamily: Fonts?.sans,
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '600' as const,
+  },
+  metadata: {
+    fontFamily: Fonts?.mono,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
+    letterSpacing: 0.3,
+  },
+  metadataLabel: {
+    fontFamily: Fonts?.mono,
+    fontSize: 10.5,
+    lineHeight: 14,
+    fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
+    letterSpacing: 0.6,
+  },
+};
 
 export const Spacing = {
   half: 2,
@@ -51,6 +92,8 @@ export const Spacing = {
   five: 24,
   six: 32,
 } as const;
+
+export const TouchTarget = Platform.select({ ios: 44, android: 48 }) ?? 44;
 
 export const BottomTabInset = Platform.select({ ios: 50, android: 72 }) ?? 0;
 export const MaxContentWidth = 800;

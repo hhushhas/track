@@ -1,0 +1,267 @@
+import { createContext, useContext, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useMutation, useQuery } from 'convex/react';
+
+import { api } from '../../../../convex/_generated/api';
+import type { Id } from '../../../../convex/_generated/dataModel';
+import { authClient, setTwoFactorRedirectHandler } from '@/lib/auth-client';
+import { clearStoredAuthSession } from '@/lib/auth-storage';
+import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
+import { OptionsSheet, SheetInput, SheetSection } from '@/components/options-sheet';
+import { ThemedText } from '@/components/themed-text';
+import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+
+type TrackUserContextValue = {
+  trackUserId: Id<'users'> | null;
+  isAuthReady: boolean;
+  signOut: () => Promise<void>;
+  openProfileSheet: () => void;
+  devAuthBypass: ReturnType<typeof useDevAuthBypass>;
+};
+
+const TrackUserContext = createContext<TrackUserContextValue | null>(null);
+
+export function useTrackUser() {
+  const ctx = useContext(TrackUserContext);
+  if (!ctx) throw new Error('useTrackUser must be used inside TrackUserProvider');
+  return ctx;
+}
+
+export function TrackUserProvider({ children }: { children: React.ReactNode }) {
+  const theme = useTheme();
+  const router = useRouter();
+  const devAuthBypass = useDevAuthBypass();
+  const session = authClient.useSession();
+
+  const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
+  const syncDevUser = useMutation(api.auth.syncDevUser);
+  const acceptInvites = useMutation(api.invitations.acceptPendingForCurrentUser);
+  const updateProfile = useMutation(api.auth.updateProfile);
+  const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [sheet, setSheet] = useState<'profile' | 'two-factor' | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [profileDraft, setProfileDraft] = useState({
+    displayName: '',
+    profileDesignation: '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  });
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorMethod, setTwoFactorMethod] = useState<'totp' | 'backup_code'>('totp');
+
+  const trackUser = useQuery(api.auth.getCurrentUser);
+  const profileStatus = useQuery(
+    api.auth.getProfileStatus,
+    trackUserId ? { userId: trackUserId } : 'skip',
+  );
+
+  const hasAccess = Boolean(session.data || devAuthBypass.enabled);
+
+  // Sync user on session arrival
+  useEffect(() => {
+    if (!hasAccess || trackUserId) return;
+    if (session.isPending && !devAuthBypass.enabled) return;
+    const syncUser = devAuthBypass.enabled && !session.data ? syncDevUser : ensureCurrentUser;
+    void syncUser()
+      .then(async (userId) => {
+        if (!userId) return;
+        setTrackUserId(userId);
+        setIsAuthReady(true);
+        await acceptInvites({ userId });
+      })
+      .catch(() => undefined);
+  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncDevUser, trackUserId]);
+
+  // Keep trackUserId in sync with the convex getCurrentUser query
+  useEffect(() => {
+    if (trackUser?._id && trackUser._id !== trackUserId) {
+      setTrackUserId(trackUser._id);
+      setIsAuthReady(true);
+    }
+  }, [trackUser?._id, trackUserId]);
+
+  // Show profile sheet if profile is incomplete
+  useEffect(() => {
+    if (!profileStatus?.user) return;
+    setProfileDraft({
+      displayName: profileStatus.user.displayName ?? '',
+      profileDesignation: profileStatus.user.profileDesignation ?? '',
+      timezone: profileStatus.user.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+    });
+    if (!profileStatus.complete) setSheet('profile');
+  }, [profileStatus?.complete, profileStatus?.user]);
+
+  // 2FA redirect
+  useEffect(() => {
+    setTwoFactorRedirectHandler(() => setSheet('two-factor'));
+    return () => setTwoFactorRedirectHandler(null);
+  }, []);
+
+  // Redirect to sign-in when session is lost
+  useEffect(() => {
+    if (session.isPending) return;
+    if (!hasAccess && isAuthReady) {
+      setTrackUserId(null);
+      setIsAuthReady(false);
+      router.replace('/sign-in');
+    }
+  }, [hasAccess, isAuthReady, router, session.isPending]);
+
+  async function withBusy(key: string, fn: () => Promise<unknown>) {
+    setBusyAction(key);
+    try { await fn(); } catch { /* swallow */ } finally { setBusyAction(null); }
+  }
+
+  async function signOut() {
+    setBusyAction('sign-out');
+    try {
+      await authClient.signOut();
+    } catch {
+      const sessionAtom = authClient.$store.atoms.session;
+      const currentSession = sessionAtom?.get?.();
+      if (sessionAtom && currentSession) {
+        sessionAtom.set({
+          ...currentSession,
+          data: null,
+          error: null,
+          isPending: false,
+          isRefetching: false,
+        });
+      }
+    } finally {
+      clearStoredAuthSession();
+      setSheet(null);
+      setTrackUserId(null);
+      setIsAuthReady(false);
+      setBusyAction(null);
+      router.replace('/sign-in');
+    }
+  }
+
+  async function submitProfile() {
+    if (!trackUserId) return;
+    await withBusy('profile', async () => {
+      await updateProfile({
+        userId: trackUserId,
+        displayName: profileDraft.displayName,
+        profileDesignation: profileDraft.profileDesignation,
+        timezone: profileDraft.timezone,
+        profileBannerStyle: 'silk',
+      });
+      setSheet(null);
+    });
+  }
+
+  async function submitTwoFactor() {
+    await withBusy('two-factor', async () => {
+      if (twoFactorMethod === 'backup_code') {
+        await authClient.twoFactor.verifyBackupCode({ code: twoFactorCode, disableSession: false });
+      } else {
+        await authClient.twoFactor.verifyTotp({ code: twoFactorCode });
+      }
+      setTwoFactorCode('');
+      setSheet(null);
+    });
+  }
+
+  const value: TrackUserContextValue = {
+    trackUserId,
+    isAuthReady,
+    signOut,
+    openProfileSheet: () => setSheet('profile'),
+    devAuthBypass,
+  };
+
+  return (
+    <TrackUserContext.Provider value={value}>
+      {children}
+
+      <OptionsSheet
+        onClose={() => profileStatus?.complete ? setSheet(null) : undefined}
+        title="Profile"
+        visible={sheet === 'profile'}>
+        <SheetSection>
+          <View style={styles.profileInputs}>
+            <SheetInput
+              label="Name"
+              onChangeText={(displayName) => setProfileDraft((d) => ({ ...d, displayName }))}
+              value={profileDraft.displayName}
+            />
+            <SheetInput
+              label="Designation"
+              onChangeText={(profileDesignation) => setProfileDraft((d) => ({ ...d, profileDesignation }))}
+              value={profileDraft.profileDesignation}
+            />
+            <SheetInput
+              label="Timezone"
+              onChangeText={(timezone) => setProfileDraft((d) => ({ ...d, timezone }))}
+              value={profileDraft.timezone}
+            />
+          </View>
+        </SheetSection>
+        <Pressable
+          disabled={busyAction === 'profile'}
+          onPress={() => void submitProfile()}
+          style={[styles.primaryButton, { backgroundColor: busyAction === 'profile' ? theme.hairline : theme.text }]}>
+          <ThemedText style={{ color: theme.background }} type="smallBold">
+            {busyAction === 'profile' ? 'Saving…' : 'Save Profile'}
+          </ThemedText>
+        </Pressable>
+      </OptionsSheet>
+
+      <OptionsSheet onClose={() => setSheet(null)} title="Two-Factor Auth" visible={sheet === 'two-factor'}>
+        <SheetSection>
+          <View style={styles.segmented}>
+            {(['totp', 'backup_code'] as const).map((method) => (
+              <Pressable
+                key={method}
+                onPress={() => setTwoFactorMethod(method)}
+                style={[
+                  styles.segment,
+                  { backgroundColor: twoFactorMethod === method ? theme.backgroundSelected : theme.backgroundElement },
+                ]}>
+                <ThemedText type="code">{method === 'totp' ? 'Authenticator' : 'Backup Code'}</ThemedText>
+              </Pressable>
+            ))}
+          </View>
+          <SheetInput label="Code" onChangeText={setTwoFactorCode} value={twoFactorCode} />
+        </SheetSection>
+        <Pressable
+          disabled={busyAction === 'two-factor'}
+          onPress={() => void submitTwoFactor()}
+          style={[styles.primaryButton, { backgroundColor: busyAction === 'two-factor' ? theme.hairline : theme.text }]}>
+          <ThemedText style={{ color: theme.background }} type="smallBold">
+            {busyAction === 'two-factor' ? 'Verifying…' : 'Verify'}
+          </ThemedText>
+        </Pressable>
+      </OptionsSheet>
+    </TrackUserContext.Provider>
+  );
+}
+
+const styles = StyleSheet.create({
+  primaryButton: {
+    alignItems: 'center',
+    borderRadius: 10,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: Spacing.four,
+  },
+  profileInputs: {
+    gap: Spacing.three,
+    padding: Spacing.three,
+  },
+  segment: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flex: 1,
+    paddingVertical: Spacing.two,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    padding: Spacing.three,
+  },
+});
