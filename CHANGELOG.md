@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-04
+
+- Added local Track Assistant text extraction for `.docx` and plain text attachments so common documents can be read even when the model file reader rejects uploaded files.
+
 ## 2026-05-23
 
 - Fixed mobile sign-out and delete-account crashes by removing automatic native notification permission checks from auth startup.

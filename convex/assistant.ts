@@ -5,6 +5,7 @@ import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { appendAuditEvent } from './lib/audit'
 import { generateTrackDocumentNotes, generateTrackText } from './lib/ai'
+import { extractAttachmentText, formatExtractedAttachmentNote } from './lib/attachmentTextExtraction'
 import {
   attachmentNameMatchesQuestion,
   attachmentReaderQuestion,
@@ -149,6 +150,27 @@ async function buildAttachmentContext(input: {
         messageId: attachment.messageId,
         quote: note,
         reason: 'Attachment reader could not access the file.',
+        ref: String(attachment.messageId),
+      })
+      continue
+    }
+    const extracted = extractAttachmentText({
+      contentType: attachment.contentType || 'application/octet-stream',
+      data: loaded.data,
+      filename: attachment.filename,
+    })
+    if (extracted.ok) {
+      const note = formatExtractedAttachmentNote({
+        filename: attachment.filename,
+        question: readerQuestion,
+        text: extracted.text,
+      })
+      notes.push(note)
+      evidence.push({
+        attachmentId: attachment.attachmentId,
+        messageId: attachment.messageId,
+        quote: compactText(note, 220),
+        reason: `Locally extracted ${extracted.type} text for ${attachment.filename}.`,
         ref: String(attachment.messageId),
       })
       continue
