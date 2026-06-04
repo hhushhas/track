@@ -5,7 +5,11 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 VITE_CONVEX_URL = "https://fleet-manatee-941.convex.cloud"
+VITE_CONVEX_URL_PROD = "https://fleet-manatee-941.convex.cloud"
 VITE_CONVEX_SITE_URL = "https://fleet-manatee-941.convex.site"
+CONVEX_DEPLOYMENT = "prod:fleet-manatee-941"
+CONVEX_URL = "https://fleet-manatee-941.convex.cloud"
+CONVEX_SITE_URL = "https://fleet-manatee-941.convex.site"
 SITE_URL = "https://track.q9labs.ai"
 BETTER_AUTH_URL = "https://track.q9labs.ai"
 

@@ -142,10 +142,24 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     if (mode === 'google-proof') {
       window.localStorage.setItem(pendingSetPasswordEmailKey, normalizeEmail(email))
     }
-    await authClient.signIn.social({
-      provider: 'google',
-      callbackURL: mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
-    })
+    setBusy(true)
+    try {
+      const result = await authClient.signIn.social({
+        provider: 'google',
+        callbackURL: mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
+      })
+      if (result.error) {
+        setMessage(getPasswordMessage(result.error))
+        return
+      }
+      if (result.data?.url) {
+        window.location.href = result.data.url
+      }
+    } catch (error) {
+      setMessage(getPasswordMessage(error))
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleEmailSubmit(event: FormEvent<HTMLFormElement>) {

@@ -2,6 +2,7 @@
 
 ## 2026-06-04
 
+- Fixed production Google sign-in by ensuring the Cloudflare Worker and browser client have the Convex production URLs and by explicitly following the OAuth redirect returned by Better Auth.
 - Added local Track Assistant text extraction for `.docx` and plain text attachments so common documents can be read even when the model file reader rejects uploaded files.
 
 ## 2026-05-23
