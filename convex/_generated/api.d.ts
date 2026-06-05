@@ -20,6 +20,7 @@ import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
 import type * as lib_ai from "../lib/ai.js";
 import type * as lib_assistantAttachments from "../lib/assistantAttachments.js";
+import type * as lib_attachmentTextExtraction from "../lib/attachmentTextExtraction.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
@@ -53,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   invitations: typeof invitations;
   "lib/ai": typeof lib_ai;
   "lib/assistantAttachments": typeof lib_assistantAttachments;
+  "lib/attachmentTextExtraction": typeof lib_attachmentTextExtraction;
   "lib/audit": typeof lib_audit;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;

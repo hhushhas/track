@@ -12,11 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as SupportRouteImport } from './routes/support'
 import { Route as SignInOptionBRouteImport } from './routes/sign-in-option-b'
 import { Route as SignInOptionARouteImport } from './routes/sign-in-option-a'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as DeletionRouteImport } from './routes/deletion'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
@@ -44,6 +46,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SupportRoute = SupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignInOptionBRoute = SignInOptionBRouteImport.update({
   id: '/sign-in-option-b',
   path: '/sign-in-option-b',
@@ -67,6 +74,11 @@ const ProfileRoute = ProfileRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeletionRoute = DeletionRouteImport.update({
+  id: '/deletion',
+  path: '/deletion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -133,11 +145,13 @@ const WorkspaceProjectsProjectIdGroupsGroupIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/deletion': typeof DeletionRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
   '/sign-in-option-a': typeof SignInOptionARoute
   '/sign-in-option-b': typeof SignInOptionBRoute
+  '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
@@ -154,11 +168,13 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/deletion': typeof DeletionRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
   '/sign-in-option-a': typeof SignInOptionARoute
   '/sign-in-option-b': typeof SignInOptionBRoute
+  '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -174,11 +190,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/deletion': typeof DeletionRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
   '/sign-in-option-a': typeof SignInOptionARoute
   '/sign-in-option-b': typeof SignInOptionBRoute
+  '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
   '/workspace': typeof WorkspaceRouteWithChildren
@@ -197,11 +215,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/deletion'
     | '/privacy'
     | '/profile'
     | '/sign-in'
     | '/sign-in-option-a'
     | '/sign-in-option-b'
+    | '/support'
     | '/terms'
     | '/two-factor'
     | '/workspace'
@@ -218,11 +238,13 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/deletion'
     | '/privacy'
     | '/profile'
     | '/sign-in'
     | '/sign-in-option-a'
     | '/sign-in-option-b'
+    | '/support'
     | '/terms'
     | '/two-factor'
     | '/auth/callback'
@@ -237,11 +259,13 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/deletion'
     | '/privacy'
     | '/profile'
     | '/sign-in'
     | '/sign-in-option-a'
     | '/sign-in-option-b'
+    | '/support'
     | '/terms'
     | '/two-factor'
     | '/workspace'
@@ -259,11 +283,13 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  DeletionRoute: typeof DeletionRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   SignInRoute: typeof SignInRoute
   SignInOptionARoute: typeof SignInOptionARoute
   SignInOptionBRoute: typeof SignInOptionBRoute
+  SupportRoute: typeof SupportRoute
   TermsRoute: typeof TermsRoute
   TwoFactorRoute: typeof TwoFactorRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
@@ -293,6 +319,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support': {
+      id: '/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof SupportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in-option-b': {
@@ -328,6 +361,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deletion': {
+      id: '/deletion'
+      path: '/deletion'
+      fullPath: '/deletion'
+      preLoaderRoute: typeof DeletionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -450,11 +490,13 @@ const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  DeletionRoute: DeletionRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   SignInRoute: SignInRoute,
   SignInOptionARoute: SignInOptionARoute,
   SignInOptionBRoute: SignInOptionBRoute,
+  SupportRoute: SupportRoute,
   TermsRoute: TermsRoute,
   TwoFactorRoute: TwoFactorRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
