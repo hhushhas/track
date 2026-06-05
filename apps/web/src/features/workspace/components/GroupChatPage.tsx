@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import type { ComponentProps } from 'react'
 import type { ClipboardEvent, RefObject } from 'react'
-import { AtSign, Bot, ChevronDown, CornerUpLeft, MessagesSquare, Paperclip, Smile, X } from 'lucide-react'
+import { AtSign, Bot, ChevronDown, CornerUpLeft, Import, MessagesSquare, Paperclip, Smile, X } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
@@ -88,6 +88,7 @@ type GroupChatPageProps = {
   onInsertComposerText: (text: string) => void
   onMentionIndexChange: (updater: (index: number) => number) => void
   onMentionSelect: (option: MentionOption) => void
+  onOpenMemoryImport: () => void
   onOpenGroup: (groupId: Id<'groups'>) => void
   onOpenMessageCitation: (messageId: Id<'messages'> | string) => void
   onOpenMessageSource: (groupId: Id<'groups'>, messageId: Id<'messages'>) => void
@@ -148,6 +149,7 @@ export function GroupChatPage({
   onInsertComposerText,
   onMentionIndexChange,
   onMentionSelect,
+  onOpenMemoryImport,
   onOpenGroup,
   onOpenMessageCitation,
   onOpenMessageSource,
@@ -480,6 +482,17 @@ export function GroupChatPage({
             </div>
           ) : null}
           <div className="track-composer-bar">
+            {!voiceRecordingActive ? (
+              <Button
+                className="icon-button"
+                disabled={!activeGroupId || busyAction === 'memory-import'}
+                onClick={onOpenMemoryImport}
+                title="Import project memory"
+                type="button"
+              >
+                <Import size={15} />
+              </Button>
+            ) : null}
             {!voiceRecordingActive ? (
               <Button
                 className="icon-button"

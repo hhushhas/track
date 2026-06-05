@@ -60,6 +60,13 @@ type AssistantRecordContext = {
   status: string
 }
 type AssistantDraftContext = { id: string; title: string; description: string; type: string }
+type AssistantMemoryContext = {
+  boxId: string | null
+  content: string
+  lastContextUpdatedAt?: number
+  loaded: boolean
+  reason?: string
+}
 
 type CollectedAssistantContext = {
   attachments: Array<AssistantAttachmentCandidate>
@@ -269,6 +276,7 @@ function buildAnswerPromptInput(prompt: string, imageParts: Array<{ attachment: 
 function answerPrompt(input: {
   attachmentNotes: Array<string>
   question: string
+  memory: AssistantMemoryContext
   messages: Array<AssistantMessageContext>
   records: Array<AssistantRecordContext>
   drafts: Array<AssistantDraftContext>
@@ -291,6 +299,9 @@ function answerPrompt(input: {
     'Keep most answers to one short paragraph of 1-3 sentences unless the user asks for detail.',
     '',
     `Question: ${cleanQuestion(input.question)}`,
+    '',
+    'Project Memory:',
+    formatProjectMemoryPromptSection(input.memory),
     '',
     'Current Group messages:',
     input.messages.length
@@ -320,6 +331,21 @@ function answerPrompt(input: {
           .map((draft) => `[${draft.id}] ${draft.title} (${draft.type}): ${draft.description}`)
           .join('\n')
       : 'No unresolved drafts available.',
+  ].join('\n')
+}
+
+function formatProjectMemoryPromptSection(memory: AssistantMemoryContext) {
+  const status = memory.loaded
+    ? `loaded fully (${memory.content.length} characters)`
+    : `omitted (${memory.reason ?? 'not available'})`
+  return [
+    `boxId: ${memory.boxId ?? 'none'}`,
+    `contextLength: ${memory.content.length}`,
+    `lastContextUpdatedAt: ${memory.lastContextUpdatedAt ? new Date(memory.lastContextUpdatedAt).toISOString() : 'unknown'}`,
+    `loadStatus: ${status}`,
+    memory.loaded
+      ? `context.md:\n${memory.content}`
+      : 'context.md was not available for this run. Do not claim project memory was loaded.',
   ].join('\n')
 }
 
@@ -377,6 +403,11 @@ export const ask = action({
         messages: context.messages,
         question: args.question,
       })
+      const memoryContext: AssistantMemoryContext = await ctx.runAction((api as any).memoryActions.loadContextForAssistant, {
+        actorId: args.requesterId,
+        groupId: args.groupId,
+        projectId: args.projectId,
+      })
       const directAnswer: string | null = context.attachments.length === 0 ? lowSignalAnswer(args.question) : null
       if (directAnswer) {
         await ctx.runMutation(internal.assistant.completeStream, {
@@ -394,6 +425,7 @@ export const ask = action({
           answerPrompt({
             attachmentNotes: attachmentContext.notes,
             question: args.question,
+            memory: memoryContext,
             messages: context.messages,
             records: context.records,
             drafts: context.drafts,
@@ -430,7 +462,7 @@ export const ask = action({
         evidence: fallbackEvidence,
         model: result.model,
         durationMs: Date.now() - startedAt,
-        retrievalScope: `current_group_plus_accessible_project_records_and_query_conditioned_attachments${readerModelLabel}`,
+        retrievalScope: `project_memory_${memoryContext.loaded ? 'loaded' : 'omitted'}_plus_current_group_accessible_records_and_query_conditioned_attachments${readerModelLabel}`,
       })
       return { streamId, answer: result.text }
     } catch (error) {

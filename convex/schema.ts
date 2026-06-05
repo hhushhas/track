@@ -78,6 +78,22 @@ const jobStatus = v.union(
   v.literal('failed'),
 )
 
+const memoryBoxStatus = v.union(
+  v.literal('creating'),
+  v.literal('ready'),
+  v.literal('paused'),
+  v.literal('error'),
+  v.literal('deleted'),
+)
+
+const memoryImportSourceKind = v.union(
+  v.literal('paste'),
+  v.literal('file'),
+  v.literal('link'),
+  v.literal('chat_export'),
+  v.literal('track_attachment'),
+)
+
 const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
 
 const evidenceItem = v.object({
@@ -317,6 +333,52 @@ export default defineSchema({
     .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_group_created_at', ['groupId', 'createdAt'])
     .index('by_entity', ['entityType', 'entityId']),
+
+  projectMemoryBoxes: defineTable({
+    projectId: v.id('projects'),
+    boxId: v.string(),
+    runtime: v.string(),
+    status: memoryBoxStatus,
+    schemaVersion: v.number(),
+    createdBy: v.id('users'),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    lastContextUpdatedAt: v.optional(v.number()),
+    contextLength: v.optional(v.number()),
+    error: v.optional(v.string()),
+  })
+    .index('by_project', ['projectId'])
+    .index('by_box', ['boxId'])
+    .index('by_status_updated_at', ['status', 'updatedAt']),
+
+  memoryImports: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    actorId: v.id('users'),
+    status: jobStatus,
+    sourceKind: memoryImportSourceKind,
+    sourceStorageIds: v.array(v.id('_storage')),
+    sourceUrls: v.array(v.string()),
+    boxScratchPath: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index('by_project_created_at', ['projectId', 'createdAt'])
+    .index('by_group_created_at', ['groupId', 'createdAt'])
+    .index('by_status_updated_at', ['status', 'updatedAt']),
+
+  memoryPathLocks: defineTable({
+    projectId: v.id('projects'),
+    path: v.string(),
+    holderId: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_project_path', ['projectId', 'path']),
 
   aiReviews: defineTable({
     projectId: v.id('projects'),

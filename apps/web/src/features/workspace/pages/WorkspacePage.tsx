@@ -1,10 +1,22 @@
 import { Navigate, useNavigate, useRouter } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
+import { useAction, useMutation, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import { Button } from '#/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
+import { Input } from '#/components/ui/input'
+import { Label } from '#/components/ui/label'
+import { Textarea } from '#/components/ui/textarea'
 import { getActiveMention } from '#/features/workspace/identity'
 import {
   buildComposerPlaceholder,
@@ -107,6 +119,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const syncDevUser = useMutation(api.auth.syncDevUser)
   const ensureStarterProject = useMutation(api.projects.ensureStarter)
   const acceptPendingInvitations = useMutation(api.invitations.acceptPendingForCurrentUser)
+  const generateGroupUploadUrl = useMutation(api.messages.generateUploadUrl)
+  const startMemoryImport = useAction((api as any).memoryActions.startImport)
 
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(() => {
     const sessionUser = getSessionUser(authClient.getSessionData?.())
@@ -142,6 +156,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const [flashingMessageId, setFlashingMessageId] = useState<string | null>(null)
   const [pendingFocusMessageId, setPendingFocusMessageId] = useState<string | null>(null)
   const [voiceRecordingActive, setVoiceRecordingActive] = useState(false)
+  const [memoryImportOpen, setMemoryImportOpen] = useState(false)
+  const [memoryImportText, setMemoryImportText] = useState('')
+  const [memoryImportLinks, setMemoryImportLinks] = useState('')
+  const [memoryImportFiles, setMemoryImportFiles] = useState<Array<File>>([])
+  const [memoryImportStatus, setMemoryImportStatus] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const threadScrollRef = useRef<HTMLDivElement | null>(null)
@@ -814,6 +833,66 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     setUiError(error instanceof Error ? error.message : 'Something went wrong')
   }
 
+  async function handleMemoryImportSubmit() {
+    if (!activeProjectId || !activeGroupId || !trackUserId) return
+    const pastedText = memoryImportText.trim()
+    const sourceUrls = memoryImportLinks
+      .split('\n')
+      .map((link) => link.trim())
+      .filter(Boolean)
+    if (!pastedText && sourceUrls.length === 0 && memoryImportFiles.length === 0) {
+      setMemoryImportStatus('Add text, links, or files before starting an import.')
+      return
+    }
+
+    setBusyAction('memory-import')
+    setMemoryImportStatus('queued')
+    setUiError(null)
+    try {
+      const sourceFiles: Array<{
+        storageId: Id<'_storage'>
+        filename: string
+        contentType: string
+        size: number
+      }> = []
+      for (const file of memoryImportFiles) {
+        const uploadUrl = await generateGroupUploadUrl({ groupId: activeGroupId, userId: trackUserId })
+        const response = await fetch(uploadUrl, {
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          method: 'POST',
+        })
+        if (!response.ok) throw new Error(`upload_failed:${file.name}`)
+        const { storageId } = await response.json() as { storageId: Id<'_storage'> }
+        sourceFiles.push({
+          contentType: file.type || 'application/octet-stream',
+          filename: file.name,
+          size: file.size,
+          storageId,
+        })
+      }
+      setMemoryImportStatus('updating memory')
+      const result = await startMemoryImport({
+        actorId: trackUserId,
+        groupId: activeGroupId,
+        pastedText: pastedText || undefined,
+        projectId: activeProjectId,
+        sourceFiles,
+        sourceStorageIds: sourceFiles.map((file) => file.storageId),
+        sourceUrls,
+      }) as { summary?: string }
+      setMemoryImportStatus(result.summary ? `completed: ${result.summary}` : 'completed')
+      setMemoryImportText('')
+      setMemoryImportLinks('')
+      setMemoryImportFiles([])
+    } catch (error) {
+      setMemoryImportStatus(error instanceof Error ? `failed: ${error.message}` : 'failed')
+      setActionError(error)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   function handleMessageSent() {
     setComposer('')
     setComposerCursor(0)
@@ -1110,6 +1189,64 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             query={chatSearchQuery}
           />
         ) : null}
+        <Dialog open={memoryImportOpen} onOpenChange={setMemoryImportOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Import Project Memory</DialogTitle>
+              <DialogDescription>
+                Add context for {activeGroup?.name ?? 'this group'}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="memory-import-text">Text</Label>
+                <Textarea
+                  id="memory-import-text"
+                  onChange={(event) => setMemoryImportText(event.currentTarget.value)}
+                  placeholder="Paste chat exports, notes, decisions, constraints, or background."
+                  value={memoryImportText}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="memory-import-links">Links</Label>
+                <Textarea
+                  id="memory-import-links"
+                  onChange={(event) => setMemoryImportLinks(event.currentTarget.value)}
+                  placeholder="One link per line"
+                  value={memoryImportLinks}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="memory-import-files">Files</Label>
+                <Input
+                  id="memory-import-files"
+                  multiple
+                  onChange={(event) => setMemoryImportFiles(Array.from(event.currentTarget.files ?? []))}
+                  type="file"
+                />
+                {memoryImportFiles.length ? (
+                  <p className="text-xs text-muted-foreground">
+                    {memoryImportFiles.map((file) => file.name).join(', ')}
+                  </p>
+                ) : null}
+              </div>
+              {memoryImportStatus ? (
+                <p className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+                  {memoryImportStatus}
+                </p>
+              ) : null}
+            </div>
+            <DialogFooter>
+              <Button
+                disabled={busyAction === 'memory-import'}
+                onClick={() => void handleMemoryImportSubmit()}
+                type="button"
+              >
+                {busyAction === 'memory-import' ? 'Importing' : 'Start Import'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {isProjectRouteLoading || isGroupRouteLoading ? (
           <WorkspaceRouteLoader label={view === 'group' ? 'Opening group conversation' : view === 'records' ? 'Loading project records' : view === 'settings' ? 'Loading project settings' : 'Loading project groups'} />
@@ -1152,6 +1289,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
             onInsertComposerText={insertComposerText}
             onMentionIndexChange={setMentionIndex}
             onMentionSelect={handleMentionSelect}
+            onOpenMemoryImport={() => {
+              setMemoryImportStatus(null)
+              setMemoryImportOpen(true)
+            }}
             onOpenGroup={navigateToGroup}
             onOpenMessageCitation={requestMessageFocus}
             onOpenMessageSource={handleOpenMessageSource}
