@@ -1,7 +1,8 @@
 export const maxDocumentReaderAttachments = 4
 export const maxDocumentReaderBytes = 18 * 1024 * 1024
 export const maxImageAttachments = 4
-export const maxImageBytes = 10 * 1024 * 1024
+const maxProviderImageBase64Bytes = 5 * 1024 * 1024
+export const maxImageBytes = Math.floor(maxProviderImageBase64Bytes * 3 / 4)
 
 export type AssistantAttachmentSelectionCandidate = {
   contentType: string

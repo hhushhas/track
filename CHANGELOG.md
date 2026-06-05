@@ -4,6 +4,7 @@
 
 - Added the Phase 1 project memory substrate with Upstash Box pointers, memory import jobs, scoped memory tools, context gateway checks, scoped run-view cleanup, audit events, fake-adapter tests, and Convex import/audit regression coverage.
 - Added bounded `context.md` loading to Track Assistant prompts and a web import dialog for pasted context, links, and files.
+- Fixed Track Assistant prod memory answers by moving model work to a Node action, routing text prompts through OpenRouter REST, and skipping oversized image attachments before provider rejection.
 
 ## 2026-06-04
 

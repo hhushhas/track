@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateText } from "ai";
+import { APICallError, generateText } from "ai";
 import type { ModelMessage } from "ai";
 
 const modelName = process.env.AI_MODEL ?? "moonshotai/kimi-k2.6";
@@ -14,9 +14,68 @@ function getOpenRouter() {
 	return createOpenRouter({ apiKey });
 }
 
+function getOpenRouterApiKey() {
+	return process.env.OPENROUTER_API_KEY ?? null;
+}
+
 function compactModelText(text: string, maxLength = 1600) {
 	const compacted = text.replace(/\s+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 	return compacted.length > maxLength ? `${compacted.slice(0, maxLength - 3).trim()}...` : compacted;
+}
+
+function normalizeProviderError(error: unknown, model: string): never {
+	if (APICallError.isInstance(error)) {
+		const message = error.message ? ` message=${compactModelText(error.message, 300)}` : "";
+		const status = error.statusCode ? ` status=${error.statusCode}` : "";
+		const body = error.responseBody ? ` body=${compactModelText(error.responseBody, 500)}` : "";
+		const cause = error.cause ? ` cause=${compactModelText(JSON.stringify(error.cause), 500)}` : "";
+		throw new Error(`Provider returned error for ${model}.${status}${message}${body}${cause}`);
+	}
+	throw error;
+}
+
+async function generateOpenRouterText(prompt: string) {
+	const apiKey = getOpenRouterApiKey();
+	if (!apiKey) {
+		return {
+			model: modelName,
+			text: "Track AI is not configured in this environment.",
+		};
+	}
+
+	const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			messages: [{ role: "user", content: prompt }],
+			model: modelName,
+		}),
+	});
+	const rawBody = await response.text();
+	let body: {
+		choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+		error?: { message?: string; code?: string | number };
+		model?: string;
+	} | null = null;
+	try {
+		body = rawBody ? JSON.parse(rawBody) : null;
+	} catch {
+		throw new Error(`Provider returned non-JSON response for ${modelName}. status=${response.status} body=${compactModelText(rawBody, 500)}`);
+	}
+	if (!response.ok || body?.error) {
+		const providerError = body?.error
+			? JSON.stringify(body.error)
+			: compactModelText(rawBody, 500);
+		throw new Error(`Provider returned error for ${modelName}. status=${response.status} body=${compactModelText(providerError, 500)}`);
+	}
+	const text = body?.choices?.[0]?.message?.content;
+	if (!text) {
+		throw new Error(`Provider returned no text for ${modelName}. status=${response.status} body=${compactModelText(rawBody, 500)}`);
+	}
+	return { model: body?.model ?? modelName, text };
 }
 
 export async function generateTrackText(prompt: string | ModelMessage[]) {
@@ -28,19 +87,19 @@ export async function generateTrackText(prompt: string | ModelMessage[]) {
 		};
 	}
 
-	if (typeof prompt === "string") {
+	try {
+		if (typeof prompt === "string") {
+			return await generateOpenRouterText(prompt);
+		}
+
 		const { text } = await generateText({
 			model: openrouter.chat(modelName),
-			prompt,
+			messages: prompt,
 		});
 		return { model: modelName, text };
+	} catch (error) {
+		normalizeProviderError(error, modelName);
 	}
-
-	const { text } = await generateText({
-		model: openrouter.chat(modelName),
-		messages: prompt,
-	});
-	return { model: modelName, text };
 }
 
 export async function generateTrackDocumentNotes(input: {
@@ -73,23 +132,27 @@ export async function generateTrackDocumentNotes(input: {
 		`Conversation context:\n${input.context}`,
 	].join("\n");
 
-	const { text } = await generateText({
-		model: openrouter.chat(documentReaderModelName),
-		messages: [
-			{
-				role: "user",
-				content: [
-					{ type: "text", text: prompt },
-					{
-						type: "file",
-						data: input.data,
-						filename: input.filename,
-						mediaType: input.mediaType,
-					},
-				],
-			},
-		],
-	});
+	try {
+		const { text } = await generateText({
+			model: openrouter.chat(documentReaderModelName),
+			messages: [
+				{
+					role: "user",
+					content: [
+						{ type: "text", text: prompt },
+						{
+							type: "file",
+							data: input.data,
+							filename: input.filename,
+							mediaType: input.mediaType,
+						},
+					],
+				},
+			],
+		});
 
-	return { model: documentReaderModelName, text: compactModelText(text) };
+		return { model: documentReaderModelName, text: compactModelText(text) };
+	} catch (error) {
+		normalizeProviderError(error, documentReaderModelName);
+	}
 }
