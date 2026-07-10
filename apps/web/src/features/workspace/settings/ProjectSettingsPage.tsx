@@ -71,7 +71,7 @@ export function ProjectSettingsPage({
                   className="track-button danger"
                   disabled={busyAction === 'delete-project'}
                   onClick={() => {
-                    if (window.confirm(`Delete ${activeProject.name}? This removes its groups, messages, records, and members.`)) {
+                    if (window.confirm(`Delete ${activeProject.name}? This removes its groups, messages, files, and members.`)) {
                       void onDeleteProject()
                     }
                   }}
@@ -120,7 +120,7 @@ export function ProjectSettingsPage({
                       className="track-nav-footer-button danger"
                       disabled={busyAction === 'delete-group'}
                       onClick={() => {
-                        if (window.confirm(`Delete ${group.name}? This removes its messages, records, and members.`)) {
+                        if (window.confirm(`Delete ${group.name}? This removes its messages, files, and members.`)) {
                           void onDeleteGroup(group._id)
                         }
                       }}
@@ -180,10 +180,6 @@ export function ProjectSettingsPage({
           <div className="track-settings-row">
             <span>Members</span>
             <strong>{members.length}</strong>
-          </div>
-          <div className="track-settings-row">
-            <span>Reviewers</span>
-            <strong>{members.filter((member) => member.membership.canReviewAiRecords).length}</strong>
           </div>
           <div className="track-settings-actions">
             <Button className="track-button" onClick={() => void onInvite()} type="button">

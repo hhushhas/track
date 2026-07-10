@@ -7,38 +7,6 @@ export type DefaultGroupKind = (typeof defaultGroupKinds)[number]
 export const groupKinds = [...defaultGroupKinds, 'custom'] as const
 export type GroupKind = (typeof groupKinds)[number]
 
-export const reviewerAuthority = 'canReviewAiRecords' as const
-
-export const recordTypes = [
-  'task',
-  'scope_change',
-  'decision',
-  'action_item',
-  'blocker',
-  'question',
-] as const
-export type RecordType = (typeof recordTypes)[number]
-
-export const recordClassifications = [
-  'official_record',
-  'billable_scope',
-  'non_billable_scope',
-  'informational',
-  'ignored',
-] as const
-export type RecordClassification = (typeof recordClassifications)[number]
-
-export const recordStatuses = [
-  'proposed',
-  'accepted',
-  'declined',
-  'open',
-  'in_progress',
-  'blocked',
-  'done',
-] as const
-export type RecordStatus = (typeof recordStatuses)[number]
-
 export const notificationModes = ['all', 'mentions', 'none'] as const
 export type NotificationMode = (typeof notificationModes)[number]
 

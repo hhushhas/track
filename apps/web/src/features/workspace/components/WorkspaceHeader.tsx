@@ -33,7 +33,7 @@ type WorkspaceHeaderProps = {
   onInvite: () => void
   onMobileNavOpen: () => void
   onSearchToggle: () => void
-  view: 'home' | 'project' | 'group' | 'records' | 'settings'
+  view: 'home' | 'project' | 'group' | 'settings'
 }
 
 export function WorkspaceHeader({
@@ -67,8 +67,6 @@ export function WorkspaceHeader({
         <h1>
           {view === 'group' && activeGroup
             ? `${activeGroup.name} Conversation`
-            : view === 'records' && activeProject
-              ? `${activeProject.project.name} Records`
               : view === 'settings' && activeProject
                 ? `${activeProject.project.name} Settings`
                 : activeProject
@@ -131,7 +129,7 @@ export function WorkspaceHeader({
             />
           </>
         ) : null}
-        {view !== 'settings' && view !== 'records' ? (
+        {view !== 'settings' ? (
           <Button
             className="track-button"
             disabled={!activeProjectId || busyAction === 'invite'}

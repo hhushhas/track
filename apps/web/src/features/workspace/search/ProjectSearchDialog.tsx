@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
-import { FileCheck2, FolderKanban, LoaderCircle, MessagesSquare, Paperclip, Search, X } from 'lucide-react'
+import { FolderKanban, LoaderCircle, MessagesSquare, Paperclip, Search, X } from 'lucide-react'
 
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
 
-export type ProjectSearchFilter = 'all' | 'messages' | 'records' | 'files' | 'groups'
+export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups'
 
 export type ProjectSearchResult = {
   attachmentId?: Id<'attachments'>
@@ -16,10 +16,9 @@ export type ProjectSearchResult = {
   groupId: Id<'groups'>
   groupName: string
   id: string
-  kind: 'message' | 'record' | 'file' | 'group'
+  kind: 'message' | 'file' | 'group'
   messageId?: Id<'messages'>
   preview: string
-  recordId?: Id<'records'>
   subtitle: string
   title: string
 }
@@ -108,7 +107,6 @@ export function ProjectSearchDialog({
   const filters: Array<{ Icon: typeof Search; label: string; value: ProjectSearchFilter }> = [
     { Icon: Search, label: 'All', value: 'all' },
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
-    { Icon: FileCheck2, label: 'Records', value: 'records' },
     { Icon: Paperclip, label: 'Files', value: 'files' },
     { Icon: FolderKanban, label: 'Groups', value: 'groups' },
   ]
@@ -139,7 +137,7 @@ export function ProjectSearchDialog({
             autoFocus
             className="track-project-search-input"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
-            placeholder="Search messages, records, files, and groups..."
+            placeholder="Search messages, files, and groups..."
             value={query}
           />
           <span>{total} results</span>
@@ -203,8 +201,6 @@ export function ProjectSearchDialog({
                               filename={result.title}
                               size={16}
                             />
-                          ) : result.kind === 'record' ? (
-                            <FileCheck2 size={16} />
                           ) : result.kind === 'group' ? (
                             <FolderKanban size={16} />
                           ) : (

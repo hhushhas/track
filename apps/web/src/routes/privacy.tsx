@@ -12,7 +12,7 @@ const sections = [
       'Email/password account data used for sign-in. Passwords are handled by the authentication system and are not stored by Track in plain text.',
       'Optional two-factor authentication data, including authenticator app setup state and encrypted backup codes.',
       'Profile details you add to Track, such as display name, avatar, designation, bio, timezone, project membership, and notification settings.',
-      'Project content created in Track, including messages, mentions, attachments, AI review drafts, accepted records, audit events, exports, and Track Assistant interactions.',
+      'Project content created in Track, including messages, mentions, attachments, audit events, imported memory, and Track Assistant interactions.',
       'Operational data needed to keep Track reliable, including device, browser, app version, push notification tokens, request metadata, and diagnostic logs.',
     ],
   },
@@ -20,7 +20,7 @@ const sections = [
     title: 'How We Use Information',
     body: [
       'To authenticate users with Google or email/password, protect sensitive actions with two-factor step-up, and control access to projects and groups.',
-      'To provide the core Track workflow: group conversation, AI-assisted review, evidence records, audit history, notifications, and exports.',
+      'To provide group conversation, evidence-aware AI assistance, project memory, search, audit history, and notifications.',
       'To improve reliability, investigate abuse or errors, and maintain security.',
       'To comply with legal, contractual, and audit obligations connected to the projects managed in Track.',
     ],
@@ -37,7 +37,7 @@ const sections = [
   {
     title: 'Retention',
     body: [
-      'Track is designed as an audit product, so project records, accepted evidence, and audit history may be retained for the life of the project or longer when required for business, legal, or dispute-resolution reasons.',
+      'Shared project content and audit history may be retained for the life of the project or longer when required for business, legal, or dispute-resolution reasons.',
       'Operational logs are kept only as long as needed for security, reliability, and debugging.',
     ],
   },
@@ -45,7 +45,7 @@ const sections = [
     title: 'Your Choices',
     body: [
       'You can request access, correction, or deletion of personal profile data by contacting us.',
-      'Deletion of project audit records may be limited when records must be preserved for contract, billing, legal, or security reasons.',
+      'Deletion of shared project content or audit events may be limited when they must be preserved for contract, legal, or security reasons.',
       'You can control push notification preferences globally and per group inside Track.',
     ],
   },
@@ -58,14 +58,14 @@ function Privacy() {
         <p className="mono-label m-0 mb-2">Q9 Track</p>
         <h1 className="m-0 text-3xl font-semibold">Privacy Policy</h1>
         <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">
-          Effective date: April 28, 2026
+          Effective date: July 11, 2026
         </p>
 
         <div className="track-surface mt-6 rounded-md p-4">
           <p className="m-0 text-sm leading-6 text-[var(--ink-2)]">
             Track is a project communication and audit tool operated by Q9 Labs. It
-            helps client and vendor teams turn project conversations into reviewable
-            records, action items, evidence trails, and exports.
+            helps client and vendor teams keep conversation, evidence, shared memory,
+            and permission-aware AI assistance together.
           </p>
         </div>
 

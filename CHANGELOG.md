@@ -2,11 +2,14 @@
 
 ## 2026-07-11
 
+- Replaced overlapping product, specification, design, and user-story monoliths with maintained product, architecture, design, and roadmap documentation plus a repository-level agent guide.
+- Removed Records, Draft Records, AI review, and record exports from the product model and live application while preserving conversation, evidence, assistant, memory, search, and audit workflows.
+- Resolved the code-quality backlog by modularizing workspace UI responsibilities, restoring typed Convex memory calls, surfacing retryable mobile failures, adding a web not-found experience, and moving the workspace to stable TypeScript 7.0.2.
+- Hardened local tooling with warning-free pnpm configuration, Nitro-aware preview and Wrangler settings, and consistent Convex environment aliases.
 - Removed obsolete prototypes, starter utilities and assets, demo fixtures, unused UI components, sign-in experiments, and logo-generation tooling while retaining the final brand masters.
 - Removed internal work logs and operator-owned deployment configuration from version control, added public configuration templates, and sanitized documented environment values.
-- Added open-source project documentation, community policies, dependency automation, and a documented code-quality backlog.
+- Added open-source project documentation, community policies, and dependency automation.
 - Updated vulnerable production dependencies and added a clean production dependency audit to CI.
-- Recorded the planned transition from Records to task management with Kanban boards while preserving the current runtime model.
 
 ## 2026-06-05
 

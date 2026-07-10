@@ -133,7 +133,6 @@ async function seedProjectMembership(t: ReturnType<typeof convexTest>, now: numb
       updatedAt: now,
     })
     await ctx.db.insert('projectMembers', {
-      canReviewAiRecords: true,
       createdAt: now,
       projectId,
       role: 'owner',

@@ -45,14 +45,6 @@ type LoadedAttachment =
   | { ok: false; reason: string }
 
 type AssistantMessageContext = { id: string; author: string; body: string; createdAt: number }
-type AssistantRecordContext = {
-  id: string
-  title: string
-  description: string
-  classification: string
-  status: string
-}
-type AssistantDraftContext = { id: string; title: string; description: string; type: string }
 type AssistantMemoryContext = {
   boxId: string | null
   content: string
@@ -63,10 +55,8 @@ type AssistantMemoryContext = {
 
 type CollectedAssistantContext = {
   attachments: Array<AssistantAttachmentCandidate>
-  drafts: Array<AssistantDraftContext>
   evidence: Array<AssistantEvidence>
   messages: Array<AssistantMessageContext>
-  records: Array<AssistantRecordContext>
 }
 
 function cleanQuestion(question: string) {
@@ -241,8 +231,6 @@ function answerPrompt(input: {
   question: string
   memory: AssistantMemoryContext
   messages: Array<AssistantMessageContext>
-  records: Array<AssistantRecordContext>
-  drafts: Array<AssistantDraftContext>
 }) {
   return [
     'You are Track Assistant, a helpful teammate inside a project group chat.',
@@ -250,15 +238,13 @@ function answerPrompt(input: {
     'Do not sound like a support bot, auditor, or legal evidence machine.',
     'Write in plain chat style: lowercase by default, no emoji, no markdown, no bullets, no headings, no line breaks unless the user explicitly asks for structure.',
     'Do not use bold, italics, code formatting, tables, or numbered lists.',
-    'Answer the person first. Then, only if useful, mention what should be tracked.',
+    'Answer the person first.',
     'Use only the supplied evidence for factual claims. If evidence is insufficient, say so plainly.',
     'For file/document claims, use only the query-specific attachment notes. The document reader may be incomplete; do not infer beyond its notes.',
     'For image claims, inspect the attached image inputs directly and cite the owning message id.',
-    'For casual greetings, acknowledgements, thanks, tests, or tiny messages, respond naturally and say there is nothing project-worthy to track.',
-    'Do not turn greetings, repeated @track pings, acknowledgements, or test messages into tasks.',
+    'For casual greetings, acknowledgements, thanks, tests, or tiny messages, respond naturally.',
     'Cite only important factual claims with bracket citations like [messageId]. Avoid citing every sentence.',
     'Never expose raw ids except as bracket citations. The UI will render citations.',
-    'If the answer reveals a real decision, task, blocker, or scope-relevant item, end with one short offer to make or update a Draft Record.',
     'Keep most answers to one short paragraph of 1-3 sentences unless the user asks for detail.',
     '',
     `Question: ${cleanQuestion(input.question)}`,
@@ -277,23 +263,6 @@ function answerPrompt(input: {
     input.attachmentNotes.length
       ? input.attachmentNotes.map((note) => `- ${note}`).join('\n')
       : 'No attachment contents were read for this question.',
-    '',
-    'Accessible Project Records:',
-    input.records.length
-      ? input.records
-          .map(
-            (record) =>
-              `[${record.id}] ${record.title} (${record.classification}, ${record.status}): ${record.description}`,
-          )
-          .join('\n')
-      : 'No reviewed records available.',
-    '',
-    'Unresolved Draft Records:',
-    input.drafts.length
-      ? input.drafts
-          .map((draft) => `[${draft.id}] ${draft.title} (${draft.type}): ${draft.description}`)
-          .join('\n')
-      : 'No unresolved drafts available.',
   ].join('\n')
 }
 
@@ -361,8 +330,6 @@ export const answerStream = internalAction({
             question: args.question,
             memory: memoryContext,
             messages: context.messages,
-            records: context.records,
-            drafts: context.drafts,
           }),
           attachmentContext.imageParts,
         ),
@@ -396,7 +363,7 @@ export const answerStream = internalAction({
         evidence: fallbackEvidence,
         model: result.model,
         durationMs: Date.now() - startedAt,
-        retrievalScope: `project_memory_${memoryContext.loaded ? 'loaded' : 'omitted'}_plus_current_group_accessible_records_and_query_conditioned_attachments${readerModelLabel}`,
+        retrievalScope: `project_memory_${memoryContext.loaded ? 'loaded' : 'omitted'}_plus_current_group_messages_and_query_conditioned_attachments${readerModelLabel}`,
       })
       return { streamId: args.streamId, answer: result.text }
     } catch (error) {

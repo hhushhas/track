@@ -12,7 +12,7 @@ const deletionSteps = [
 
 const retentionItems = [
   'Track removes personal profile fields and disables push notification subscriptions for the deleted account.',
-  'Shared project messages, attachments, evidence records, exports, and audit events may be retained where needed for other project members, project integrity, contracts, legal obligations, security, or dispute resolution.',
+  'Shared project messages, attachments, and audit events may be retained where needed for other project members, project integrity, contracts, legal obligations, security, or dispute resolution.',
   'If you cannot access the app, email support from the address associated with your Track account and ask for account deletion assistance.',
 ]
 
@@ -23,13 +23,13 @@ function Deletion() {
         <p className="mono-label m-0 mb-2">Q9 Track</p>
         <h1 className="m-0 text-3xl font-semibold">Account Deletion</h1>
         <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">
-          Effective date: May 21, 2026
+          Effective date: July 11, 2026
         </p>
 
         <div className="track-surface mt-6 rounded-md p-4">
           <p className="m-0 text-sm leading-6 text-[var(--ink-2)]">
             Track users can request account deletion from inside the mobile app.
-            This page explains the deletion path and how project audit records are
+            This page explains the deletion path and how shared project history is
             handled after a request.
           </p>
         </div>

@@ -1,44 +1,58 @@
 # Track
 
-Track is a chat-first project collaboration app with evidence-grounded AI assistance. Teams organize work into projects and groups, communicate in context, and ask `@track` to answer questions from the information they can access.
+Track is a project collaboration workspace where client and vendor teams work in group conversations, retain source evidence, and use permission-aware AI assistance. The web and mobile apps support realtime chat, attachments, voice notes, notifications, `@track` answers, project memory imports, search, and audit history.
 
-The repository contains the TanStack Start web app, the Expo mobile app, shared TypeScript domain code, and the Convex backend. The current product still uses Records and Project Records. The planned successor is task management with Kanban boards; [CONTEXT.md](./CONTEXT.md#planned-direction) describes that direction without changing the current runtime model.
+First-class task management and Kanban boards are the next major product direction in [docs/ROADMAP.md](./docs/ROADMAP.md).
+
+## Repository
+
+```text
+apps/web/          TanStack Start web app and PWA
+apps/mobile/       Expo Router native app
+packages/shared/   Shared domain rules and theme primitives
+convex/            Schema, authorization, functions, jobs, AI, and tests
+docs/              Maintained product and engineering context
+assets/brand/svg/  Final brand masters
+```
+
+Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained documentation is:
+
+- [Product](./docs/PRODUCT.md): current behavior, roles, and access invariants.
+- [Architecture](./docs/ARCHITECTURE.md): stack, boundaries, and data flow.
+- [Design](./docs/DESIGN.md): interface, tokens, interaction states, and accessibility.
+- [Roadmap](./docs/ROADMAP.md): agreed behavior that has not shipped.
 
 ## Requirements
 
-- Node.js 24 or newer
-- pnpm 10.19.0
-- A Convex project
-- OAuth credentials for the sign-in providers you enable
-- An OpenRouter API key for AI features
+- Node.js 24 or newer.
+- pnpm 10.19.0 through Corepack.
+- A Convex project.
+- OAuth credentials for enabled providers.
+- An OpenRouter API key for AI features.
 
-Cloudflare and Expo accounts are only required for their respective deployment paths.
+Cloudflare and Expo accounts are needed only for their deployment paths.
 
-## Local setup
+## Local web setup
 
 ```bash
 git clone https://github.com/hhushhas/track.git
 cd track
 corepack enable
 pnpm install --frozen-lockfile
-cp .env.example .env.local
-```
-
-Fill the required values in `.env.local`, then initialize or connect the Convex development deployment:
-
-```bash
 pnpm convex:dev
 ```
 
-In another terminal, start the web app on localhost:
+Keep `pnpm convex:dev` running. In another terminal:
 
 ```bash
 pnpm --filter @track/web dev
 ```
 
-The web app is available at `http://localhost:3000`.
+Open `http://localhost:3000`. Convex creates the development deployment values in `.env.local`. Add the remaining auth, AI, and optional integration values documented in `.env.example`; do not copy the placeholder Convex deployment values over the generated values.
 
-Start the Expo app separately when working on mobile:
+## Local mobile setup
+
+Create the ignored operator configuration once:
 
 ```bash
 cp apps/mobile/app.example.json apps/mobile/app.json
@@ -46,9 +60,9 @@ cp apps/mobile/eas.example.json apps/mobile/eas.json
 pnpm --filter @track/mobile dev
 ```
 
-## Verification
+Set the `EXPO_PUBLIC_*` values from `.env.example` for the development environment. Native OAuth, push, and store builds also require operator-owned provider configuration.
 
-Run the same gate used by CI:
+## Verification
 
 ```bash
 pnpm lint
@@ -58,30 +72,14 @@ pnpm audit --prod
 pnpm build
 ```
 
-## Configuration
+CI runs the same gate after a frozen install. The mobile `build` script records that release builds are handled by EAS; web client, SSR, and Worker output is built locally.
 
-- `.env.example` documents runtime variables. Keep real values in `.env.local` or provider secret stores.
-- `wrangler.example.toml` is the Cloudflare Workers template. Copy it to the ignored `wrangler.toml` and replace every placeholder before deploying.
-- `convex.prod.env.example` is the production Convex selector template. Copy it to the ignored `convex.prod.env` for an operator-owned deployment.
-- `apps/mobile/eas.example.json` is the public EAS template. Copy it to the ignored `apps/mobile/eas.json` and configure release values in EAS.
-- `apps/mobile/app.example.json` is the public Expo template. The ignored `apps/mobile/app.json` contains the operator's application identity.
+## Configuration and safety
 
-The repository does not include operator credentials, internal session logs, store-submission packets, or live deployment configuration.
+- Copy `wrangler.example.toml` to ignored `wrangler.toml` for Cloudflare variables.
+- Copy `convex.prod.env.example` to ignored `convex.prod.env` for the production deployment selector.
+- Keep credentials in `.env.local`, `.credentials/`, EAS, Convex, Cloudflare, or another provider secret store.
+- Never commit deployment identifiers, credentials, personal data, working logs, crash reports, or store-submission material.
+- Report security vulnerabilities through GitHub private vulnerability reporting.
 
-## Repository layout
-
-```text
-apps/web/       TanStack Start web application
-apps/mobile/    Expo / React Native application
-packages/shared Shared domain and theme code
-convex/         Backend schema, functions, jobs, and tests
-assets/brand/   Final SVG brand assets
-```
-
-Product semantics live in [CONTEXT.md](./CONTEXT.md), technical decisions in [SPEC.md](./SPEC.md), and design rules in [DESIGN.md](./DESIGN.md). Known code-quality work is tracked in [CODE_QUALITY.md](./CODE_QUALITY.md).
-
-## Contributing and security
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. Report vulnerabilities privately as described in [SECURITY.md](./SECURITY.md).
-
-Track is available under the [MIT License](./LICENSE).
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution expectations. Track is licensed under the [MIT License](./LICENSE).

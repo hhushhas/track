@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildMessageCitations, buildWorkspaceThreadItems } from './chat-thread-data'
 
 describe('workspace chat thread data', () => {
-  it('orders messages, assistant streams, and pending drafts chronologically', () => {
+  it('orders messages and assistant streams chronologically', () => {
     const threadItems = buildWorkspaceThreadItems({
       messages: [
         {
@@ -16,14 +16,12 @@ describe('workspace chat thread data', () => {
         },
       ],
       assistantStreams: [{ _id: 'assistant-1', createdAt: 15 }],
-      draftRecords: [{ _id: 'draft-1', createdAt: 30 }],
     } as Parameters<typeof buildWorkspaceThreadItems>[0])
 
     expect(threadItems.map((item) => [item.kind, item.key])).toEqual([
       ['message', 'message-1'],
       ['assistant', 'assistant-1'],
       ['message', 'message-2'],
-      ['draft', 'draft-1'],
     ])
   })
 

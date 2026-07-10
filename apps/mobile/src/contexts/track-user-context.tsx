@@ -43,6 +43,9 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [sheet, setSheet] = useState<'profile' | 'two-factor' | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<'account' | 'invites' | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [syncAttempt, setSyncAttempt] = useState(0);
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
     profileDesignation: '',
@@ -64,15 +67,20 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
     if (!hasAccess || trackUserId) return;
     if (session.isPending && !devAuthBypass.enabled) return;
     const syncUser = devAuthBypass.enabled && !session.data ? syncDevUser : ensureCurrentUser;
+    setBootstrapError(null);
     void syncUser()
       .then(async (userId) => {
         if (!userId) return;
         setTrackUserId(userId);
         setIsAuthReady(true);
-        await acceptInvites({ userId });
+        try {
+          await acceptInvites({ userId });
+        } catch {
+          setBootstrapError('invites');
+        }
       })
-      .catch(() => undefined);
-  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncDevUser, trackUserId]);
+      .catch(() => setBootstrapError('account'));
+  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncAttempt, syncDevUser, trackUserId]);
 
   // Keep trackUserId in sync with the convex getCurrentUser query
   useEffect(() => {
@@ -95,7 +103,10 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 
   // 2FA redirect
   useEffect(() => {
-    setTwoFactorRedirectHandler(() => setSheet('two-factor'));
+    setTwoFactorRedirectHandler(() => {
+      setActionError(null);
+      setSheet('two-factor');
+    });
     return () => setTwoFactorRedirectHandler(null);
   }, []);
 
@@ -111,7 +122,33 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 
   async function withBusy(key: string, fn: () => Promise<unknown>) {
     setBusyAction(key);
-    try { await fn(); } catch { /* swallow */ } finally { setBusyAction(null); }
+    setActionError(null);
+    try {
+      await fn();
+    } catch {
+      setActionError(key === 'profile'
+        ? 'We could not save your profile. Check your connection and try again.'
+        : 'We could not verify that code. Check it and try again.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function retryBootstrap() {
+    if (bootstrapError === 'account') {
+      setSyncAttempt((attempt) => attempt + 1);
+      return;
+    }
+    if (!trackUserId) return;
+    setBusyAction('invites');
+    try {
+      await acceptInvites({ userId: trackUserId });
+      setBootstrapError(null);
+    } catch {
+      setBootstrapError('invites');
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function signOut() {
@@ -170,13 +207,34 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
     trackUserId,
     isAuthReady,
     signOut,
-    openProfileSheet: () => setSheet('profile'),
+    openProfileSheet: () => {
+      setActionError(null);
+      setSheet('profile');
+    },
     devAuthBypass,
   };
 
   return (
     <TrackUserContext.Provider value={value}>
       {children}
+
+      {bootstrapError ? (
+        <View accessibilityRole="alert" style={[styles.errorBanner, { backgroundColor: theme.backgroundElement }]}>
+          <ThemedText type="smallBold">
+            {bootstrapError === 'account'
+              ? 'We could not finish setting up your account.'
+              : 'Your account is ready, but pending invitations could not be accepted.'}
+          </ThemedText>
+          <ThemedText type="small">Check your connection, then try again.</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busyAction === 'invites'}
+            onPress={() => void retryBootstrap()}
+            style={[styles.retryButton, { borderColor: theme.hairline }]}>
+            <ThemedText type="smallBold">{busyAction === 'invites' ? 'Trying…' : 'Try Again'}</ThemedText>
+          </Pressable>
+        </View>
+      ) : null}
 
       <OptionsSheet
         onClose={() => profileStatus?.complete ? setSheet(null) : undefined}
@@ -201,6 +259,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
             />
           </View>
         </SheetSection>
+        {actionError ? <ThemedText accessibilityRole="alert" style={styles.errorText} type="small">{actionError}</ThemedText> : null}
         <Pressable
           disabled={busyAction === 'profile'}
           onPress={() => void submitProfile()}
@@ -228,6 +287,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
           </View>
           <SheetInput label="Code" onChangeText={setTwoFactorCode} value={twoFactorCode} />
         </SheetSection>
+        {actionError ? <ThemedText accessibilityRole="alert" style={styles.errorText} type="small">{actionError}</ThemedText> : null}
         <Pressable
           disabled={busyAction === 'two-factor'}
           onPress={() => void submitTwoFactor()}
@@ -242,6 +302,18 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 }
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    borderRadius: 12,
+    bottom: Spacing.four,
+    gap: Spacing.two,
+    left: Spacing.four,
+    padding: Spacing.three,
+    position: 'absolute',
+    right: Spacing.four,
+  },
+  errorText: {
+    paddingHorizontal: Spacing.three,
+  },
   primaryButton: {
     alignItems: 'center',
     borderRadius: 10,
@@ -252,6 +324,15 @@ const styles = StyleSheet.create({
   profileInputs: {
     gap: Spacing.three,
     padding: Spacing.three,
+  },
+  retryButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
   },
   segment: {
     alignItems: 'center',

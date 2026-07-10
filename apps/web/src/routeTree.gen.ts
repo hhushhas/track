@@ -26,7 +26,6 @@ import { Route as WorkspaceProjectsProjectIdRouteImport } from './routes/workspa
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as WorkspaceProjectsProjectIdIndexRouteImport } from './routes/workspace.projects.$projectId.index'
 import { Route as WorkspaceProjectsProjectIdSettingsRouteImport } from './routes/workspace.projects.$projectId.settings'
-import { Route as WorkspaceProjectsProjectIdRecordsRouteImport } from './routes/workspace.projects.$projectId.records'
 import { Route as WorkspaceProjectsProjectIdGroupsGroupIdRouteImport } from './routes/workspace.projects.$projectId.groups.$groupId'
 
 const WorkspaceRoute = WorkspaceRouteImport.update({
@@ -117,12 +116,6 @@ const WorkspaceProjectsProjectIdSettingsRoute =
     path: '/settings',
     getParentRoute: () => WorkspaceProjectsProjectIdRoute,
   } as any)
-const WorkspaceProjectsProjectIdRecordsRoute =
-  WorkspaceProjectsProjectIdRecordsRouteImport.update({
-    id: '/records',
-    path: '/records',
-    getParentRoute: () => WorkspaceProjectsProjectIdRoute,
-  } as any)
 const WorkspaceProjectsProjectIdGroupsGroupIdRoute =
   WorkspaceProjectsProjectIdGroupsGroupIdRouteImport.update({
     id: '/groups/$groupId',
@@ -146,7 +139,6 @@ export interface FileRoutesByFullPath {
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
-  '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
   '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
@@ -165,7 +157,6 @@ export interface FileRoutesByTo {
   '/onboarding/profile': typeof OnboardingProfileRoute
   '/workspace': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
   '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
@@ -187,7 +178,6 @@ export interface FileRoutesById {
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdRouteWithChildren
-  '/workspace/projects/$projectId/records': typeof WorkspaceProjectsProjectIdRecordsRoute
   '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
@@ -210,7 +200,6 @@ export interface FileRouteTypes {
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
-    | '/workspace/projects/$projectId/records'
     | '/workspace/projects/$projectId/settings'
     | '/workspace/projects/$projectId/'
     | '/workspace/projects/$projectId/groups/$groupId'
@@ -229,7 +218,6 @@ export interface FileRouteTypes {
     | '/onboarding/profile'
     | '/workspace'
     | '/api/auth/$'
-    | '/workspace/projects/$projectId/records'
     | '/workspace/projects/$projectId/settings'
     | '/workspace/projects/$projectId'
     | '/workspace/projects/$projectId/groups/$groupId'
@@ -250,7 +238,6 @@ export interface FileRouteTypes {
     | '/workspace/'
     | '/api/auth/$'
     | '/workspace/projects/$projectId'
-    | '/workspace/projects/$projectId/records'
     | '/workspace/projects/$projectId/settings'
     | '/workspace/projects/$projectId/'
     | '/workspace/projects/$projectId/groups/$groupId'
@@ -393,13 +380,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceProjectsProjectIdSettingsRouteImport
       parentRoute: typeof WorkspaceProjectsProjectIdRoute
     }
-    '/workspace/projects/$projectId/records': {
-      id: '/workspace/projects/$projectId/records'
-      path: '/records'
-      fullPath: '/workspace/projects/$projectId/records'
-      preLoaderRoute: typeof WorkspaceProjectsProjectIdRecordsRouteImport
-      parentRoute: typeof WorkspaceProjectsProjectIdRoute
-    }
     '/workspace/projects/$projectId/groups/$groupId': {
       id: '/workspace/projects/$projectId/groups/$groupId'
       path: '/groups/$groupId'
@@ -411,7 +391,6 @@ declare module '@tanstack/react-router' {
 }
 
 interface WorkspaceProjectsProjectIdRouteChildren {
-  WorkspaceProjectsProjectIdRecordsRoute: typeof WorkspaceProjectsProjectIdRecordsRoute
   WorkspaceProjectsProjectIdSettingsRoute: typeof WorkspaceProjectsProjectIdSettingsRoute
   WorkspaceProjectsProjectIdIndexRoute: typeof WorkspaceProjectsProjectIdIndexRoute
   WorkspaceProjectsProjectIdGroupsGroupIdRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
@@ -419,8 +398,6 @@ interface WorkspaceProjectsProjectIdRouteChildren {
 
 const WorkspaceProjectsProjectIdRouteChildren: WorkspaceProjectsProjectIdRouteChildren =
   {
-    WorkspaceProjectsProjectIdRecordsRoute:
-      WorkspaceProjectsProjectIdRecordsRoute,
     WorkspaceProjectsProjectIdSettingsRoute:
       WorkspaceProjectsProjectIdSettingsRoute,
     WorkspaceProjectsProjectIdIndexRoute: WorkspaceProjectsProjectIdIndexRoute,

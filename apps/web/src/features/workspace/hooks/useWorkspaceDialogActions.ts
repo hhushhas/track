@@ -2,19 +2,15 @@ import { useMutation } from 'convex/react'
 import type { FormEvent } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
-import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import type { Id } from '../../../../../../convex/_generated/dataModel'
 import type { WorkspaceInviteRole } from '#/features/workspace/hooks/useWorkspaceDialogState'
 
 export function useWorkspaceDialogActions({
-  activeGroup,
-  activeGroupId,
   activeProjectId,
   editingGroupId,
-  frequencyMinutesInput,
   groupDialogMode,
   groupName,
   inviteAccess,
-  inviteCanReview,
   inviteEmail,
   inviteRole,
   onBusyChange,
@@ -29,22 +25,16 @@ export function useWorkspaceDialogActions({
   onProjectCreated,
   onProjectDialogOpenChange,
   onProjectUpdated,
-  onFrequencyDialogOpenChange,
   projectClientLabel,
   projectDialogMode,
   projectName,
-  reviewEnabledInput,
   trackUserId,
 }: {
-  activeGroup: Doc<'groups'> | undefined
-  activeGroupId: Id<'groups'> | null
   activeProjectId: Id<'projects'> | null
   editingGroupId: Id<'groups'> | null
-  frequencyMinutesInput: string
   groupDialogMode: 'create' | 'edit'
   groupName: string
   inviteAccess: string
-  inviteCanReview: boolean
   inviteEmail: string
   inviteRole: WorkspaceInviteRole
   onBusyChange: (label: string | null) => void
@@ -59,11 +49,9 @@ export function useWorkspaceDialogActions({
   onProjectCreated: (projectId: Id<'projects'>) => void
   onProjectDialogOpenChange: (open: boolean) => void
   onProjectUpdated: (projectId: Id<'projects'>) => void
-  onFrequencyDialogOpenChange: (open: boolean) => void
   projectClientLabel: string
   projectDialogMode: 'create' | 'edit'
   projectName: string
-  reviewEnabledInput: boolean
   trackUserId: Id<'users'> | null
 }) {
   const createProject = useMutation(api.projects.create)
@@ -73,7 +61,6 @@ export function useWorkspaceDialogActions({
   const deleteGroup = useMutation(api.groups.remove)
   const updateGroup = useMutation(api.groups.update)
   const createInvitation = useMutation(api.invitations.create)
-  const updateGroupAiReviewSettings = useMutation(api.groups.updateAiReviewSettings)
 
   async function withDialogBusy(label: string, action: () => Promise<void>) {
     onBusyChange(label)
@@ -183,38 +170,17 @@ export function useWorkspaceDialogActions({
         invitedBy: trackUserId,
         email,
         role: inviteRole,
-        canReviewAiRecords: inviteCanReview,
       })
       onInviteDialogOpenChange(false)
     })
   }
 
-  async function handleFrequencySubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!trackUserId || !activeProjectId || !activeGroupId || !activeGroup) return
-    const frequencyMinutes = Number(frequencyMinutesInput)
-    if (!Number.isFinite(frequencyMinutes)) {
-      onError(new Error('Frequency must be a number.'))
-      return
-    }
-    await withDialogBusy('review-frequency', async () => {
-      await updateGroupAiReviewSettings({
-        projectId: activeProjectId,
-        groupId: activeGroupId,
-        userId: trackUserId,
-        enabled: reviewEnabledInput,
-        frequencyMinutes,
-      })
-      onFrequencyDialogOpenChange(false)
-    })
-  }
 
   return {
     handleDeleteGroup,
     handleDeleteProject,
     handleCreateGroupSubmit,
     handleCreateProjectSubmit,
-    handleFrequencySubmit,
     handleInviteSubmit,
   }
 }

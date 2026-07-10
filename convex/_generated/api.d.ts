@@ -8,13 +8,11 @@
  * @module
  */
 
-import type * as ai from "../ai.js";
 import type * as assistant from "../assistant.js";
 import type * as assistantNode from "../assistantNode.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
-import type * as exports from "../exports.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as invitations from "../invitations.js";
@@ -34,7 +32,6 @@ import type * as mobile from "../mobile.js";
 import type * as notifications from "../notifications.js";
 import type * as projects from "../projects.js";
 import type * as pushNotifications from "../pushNotifications.js";
-import type * as records from "../records.js";
 import type * as reports from "../reports.js";
 import type * as search from "../search.js";
 import type * as typingIndicators from "../typingIndicators.js";
@@ -46,13 +43,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  ai: typeof ai;
   assistant: typeof assistant;
   assistantNode: typeof assistantNode;
   audit: typeof audit;
   auth: typeof auth;
   crons: typeof crons;
-  exports: typeof exports;
   groups: typeof groups;
   http: typeof http;
   invitations: typeof invitations;
@@ -72,7 +67,6 @@ declare const fullApi: ApiFromModules<{
   notifications: typeof notifications;
   projects: typeof projects;
   pushNotifications: typeof pushNotifications;
-  records: typeof records;
   reports: typeof reports;
   search: typeof search;
   typingIndicators: typeof typingIndicators;

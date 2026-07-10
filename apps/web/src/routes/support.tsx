@@ -11,7 +11,7 @@ const supportItems = [
   },
   {
     title: 'Project Support',
-    body: 'For project membership, records, exports, notifications, or workspace questions, include your project name, affected group, and a brief description of what happened.',
+    body: 'For project membership, conversation, memory, notifications, or workspace questions, include your project name, affected group, and a brief description of what happened.',
   },
   {
     title: 'Privacy and Deletion',
@@ -26,13 +26,13 @@ function Support() {
         <p className="mono-label m-0 mb-2">Q9 Track</p>
         <h1 className="m-0 text-3xl font-semibold">Support</h1>
         <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">
-          Effective date: May 21, 2026
+          Effective date: July 11, 2026
         </p>
 
         <div className="track-surface mt-6 rounded-md p-4">
           <p className="m-0 text-sm leading-6 text-[var(--ink-2)]">
             Track support is available by email for mobile and web users who need
-            help with account access, project workspaces, records, exports, privacy
+            help with account access, project workspaces, conversation, memory, privacy
             requests, or account deletion.
           </p>
         </div>

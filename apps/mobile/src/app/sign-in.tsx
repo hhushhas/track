@@ -76,7 +76,7 @@ export default function SignInScreen() {
             </ThemedText>
             <ThemedText style={styles.brandName}>Track</ThemedText>
             <ThemedText style={[styles.brandTagline, { color: theme.textSecondary }]} type="small">
-              Project communication that builds a record
+              Project communication that keeps teams aligned
             </ThemedText>
           </View>
         </View>

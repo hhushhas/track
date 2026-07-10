@@ -5,10 +5,8 @@ import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 export type WorkspaceInviteRole = 'admin' | 'staff' | 'client'
 
 export function useWorkspaceDialogState({
-  activeGroup,
   activeGroupId,
 }: {
-  activeGroup: Doc<'groups'> | undefined
   activeGroupId: Id<'groups'> | null
 }) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
@@ -17,16 +15,12 @@ export function useWorkspaceDialogState({
   const [groupDialogMode, setGroupDialogMode] = useState<'create' | 'edit'>('create')
   const [editingGroupId, setEditingGroupId] = useState<Id<'groups'> | null>(null)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
-  const [frequencyDialogOpen, setFrequencyDialogOpen] = useState(false)
-  const [reviewEnabledInput, setReviewEnabledInput] = useState(true)
   const [projectName, setProjectName] = useState('')
   const [projectClientLabel, setProjectClientLabel] = useState('')
   const [groupName, setGroupName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<WorkspaceInviteRole>('staff')
-  const [inviteCanReview, setInviteCanReview] = useState(true)
   const [inviteAccess, setInviteAccess] = useState('project')
-  const [frequencyMinutesInput, setFrequencyMinutesInput] = useState('30')
 
   function openProjectDialog() {
     setProjectDialogMode('create')
@@ -59,33 +53,22 @@ export function useWorkspaceDialogState({
   function openInviteDialog() {
     setInviteEmail('')
     setInviteRole('staff')
-    setInviteCanReview(true)
     setInviteAccess(activeGroupId ? `group:${activeGroupId}` : 'project')
     setInviteDialogOpen(true)
   }
 
-  function openFrequencyDialog() {
-    const current = activeGroup?.aiReviewSettings?.frequencyMinutes ?? 30
-    setReviewEnabledInput(activeGroup?.aiReviewSettings?.enabled ?? true)
-    setFrequencyMinutesInput(String(current))
-    setFrequencyDialogOpen(true)
-  }
 
   return {
-    frequencyDialogOpen,
-    frequencyMinutesInput,
     editingGroupId,
     groupDialogOpen,
     groupDialogMode,
     groupName,
     inviteAccess,
-    inviteCanReview,
     inviteDialogOpen,
     inviteEmail,
     inviteRole,
     openEditGroupDialog,
     openEditProjectDialog,
-    openFrequencyDialog,
     openGroupDialog,
     openInviteDialog,
     openProjectDialog,
@@ -93,19 +76,14 @@ export function useWorkspaceDialogState({
     projectDialogOpen,
     projectDialogMode,
     projectName,
-    reviewEnabledInput,
-    setFrequencyDialogOpen,
-    setFrequencyMinutesInput,
     setGroupDialogOpen,
     setGroupName,
     setInviteAccess,
-    setInviteCanReview,
     setInviteDialogOpen,
     setInviteEmail,
     setInviteRole,
     setProjectClientLabel,
     setProjectDialogOpen,
     setProjectName,
-    setReviewEnabledInput,
   }
 }

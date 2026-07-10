@@ -1,4 +1,4 @@
-import { Bell, Clock3, Download, GripVertical, PanelRightClose, PanelRightOpen, Settings2, Upload } from 'lucide-react'
+import { Bell, Clock3, GripVertical, PanelRightClose, PanelRightOpen, Upload } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { Card } from '#/components/ui/card'
@@ -14,69 +14,49 @@ import {
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
 import { formatRailLabel } from '#/features/workspace/lib/formatting'
-import { RecordStatusDropdown } from '#/features/workspace/records/ProjectRecordsPage'
-import { Metric } from '#/features/workspace/thread-items'
 import { notificationModes } from '#/features/workspace/constants'
 import { notificationPermissionLabels, type WebNotificationPermission } from '#/features/workspace/web-notifications'
 
 type WorkspaceRailProps = {
-  activeGroupId: Id<'groups'> | null
   activeProjectId: Id<'projects'> | null
   busyAction: string | null
-  exportDownloadUrl: string | null | undefined
   globalNotificationMode: (typeof notificationModes)[number]
   groupNotificationMode: (typeof notificationModes)[number]
-  latestExportId: Id<'exports'> | null
-  latestReview: Doc<'aiReviews'> | null | undefined
   notificationPermission: WebNotificationPermission
   notificationStatus: string | null
   onCollapse: () => void
   onExpand: () => void
-  onFrequencyChange: () => void
   onNotificationMode: (mode: (typeof notificationModes)[number]) => void
-  onRecordStatus: (recordId: Id<'records'>, status: 'open' | 'in_progress' | 'blocked' | 'done') => Promise<void>
-  onRequestExport: (format: 'csv' | 'pdf') => void
   onSendTestNotification: () => void
   onEnableBrowserNotifications: () => void
   onStartResize: () => void
-  pendingDraftCount: number
   projectAuditEvents: Array<Doc<'auditEvents'>>
   projectInvitations: Array<Doc<'invitations'>>
-  projectRecords: Array<Doc<'records'>>
   railCollapsed: boolean
 }
 
 export function WorkspaceRail({
-  activeGroupId,
   activeProjectId,
   busyAction,
-  exportDownloadUrl,
   globalNotificationMode,
   groupNotificationMode,
-  latestExportId,
-  latestReview,
   notificationPermission,
   notificationStatus,
   onCollapse,
   onExpand,
-  onFrequencyChange,
   onNotificationMode,
-  onRecordStatus,
-  onRequestExport,
   onSendTestNotification,
   onEnableBrowserNotifications,
   onStartResize,
-  pendingDraftCount,
   projectAuditEvents,
   projectInvitations,
-  projectRecords,
   railCollapsed,
 }: WorkspaceRailProps) {
   if (railCollapsed) {
     return (
       <aside className="track-rail collapsed">
         <button
-          aria-label="Expand AI review panel"
+          aria-label="Expand workspace details"
           className="track-rail-collapse-button"
           onClick={onExpand}
           type="button"
@@ -90,7 +70,7 @@ export function WorkspaceRail({
   return (
     <aside className="track-rail">
       <button
-        aria-label="Resize AI review panel"
+        aria-label="Resize workspace details"
         className="track-rail-resize-handle"
         onPointerDown={(event) => {
           event.preventDefault()
@@ -105,59 +85,16 @@ export function WorkspaceRail({
       <Card className="track-rail-section" size="sm">
         <div className="track-rail-title">
           <span>
-            <span className="track-rail-heading">AI Review</span>
+            <span className="track-rail-heading">Workspace</span>
           </span>
           <div className="track-rail-icon-actions">
             <button
-              aria-label="Collapse AI review panel"
+              aria-label="Collapse workspace details"
               className="track-rail-icon-button"
               onClick={onCollapse}
               type="button"
             >
               <PanelRightClose size={14} />
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                aria-label="Project record exports"
-                className="track-rail-icon-button"
-                disabled={!activeProjectId}
-              >
-                <Download size={14} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="track-rail-menu">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Export project record</DropdownMenuLabel>
-                  <DropdownMenuItem
-                    disabled={!activeProjectId || busyAction === 'export-csv'}
-                    onClick={() => onRequestExport('csv')}
-                  >
-                    Export csv
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!activeProjectId || busyAction === 'export-pdf'}
-                    onClick={() => onRequestExport('pdf')}
-                  >
-                    Export pdf
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-                {exportDownloadUrl || latestExportId ? <DropdownMenuSeparator /> : null}
-                {exportDownloadUrl ? (
-                  <a className="track-rail-menu-link" href={exportDownloadUrl} rel="noreferrer" target="_blank">
-                    Download latest
-                  </a>
-                ) : latestExportId ? (
-                  <span className="track-rail-menu-note">Preparing export...</span>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <button
-              aria-label="AI review settings"
-              className="track-rail-icon-button"
-              disabled={!activeGroupId || busyAction === 'review-frequency'}
-              onClick={onFrequencyChange}
-              type="button"
-            >
-              <Settings2 size={14} />
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -200,48 +137,6 @@ export function WorkspaceRail({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
-        <div className="track-review-status">
-          <span>Last run</span>
-          <strong>{latestReview?.finishedAt ? new Date(latestReview.finishedAt).toLocaleTimeString() : 'Never'}</strong>
-        </div>
-        <p className="track-muted track-rail-compact-copy">{latestReview?.summary ?? 'Run AI Review to propose Draft Records from this Group.'}</p>
-      </Card>
-
-      <Card className="track-count-grid" size="sm">
-        <Metric label="Drafts" value={pendingDraftCount} />
-        <Metric label="Records" value={projectRecords.length} />
-        <Metric
-          label="Billable"
-          value={projectRecords.filter((record) => record.classification === 'billable_scope').length}
-        />
-        <Metric
-          label="Open"
-          value={projectRecords.filter((record) => record.status === 'open' || record.status === 'in_progress' || record.status === 'blocked').length}
-        />
-      </Card>
-
-      <Card className="track-rail-section" size="sm">
-        <div className="track-rail-heading-row">
-          <span className="track-rail-heading">Records</span>
-        </div>
-        <div className="track-record-list">
-          {projectRecords.slice(0, 8).map((record) => (
-            <div className="track-record-item" key={record._id}>
-              <strong>{record.title}</strong>
-              <div className="track-record-item-side">
-                <RecordStatusDropdown
-                  ariaLabel={`Set status for ${record.title}`}
-                  disabled={busyAction === `record-status-${record._id}`}
-                  onStatus={(status) => onRecordStatus(record._id, status)}
-                  status={record.status}
-                />
-              </div>
-            </div>
-          ))}
-          {projectRecords.length === 0 ? (
-            <p className="track-muted track-record-empty">No project records yet.</p>
-          ) : null}
         </div>
       </Card>
 

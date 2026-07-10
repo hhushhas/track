@@ -89,7 +89,6 @@ export const create = mutation({
       projectId,
       userId: args.userId,
       role: 'owner',
-      canReviewAiRecords: true,
       createdAt: now,
       updatedAt: now,
     })
@@ -99,10 +98,6 @@ export const create = mutation({
         projectId,
         kind: group.kind,
         name: group.name,
-        aiReviewSettings: {
-          enabled: true,
-          frequencyMinutes: 30,
-        },
         createdBy: args.userId,
         createdAt: now,
         updatedAt: now,
@@ -182,10 +177,6 @@ export const remove = mutation({
       messages,
       attachments,
       typingIndicators,
-      aiReviews,
-      draftRecords,
-      records,
-      exports,
       assistantStreams,
       auditEvents,
       groupNotificationSettings,
@@ -203,10 +194,6 @@ export const remove = mutation({
       ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('attachments').collect(),
       ctx.db.query('typingIndicators').collect(),
-      ctx.db.query('aiReviews').withIndex('by_project_started_at', (q) => q.eq('projectId', args.projectId)).collect(),
-      ctx.db.query('draftRecords').withIndex('by_project_status', (q) => q.eq('projectId', args.projectId)).collect(),
-      ctx.db.query('records').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
-      ctx.db.query('exports').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('assistantStreams').collect(),
       ctx.db.query('auditEvents').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('groupNotificationSettings').collect(),
@@ -246,10 +233,6 @@ export const remove = mutation({
     for (const row of assistantStreams) {
       if (row.projectId === args.projectId) await ctx.db.delete(row._id)
     }
-    for (const row of exports) await ctx.db.delete(row._id)
-    for (const row of records) await ctx.db.delete(row._id)
-    for (const row of draftRecords) await ctx.db.delete(row._id)
-    for (const row of aiReviews) await ctx.db.delete(row._id)
     for (const row of typingIndicators) {
       if (row.projectId === args.projectId) await ctx.db.delete(row._id)
     }
@@ -288,7 +271,6 @@ export const ensureStarter = mutation({
       projectId,
       userId: args.userId,
       role: 'owner',
-      canReviewAiRecords: true,
       createdAt: now,
       updatedAt: now,
     })
@@ -298,10 +280,6 @@ export const ensureStarter = mutation({
         projectId,
         kind: group.kind,
         name: group.name,
-        aiReviewSettings: {
-          enabled: true,
-          frequencyMinutes: 30,
-        },
         createdBy: args.userId,
         createdAt: now,
         updatedAt: now,
@@ -341,31 +319,9 @@ export const getOverview = query({
       .query('groups')
       .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
       .collect()
-    const records = await ctx.db
-      .query('records')
-      .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
-      .collect()
-    const drafts = await ctx.db
-      .query('draftRecords')
-      .withIndex('by_project_status', (q) => q.eq('projectId', args.projectId))
-      .collect()
-
     return {
       project,
       groups,
-      metrics: {
-        records: records.length,
-        drafts: drafts.filter((draft) => draft.status === 'pending').length,
-        billable: records.filter(
-          (record) => record.classification === 'billable_scope',
-        ).length,
-        open: records.filter(
-          (record) =>
-            record.status === 'open' ||
-            record.status === 'in_progress' ||
-            record.status === 'blocked',
-        ).length,
-      },
     }
   },
 })

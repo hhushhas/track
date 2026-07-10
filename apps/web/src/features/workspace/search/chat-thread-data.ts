@@ -14,20 +14,12 @@ export type WorkspaceThreadItem =
       kind: 'assistant'
       key: string
     }
-  | {
-      at: number
-      draft: Doc<'draftRecords'>
-      kind: 'draft'
-      key: string
-    }
 
 export function buildWorkspaceThreadItems({
   assistantStreams,
-  draftRecords,
   messages,
 }: {
   assistantStreams: Array<Doc<'assistantStreams'>>
-  draftRecords: Array<Doc<'draftRecords'>>
   messages: Array<GroupMessageItem>
 }): Array<WorkspaceThreadItem> {
   return [
@@ -42,12 +34,6 @@ export function buildWorkspaceThreadItems({
       stream,
       kind: 'assistant' as const,
       key: stream._id,
-    })),
-    ...draftRecords.map((draft) => ({
-      at: draft.createdAt,
-      draft,
-      kind: 'draft' as const,
-      key: draft._id,
     })),
   ].sort((a, b) => a.at - b.at)
 }

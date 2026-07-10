@@ -52,22 +52,6 @@ export async function requireProjectOwner(
   return member
 }
 
-export async function requireReviewer(
-  ctx: AppCtx,
-  projectId: Id<'projects'>,
-  userId: Id<'users'>,
-) {
-  const member = await requireProjectMember(ctx, projectId, userId)
-  if (
-    member.role !== 'owner' &&
-    member.role !== 'admin' &&
-    !member.canReviewAiRecords
-  ) {
-    throw new Error('not_reviewer')
-  }
-  return member
-}
-
 export async function requireGroupMember(
   ctx: AppCtx,
   groupId: Id<'groups'>,

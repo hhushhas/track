@@ -45,7 +45,6 @@ export const create = mutation({
     invitedBy: v.id('users'),
     email: v.string(),
     role,
-    canReviewAiRecords: v.boolean(),
   },
   handler: async (ctx, args) => {
     await requireProjectManager(ctx, args.projectId, args.invitedBy)
@@ -58,7 +57,6 @@ export const create = mutation({
       groupId: args.groupId,
       email,
       role: args.role,
-      canReviewAiRecords: args.canReviewAiRecords,
       invitedBy: args.invitedBy,
       status: 'pending',
       token: newInviteToken(),
@@ -78,7 +76,6 @@ export const create = mutation({
         email,
         role: args.role,
         groupId: args.groupId,
-        canReviewAiRecords: args.canReviewAiRecords,
       },
     })
 
@@ -122,7 +119,6 @@ export const acceptPendingForCurrentUser = mutation({
       if (existingProjectMember) {
         await ctx.db.patch(existingProjectMember._id, {
           role: invite.role,
-          canReviewAiRecords: invite.canReviewAiRecords,
           updatedAt: now,
         })
       } else {
@@ -130,7 +126,6 @@ export const acceptPendingForCurrentUser = mutation({
           projectId: invite.projectId,
           userId: args.userId,
           role: invite.role,
-          canReviewAiRecords: invite.canReviewAiRecords,
           createdAt: now,
           updatedAt: now,
         })

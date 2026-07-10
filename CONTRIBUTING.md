@@ -11,7 +11,7 @@ Track welcomes focused bug fixes, tests, documentation improvements, and product
 
 ## Development
 
-Follow the setup in [README.md](./README.md). Match existing TypeScript and UI patterns, preserve access boundaries, and add regression coverage for changed behavior.
+Follow the setup in [README.md](./README.md) and the repository rules in [AGENTS.md](./AGENTS.md). Match existing TypeScript and UI patterns, preserve access boundaries, update the maintained document that owns any changed product or architecture fact, and add regression coverage for changed behavior.
 
 Run the full gate before opening a pull request:
 

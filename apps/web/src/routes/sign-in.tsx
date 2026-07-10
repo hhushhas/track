@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvex } from 'convex/react'
-import { Eye, EyeOff, FileCheck2, KeyRound, Lock, Mail, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Lock, Mail, MessageSquareText, Search, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 
@@ -297,15 +297,15 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           ) : (
             <>
               <div>
-                <h1>Turn project conversations into accountable records.</h1>
+                <h1>Keep project conversation and evidence connected.</h1>
                 <p>
                   Track keeps client and vendor teams aligned around decisions,
-                  evidence, action items, and audit-ready exports.
+                  source context, shared memory, and permission-aware answers.
                 </p>
               </div>
               <div className="track-auth-proof">
                 <span><MessageSquareText size={16} /> Shared conversation</span>
-                <span><FileCheck2 size={16} /> Accepted records</span>
+                <span><Search size={16} /> Searchable evidence</span>
                 <span><ShieldCheck size={16} /> Permissioned access</span>
               </div>
             </>

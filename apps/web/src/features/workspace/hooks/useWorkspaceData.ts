@@ -5,8 +5,6 @@ import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import { filterVisibleProjectGroups } from '#/features/workspace/lib/route-state'
-import type { ProjectRecordFilter } from '#/features/workspace/records/filtering'
-import { filterProjectRecords } from '#/features/workspace/records/filtering'
 import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
 
 export function useWorkspaceData({
@@ -15,8 +13,6 @@ export function useWorkspaceData({
   projectSearchFilter,
   projectSearchOpen,
   projectSearchQuery,
-  recordFilter,
-  recordSearchQuery,
   trackUserId,
 }: {
   activeGroupId: Id<'groups'> | null
@@ -24,8 +20,6 @@ export function useWorkspaceData({
   projectSearchFilter: ProjectSearchFilter
   projectSearchOpen: boolean
   projectSearchQuery: string
-  recordFilter: ProjectRecordFilter
-  recordSearchQuery: string
   trackUserId: Id<'users'> | null
 }) {
   const currentTrackUser = useQuery(
@@ -73,18 +67,6 @@ export function useWorkspaceData({
       ? { userId: trackUserId, groupId: confirmedActiveGroupId, limit: 80 }
       : 'skip',
   )
-  const drafts = useQuery(
-    api.records.listDrafts,
-    trackUserId && activeProjectId && confirmedActiveGroupId
-      ? { userId: trackUserId, projectId: activeProjectId, groupId: confirmedActiveGroupId }
-      : 'skip',
-  )
-  const records = useQuery(
-    api.records.listProjectRecords,
-    trackUserId && activeProjectId
-      ? { userId: trackUserId, projectId: activeProjectId }
-      : 'skip',
-  )
   const projectSearchResults = useQuery(
     api.search.project,
     trackUserId && activeProjectId && projectSearchOpen && projectSearchQuery.trim().length >= 2
@@ -96,10 +78,6 @@ export function useWorkspaceData({
           userId: trackUserId,
         }
       : 'skip',
-  )
-  const latestReview = useQuery(
-    api.ai.latestForGroup,
-    trackUserId && confirmedActiveGroupId ? { userId: trackUserId, groupId: confirmedActiveGroupId } : 'skip',
   )
   const assistantStreams = useQuery(
     api.assistant.listForGroup,
@@ -147,12 +125,6 @@ export function useWorkspaceData({
     () => (messages ?? []) as Array<GroupMessageItem>,
     [messages],
   )
-  const groupDrafts = useMemo(() => (drafts ?? []) as Array<Doc<'draftRecords'>>, [drafts])
-  const projectRecords = useMemo(() => (records ?? []) as Array<Doc<'records'>>, [records])
-  const filteredProjectRecords = useMemo(
-    () => filterProjectRecords(projectRecords, recordFilter, recordSearchQuery),
-    [projectRecords, recordFilter, recordSearchQuery],
-  )
   const groupAssistantStreams = useMemo(
     () => (assistantStreams ?? []) as Array<Doc<'assistantStreams'>>,
     [assistantStreams],
@@ -176,20 +148,15 @@ export function useWorkspaceData({
     currentAvatarUrl,
     currentTrackProfileIncomplete,
     currentTrackUser,
-    drafts,
-    filteredProjectRecords,
     groupAssistantStreams,
-    groupDrafts,
     groupMessages,
     groups,
-    latestReview,
     messages,
     projectAuditEvents,
     projectInvitations,
     projectItems,
     projectMemberRoleByUserId,
     projectMembers,
-    projectRecords,
     projectSearchResults,
     projects,
     visibleGroups,

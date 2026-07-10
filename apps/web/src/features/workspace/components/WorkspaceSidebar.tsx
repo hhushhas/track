@@ -1,4 +1,4 @@
-import { ChevronDown, FileCheck2, FolderKanban, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
+import { ChevronDown, FolderKanban, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import ThemeToggle from '#/components/ThemeToggle'
@@ -39,20 +39,17 @@ type WorkspaceSidebarProps = {
   onCreateProject: () => void
   onLogoutConfirmOpenChange: (open: boolean | ((open: boolean) => boolean)) => void
   onMobileNavOpenChange: (open: boolean) => void
-  onNavigateProjectRecords: () => void
   onNavigateProjectSettings: () => void
   onNavCollapsedChange: (collapsed: boolean | ((collapsed: boolean) => boolean)) => void
   onOpenProjectSearch: () => void
   onPreloadGroupRoute: (groupId: Id<'groups'>) => void
-  onPreloadProjectRecordsRoute: () => void
   onPreloadProjectRoute: (projectId: Id<'projects'>) => void
   onPreloadProjectSettingsRoute: () => void
   onSelectGroup: (groupId: Id<'groups'>) => void
   onSelectProject: (projectId: Id<'projects'>) => void
   onSignOut: () => void
   projectItems: Array<ProjectItem>
-  projectRecordsCount: number
-  view: 'home' | 'project' | 'group' | 'records' | 'settings'
+  view: 'home' | 'project' | 'group' | 'settings'
   visibleGroups: Array<Doc<'groups'>>
 }
 
@@ -73,19 +70,16 @@ export function WorkspaceSidebar({
   onCreateProject,
   onLogoutConfirmOpenChange,
   onMobileNavOpenChange,
-  onNavigateProjectRecords,
   onNavigateProjectSettings,
   onNavCollapsedChange,
   onOpenProjectSearch,
   onPreloadGroupRoute,
-  onPreloadProjectRecordsRoute,
   onPreloadProjectRoute,
   onPreloadProjectSettingsRoute,
   onSelectGroup,
   onSelectProject,
   onSignOut,
   projectItems,
-  projectRecordsCount,
   view,
   visibleGroups,
 }: WorkspaceSidebarProps) {
@@ -229,24 +223,8 @@ export function WorkspaceSidebar({
                 <Search className="track-nav-icon" size={14} />
                 <span className="track-nav-copy">
                   <span className="track-nav-title">Search</span>
-                  <span className="track-nav-meta">Messages, records, files</span>
+                  <span className="track-nav-meta">Messages and files</span>
                 </span>
-              </Button>
-              <Button
-                className={view === 'records' ? 'track-nav-item active' : 'track-nav-item'}
-                onFocus={onPreloadProjectRecordsRoute}
-                onClick={onNavigateProjectRecords}
-                onPointerEnter={onPreloadProjectRecordsRoute}
-                onTouchStart={onPreloadProjectRecordsRoute}
-                title={navCollapsed ? `Records, ${projectRecordsCount}` : undefined}
-                type="button"
-              >
-                <FileCheck2 className="track-nav-icon" size={14} />
-                <span className="track-nav-copy">
-                  <span className="track-nav-title">Records</span>
-                  <span className="track-nav-meta">Project audit register</span>
-                </span>
-                <span className="track-nav-count">{projectRecordsCount}</span>
               </Button>
               <Button
                 className={view === 'settings' ? 'track-nav-item active' : 'track-nav-item'}

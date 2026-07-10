@@ -570,7 +570,7 @@ export const requestAccountDeletion = mutation({
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .first()
     const retentionNote =
-      'Shared project messages, attachments, records, and audit events are retained where needed for other members and project integrity; personal profile fields and push subscriptions are removed.'
+      'Shared project messages, attachments, and audit events are retained where needed for other members and project integrity; personal profile fields and push subscriptions are removed.'
 
     if (existing) {
       await ctx.db.patch(existing._id, {

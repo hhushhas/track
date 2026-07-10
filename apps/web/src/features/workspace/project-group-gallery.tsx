@@ -24,7 +24,7 @@ export function ProjectGroupGallery({ groups, onOpenGroup }: ProjectGroupGallery
               </span>
               <span className="track-group-card-copy">
                 <strong>{group.name}</strong>
-                <span>{group.kind} · AI review every {group.aiReviewSettings?.frequencyMinutes ?? 30}m</span>
+                <span>{group.kind} conversation</span>
               </span>
               <span className="track-group-card-action">Open chat</span>
             </button>

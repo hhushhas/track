@@ -11,7 +11,7 @@ import { AttachmentTypeIcon, formatFileSize } from '#/features/workspace/attachm
 import type { createPendingAttachment } from '#/features/workspace/attachments/pending-attachments'
 import { getInitials } from '#/features/workspace/identity'
 import { formatThreadDayLabel, getThreadDayKey } from '#/features/workspace/lib/thread-date'
-import { AssistantAnswer, DraftRecordCard, MessageRow } from '#/features/workspace/thread-items'
+import { AssistantAnswer, MessageRow } from '#/features/workspace/thread-items'
 import type { GroupMessageItem, MessageCitationPreview } from '#/features/workspace/thread-items'
 import { ThreadDaySeparator } from '#/features/workspace/components/ThreadDaySeparator'
 import { TypingIndicatorLine } from '#/features/workspace/typing-indicators'
@@ -23,7 +23,6 @@ import {
 } from '#/features/workspace/voice-notes'
 import type { ChatSearchMatch } from '#/features/workspace/search/chat-search'
 import type { WorkspaceThreadItem } from '#/features/workspace/search/chat-thread-data'
-import type { draftClassifications, draftStatuses } from '#/features/workspace/constants'
 
 type PendingAttachment = ReturnType<typeof createPendingAttachment>
 type ActiveTypingIndicator = ComponentProps<typeof TypingIndicatorLine>['indicators'][number]
@@ -68,11 +67,6 @@ type GroupChatPageProps = {
   messageAuthorAvatarUrlById: Map<string, string>
   messageCitations: Map<string, MessageCitationPreview>
   messagesLoaded: boolean
-  onClassifyDraft: (
-    draftRecordId: Id<'draftRecords'>,
-    classification: (typeof draftClassifications)[number],
-    updates: { title: string; description: string; status: (typeof draftStatuses)[number] },
-  ) => Promise<void>
   onComposerBlur: () => void
   onComposerChange: (value: string, cursor: number) => void
   onComposerFocus: () => void
@@ -137,7 +131,6 @@ export function GroupChatPage({
   messageAuthorAvatarUrlById,
   messageCitations,
   messagesLoaded,
-  onClassifyDraft,
   onComposerBlur,
   onComposerChange,
   onComposerFocus,
@@ -254,20 +247,7 @@ export function GroupChatPage({
                 </Fragment>
               )
             }
-            return (
-              <Fragment key={threadItem.key}>
-                {shouldShowDaySeparator ? (
-                  <ThreadDaySeparator label={formatThreadDayLabel(threadItem.at)} />
-                ) : null}
-                <DraftRecordCard
-                  busy={busyAction === `classify-${threadItem.draft._id}`}
-                  draft={threadItem.draft}
-                  isSearchActive={chatSearchMatchKeys.has(threadItem.key)}
-                  onClassify={onClassifyDraft}
-                  searchQuery={searchQuery}
-                />
-              </Fragment>
-            )
+            return null
           })}
         </div>
         {showJumpToLatest ? (

@@ -52,10 +52,6 @@ export const create = mutation({
       projectId: args.projectId,
       kind: 'custom',
       name: args.name,
-      aiReviewSettings: {
-        enabled: true,
-        frequencyMinutes: 30,
-      },
       createdBy: args.userId,
       createdAt: now,
       updatedAt: now,
@@ -128,9 +124,6 @@ export const remove = mutation({
       messages,
       attachments,
       typingIndicators,
-      aiReviews,
-      draftRecords,
-      records,
       assistantStreams,
       groupNotificationSettings,
       invitations,
@@ -139,9 +132,6 @@ export const remove = mutation({
       ctx.db.query('messages').withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('attachments').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('typingIndicators').withIndex('by_group_updated_at', (q) => q.eq('groupId', args.groupId)).collect(),
-      ctx.db.query('aiReviews').withIndex('by_group_started_at', (q) => q.eq('groupId', args.groupId)).collect(),
-      ctx.db.query('draftRecords').withIndex('by_group_status', (q) => q.eq('groupId', args.groupId)).collect(),
-      ctx.db.query('records').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('assistantStreams').withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('groupNotificationSettings').collect(),
       Promise.all(
@@ -170,52 +160,11 @@ export const remove = mutation({
       if (row.groupId === args.groupId) await ctx.db.delete(row._id)
     }
     for (const row of assistantStreams) await ctx.db.delete(row._id)
-    for (const row of records) await ctx.db.delete(row._id)
-    for (const row of draftRecords) await ctx.db.delete(row._id)
-    for (const row of aiReviews) await ctx.db.delete(row._id)
     for (const row of typingIndicators) await ctx.db.delete(row._id)
     for (const row of attachments) await ctx.db.delete(row._id)
     for (const row of messages) await ctx.db.delete(row._id)
     for (const row of groupMembers) await ctx.db.delete(row._id)
     await ctx.db.delete(args.groupId)
-  },
-})
-
-export const updateAiReviewSettings = mutation({
-  args: {
-    projectId: v.id('projects'),
-    groupId: v.id('groups'),
-    userId: v.id('users'),
-    enabled: v.boolean(),
-    frequencyMinutes: v.number(),
-  },
-  handler: async (ctx, args) => {
-    await requireProjectManager(ctx, args.projectId, args.userId)
-    await requireGroupMember(ctx, args.groupId, args.userId)
-    const group = await ctx.db.get(args.groupId)
-    if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
-    const frequencyMinutes = Math.max(5, Math.min(1440, Math.round(args.frequencyMinutes)))
-
-    await ctx.db.patch(args.groupId, {
-      aiReviewSettings: {
-        enabled: args.enabled,
-        frequencyMinutes,
-      },
-      updatedAt: Date.now(),
-    })
-
-    await appendAuditEvent(ctx, {
-      projectId: args.projectId,
-      groupId: args.groupId,
-      actorId: args.userId,
-      entityType: 'group',
-      entityId: args.groupId,
-      action: 'group.ai_review_settings_updated',
-      after: {
-        enabled: args.enabled,
-        frequencyMinutes,
-      },
-    })
   },
 })
 
@@ -225,7 +174,6 @@ export const addProjectMember = mutation({
     actorId: v.id('users'),
     userId: v.id('users'),
     role,
-    canReviewAiRecords: v.boolean(),
   },
   handler: async (ctx, args) => {
     await requireProjectManager(ctx, args.projectId, args.actorId)
@@ -240,7 +188,6 @@ export const addProjectMember = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         role: args.role,
-        canReviewAiRecords: args.canReviewAiRecords,
         updatedAt: now,
       })
     } else {
@@ -248,7 +195,6 @@ export const addProjectMember = mutation({
         projectId: args.projectId,
         userId: args.userId,
         role: args.role,
-        canReviewAiRecords: args.canReviewAiRecords,
         createdAt: now,
         updatedAt: now,
       })
@@ -287,7 +233,6 @@ export const addProjectMember = mutation({
       after: {
         userId: args.userId,
         role: args.role,
-        canReviewAiRecords: args.canReviewAiRecords,
       },
     })
   },

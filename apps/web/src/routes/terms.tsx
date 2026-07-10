@@ -11,11 +11,11 @@ const sections = [
   },
   {
     title: 'Project Content',
-    body: 'Messages, attachments, voice notes, assistant interactions, reports, records, and audit history may be visible to users with access to the relevant project or group. Project owners are responsible for inviting the right collaborators and managing access.',
+    body: 'Messages, attachments, voice notes, assistant interactions, reports, imported memory, and audit history may be visible to users with access to the relevant project or group. Project owners are responsible for inviting the right collaborators and managing access.',
   },
   {
     title: 'AI Features',
-    body: 'Track Assistant and AI review features can help summarize, answer, or classify project conversation content. AI output should be reviewed before it is relied on for legal, billing, operational, or contractual decisions.',
+    body: 'Track Assistant can help summarize and answer questions about accessible project content. AI output should be reviewed before it is relied on for legal, billing, operational, or contractual decisions.',
   },
   {
     title: 'Accounts and Security',
@@ -23,7 +23,7 @@ const sections = [
   },
   {
     title: 'Retention and Deletion',
-    body: 'Personal profile data can be corrected or deleted as described in the Privacy Policy. Some project evidence, audit history, and records may be retained where needed for project integrity, contracts, legal obligations, or dispute resolution.',
+    body: 'Personal profile data can be corrected or deleted as described in the Privacy Policy. Some shared project content and audit history may be retained where needed for project integrity, contracts, legal obligations, or dispute resolution.',
   },
 ]
 
@@ -34,7 +34,7 @@ function Terms() {
         <p className="mono-label m-0 mb-2">Q9 Track</p>
         <h1 className="m-0 text-3xl font-semibold">Terms</h1>
         <p className="m-0 mt-2 text-sm text-[var(--ink-3)]">
-          Effective date: May 16, 2026
+          Effective date: July 11, 2026
         </p>
 
         <div className="track-surface mt-6 rounded-md p-4">

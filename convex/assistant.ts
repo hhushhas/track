@@ -40,20 +40,10 @@ type AssistantAttachmentCandidate = {
 }
 
 type AssistantMessageContext = { id: string; author: string; body: string; createdAt: number }
-type AssistantRecordContext = {
-  id: string
-  title: string
-  description: string
-  classification: string
-  status: string
-}
-type AssistantDraftContext = { id: string; title: string; description: string; type: string }
 type CollectedAssistantContext = {
   attachments: Array<AssistantAttachmentCandidate>
-  drafts: Array<AssistantDraftContext>
   evidence: Array<AssistantEvidence>
   messages: Array<AssistantMessageContext>
-  records: Array<AssistantRecordContext>
 }
 
 function cleanQuestion(question: string) {
@@ -67,9 +57,9 @@ function lowSignalAnswer(question: string) {
     return "hey, i'm here. nothing to track from that yet."
   }
   if (/^(thanks|thank you)/i.test(cleaned)) {
-    return "anytime. no record needed for that."
+    return "anytime."
   }
-  return "got it. nothing to track from that on its own."
+  return "got it."
 }
 
 function scoreAttachment(input: {
@@ -163,32 +153,6 @@ export const collectContext = query({
       .order('desc')
       .take(80)
     const orderedMessages = messages.reverse()
-
-    const groupMemberships = await ctx.db
-      .query('groupMembers')
-      .withIndex('by_user', (q) => q.eq('userId', args.requesterId))
-      .collect()
-    const visibleGroupIds = new Set(
-      groupMemberships
-        .filter((membership) => membership.projectId === args.projectId)
-        .map((membership) => membership.groupId),
-    )
-    const records = (
-      await ctx.db
-        .query('records')
-        .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
-        .collect()
-    )
-      .filter((record) => visibleGroupIds.has(record.groupId))
-      .slice(-40)
-    const drafts = (
-      await ctx.db
-        .query('draftRecords')
-        .withIndex('by_project_status', (q) => q.eq('projectId', args.projectId))
-        .collect()
-    )
-      .filter((draft) => draft.status === 'pending' && visibleGroupIds.has(draft.groupId))
-      .slice(-20)
 
     const users = await Promise.all(
       Array.from(new Set(orderedMessages.map((message) => message.authorId))).map(
@@ -286,45 +250,17 @@ export const collectContext = query({
         }
       }),
     )
-    const formattedRecords = records.map((record) => ({
-      id: String(record._id),
-      title: record.title,
-      description: record.description,
-      classification: record.classification,
-      status: record.status,
-    }))
-    const formattedDrafts = drafts.map((draft) => ({
-      id: String(draft._id),
-      title: draft.title,
-      description: draft.description,
-      type: draft.type,
-    }))
-
     return {
       messages: formattedMessages,
-      records: formattedRecords,
-      drafts: formattedDrafts,
       attachments: selectAttachmentCandidates(attachmentCandidates),
-      evidence: [
-        ...orderedMessages.map((message, index) => ({
-          ref: String(message._id),
-          messageId: message._id,
-          quote: formattedMessages[index]?.body.slice(0, 220) ?? message.body.slice(0, 220),
-          reason: message.forwardedFrom
-            ? 'Current Group message containing forwarded/copied evidence.'
-            : 'Current Group message.',
-        })),
-        ...records.map((record) => ({
-          ref: String(record._id),
-          quote: `${record.title}: ${record.description}`.slice(0, 220),
-          reason: 'Accessible Project Record.',
-        })),
-        ...drafts.map((draft) => ({
-          ref: String(draft._id),
-          quote: `${draft.title}: ${draft.description}`.slice(0, 220),
-          reason: 'Unresolved Draft Record.',
-        })),
-      ],
+      evidence: orderedMessages.map((message, index) => ({
+        ref: String(message._id),
+        messageId: message._id,
+        quote: formattedMessages[index]?.body.slice(0, 220) ?? message.body.slice(0, 220),
+        reason: message.forwardedFrom
+          ? 'Current Group message containing forwarded/copied evidence.'
+          : 'Current Group message.',
+      })),
     }
   },
 })

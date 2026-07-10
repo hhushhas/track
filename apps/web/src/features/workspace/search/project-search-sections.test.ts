@@ -6,7 +6,6 @@ describe('workspace project search sections', () => {
   it('preserves the project search section order and labels', () => {
     expect(buildProjectSearchSections(null).map(({ key, label }) => [key, label])).toEqual([
       ['messages', 'Messages'],
-      ['records', 'Records'],
       ['files', 'Files'],
       ['groups', 'Groups'],
     ])
@@ -20,7 +19,6 @@ describe('workspace project search sections', () => {
 
     expect(sections.map((section) => section.results.map((result) => result.id))).toEqual([
       ['message'],
-      [],
       ['file-1', 'file-2'],
       [],
     ])

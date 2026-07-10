@@ -6,7 +6,6 @@ import { requireProjectMember } from './lib/permissions'
 const searchScope = v.union(
   v.literal('all'),
   v.literal('messages'),
-  v.literal('records'),
   v.literal('files'),
   v.literal('groups'),
 )
@@ -41,7 +40,6 @@ export const project = query({
         files: [],
         groups: [],
         messages: [],
-        records: [],
       }
     }
 
@@ -83,36 +81,6 @@ export const project = query({
               preview: compactPreview(message.body, 'Attachment message'),
               subtitle: `${author?.displayName ?? 'Unknown member'} in ${group?.name ?? 'Unknown group'}`,
               title: author?.displayName ?? 'Message',
-            }
-          }),
-      )
-    )
-
-    const records = enabled(filter, 'records')
-      ? await ctx.db
-          .query('records')
-          .withSearchIndex('search_text_by_project', (q) =>
-            q.search('searchText', term).eq('projectId', args.projectId),
-          )
-          .take(perSectionLimit * 2)
-      : []
-    const recordResults = (
-      await Promise.all(
-        records
-          .filter((record) => visibleGroupIds.has(record.groupId))
-          .slice(0, perSectionLimit)
-          .map(async (record) => {
-            const group = await ctx.db.get(record.groupId)
-            return {
-              createdAt: record.createdAt,
-              groupId: record.groupId,
-              groupName: group?.name ?? 'Unknown group',
-              id: record._id,
-              kind: 'record' as const,
-              preview: compactPreview(record.description),
-              recordId: record._id,
-              subtitle: `${record.type.replaceAll('_', ' ')} · ${record.status.replaceAll('_', ' ')}`,
-              title: record.title,
             }
           }),
       )
@@ -176,7 +144,6 @@ export const project = query({
       files: fileResults,
       groups: groupResults,
       messages: messageResults,
-      records: recordResults,
     }
   },
 })

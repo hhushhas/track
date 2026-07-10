@@ -72,7 +72,7 @@ export function buildWorkspaceMentionOptions(
       id: 'track',
       kind: 'assistant',
       label: 'Track Assistant',
-      sublabel: 'ai review',
+      sublabel: 'project memory',
       handle: 'track',
       tone: 'bot',
     },

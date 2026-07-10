@@ -4,7 +4,7 @@ import { v } from 'convex/values'
 
 import { action, internalAction, type ActionCtx } from './_generated/server'
 import { api, internal } from './_generated/api'
-import type { Id } from './_generated/dataModel'
+import type { Doc, Id } from './_generated/dataModel'
 import { createLiveMemoryBoxAdapter } from './lib/box'
 import { generateTrackText } from './lib/ai'
 import { extractAttachmentText } from './lib/attachmentTextExtraction'
@@ -21,11 +21,10 @@ import {
   truncateMemoryOutput,
   validateContextMutation,
   type ContextEdit,
+  type ContextMutationDecision,
 } from './lib/memoryPolicy'
 
 const memoryLockTtlMs = 20_000
-const memoryApi = api as any
-const memoryInternal = internal as any
 
 const contextEditValidator = v.object({
   oldText: v.string(),
@@ -50,7 +49,7 @@ export const startImport = action({
     sourceUrls: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args): Promise<{ importId: Id<'memoryImports'>; summary: string }> => {
-    await ctx.runMutation(memoryInternal.memory.authorizeGroupMemoryWrite, {
+    await ctx.runMutation(internal.memory.authorizeGroupMemoryWrite, {
       actorId: args.actorId,
       groupId: args.groupId,
       projectId: args.projectId,
@@ -68,7 +67,7 @@ export const startImport = action({
         ? 'link'
         : 'paste'
     const now = Date.now()
-    const importId: Id<'memoryImports'> = await ctx.runMutation(memoryInternal.memory.createImportJob, {
+    const importId: Id<'memoryImports'> = await ctx.runMutation(internal.memory.createImportJob, {
       actorId: args.actorId,
       createdAt: now,
       groupId: args.groupId,
@@ -79,7 +78,7 @@ export const startImport = action({
     })
 
     try {
-      await ctx.runMutation(memoryInternal.memory.updateImportJob, {
+      await ctx.runMutation(internal.memory.updateImportJob, {
         importId,
         status: 'running',
         updatedAt: Date.now(),
@@ -139,7 +138,7 @@ export const startImport = action({
         ].filter(Boolean).join('\n\n'),
       })
 
-      await ctx.runMutation(memoryInternal.memory.updateImportJob, {
+      await ctx.runMutation(internal.memory.updateImportJob, {
         boxScratchPath: scratchPath,
         completedAt: Date.now(),
         importId,
@@ -147,7 +146,7 @@ export const startImport = action({
         summary,
         updatedAt: Date.now(),
       })
-      await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+      await ctx.runMutation(internal.memory.auditMemoryEvent, {
         action: 'memory_import.completed',
         actorId: args.actorId,
         after: { boxScratchPath: scratchPath, summary },
@@ -159,13 +158,13 @@ export const startImport = action({
       return { importId, summary }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'memory_import_failed'
-      await ctx.runMutation(memoryInternal.memory.updateImportJob, {
+      await ctx.runMutation(internal.memory.updateImportJob, {
         error: message,
         importId,
         status: 'failed',
         updatedAt: Date.now(),
       })
-      await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+      await ctx.runMutation(internal.memory.auditMemoryEvent, {
         action: 'memory_import.failed',
         actorId: args.actorId,
         after: { error: message },
@@ -227,7 +226,7 @@ export const writeTool = action({
     runId: v.optional(v.string()),
     correlationId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ContextMutationDecision | { path: string; length: number }> => {
     const { boxId } = await ensureProjectBox(ctx, args)
     const scope = await getAccessScope(ctx, { ...args, boxId })
     const decision = canAccessMemoryPath(scope, args.path, 'write')
@@ -291,7 +290,7 @@ export const editTool = action({
         throw new Error(validation.reason)
       }
       await adapter.writeFile(boxId, contextPath, validation.newContent)
-      await ctx.runMutation(memoryInternal.memory.updateMemoryBoxContextStats, {
+      await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
         boxId,
         contextLength: validation.newLength,
         lastContextUpdatedAt: Date.now(),
@@ -355,9 +354,15 @@ export const loadContextForAssistant = action({
     groupId: v.id('groups'),
     actorId: v.id('users'),
   },
-  handler: async (ctx, args) => {
-    await ctx.runMutation(memoryInternal.memory.authorizeGroupMemoryWrite, args)
-    let boxRow = await ctx.runQuery(memoryApi.memory.getStatus, {
+  handler: async (ctx, args): Promise<{
+    boxId: string | null
+    content: string
+    lastContextUpdatedAt?: number
+    loaded: boolean
+    reason?: string
+  }> => {
+    await ctx.runMutation(internal.memory.authorizeGroupMemoryWrite, args)
+    let boxRow: Pick<Doc<'projectMemoryBoxes'>, 'boxId' | 'error' | 'lastContextUpdatedAt' | 'status'> | null = await ctx.runQuery(api.memory.getStatus, {
       projectId: args.projectId,
       userId: args.actorId,
     })
@@ -367,13 +372,13 @@ export const loadContextForAssistant = action({
           actorId: args.actorId,
           projectId: args.projectId,
         })
-        boxRow = await ctx.runQuery(memoryApi.memory.getStatus, {
+        boxRow = await ctx.runQuery(api.memory.getStatus, {
           projectId: args.projectId,
           userId: args.actorId,
         }) ?? { boxId: ensured.boxId, lastContextUpdatedAt: undefined, status: 'ready' }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'memory_box_create_failed'
-        await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+        await ctx.runMutation(internal.memory.auditMemoryEvent, {
           action: 'memory_tool.read.denied',
           actorId: args.actorId,
           after: { path: contextPath, purpose: 'assistant_context_load', reason: message },
@@ -403,7 +408,7 @@ export const loadContextForAssistant = action({
       if (content.length > contextHardLimitChars) {
         return { boxId: boxRow.boxId, content: '', loaded: false, reason: 'context_too_large' }
       }
-      await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+      await ctx.runMutation(internal.memory.auditMemoryEvent, {
         action: 'memory_tool.read.allowed',
         actorId: args.actorId,
         after: { length: content.length, path: contextPath, purpose: 'assistant_context_load' },
@@ -420,7 +425,7 @@ export const loadContextForAssistant = action({
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'context_read_failed'
-      await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+      await ctx.runMutation(internal.memory.auditMemoryEvent, {
         action: 'memory_tool.read.denied',
         actorId: args.actorId,
         after: { path: contextPath, purpose: 'assistant_context_load', reason: message },
@@ -437,7 +442,7 @@ export const loadContextForAssistant = action({
 export const cleanupRunViews = internalAction({
   args: {},
   handler: async (ctx) => {
-    const boxes = await ctx.runQuery(memoryInternal.memory.listMemoryBoxesForCleanup, {})
+    const boxes = await ctx.runQuery(internal.memory.listMemoryBoxesForCleanup, {})
     let cleaned = 0
     const adapter = createLiveMemoryBoxAdapter()
     for (const box of boxes) {
@@ -448,7 +453,7 @@ export const cleanupRunViews = internalAction({
         })
         cleaned += run.stdout.split('\n').filter(Boolean).length
       } catch (error) {
-        await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+        await ctx.runMutation(internal.memory.auditMemoryEvent, {
           action: 'memory_tool.bash.denied',
           after: {
             boxId: box.boxId,
@@ -474,7 +479,7 @@ export const deleteMemoryBoxById = internalAction({
   handler: async (ctx, args) => {
     try {
       await createLiveMemoryBoxAdapter().delete(args.boxId)
-      await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+      await ctx.runMutation(internal.memory.auditMemoryEvent, {
         action: 'memory_box.deleted',
         actorId: args.actorId,
         after: { boxId: args.boxId, result: 'deleted' },
@@ -482,7 +487,7 @@ export const deleteMemoryBoxById = internalAction({
         entityType: 'projectMemoryBox',
         projectId: args.projectId,
       })
-      await ctx.runMutation(memoryInternal.memory.markMemoryBoxDeleted, {
+      await ctx.runMutation(internal.memory.markMemoryBoxDeleted, {
         boxId: args.boxId,
         error: undefined,
         projectId: args.projectId,
@@ -490,7 +495,7 @@ export const deleteMemoryBoxById = internalAction({
       return { ok: true }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'memory_box_delete_failed'
-      await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+      await ctx.runMutation(internal.memory.auditMemoryEvent, {
         action: 'memory_box.deleted',
         actorId: args.actorId,
         after: { boxId: args.boxId, error: message, result: 'failed' },
@@ -498,7 +503,7 @@ export const deleteMemoryBoxById = internalAction({
         entityType: 'projectMemoryBox',
         projectId: args.projectId,
       })
-      await ctx.runMutation(memoryInternal.memory.markMemoryBoxDeleted, {
+      await ctx.runMutation(internal.memory.markMemoryBoxDeleted, {
         boxId: args.boxId,
         error: message,
         projectId: args.projectId,
@@ -511,10 +516,10 @@ export const deleteMemoryBoxById = internalAction({
 async function ensureProjectBox(
   ctx: ActionCtx,
   input: { projectId: Id<'projects'>; actorId: Id<'users'> },
-) {
+): Promise<{ boxId: string }> {
   const existing = await getProjectMemoryBox(ctx, input)
   if (existing && existing.status !== 'deleted') {
-    await ctx.runMutation(memoryInternal.memory.markMemoryBoxUsed, {
+    await ctx.runMutation(internal.memory.markMemoryBoxUsed, {
       actorId: input.actorId,
       boxId: existing.boxId,
       projectId: input.projectId,
@@ -539,7 +544,7 @@ async function ensureProjectBox(
     if (!message.includes('already in use')) throw error
     const raced = await waitForProjectMemoryBox(ctx, input)
     if (!raced) throw error
-    await ctx.runMutation(memoryInternal.memory.markMemoryBoxUsed, {
+    await ctx.runMutation(internal.memory.markMemoryBoxUsed, {
       actorId: input.actorId,
       boxId: raced.boxId,
       projectId: input.projectId,
@@ -548,7 +553,7 @@ async function ensureProjectBox(
   }
   await adapter.ensureDirectories(boxId, ['scratch', 'scratch/groups', 'scratch/runs'])
   await adapter.writeFile(boxId, contextPath, initialContextTemplate)
-  await ctx.runMutation(memoryInternal.memory.createMemoryBoxRecord, {
+  await ctx.runMutation(internal.memory.createMemoryBoxRecord, {
     boxId,
     createdBy: input.actorId,
     projectId: input.projectId,
@@ -560,8 +565,8 @@ async function ensureProjectBox(
 async function getProjectMemoryBox(
   ctx: ActionCtx,
   input: { projectId: Id<'projects'>; actorId: Id<'users'> },
-) {
-  return await ctx.runQuery(memoryApi.memory.getMemoryBoxForProject, {
+): Promise<Doc<'projectMemoryBoxes'> | null> {
+  return await ctx.runQuery(api.memory.getMemoryBoxForProject, {
     actorId: input.actorId,
     projectId: input.projectId,
   })
@@ -589,7 +594,7 @@ async function getAccessScope(
     runId?: string
   },
 ) {
-  return await ctx.runQuery(memoryApi.memory.getAccessScope, {
+  return await ctx.runQuery(api.memory.getAccessScope, {
     actorId: input.actorId,
     boxId: input.boxId,
     groupId: input.groupId,
@@ -629,7 +634,7 @@ async function promoteImportToContext(
     nextContent: result.text,
   })
   if (!validation.allowed) {
-    await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+    await ctx.runMutation(internal.memory.auditMemoryEvent, {
       action: 'memory_context.update_rejected',
       actorId: input.actorId,
       after: { importId: input.importId, path: contextPath, reason: validation.reason },
@@ -643,13 +648,13 @@ async function promoteImportToContext(
   const lockId = await acquirePathLock(ctx, input.projectId, contextPath)
   try {
     await adapter.writeFile(input.boxId, contextPath, validation.newContent)
-    await ctx.runMutation(memoryInternal.memory.updateMemoryBoxContextStats, {
+    await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
       boxId: input.boxId,
       contextLength: validation.newLength,
       lastContextUpdatedAt: Date.now(),
       projectId: input.projectId,
     })
-    await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+    await ctx.runMutation(internal.memory.auditMemoryEvent, {
       action: 'memory_context.updated',
       actorId: input.actorId,
       after: { ...validation, importId: input.importId, model: result.model, path: contextPath },
@@ -691,7 +696,7 @@ async function writeContextThroughGateway(
       throw new Error(validation.reason)
     }
     await adapter.writeFile(input.boxId, input.path, validation.newContent)
-    await ctx.runMutation(memoryInternal.memory.updateMemoryBoxContextStats, {
+    await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
       boxId: input.boxId,
       contextLength: validation.newLength,
       lastContextUpdatedAt: Date.now(),
@@ -851,7 +856,7 @@ async function auditTool(
   path: string,
   after: unknown,
 ) {
-  await ctx.runMutation(memoryInternal.memory.auditMemoryEvent, {
+  await ctx.runMutation(internal.memory.auditMemoryEvent, {
     action,
     actorId: input.actorId,
     after: { path, ...(typeof after === 'object' && after ? after : { detail: after }) },
@@ -870,7 +875,7 @@ async function acquirePathLock(
 ) {
   const normalized = normalizeMemoryPath(path)
   if (!normalized.allowed) throw new Error(normalized.reason)
-  return await ctx.runMutation(memoryInternal.memory.acquireMemoryPathLock, {
+  return await ctx.runMutation(internal.memory.acquireMemoryPathLock, {
     expiresAt: Date.now() + memoryLockTtlMs,
     holderId: crypto.randomUUID(),
     path: normalized.normalizedPath,
@@ -882,7 +887,7 @@ async function releasePathLock(
   ctx: ActionCtx,
   lockId: Id<'memoryPathLocks'>,
 ) {
-  await ctx.runMutation(memoryInternal.memory.releaseMemoryPathLock, { lockId })
+  await ctx.runMutation(internal.memory.releaseMemoryPathLock, { lockId })
 }
 
 function envLiteral(key: string, fallback: string) {

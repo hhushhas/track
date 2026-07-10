@@ -106,7 +106,7 @@ const groupAvatarRules: GroupAvatarRule[] = [
   { keywords: ['goal', 'okr', 'target', 'milestone'], Icon: Target, tone: 'red' },
   { keywords: ['experiment', 'lab', 'prototype', 'r&d'], Icon: FlaskConical, tone: 'purple' },
   { keywords: ['audit', 'approval', 'review', 'signoff'], Icon: FileCheck2, tone: 'blue' },
-  { keywords: ['record', 'document', 'file', 'paperwork'], Icon: FileText, tone: 'yellow' },
+  { keywords: ['document', 'file', 'paperwork'], Icon: FileText, tone: 'yellow' },
   { keywords: ['package', 'inventory', 'fulfillment', 'stock'], Icon: PackageCheck, tone: 'lime' },
   { keywords: ['community', 'social', 'forum', 'members'], Icon: MessageCircle, tone: 'indigo' },
   { keywords: ['access', 'auth', 'login', 'permission'], Icon: KeyRound, tone: 'zinc' },
