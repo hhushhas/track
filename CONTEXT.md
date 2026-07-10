@@ -40,6 +40,14 @@ Track should center one core loop:
 8. Client-visible classifications, especially billable ones, appear only where the relevant members have access.
 9. Users can mention `@track` inside a Group to ask evidence-based questions about the conversation and records they can access.
 
+## Planned Direction
+
+Records and the Project Record remain the authoritative model for the current application. A future product phase will retire that model in favor of first-class task management organized through Kanban boards.
+
+AI-derived work will become tasks with explicit status, ownership, evidence, and board placement. Chat, source evidence, project and group context, and access controls remain foundational to that system.
+
+Implementation requires a replacement domain model, permission review, and data-migration specification. The current Records schema and workflows remain in force until that specification is approved.
+
 ## Core Domain Sentence
 
 A Project is the overall client engagement. A Project contains Groups. Each Group is a focused chat space where selected Staff members and Clients communicate. AI periodically reviews Group Conversations and creates Draft Records. Users can mention `@track` for immediate evidence-based help. Authorized Staff users review Draft Records and classify them into the Project Record.
@@ -592,9 +600,7 @@ Primary screens explored so far:
 - AI review settings.
 - Mobile chat-first version.
 
-Current mockup artifact:
-
-- `ui-example.html`
+The implemented web and mobile applications are the current UI reference. `DESIGN.md` remains the durable source for visual rules and product semantics.
 
 ## Open Product Questions
 

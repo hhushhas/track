@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
@@ -37,8 +40,8 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
       - name: Build
         run: pnpm build
-
-      - name: Docs
-        run: pnpm run docs

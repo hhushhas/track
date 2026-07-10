@@ -9,6 +9,14 @@ build/
 .eas/
 .wrangler/
 .convex/
+scratchpad/
+
+# Operator-specific deployment and release configuration
+convex.prod.env
+wrangler.toml
+apps/mobile/eas.json
+apps/mobile/app.json
+.credentials/
 
 # Local environment and secrets
 .env
@@ -17,7 +25,6 @@ build/
 *.local
 
 # Provisioning credentials and generated private material
-scratchpad/credentials/
 credentials.json
 apps/mobile/credentials.json
 *.p8
@@ -31,9 +38,6 @@ apps/mobile/credentials.json
 
 # Local screenshots / scratch captures
 SCR-*.png
-
-# Store release artifacts downloaded for manual console upload
-scratchpad/store-assets/play-release/
 
 # Riptide artifacts (cloud-synced)
 .humanlayer/tasks/

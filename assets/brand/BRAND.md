@@ -1,14 +1,6 @@
 # Track Brand Assets
 
-Production-facing brand assets live here.
-
-## Source References
-
-- `source/track-logo-reference.png` - original horizontal logo screenshot reference.
-- `source/track-mark-reference-padded.png` - original padded mark screenshot reference.
-- `source/track-mark-reference-tight.png` - tight mark screenshot reference used to rebuild the SVG mark.
-
-These files are references only. Do not use them directly in app or store surfaces.
+The final, production-facing SVG assets live here. Logo-generation references, scripts, and duplicate raster exports are intentionally excluded from the repository.
 
 ## Masters
 
@@ -28,14 +20,4 @@ These files are references only. Do not use them directly in app or store surfac
 - Stone 500: `#8f8a83`
 - Stone 700: `#3a3631`
 
-## Generated Raster Assets
-
-Generated files live in `raster/`.
-
-Run:
-
-```bash
-node assets/brand/scripts/export-brand-assets.mjs
-```
-
-The export script renders from SVG masters and writes app icons, favicons, and logo PNGs. Re-run it after editing the SVG masters.
+Application-specific raster copies live with the web and mobile applications that consume them.

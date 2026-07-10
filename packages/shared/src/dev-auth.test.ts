@@ -14,12 +14,12 @@ describe('dev auth bypass helpers', () => {
     expect(shouldAllowDevAuthBypass({ flag: '1', isDev: false })).toBe(false)
   })
 
-  it('uses the fixed Hasan demo identity for synthetic sessions', () => {
+  it('uses the public developer identity for synthetic sessions', () => {
     expect(createDevAuthBypassSessionData()).toEqual({
       user: {
         id: devAuthBypassUser.googleSubject,
-        email: 'shasanshoaib@gmail.com',
-        name: 'Hasan Shoaib',
+        email: 'developer@track.local',
+        name: 'Track Developer',
       },
       session: {
         userId: devAuthBypassUser.googleSubject,

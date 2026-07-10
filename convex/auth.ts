@@ -24,12 +24,12 @@ const trustedOrigins = [
   'https://appleid.apple.com',
 ]
 const devAuthBypassUser = {
-  googleSubject: 'demo:hasan-shoaib',
-  email: 'shasanshoaib@gmail.com',
-  displayName: 'Hasan Shoaib',
-  profileDesignation: 'Founder / Product Lead',
+  googleSubject: 'demo:track-developer',
+  email: 'developer@track.local',
+  displayName: 'Track Developer',
+  profileDesignation: 'Developer',
   profileBannerStyle: 'silk',
-  timezone: 'Asia/Karachi',
+  timezone: 'UTC',
 } as const
 
 const stepUpFreshMs = 10 * 60 * 1000

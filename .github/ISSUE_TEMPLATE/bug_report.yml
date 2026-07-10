@@ -1,0 +1,32 @@
+name: Bug report
+description: Report reproducible broken behavior.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What happened?
+      description: Include the expected and actual outcomes.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest reliable sequence of steps.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the app, OS or browser, and commit or version.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Remove secrets and personal data before pasting logs.

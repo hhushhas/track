@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-11
+
+- Removed obsolete prototypes, starter utilities and assets, demo fixtures, unused UI components, sign-in experiments, and logo-generation tooling while retaining the final brand masters.
+- Removed internal work logs and operator-owned deployment configuration from version control, added public configuration templates, and sanitized documented environment values.
+- Added open-source project documentation, community policies, dependency automation, and a documented code-quality backlog.
+- Updated vulnerable production dependencies and added a clean production dependency audit to CI.
+- Recorded the planned transition from Records to task management with Kanban boards while preserving the current runtime model.
+
 ## 2026-06-05
 
 - Added the Phase 1 project memory substrate with Upstash Box pointers, memory import jobs, scoped memory tools, context gateway checks, scoped run-view cleanup, audit events, fake-adapter tests, and Convex import/audit regression coverage.
@@ -32,7 +40,7 @@
 - Decomposed the workspace page into focused chat, sidebar, header, rail, search, records, settings, and hook modules.
 - Added regression coverage for route state, record filtering, search result shaping, mentions, message sending, and notification body copy.
 - Improved workspace notification diagnostics, pending attachment handling, project record export flows, and assistant/chat data shaping.
-- Added a committed Convex production deploy selector so `pnpm convex:deploy:prod` targets `fleet-manatee-941` even when local dev env files are present.
+- Added a production Convex deploy selector so `pnpm convex:deploy:prod` uses the operator's production environment file even when local development values are present.
 
 ## 2026-04-29
 

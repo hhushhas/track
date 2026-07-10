@@ -145,7 +145,7 @@ The locked product direction is:
 - Project and Group context are always visible.
 - AI output appears as reviewable work artifacts, not as magic theater.
 - Records, evidence, permissions, and visibility need stronger visual clarity than decorative branding.
-- Web and mobile must share Track's product identity, information semantics, evidence cues, and permission clarity. Mobile v1 feature scope is controlled by `scratchpad/mobile-v1-implementation-spec-2026-05-16.md`.
+- Web and mobile must share Track's product identity, information semantics, evidence cues, and permission clarity. Mobile v1 feature scope is defined in `SPEC.md`.
 
 ## Colors
 
@@ -334,7 +334,7 @@ Track Assistant answers inline in the Group conversation after `@track`.
 
 ## Mobile V1 Parity
 
-Mobile v1 must feel like the same Track product while using native mobile spatial patterns. `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` is the controlling implementation scope.
+Mobile v1 must feel like the same Track product while using native mobile spatial patterns. `SPEC.md` defines the controlling implementation scope.
 
 Mobile v1 includes:
 

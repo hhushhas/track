@@ -6,6 +6,8 @@ Living technical specification for Track.
 
 This spec follows the product context in `CONTEXT.md`. If product semantics conflict with this file, update the product context first, then update this spec.
 
+`CONTEXT.md#planned-direction` describes the future task-management and Kanban model. The current `draftRecords` and `records` schema remains authoritative until a replacement domain and migration specification is approved.
+
 ## Product Core
 
 Track is a multi-project, group-based project communication tool.
@@ -42,21 +44,7 @@ Use:
 
 Use Convex as the database, backend, realtime layer, scheduled jobs layer, and backend function runtime.
 
-Provisioned Convex projects:
-
-```text
-Project: track
-
-Development:
-  Cloud URL: https://enduring-impala-781.convex.cloud
-  HTTP Actions URL: https://enduring-impala-781.convex.site
-
-Production:
-  Cloud URL: https://fleet-manatee-941.convex.cloud
-  HTTP Actions URL: https://fleet-manatee-941.convex.site
-```
-
-Local `.env` stores both development and production Convex deploy keys. Do not record deploy key values in docs.
+Each contributor must connect an operator-owned Convex development deployment through `.env.local`. Production deployment identifiers and keys belong in ignored local configuration and provider secret stores.
 
 Use Convex components for:
 
@@ -87,7 +75,7 @@ Shortcuts are in scope for the web app, but the exact package can be decided dur
 
 Use React Native with Expo.
 
-`scratchpad/mobile-v1-implementation-spec-2026-05-16.md` is the controlling scope for the next mobile implementation. Mobile v1 is conversation-first: Projects, Groups, Conversation, attachments, voice notes, mentions, `@track`, unread counts, native push, lightweight tools, Google sign-in, and Sign in with Apple on iOS. Project Record, Draft Record review, AI Review run, exports, and audit remain web-first for that version.
+Mobile v1 is conversation-first: Projects, Groups, Conversation, attachments, voice notes, mentions, `@track`, unread counts, native push, lightweight tools, Google sign-in, and Sign in with Apple on iOS. Project Record, Draft Record review, AI Review run, exports, and audit remain web-first for that version.
 
 Mobile should share domain logic, validation, and app semantics with web through `packages/shared`.
 
@@ -95,7 +83,7 @@ Web shadcn/ui components will not directly carry over to React Native, so mobile
 
 Mobile UI component strategy:
 
-- Preserve domain semantics and Track design parity with web while following `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` for v1 feature scope.
+- Preserve domain semantics and Track design parity with web while following the mobile v1 scope in this specification.
 - Theme mobile to Track's own design system.
 - Use NativeWind for Tailwind-style mobile styling and shared token language.
 - Use React Native Reusables selectively as a shadcn-like starter, but own the copied components.
@@ -142,7 +130,7 @@ AI workloads:
 
 Use shadcn/ui and Tailwind CSS.
 
-Customize the theme to match `ui-example.html`:
+Customize the theme to match `DESIGN.md`:
 
 - Base stone: `#1b1917`.
 - Accent yellow: `#f0b100`.
@@ -606,7 +594,7 @@ Web push implementation:
 
 - Use direct Web Push with VAPID for browser push.
 - VAPID keys were generated locally on `2026-04-27`.
-- Local env file: `scratchpad/credentials/track-web-push-vapid.env`.
+- Local env or provider secret store only.
 - Keep the VAPID private key in provider secret stores only.
 - Do not add a notification SaaS unless product needs like campaigns, analytics, or dashboard-driven notification management appear.
 
@@ -762,10 +750,7 @@ Convex:
 
 - Use Convex deployment environments.
 - Keep production secrets in the deployment environment, not source code.
-- Development Convex cloud URL: `https://enduring-impala-781.convex.cloud`.
-- Development Convex HTTP Actions URL: `https://enduring-impala-781.convex.site`.
-- Production Convex cloud URL: `https://fleet-manatee-941.convex.cloud`.
-- Production Convex HTTP Actions URL: `https://fleet-manatee-941.convex.site`.
+- Keep deployment URLs in local environment files and operator-owned platform configuration.
 - Keep Convex deploy keys in `.env` locally and provider secret stores in deployment.
 
 Mobile:
@@ -773,23 +758,12 @@ Mobile:
 - Expo development builds during development.
 - Apple App Store submission is in scope.
 - Google Play Store submission is in scope.
-- Use `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` as the controlling mobile release scope.
+- Use the mobile v1 scope in this specification as the controlling release scope.
 - Use `react`, `better-auth`, and `convex` as implementation aids for mobile UI, auth/security, backend/realtime/storage, and release-critical contracts.
 - Use `mobile-app-provisioning` and `mobile-store-submission-readiness` as release preflight/review aids.
 - Official Apple and Google policy docs are the final authority for sign-in, account deletion, privacy, UGC, AI content, permissions, Data Safety/App Privacy, and target API requirements.
 
-Provisioned mobile/store identity:
-
-```text
-Bundle/package id: ai.q9labs.track
-App Store Connect app name: Q9 Track
-App Store Connect app id: 6763930104
-Google Play app name: Track
-Google Play app id: 4975775109941853146
-Google Cloud project: track-494517
-```
-
-Credential details are recorded in `scratchpad/store-auth-preflight-2026-04-26.md` and `scratchpad/provisioning-status-2026-04-27.md`. Secret material remains local-only under `scratchpad/credentials/`.
+Forks must configure their own mobile bundle identifiers, store application records, OAuth projects, and release credentials. Secret material remains local-only under `.credentials/`, environment files, or provider stores.
 
 ## Testing And Gates
 
@@ -882,7 +856,7 @@ Advanced AI
 
 Web/mobile relationship
   web remains the complete review/export/admin surface
-  mobile v1 follows scratchpad/mobile-v1-implementation-spec-2026-05-16.md
+  mobile v1 follows the scope defined in this specification
   shared semantics and design language matter more than pixel parity
 
 Native app release
@@ -898,4 +872,4 @@ Native app release
 - Make `@track` available to all Group members, including Clients, but strictly permission-bound.
 - Use current Group as the default assistant search scope.
 - Add explicit "search all accessible groups" UX behind a clear action.
-- Maintain shared Track semantics across web and mobile while following `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` for mobile v1 scope.
+- Maintain shared Track semantics across web and mobile while following this specification's mobile v1 scope.

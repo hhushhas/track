@@ -13,8 +13,6 @@ import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SupportRouteImport } from './routes/support'
-import { Route as SignInOptionBRouteImport } from './routes/sign-in-option-b'
-import { Route as SignInOptionARouteImport } from './routes/sign-in-option-a'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -49,16 +47,6 @@ const TermsRoute = TermsRouteImport.update({
 const SupportRoute = SupportRouteImport.update({
   id: '/support',
   path: '/support',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignInOptionBRoute = SignInOptionBRouteImport.update({
-  id: '/sign-in-option-b',
-  path: '/sign-in-option-b',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignInOptionARoute = SignInOptionARouteImport.update({
-  id: '/sign-in-option-a',
-  path: '/sign-in-option-a',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -149,8 +137,6 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
-  '/sign-in-option-a': typeof SignInOptionARoute
-  '/sign-in-option-b': typeof SignInOptionBRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
@@ -172,8 +158,6 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
-  '/sign-in-option-a': typeof SignInOptionARoute
-  '/sign-in-option-b': typeof SignInOptionBRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
@@ -194,8 +178,6 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/sign-in': typeof SignInRoute
-  '/sign-in-option-a': typeof SignInOptionARoute
-  '/sign-in-option-b': typeof SignInOptionBRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/two-factor': typeof TwoFactorRoute
@@ -219,8 +201,6 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/sign-in'
-    | '/sign-in-option-a'
-    | '/sign-in-option-b'
     | '/support'
     | '/terms'
     | '/two-factor'
@@ -242,8 +222,6 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/sign-in'
-    | '/sign-in-option-a'
-    | '/sign-in-option-b'
     | '/support'
     | '/terms'
     | '/two-factor'
@@ -263,8 +241,6 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/sign-in'
-    | '/sign-in-option-a'
-    | '/sign-in-option-b'
     | '/support'
     | '/terms'
     | '/two-factor'
@@ -287,8 +263,6 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   SignInRoute: typeof SignInRoute
-  SignInOptionARoute: typeof SignInOptionARoute
-  SignInOptionBRoute: typeof SignInOptionBRoute
   SupportRoute: typeof SupportRoute
   TermsRoute: typeof TermsRoute
   TwoFactorRoute: typeof TwoFactorRoute
@@ -326,20 +300,6 @@ declare module '@tanstack/react-router' {
       path: '/support'
       fullPath: '/support'
       preLoaderRoute: typeof SupportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-in-option-b': {
-      id: '/sign-in-option-b'
-      path: '/sign-in-option-b'
-      fullPath: '/sign-in-option-b'
-      preLoaderRoute: typeof SignInOptionBRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-in-option-a': {
-      id: '/sign-in-option-a'
-      path: '/sign-in-option-a'
-      fullPath: '/sign-in-option-a'
-      preLoaderRoute: typeof SignInOptionARouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -494,8 +454,6 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   SignInRoute: SignInRoute,
-  SignInOptionARoute: SignInOptionARoute,
-  SignInOptionBRoute: SignInOptionBRoute,
   SupportRoute: SupportRoute,
   TermsRoute: TermsRoute,
   TwoFactorRoute: TwoFactorRoute,

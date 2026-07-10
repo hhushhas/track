@@ -1,7 +1,7 @@
 export const devAuthBypassUser = {
-  googleSubject: 'demo:hasan-shoaib',
-  email: 'shasanshoaib@gmail.com',
-  displayName: 'Hasan Shoaib',
+  googleSubject: 'demo:track-developer',
+  email: 'developer@track.local',
+  displayName: 'Track Developer',
 } as const
 
 export const devAuthBypassStorageKey = 'track:dev-auth-bypass'

@@ -14,7 +14,6 @@ import type * as assistantNode from "../assistantNode.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
-import type * as demoSeed from "../demoSeed.js";
 import type * as exports from "../exports.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
@@ -53,7 +52,6 @@ declare const fullApi: ApiFromModules<{
   audit: typeof audit;
   auth: typeof auth;
   crons: typeof crons;
-  demoSeed: typeof demoSeed;
   exports: typeof exports;
   groups: typeof groups;
   http: typeof http;

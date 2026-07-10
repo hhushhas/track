@@ -40,7 +40,7 @@ Product boundary:
 ```text
 Autonomous AI actions
 Cross-Project AI reasoning
-Shared web/mobile product semantics with `scratchpad/mobile-v1-implementation-spec-2026-05-16.md` controlling mobile v1 feature scope
+Shared web/mobile product semantics with `SPEC.md` controlling mobile v1 feature scope
 ```
 
 ## 1. Sign In And Secure Account
