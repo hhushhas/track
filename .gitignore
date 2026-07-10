@@ -34,3 +34,6 @@ SCR-*.png
 
 # Store release artifacts downloaded for manual console upload
 scratchpad/store-assets/play-release/
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/

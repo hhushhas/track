@@ -4,8 +4,8 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "paths": {
-      "#/*": ["apps/web/src/*"],
-      "@/*": ["apps/web/src/*"],
+      "#/*": ["./src/*"],
+      "@/*": ["./src/*"],
       "@track/shared": ["../../packages/shared/src/index.ts"],
       "@track/shared/*": ["../../packages/shared/src/*"]
     },

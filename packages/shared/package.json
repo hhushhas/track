@@ -17,7 +17,7 @@
     "docs": "echo \"shared package docs checked\""
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
+    "typescript": "7.0.1-rc",
     "vitest": "^4.1.5"
   }
 }

@@ -5,13 +5,27 @@ import type { ModelMessage } from "ai";
 const modelName = process.env.AI_MODEL ?? "moonshotai/kimi-k2.6";
 const documentReaderModelName =
 	process.env.AI_DOCUMENT_READER_MODEL ?? "google/gemini-3.1-flash-lite";
+const openRouterAppUrl = process.env.OPENROUTER_APP_URL ?? process.env.SITE_URL ?? "https://track.q9labs.ai";
+const openRouterAppTitle = process.env.OPENROUTER_APP_TITLE ?? "Track";
+const openRouterAppCategories = process.env.OPENROUTER_APP_CATEGORIES ?? "general-chat";
+
+function getOpenRouterAttributionHeaders() {
+	return {
+		"HTTP-Referer": openRouterAppUrl,
+		"X-OpenRouter-Categories": openRouterAppCategories,
+		"X-OpenRouter-Title": openRouterAppTitle,
+	};
+}
 
 function getOpenRouter() {
 	const apiKey = process.env.OPENROUTER_API_KEY;
 	if (!apiKey) {
 		return null;
 	}
-	return createOpenRouter({ apiKey });
+	return createOpenRouter({
+		apiKey,
+		headers: getOpenRouterAttributionHeaders(),
+	});
 }
 
 function getOpenRouterApiKey() {
@@ -48,6 +62,7 @@ async function generateOpenRouterText(prompt: string) {
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
 			"Content-Type": "application/json",
+			...getOpenRouterAttributionHeaders(),
 		},
 		body: JSON.stringify({
 			messages: [{ role: "user", content: prompt }],

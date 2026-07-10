@@ -10,10 +10,9 @@
     "verbatimModuleSyntax": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
-      "@track/shared": ["packages/shared/src/index.ts"],
-      "@track/shared/*": ["packages/shared/src/*"]
+      "@track/shared": ["./packages/shared/src/index.ts"],
+      "@track/shared/*": ["./packages/shared/src/*"]
     }
   }
 }
