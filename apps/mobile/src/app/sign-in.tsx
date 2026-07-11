@@ -1,4 +1,14 @@
-import { Image, Linking, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import {
+  Image,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -6,7 +16,7 @@ import { useRouter } from 'expo-router';
 
 import { authClient } from '@/lib/auth-client';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
-import { validateEmailSignIn } from '@/lib/email-auth';
+import { requiresTwoFactor, validateEmailSignIn } from '@/lib/email-auth';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
@@ -38,9 +48,10 @@ export default function SignInScreen() {
     setError(null);
     hapticMedium();
     try {
-      const result = provider === 'apple' && Platform.OS === 'ios'
-        ? await signInWithNativeApple()
-        : await authClient.signIn.social({ provider, callbackURL: '/' });
+      const result =
+        provider === 'apple' && Platform.OS === 'ios'
+          ? await signInWithNativeApple()
+          : await authClient.signIn.social({ provider, callbackURL: '/' });
       const err = (result as { error?: { code?: string; message?: string } | null }).error;
       if (err) {
         throw new Error(err.message ?? err.code ?? 'Sign-in failed');
@@ -77,6 +88,9 @@ export default function SignInScreen() {
       if (result.error) {
         throw new Error('Email or password is incorrect.');
       }
+      if (requiresTwoFactor(result.data)) {
+        return;
+      }
       await waitForSessionReady(session.refetch);
       router.replace('/');
     } catch (e) {
@@ -92,152 +106,185 @@ export default function SignInScreen() {
   return (
     <ThemedView style={styles.screen}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safe}>
-
-        {/* Brand lockup */}
-        <View style={styles.brand}>
-          <View style={[styles.markRing, { borderColor: theme.hairline }]}>
-            <Image
-              accessibilityIgnoresInvertColors
-              resizeMode="contain"
-              source={markSource}
-              style={styles.mark}
-            />
-          </View>
-          <View style={styles.brandText}>
-            <ThemedText style={[styles.brandLabel, { color: theme.textSecondary }]} type="code">
-              Q9 LABS
-            </ThemedText>
-            <ThemedText style={styles.brandName}>Track</ThemedText>
-            <ThemedText style={[styles.brandTagline, { color: theme.textSecondary }]} type="small">
-              Project communication that keeps teams aligned
-            </ThemedText>
-          </View>
-        </View>
-
-        {/* Auth panel */}
-        <View style={styles.panel}>
-          {error ? (
-            <View style={[styles.errorBox, { backgroundColor: '#fee2e2', borderColor: '#fecaca' }]}>
-              <ThemedText style={{ color: '#b91c1c' }} type="small">{error}</ThemedText>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboard}>
+          <ScrollView
+            contentContainerStyle={styles.content}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Brand lockup */}
+            <View style={styles.brand}>
+              <View style={[styles.markRing, { borderColor: theme.hairline }]}>
+                <Image accessibilityIgnoresInvertColors resizeMode="contain" source={markSource} style={styles.mark} />
+              </View>
+              <View style={styles.brandText}>
+                <ThemedText style={[styles.brandLabel, { color: theme.textSecondary }]} type="code">
+                  Q9 LABS
+                </ThemedText>
+                <ThemedText style={styles.brandName}>Track</ThemedText>
+                <ThemedText style={[styles.brandTagline, { color: theme.textSecondary }]} type="small">
+                  Project communication that keeps teams aligned
+                </ThemedText>
+              </View>
             </View>
-          ) : null}
 
-          {/* Google */}
-          <Pressable
-            android_ripple={{ color: theme.background }}
-            disabled={busy}
-            onPress={() => void signIn('google')}
-            style={[styles.authButton, styles.authButtonPrimary, { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 }]}>
-            <Image accessibilityIgnoresInvertColors source={googleMarkImage} style={styles.authIcon} />
-            <ThemedText style={[styles.authLabel, { color: theme.background }]}>
-              Continue with Google
-            </ThemedText>
-          </Pressable>
+            {/* Auth panel */}
+            <View style={styles.panel}>
+              {error ? (
+                <View style={[styles.errorBox, { backgroundColor: '#fee2e2', borderColor: '#fecaca' }]}>
+                  <ThemedText style={{ color: '#b91c1c' }} type="small">
+                    {error}
+                  </ThemedText>
+                </View>
+              ) : null}
 
-          {/* Apple */}
-          {showApple ? (
-            <Pressable
-              android_ripple={{ color: theme.hairline }}
-              disabled={busy}
-              onPress={() => void signIn('apple')}
-              style={[styles.authButton, { backgroundColor: theme.backgroundElement, opacity: busy ? 0.7 : 1 }]}>
-              <PlatformIcon color={theme.text} name="apple" size={20} />
-              <ThemedText style={[styles.authLabel, { color: theme.text }]}>
-                Continue with Apple
-              </ThemedText>
-            </Pressable>
-          ) : null}
-
-          {emailMode ? (
-            <View style={styles.emailFields}>
-              <TextInput
-                accessibilityLabel="Email address"
-                autoCapitalize="none"
-                autoComplete="email"
-                editable={!busy}
-                keyboardType="email-address"
-                onChangeText={setEmail}
-                placeholder="Email address"
-                placeholderTextColor={theme.textSecondary}
-                returnKeyType="next"
-                style={[
-                  styles.input,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text },
-                ]}
-                textContentType="emailAddress"
-                value={email}
-              />
-              <TextInput
-                accessibilityLabel="Password"
-                autoCapitalize="none"
-                autoComplete="current-password"
-                editable={!busy}
-                onChangeText={setPassword}
-                onSubmitEditing={() => void signInWithEmail()}
-                placeholder="Password"
-                placeholderTextColor={theme.textSecondary}
-                returnKeyType="done"
-                secureTextEntry
-                style={[
-                  styles.input,
-                  { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text },
-                ]}
-                textContentType="password"
-                value={password}
-              />
+              {/* Google */}
               <Pressable
                 android_ripple={{ color: theme.background }}
                 disabled={busy}
-                onPress={() => void signInWithEmail()}
-                style={[styles.authButton, { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 }]}
+                onPress={() => void signIn('google')}
+                style={[
+                  styles.authButton,
+                  styles.authButtonPrimary,
+                  { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 },
+                ]}
               >
-                <PlatformIcon color={theme.background} name="email-outline" size={20} />
-                <ThemedText style={[styles.authLabel, { color: theme.background }]}>Sign in with email</ThemedText>
+                <Image accessibilityIgnoresInvertColors source={googleMarkImage} style={styles.authIcon} />
+                <ThemedText style={[styles.authLabel, { color: theme.background }]}>Continue with Google</ThemedText>
               </Pressable>
+
+              {/* Apple */}
+              {showApple ? (
+                <Pressable
+                  android_ripple={{ color: theme.hairline }}
+                  disabled={busy}
+                  onPress={() => void signIn('apple')}
+                  style={[
+                    styles.authButton,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      opacity: busy ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <PlatformIcon color={theme.text} name="apple" size={20} />
+                  <ThemedText style={[styles.authLabel, { color: theme.text }]}>Continue with Apple</ThemedText>
+                </Pressable>
+              ) : null}
+
+              {emailMode ? (
+                <View style={styles.emailFields}>
+                  <TextInput
+                    accessibilityLabel="Email address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    editable={!busy}
+                    keyboardType="email-address"
+                    onChangeText={setEmail}
+                    placeholder="Email address"
+                    placeholderTextColor={theme.textSecondary}
+                    returnKeyType="next"
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.backgroundElement,
+                        borderColor: theme.hairline,
+                        color: theme.text,
+                      },
+                    ]}
+                    textContentType="emailAddress"
+                    value={email}
+                  />
+                  <TextInput
+                    accessibilityLabel="Password"
+                    autoCapitalize="none"
+                    autoComplete="current-password"
+                    editable={!busy}
+                    onChangeText={setPassword}
+                    onSubmitEditing={() => void signInWithEmail()}
+                    placeholder="Password"
+                    placeholderTextColor={theme.textSecondary}
+                    returnKeyType="done"
+                    secureTextEntry
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.backgroundElement,
+                        borderColor: theme.hairline,
+                        color: theme.text,
+                      },
+                    ]}
+                    textContentType="password"
+                    value={password}
+                  />
+                  <Pressable
+                    android_ripple={{ color: theme.background }}
+                    disabled={busy}
+                    onPress={() => void signInWithEmail()}
+                    style={[styles.authButton, { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 }]}
+                  >
+                    <PlatformIcon color={theme.background} name="email-outline" size={20} />
+                    <ThemedText style={[styles.authLabel, { color: theme.background }]}>Sign in with email</ThemedText>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  android_ripple={{ color: theme.hairline }}
+                  disabled={busy}
+                  onPress={() => {
+                    hapticLight();
+                    setError(null);
+                    setEmailMode(true);
+                  }}
+                  style={[styles.authButton, { backgroundColor: theme.backgroundElement }]}
+                >
+                  <PlatformIcon color={theme.text} name="email-outline" size={20} />
+                  <ThemedText style={[styles.authLabel, { color: theme.text }]}>Continue with email</ThemedText>
+                </Pressable>
+              )}
+
+              {/* Dev bypass */}
+              {devAuthBypass.allowed ? (
+                <Pressable
+                  onPress={() => {
+                    hapticLight();
+                    devAuthBypass.enable();
+                    router.replace('/');
+                  }}
+                  style={styles.devBypass}
+                >
+                  <ThemedText style={{ color: theme.textSecondary }} type="code">
+                    Dev bypass
+                  </ThemedText>
+                </Pressable>
+              ) : null}
             </View>
-          ) : (
-            <Pressable
-              android_ripple={{ color: theme.hairline }}
-              disabled={busy}
-              onPress={() => {
-                hapticLight();
-                setError(null);
-                setEmailMode(true);
-              }}
-              style={[styles.authButton, { backgroundColor: theme.backgroundElement }]}
-            >
-              <PlatformIcon color={theme.text} name="email-outline" size={20} />
-              <ThemedText style={[styles.authLabel, { color: theme.text }]}>Continue with email</ThemedText>
-            </Pressable>
-          )}
 
-          {/* Dev bypass */}
-          {devAuthBypass.allowed ? (
-            <Pressable
-              onPress={() => { hapticLight(); devAuthBypass.enable(); router.replace('/'); }}
-              style={styles.devBypass}>
-              <ThemedText style={{ color: theme.textSecondary }} type="code">Dev bypass</ThemedText>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {/* Footer links */}
-        <View style={styles.footer}>
-          {(['Privacy', 'Terms', 'Support'] as const).map((item, i) => (
-            <View key={item} style={styles.footerItem}>
-              {i > 0 ? <View style={[styles.footerDot, { backgroundColor: theme.hairline }]} /> : null}
-              <Pressable
-                hitSlop={8}
-                onPress={() => { hapticLight(); void Linking.openURL(
-                  item === 'Support' ? 'mailto:q9labs.ai@gmail.com'
-                  : `https://track.q9labs.ai/${item.toLowerCase()}`
-                ); }}>
-                <ThemedText style={{ color: theme.textSecondary }} type="code">{item}</ThemedText>
-              </Pressable>
+            {/* Footer links */}
+            <View style={styles.footer}>
+              {(['Privacy', 'Terms', 'Support'] as const).map((item, i) => (
+                <View key={item} style={styles.footerItem}>
+                  {i > 0 ? <View style={[styles.footerDot, { backgroundColor: theme.hairline }]} /> : null}
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => {
+                      hapticLight();
+                      void Linking.openURL(
+                        item === 'Support'
+                          ? 'mailto:q9labs.ai@gmail.com'
+                          : `https://track.q9labs.ai/${item.toLowerCase()}`,
+                      );
+                    }}
+                  >
+                    <ThemedText style={{ color: theme.textSecondary }} type="code">
+                      {item}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -270,9 +317,7 @@ async function signInWithNativeApple() {
   });
 }
 
-async function waitForSessionReady(
-  refetch: ReturnType<typeof authClient.useSession>['refetch'],
-) {
+async function waitForSessionReady(refetch: ReturnType<typeof authClient.useSession>['refetch']) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     await refetch({ query: { disableCookieCache: true } });
 
@@ -303,8 +348,7 @@ function sleep(ms: number) {
 }
 
 function isAppleCancel(error: unknown) {
-  return error instanceof Error
-    && (error as Error & { code?: string }).code === 'ERR_REQUEST_CANCELED';
+  return error instanceof Error && (error as Error & { code?: string }).code === 'ERR_REQUEST_CANCELED';
 }
 
 const styles = StyleSheet.create({
@@ -334,6 +378,9 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
     justifyContent: 'center',
     paddingHorizontal: Spacing.five,
+  },
+  content: {
+    flexGrow: 1,
   },
   brandLabel: { letterSpacing: 1 },
   brandName: {
@@ -397,6 +444,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 52,
     paddingHorizontal: Spacing.four,
+  },
+  keyboard: {
+    flex: 1,
   },
   panel: {
     gap: Spacing.three,

@@ -12,3 +12,7 @@ export function validateEmailSignIn(email: string, password: string): EmailSignI
 
   return { ok: true, email: normalizedEmail };
 }
+
+export function requiresTwoFactor(data: unknown) {
+  return Boolean(data && typeof data === 'object' && 'twoFactorRedirect' in data && data.twoFactorRedirect === true);
+}

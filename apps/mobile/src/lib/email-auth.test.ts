@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateEmailSignIn } from './email-auth';
+import { requiresTwoFactor, validateEmailSignIn } from './email-auth';
 
 describe('validateEmailSignIn', () => {
   it('normalizes valid email addresses', () => {
@@ -22,5 +22,16 @@ describe('validateEmailSignIn', () => {
       ok: false,
       error: 'Enter your password.',
     });
+  });
+});
+
+describe('requiresTwoFactor', () => {
+  it('recognizes a Better Auth two-factor redirect', () => {
+    expect(requiresTwoFactor({ twoFactorRedirect: true })).toBe(true);
+  });
+
+  it('rejects ordinary sign-in responses', () => {
+    expect(requiresTwoFactor({ user: { id: 'user' } })).toBe(false);
+    expect(requiresTwoFactor(null)).toBe(false);
   });
 });

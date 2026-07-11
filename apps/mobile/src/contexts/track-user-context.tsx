@@ -193,13 +193,20 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 
   async function submitTwoFactor() {
     await withBusy('two-factor', async () => {
-      if (twoFactorMethod === 'backup_code') {
-        await authClient.twoFactor.verifyBackupCode({ code: twoFactorCode, disableSession: false });
-      } else {
-        await authClient.twoFactor.verifyTotp({ code: twoFactorCode });
+      const result =
+        twoFactorMethod === 'backup_code'
+          ? await authClient.twoFactor.verifyBackupCode({
+              code: twoFactorCode,
+              disableSession: false,
+            })
+          : await authClient.twoFactor.verifyTotp({ code: twoFactorCode });
+      if (result.error) {
+        throw new Error(result.error.message ?? 'Two-factor verification failed.');
       }
+      await session.refetch({ query: { disableCookieCache: true } });
       setTwoFactorCode('');
       setSheet(null);
+      router.replace('/');
     });
   }
 
