@@ -1,4 +1,4 @@
-import { Image, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 
 import { authClient } from '@/lib/auth-client';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
+import { validateEmailSignIn } from '@/lib/email-auth';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
@@ -25,6 +26,9 @@ export default function SignInScreen() {
   const devAuthBypass = useDevAuthBypass();
   const session = authClient.useSession();
   const [busy, setBusy] = useState(false);
+  const [emailMode, setEmailMode] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const markSource = colorScheme === 'dark' ? trackMarkReversedImage : trackMarkImage;
@@ -48,6 +52,35 @@ export default function SignInScreen() {
       if (isAppleCancel(e)) {
         return;
       }
+      setError(e instanceof Error ? e.message : 'Sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signInWithEmail() {
+    const input = validateEmailSignIn(email, password);
+    if (!input.ok) {
+      setError(input.error);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    hapticMedium();
+    try {
+      const result = await authClient.signIn.email({
+        email: input.email,
+        password,
+        callbackURL: '/',
+      });
+      if (result.error) {
+        throw new Error('Email or password is incorrect.');
+      }
+      await waitForSessionReady(session.refetch);
+      router.replace('/');
+    } catch (e) {
+      hapticLight();
       setError(e instanceof Error ? e.message : 'Sign-in failed');
     } finally {
       setBusy(false);
@@ -114,6 +147,69 @@ export default function SignInScreen() {
               </ThemedText>
             </Pressable>
           ) : null}
+
+          {emailMode ? (
+            <View style={styles.emailFields}>
+              <TextInput
+                accessibilityLabel="Email address"
+                autoCapitalize="none"
+                autoComplete="email"
+                editable={!busy}
+                keyboardType="email-address"
+                onChangeText={setEmail}
+                placeholder="Email address"
+                placeholderTextColor={theme.textSecondary}
+                returnKeyType="next"
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text },
+                ]}
+                textContentType="emailAddress"
+                value={email}
+              />
+              <TextInput
+                accessibilityLabel="Password"
+                autoCapitalize="none"
+                autoComplete="current-password"
+                editable={!busy}
+                onChangeText={setPassword}
+                onSubmitEditing={() => void signInWithEmail()}
+                placeholder="Password"
+                placeholderTextColor={theme.textSecondary}
+                returnKeyType="done"
+                secureTextEntry
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text },
+                ]}
+                textContentType="password"
+                value={password}
+              />
+              <Pressable
+                android_ripple={{ color: theme.background }}
+                disabled={busy}
+                onPress={() => void signInWithEmail()}
+                style={[styles.authButton, { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 }]}
+              >
+                <PlatformIcon color={theme.background} name="email-outline" size={20} />
+                <ThemedText style={[styles.authLabel, { color: theme.background }]}>Sign in with email</ThemedText>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              android_ripple={{ color: theme.hairline }}
+              disabled={busy}
+              onPress={() => {
+                hapticLight();
+                setError(null);
+                setEmailMode(true);
+              }}
+              style={[styles.authButton, { backgroundColor: theme.backgroundElement }]}
+            >
+              <PlatformIcon color={theme.text} name="email-outline" size={20} />
+              <ThemedText style={[styles.authLabel, { color: theme.text }]}>Continue with email</ThemedText>
+            </Pressable>
+          )}
 
           {/* Dev bypass */}
           {devAuthBypass.allowed ? (
@@ -263,6 +359,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
+  emailFields: {
+    gap: Spacing.three,
+  },
   footer: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -291,6 +390,13 @@ const styles = StyleSheet.create({
     height: 96,
     justifyContent: 'center',
     width: 96,
+  },
+  input: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 16,
+    minHeight: 52,
+    paddingHorizontal: Spacing.four,
   },
   panel: {
     gap: Spacing.three,

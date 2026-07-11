@@ -2,6 +2,7 @@
 
 ## 2026-07-11
 
+- Added mobile email/password sign-in for reusable store-review and team access.
 - Removed unused overlay and legacy external-storage permissions from Android release manifests.
 - Replaced overlapping product, specification, design, and user-story monoliths with maintained product, architecture, design, and roadmap documentation plus a repository-level agent guide.
 - Removed Records, Draft Records, AI review, and record exports from the product model and live application while preserving conversation, evidence, assistant, memory, search, and audit workflows.
