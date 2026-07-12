@@ -22,13 +22,16 @@ Projects.
 
 ## Task management and Kanban
 
-Track will add first-class task management. The target experience combines conversation-derived work with Kanban boards, explicit ownership, workflow status, evidence, and project/group visibility.
+Track will add first-class task management. The target experience combines conversation-derived work with Kanban boards, explicit ownership, workflow status, evidence, and project/channel visibility.
+
+The approved product and implementation contract is in
+[TASK_MANAGEMENT_SPEC.md](./TASK_MANAGEMENT_SPEC.md).
 
 The replacement needs:
 
-- a task domain model with board, column, status, assignee, priority, due date, and source evidence;
-- project boards with group-aware visibility;
-- explicit conversion from assistant or review output into tasks;
+- a task domain model with boards, workflow states, assignee, priority, due date, and source evidence;
+- project boards with channel-aware visibility;
+- explicit conversion from source messages or assistant output into tasks;
 - task creation and management independent of AI;
 - permission rules for viewing, creating, assigning, moving, and closing tasks;
 - notifications, audit events, search, and mobile behavior;

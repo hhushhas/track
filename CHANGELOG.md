@@ -2,6 +2,7 @@
 
 ## 2026-07-12
 
+- Specified the approved first-class task-management direction: multiple project and Channel boards, task suggestions grounded in chat, human confirmation, live conversation cards, scoped collaboration, permissions, web and mobile behavior, backend boundaries, and phased verification.
 - Specified the approved first-class Company direction: multi-company Relationships, consent-based shared Projects, neutral roles, explicit Channel access, private discovery, peer governance, retained read-only history, guided legacy migration, task integration, and phased verification.
 
 ## 2026-07-11

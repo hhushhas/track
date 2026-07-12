@@ -9,7 +9,7 @@ Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile a
 - Expo 55, Expo Router, and React Native on mobile.
 - Convex for persistence, realtime queries, files, scheduled jobs, search, and server functions.
 - Better Auth for sessions, OAuth, two-factor authentication, and the Convex auth bridge.
-- AI SDK with OpenRouter for assistant and review model calls.
+- AI SDK with OpenRouter for assistant model calls.
 - Upstash Box for imported project-memory storage; Convex retains metadata, access state, and audit events.
 - Cloudflare Workers for the web runtime and EAS for native builds.
 
