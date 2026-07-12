@@ -2,6 +2,24 @@
 
 This file contains direction that is not yet the running product contract.
 
+## Companies, relationships, and shared projects
+
+Track will add first-class Companies that can form peer Relationships with two
+or more Companies. Relationships authorize Companies to propose shared
+Projects; they grant no Project or Channel access by themselves. Shared
+Projects use neutral roles, explicit Company participation, explicit Channel
+membership, non-destructive exit and archive rules, and a guided upgrade from
+the current client/vendor Project model.
+
+The approved product, access, lifecycle, migration, and implementation contract
+is in
+[COMPANY_RELATIONSHIPS_SPEC.md](./COMPANY_RELATIONSHIPS_SPEC.md).
+
+The company model and task model share the same Project and Channel boundaries.
+Their specifications must be reconciled before a combined release so legacy
+roles and the current Group product noun do not survive into company-model
+Projects.
+
 ## Task management and Kanban
 
 Track will add first-class task management. The target experience combines conversation-derived work with Kanban boards, explicit ownership, workflow status, evidence, and project/group visibility.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-07-12
+
+- Specified the approved first-class Company direction: multi-company Relationships, consent-based shared Projects, neutral roles, explicit Channel access, private discovery, peer governance, retained read-only history, guided legacy migration, task integration, and phased verification.
+
 ## 2026-07-11
 
 - Added keyboard-aware mobile email/password sign-in with two-factor completion for reusable store-review and team access.

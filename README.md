@@ -21,6 +21,7 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
 - [Architecture](./docs/ARCHITECTURE.md): stack, boundaries, and data flow.
 - [Design](./docs/DESIGN.md): interface, tokens, interaction states, and accessibility.
 - [Roadmap](./docs/ROADMAP.md): agreed behavior that has not shipped.
+- [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md): approved future company, relationship, shared-project, channel, access, and migration contract.
 
 ## Requirements
 
