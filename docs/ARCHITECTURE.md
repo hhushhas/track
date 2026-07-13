@@ -25,7 +25,7 @@ Clients may hide unavailable controls for usability, but Convex functions enforc
 2. Convex resolves the application user and project/group membership.
 3. Reactive queries deliver accessible project, group, conversation, search, and notification state.
 4. Mutations validate access, write the domain change, and emit audit or notification effects where required.
-5. AI workflows assemble permission-filtered context, stream or persist results, and retain evidence references.
+5. AI workflows assemble permission-filtered context, stream or persist results, and retain references.
 
 The schema in `convex/schema.ts` is the authoritative inventory of persisted data. Shared domain constants in `packages/shared/src/domain.ts` must match schema validators.
 

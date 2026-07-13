@@ -1,6 +1,6 @@
 # Design
 
-Track should feel calm, operational, and evidence-first. The interface uses warm paper surfaces, dark stone text, and yellow for attention and action. Decoration must never outrank access, status, or source evidence.
+Track should feel calm, operational, and reference-first. The interface uses warm paper surfaces, dark stone text, and yellow for attention and action. Decoration must never outrank access, status, or references.
 
 ## Source tokens
 
@@ -41,8 +41,8 @@ Unread, mention, report, blocked, and permission states need text or icon semant
 - Maintain at least 44px touch targets for primary mobile actions.
 - Meet WCAG AA contrast for text and meaningful controls.
 - Announce async failures and significant state changes to assistive technology.
-- Keep source evidence and permission explanations readable without hover.
+- Keep references and permission explanations readable without hover.
 
 ## Product language
 
-Use the canonical nouns in [PRODUCT.md](./PRODUCT.md). Describe `@track` as an assistant grounded in accessible project evidence. Do not describe AI answers as durable work items; tasks and boards arrive through the future direction in [ROADMAP.md](./ROADMAP.md).
+Use the canonical nouns in [PRODUCT.md](./PRODUCT.md). Describe `@track` as an assistant grounded in accessible references. Do not describe AI answers as durable work items; tasks and boards arrive through the future direction in [ROADMAP.md](./ROADMAP.md).

@@ -1,6 +1,6 @@
 # Product
 
-Track is a project collaboration workspace built around group conversation, source evidence, and permission-aware AI assistance. It helps client and vendor teams keep decisions, scope changes, tasks, blockers, and commercial context connected to the messages that produced them.
+Track is a project collaboration workspace built around group conversation, references, and permission-aware AI assistance. It helps client and vendor teams keep decisions, scope changes, tasks, blockers, and commercial context connected to the messages that produced them.
 
 ## Current product model
 
@@ -30,13 +30,13 @@ Default groups reflect common visibility:
 
 Custom groups use explicit membership.
 
-## Evidence and AI rules
+## References and AI rules
 
 AI output is a proposal or an answer, never silent authority.
 
 - `@track` uses only information the requesting user can access.
 - Factual answers should cite their supporting messages, attachments, or imported memory.
-- Unclear evidence produces an explicit uncertainty response.
+- Unclear references produce an explicit uncertainty response.
 - Imported memory is project-scoped and remains subject to project and group access checks.
 
 ## Platform coverage

@@ -1,6 +1,6 @@
 # Track
 
-Track is a project collaboration workspace where client and vendor teams work in group conversations, retain source evidence, and use permission-aware AI assistance. The web and mobile apps support realtime chat, attachments, voice notes, notifications, `@track` answers, project memory imports, search, and audit history.
+Track is a project collaboration workspace where client and vendor teams work in group conversations, retain references, and use permission-aware AI assistance. The web and mobile apps support realtime chat, attachments, voice notes, notifications, `@track` answers, project memory imports, search, and audit history.
 
 First-class task management and Kanban boards are the next major product direction in [docs/ROADMAP.md](./docs/ROADMAP.md).
 

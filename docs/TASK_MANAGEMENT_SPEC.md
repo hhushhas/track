@@ -5,7 +5,7 @@ Status: approved product direction; implementation pending.
 This specification defines Track's first-class task-management release. The
 current shipped contract remains in [PRODUCT.md](./PRODUCT.md) until this work
 passes its release gate. The task release combines Channel conversation,
-permission-aware source evidence, multiple Kanban boards, and human-controlled
+permission-aware references, multiple Kanban boards, and human-controlled
 AI task suggestions in one workspace.
 
 ## Product intent
@@ -23,7 +23,7 @@ lists, and task details provide the structure needed to plan and finish work.
 ## Goals
 
 - Make tasks durable project objects with ownership, workflow, priority, due
-  date, comments, subtasks, labels, activity, and source evidence.
+  date, comments, subtasks, labels, activity, and references.
 - Support multiple boards with independent workflows at project or Channel scope.
 - Let people create tasks from the task surface, a Channel conversation, a source
   message, or an assistant answer.
@@ -68,8 +68,8 @@ feature and follows its separately approved retention or deletion plan.
   suggestion becomes a task only when a person accepts it.
 - **Suggestion inbox**: the shared list of pending task suggestions visible to
   the members of their source Channels.
-- **Source evidence**: a message, attachment, assistant answer, or imported
-  memory excerpt that supports a task or suggestion.
+- **Reference**: a message, attachment, assistant answer, or imported memory
+  excerpt that supports a task or suggestion.
 - **Project-scoped**: visible to every active Project member and through an
   authorized read-only archive after Company exit.
 - **Channel-scoped**: visible only to members authorized for one Channel.
@@ -232,7 +232,7 @@ Every task belongs to one project, one board, and one workflow state. It has:
 - priority: `none`, `urgent`, `high`, `medium`, or `low`;
 - an optional date-only due date stored as `YYYY-MM-DD`;
 - zero or more project labels;
-- zero or more source-evidence links, with one optional primary source;
+- zero or more reference links, with one optional primary reference;
 - a creator, followers, comments, and user-facing activity;
 - an optional parent task;
 - created, updated, terminal, and archived timestamps.
@@ -287,7 +287,7 @@ Channel-scoped task to project scope. Promotion requires an explicit confirmatio
 that names the current fields becoming visible: task key, title, description,
 creator, assignee, priority, due date, labels, workflow state, and subtask
 fields. In a company-model Project it also names every Company and person that
-will gain access. Promotion requires a destination project board. Source evidence and
+will gain access. Promotion requires a destination project board. References and
 pre-promotion comments and activity retain their original Channel access rule.
 Project members outside that Channel see an “Earlier context is restricted”
 indicator without Channel names, authors, quotes, filenames, event types, counts
@@ -310,7 +310,7 @@ can access the task. The UI shows a Company badge where one user has multiple
 eligible memberships.
 An author can edit a comment; edited comments show an edited marker and create a
 safe audit event. A comment can be archived by its author or a task administrator. The
-first release links existing evidence and has no direct task-comment file upload.
+first release links existing references and has no direct task-comment file upload.
 
 Every comment and activity item stores the task's access scope at the moment it
 is created. Reads require access to both the task's current scope and the item's
@@ -444,7 +444,7 @@ The model returns validated structured candidates containing:
 
 - proposed title and description;
 - proposed assignee, priority, and due date when directly supported;
-- a primary source and supporting evidence references;
+- a primary reference and supporting references;
 - confidence and a short grounding reason;
 - an optional likely-duplicate task reference.
 
@@ -483,8 +483,8 @@ Suggestion status follows one server-enforced state machine:
 
 Every terminal transition accepts an idempotency key and conditionally updates
 only a pending suggestion. Concurrent or repeated calls return the recorded
-terminal result. Linking evidence also verifies that the actor may edit the
-target task and that each evidence source is compatible with its scope.
+terminal result. Linking references also verifies that the actor may edit the
+target task and that each reference is compatible with its scope.
 
 ### Suggestion inbox
 
@@ -530,7 +530,7 @@ unavailable for task extraction.
 ## Permissions
 
 Administrative authority never grants access to a Channel. Every Channel board,
-task, suggestion, comment, activity item, and evidence source requires the
+task, suggestion, comment, activity item, and reference requires the
 actor's current Channel membership or their authorized read-only archive
 membership in addition to the capability rule.
 
@@ -780,7 +780,7 @@ suggestions, comments, and notification state. Proposed schema additions are:
   priority, due date, creator Project membership and Acting Company, revision,
   terminal/archive state, source suggestion, and timestamps;
 - `taskLabels` and `taskLabelLinks`: project label catalog and task association;
-- `taskEvidence`: task, source type and identifiers, source project/Channel,
+- `taskReferences`: task, source type and identifiers, source project/Channel,
   invalidatable bounded quote snapshot, availability state, primary flag, actor
   Project membership and Acting Company, rank, and timestamps;
 - `taskComments`: task, immutable original visibility Channel, author Project
@@ -795,7 +795,7 @@ suggestions, comments, and notification state. Proposed schema additions are:
   grounding reason, fingerprint, possible duplicate, decision actor/reason,
   decision Project membership and Acting Company, accepted or linked task,
   duplicate override, archive state, model/prompt version, and timestamps;
-- `taskSuggestionEvidence` and `taskSuggestionHides`: scoped source references
+- `taskSuggestionReferences` and `taskSuggestionHides`: scoped source references
   and per-Project-membership hidden state;
 - `taskDetectionSettings` and `taskDetectionRuns`: per-Channel enabled state,
   generation, high-water cursor, expected cursor range, lease, coalescing/job
@@ -811,7 +811,7 @@ suggestions, comments, and notification state. Proposed schema additions are:
   timestamp, exact Channel entitlement, snapshot manifest, and bounded copies
   of every archive-visible mutable field. The copies cover boards, workflows,
   tasks, labels and links, comment body/revision/archive state, suggestion
-  proposed fields/status/archive state, evidence-link/cache state, membership
+  proposed fields/status/archive state, reference-link/cache state, membership
   labels, and actor Project-membership/Acting-Company display attribution.
 
 Company and Acting Company attribution fields are present for company-model
@@ -945,7 +945,7 @@ read-only task history defined by the Company specification.
 
 Company exit records an exit timestamp, the exact Channel set held by each
 exiting Project membership, and bounded snapshots of mutable board, workflow,
-task, label, comment, suggestion, evidence-link, membership-label, and
+task, label, comment, suggestion, reference-link, membership-label, and
 author-Company fields. Immutable activity and evidence events are bounded by
 the exit timestamp; comments and every other mutable child read only from their
 exit snapshot.
@@ -1006,9 +1006,9 @@ enables the Company model must additionally satisfy statements 16–18.
    every concurrent decision returns one idempotent accepted, linked, or
    dismissed terminal result.
 10. Channel-to-project promotion requires explicit declassification confirmation,
-    moves the task and subtasks to a project board, and keeps source evidence
+    moves the task and subtasks to a project board, and keeps references
     plus pre-promotion comments and activity restricted.
-11. Removing or redacting an evidence source removes its quote, preview, search
+11. Removing or redacting a reference removes its quote, preview, search
     presence, and source-side card while retaining only an authorized generic
     tombstone.
 12. Task search, My tasks, filters, unread counts, audit events, task activity,
@@ -1027,7 +1027,7 @@ enables the Company model must additionally satisfy statements 16–18.
     and unread changes in `exit_pending`, completes the task snapshot manifest
     before `exited`, and preserves only the exact authorized read-only
     Project/Channel history; retry reuses the cutoff, safe-cancel cleans partial
-    snapshots, and later task, comment, suggestion, label, or evidence-link
+snapshots, and later task, comment, suggestion, label, or reference-link
     changes remain invisible.
 18. Guided upgrade preserves every legacy Group task scope and evidence boundary,
     shows staff/client capability changes, and activates neutral manager/member
