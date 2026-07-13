@@ -37,7 +37,7 @@ The replacement needs:
 - notifications, audit events, search, and mobile behavior;
 - migration rules for any task-like information that users choose to bring forward from conversation or imported memory.
 
-Until this ships, Track remains a conversation, evidence, memory, search, and audit workspace without a durable work-item model.
+Until this ships, Track remains a conversation, evidence, memory, and search workspace without a durable work-item model.
 
 ## Planning rule
 

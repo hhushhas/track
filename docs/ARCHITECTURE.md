@@ -15,7 +15,7 @@ Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile a
 
 ## Package boundaries
 
-`apps/web` owns browser routes, PWA behavior, workspace presentation, search, audit surfaces, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral role, group, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
+`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral role, group, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
 
 Clients may hide unavailable controls for usability, but Convex functions enforce every permission boundary. Public functions validate identity and access before reading or mutating data. Internal functions are used for trusted jobs and multi-step workflows.
 

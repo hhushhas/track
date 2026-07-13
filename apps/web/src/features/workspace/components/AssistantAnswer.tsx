@@ -72,6 +72,7 @@ export function AssistantAnswer({
               <MentionInline
                 handle={handle}
                 index={index}
+                key={`${handle}-${index}`}
                 mentionGroups={mentionGroups}
                 onOpenGroup={onOpenGroup}
               />

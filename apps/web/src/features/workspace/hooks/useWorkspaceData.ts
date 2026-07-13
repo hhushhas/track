@@ -85,19 +85,6 @@ export function useWorkspaceData({
       ? { userId: trackUserId, groupId: confirmedActiveGroupId, limit: 20 }
       : 'skip',
   )
-  const auditEvents = useQuery(
-    api.audit.listProjectEvents,
-    trackUserId && activeProjectId
-      ? { userId: trackUserId, projectId: activeProjectId, limit: 30 }
-      : 'skip',
-  )
-  const invitations = useQuery(
-    api.invitations.listForProject,
-    trackUserId && activeProjectId
-      ? { userId: trackUserId, projectId: activeProjectId }
-      : 'skip',
-  )
-
   const projectItems = useMemo(
     () =>
       (projects ?? []) as Array<{
@@ -129,14 +116,6 @@ export function useWorkspaceData({
     () => (assistantStreams ?? []) as Array<Doc<'assistantStreams'>>,
     [assistantStreams],
   )
-  const projectAuditEvents = useMemo(
-    () => (auditEvents ?? []) as Array<Doc<'auditEvents'>>,
-    [auditEvents],
-  )
-  const projectInvitations = useMemo(
-    () => (invitations ?? []) as Array<Doc<'invitations'>>,
-    [invitations],
-  )
   const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
 
@@ -152,8 +131,6 @@ export function useWorkspaceData({
     groupMessages,
     groups,
     messages,
-    projectAuditEvents,
-    projectInvitations,
     projectItems,
     projectMemberRoleByUserId,
     projectMembers,

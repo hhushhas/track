@@ -23,7 +23,7 @@ Use semantic CSS variables and shared theme values instead of copying raw colors
 
 - Keep project and group context visible in the workspace.
 - Optimize conversation for reading and composing; keep metadata subordinate.
-- Use dense lists or tables for members, audit events, and settings.
+- Use dense lists or tables for members and settings.
 - Keep AI answers close to their source messages and visibly distinct from human messages.
 - Show evidence, visibility, ownership, and status before decorative details.
 - Adapt the information hierarchy to mobile instead of shrinking desktop layouts.

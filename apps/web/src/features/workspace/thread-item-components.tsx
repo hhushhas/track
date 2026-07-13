@@ -150,6 +150,7 @@ export function MessageRow({
             <MentionInline
               handle={handle}
               index={index}
+              key={`${handle}-${index}`}
               mentionGroups={mentionGroups}
               onOpenGroup={onOpenGroup}
             />

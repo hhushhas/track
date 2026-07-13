@@ -12,7 +12,7 @@ The current application supports:
 - realtime group chat, replies, forwarding, mentions, typing state, attachments, and voice notes;
 - unread state, notification preferences, web push, and mobile push registration;
 - `@track` answers grounded in accessible conversation, attachments, and imported project memory;
-- project search, audit history, content reporting, account deletion, profile security, and two-factor authentication.
+- project search, content reporting, account deletion, profile security, and two-factor authentication.
 
 ## Roles and access
 
@@ -41,4 +41,4 @@ AI output is a proposal or an answer, never silent authority.
 
 ## Platform coverage
 
-The web app is the complete workspace, search, audit, profile, and administration surface. The mobile app focuses on authentication, projects, groups, conversation, attachments, voice notes, assistant interactions, notification settings, reporting, and account deletion.
+The web app is the complete workspace, search, profile, and administration surface. The mobile app focuses on authentication, projects, groups, conversation, attachments, voice notes, assistant interactions, notification settings, reporting, and account deletion.

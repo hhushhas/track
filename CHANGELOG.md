@@ -4,6 +4,7 @@
 
 - Completed the production removal of Records, Draft Records, AI review, and record exports by retiring the legacy Convex functions, data, fields, audit entries, and obsolete assistant prompts.
 - Updated Better Auth to 1.6.15 across the monorepo so Convex production bundles build successfully with the current Kysely dependency.
+- Removed invitation emails and audit history from the web workspace rail, stopped fetching both datasets there, collapsed the rail by default, kept notification settings accessible beneath its expand control, and cleared the route's mention-rendering key warning.
 
 ## 2026-07-12
 

@@ -1876,6 +1876,13 @@ button {
   padding: 10px 0 0;
 }
 
+.track-rail-collapsed-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
 .track-rail-collapse-button,
 .track-rail-resize-handle {
   display: inline-flex;
@@ -1900,8 +1907,10 @@ button {
 }
 
 .track-rail.collapsed .track-rail-collapse-button {
+  position: static;
   align-self: center;
   margin: 0;
+  transform: none;
 }
 
 .track-rail-collapse-button:hover,

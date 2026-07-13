@@ -1,6 +1,6 @@
-import { Bell, Clock3, GripVertical, PanelRightClose, PanelRightOpen, Upload } from 'lucide-react'
+import { Bell, GripVertical, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
-import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { Card } from '#/components/ui/card'
 import {
   DropdownMenu,
@@ -30,9 +30,75 @@ type WorkspaceRailProps = {
   onSendTestNotification: () => void
   onEnableBrowserNotifications: () => void
   onStartResize: () => void
-  projectAuditEvents: Array<Doc<'auditEvents'>>
-  projectInvitations: Array<Doc<'invitations'>>
   railCollapsed: boolean
+}
+
+type NotificationMenuProps = Pick<
+  WorkspaceRailProps,
+  | 'activeProjectId'
+  | 'busyAction'
+  | 'globalNotificationMode'
+  | 'groupNotificationMode'
+  | 'notificationPermission'
+  | 'notificationStatus'
+  | 'onEnableBrowserNotifications'
+  | 'onNotificationMode'
+  | 'onSendTestNotification'
+>
+
+function NotificationMenu({
+  activeProjectId,
+  busyAction,
+  globalNotificationMode,
+  groupNotificationMode,
+  notificationPermission,
+  notificationStatus,
+  onEnableBrowserNotifications,
+  onNotificationMode,
+  onSendTestNotification,
+}: NotificationMenuProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Notification settings"
+        className="track-rail-icon-button"
+        disabled={!activeProjectId}
+      >
+        <Bell size={14} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="track-rail-menu">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+          <p className="track-rail-menu-note">Browser: {notificationPermissionLabels[notificationPermission]}</p>
+          <DropdownMenuItem
+            disabled={busyAction === 'notifications' || busyAction === 'test-notifications'}
+            onClick={onEnableBrowserNotifications}
+          >
+            {notificationPermission === 'granted' ? 'Reconnect browser alerts' : 'Enable browser alerts'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={busyAction === 'notifications' || busyAction === 'test-notifications'}
+            onClick={onSendTestNotification}
+          >
+            Send test alert
+          </DropdownMenuItem>
+          {notificationStatus ? <p className="track-rail-menu-note">{notificationStatus}</p> : null}
+          <DropdownMenuSeparator />
+          <p className="track-rail-menu-note">Global: {formatRailLabel(globalNotificationMode)}</p>
+          <DropdownMenuRadioGroup
+            value={groupNotificationMode}
+            onValueChange={(mode) => onNotificationMode(mode as (typeof notificationModes)[number])}
+          >
+            {notificationModes.map((mode) => (
+              <DropdownMenuRadioItem key={mode} value={mode}>
+                {formatRailLabel(mode)}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export function WorkspaceRail({
@@ -48,21 +114,32 @@ export function WorkspaceRail({
   onSendTestNotification,
   onEnableBrowserNotifications,
   onStartResize,
-  projectAuditEvents,
-  projectInvitations,
   railCollapsed,
 }: WorkspaceRailProps) {
   if (railCollapsed) {
     return (
       <aside className="track-rail collapsed">
-        <button
-          aria-label="Expand workspace details"
-          className="track-rail-collapse-button"
-          onClick={onExpand}
-          type="button"
-        >
-          <PanelRightOpen size={15} />
-        </button>
+        <div className="track-rail-collapsed-actions">
+          <button
+            aria-label="Expand workspace details"
+            className="track-rail-collapse-button"
+            onClick={onExpand}
+            type="button"
+          >
+            <PanelRightOpen size={15} />
+          </button>
+          <NotificationMenu
+            activeProjectId={activeProjectId}
+            busyAction={busyAction}
+            globalNotificationMode={globalNotificationMode}
+            groupNotificationMode={groupNotificationMode}
+            notificationPermission={notificationPermission}
+            notificationStatus={notificationStatus}
+            onEnableBrowserNotifications={onEnableBrowserNotifications}
+            onNotificationMode={onNotificationMode}
+            onSendTestNotification={onSendTestNotification}
+          />
+        </div>
       </aside>
     )
   }
@@ -96,78 +173,18 @@ export function WorkspaceRail({
             >
               <PanelRightClose size={14} />
             </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                aria-label="Notification settings"
-                className="track-rail-icon-button"
-                disabled={!activeProjectId}
-              >
-                <Bell size={14} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="track-rail-menu">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-                  <p className="track-rail-menu-note">Browser: {notificationPermissionLabels[notificationPermission]}</p>
-                  <DropdownMenuItem
-                    disabled={busyAction === 'notifications' || busyAction === 'test-notifications'}
-                    onClick={onEnableBrowserNotifications}
-                  >
-                    {notificationPermission === 'granted' ? 'Reconnect browser alerts' : 'Enable browser alerts'}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={busyAction === 'notifications' || busyAction === 'test-notifications'}
-                    onClick={onSendTestNotification}
-                  >
-                    Send test alert
-                  </DropdownMenuItem>
-                  {notificationStatus ? <p className="track-rail-menu-note">{notificationStatus}</p> : null}
-                  <DropdownMenuSeparator />
-                  <p className="track-rail-menu-note">Global: {formatRailLabel(globalNotificationMode)}</p>
-                  <DropdownMenuRadioGroup
-                    value={groupNotificationMode}
-                    onValueChange={(mode) => onNotificationMode(mode as (typeof notificationModes)[number])}
-                  >
-                    {notificationModes.map((mode) => (
-                      <DropdownMenuRadioItem key={mode} value={mode}>
-                        {formatRailLabel(mode)}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <NotificationMenu
+              activeProjectId={activeProjectId}
+              busyAction={busyAction}
+              globalNotificationMode={globalNotificationMode}
+              groupNotificationMode={groupNotificationMode}
+              notificationPermission={notificationPermission}
+              notificationStatus={notificationStatus}
+              onEnableBrowserNotifications={onEnableBrowserNotifications}
+              onNotificationMode={onNotificationMode}
+              onSendTestNotification={onSendTestNotification}
+            />
           </div>
-        </div>
-      </Card>
-
-      <Card className="track-rail-section" size="sm">
-        <div className="track-rail-heading-row">
-          <span className="track-rail-heading">Invitations</span>
-          <Upload size={14} />
-        </div>
-        <div className="track-audit-list">
-          {projectInvitations.slice(0, 5).map((invite) => (
-            <p key={invite._id}>
-              <span>{invite.email}</span>
-              <small>{invite.role} · {invite.status}</small>
-            </p>
-          ))}
-          {projectInvitations.length === 0 ? <p className="track-muted">No invites yet.</p> : null}
-        </div>
-      </Card>
-
-      <Card className="track-rail-section" size="sm">
-        <div className="track-rail-heading-row">
-          <span className="track-rail-heading">Audit Trail</span>
-          <Clock3 size={14} />
-        </div>
-        <div className="track-audit-list">
-          {projectAuditEvents.slice(0, 8).map((event) => (
-            <p key={event._id}>
-              <span>{event.action}</span>
-              <small>{new Date(event.createdAt).toLocaleTimeString()}</small>
-            </p>
-          ))}
         </div>
       </Card>
     </aside>

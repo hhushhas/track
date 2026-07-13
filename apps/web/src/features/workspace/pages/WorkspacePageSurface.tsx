@@ -146,8 +146,6 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
     activeProjectMembers,
     currentTrackUser,
     messages,
-    projectAuditEvents,
-    projectInvitations,
     projectMemberRoleByUserId,
     projectSearchResults,
     projectItems,
@@ -166,7 +164,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         'track-app-shell',
         state.navCollapsed ? 'track-app-shell-nav-collapsed' : '',
         route.view === 'group' ? 'track-app-shell-with-rail' : '',
-        state.railCollapsed ? 'track-app-shell-rail-collapsed' : '',
+        route.view === 'group' && state.railCollapsed ? 'track-app-shell-rail-collapsed' : '',
       ].filter(Boolean).join(' ')}
       style={{ '--track-rail-width': `${state.railWidth}px` } as CSSProperties}
     >
@@ -346,8 +344,6 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           onNotificationMode={(mode) => void notifications.handleNotificationMode(mode)}
           onSendTestNotification={() => void notifications.handleSendTestNotification()}
           onStartResize={() => update.setRailResizing(true)}
-          projectAuditEvents={projectAuditEvents}
-          projectInvitations={projectInvitations}
           railCollapsed={state.railCollapsed}
         />
       ) : null}
