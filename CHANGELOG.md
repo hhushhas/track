@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-13
+
+- Completed the production removal of Records, Draft Records, AI review, and record exports by retiring the legacy Convex functions, data, fields, audit entries, and obsolete assistant prompts.
+- Updated Better Auth to 1.6.15 across the monorepo so Convex production bundles build successfully with the current Kysely dependency.
+
 ## 2026-07-12
 
 - Specified the approved first-class task-management direction: multiple project and Channel boards, task suggestions grounded in chat, human confirmation, live conversation cards, scoped collaboration, permissions, web and mobile behavior, backend boundaries, and phased verification.

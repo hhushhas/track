@@ -15,15 +15,15 @@
     "test": "vitest run --config vitest.config.ts --passWithNoTests"
   },
   "dependencies": {
-    "@better-auth/core": "1.6.13",
-    "@better-auth/expo": "^1.6.13",
+    "@better-auth/core": "1.6.15",
+    "@better-auth/expo": "^1.6.15",
     "@convex-dev/better-auth": "^0.12.5",
     "@expo/dom-webview": "^55.0.6",
     "@expo/metro-runtime": "^55.0.11",
     "@expo/vector-icons": "^15.1.1",
     "@react-navigation/native": "^7.3.8",
     "@track/shared": "workspace:*",
-    "better-auth": "^1.6.13",
+    "better-auth": "^1.6.15",
     "convex": "^1.42.1",
     "expo": "~55.0.27",
     "expo-apple-authentication": "~55.0.14",
