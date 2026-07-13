@@ -12,6 +12,8 @@ const config = defineConfig(({ mode }) => {
   for (const [key, value] of Object.entries(env)) {
     process.env[key] ??= value
   }
+  process.env.VITE_CONVEX_URL ??= env.CONVEX_URL
+  process.env.VITE_CONVEX_SITE_URL ??= env.CONVEX_SITE_URL
 
   return {
     envDir: '../..',

@@ -1,5 +1,4 @@
 name = "track"
-main = "apps/web/.output/server/index.mjs"
 compatibility_date = "2026-07-11"
 compatibility_flags = ["nodejs_compat"]
 
@@ -12,7 +11,3 @@ CONVEX_URL = "https://your-deployment.convex.cloud"
 CONVEX_SITE_URL = "https://your-deployment.convex.site"
 SITE_URL = "https://your-domain.example"
 BETTER_AUTH_URL = "https://your-domain.example"
-
-[assets]
-directory = "apps/web/.output/public"
-binding = "ASSETS"
