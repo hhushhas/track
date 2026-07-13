@@ -4,6 +4,25 @@ Track is a pnpm monorepo for a project-memory application. The web client and
 mobile client share domain contracts, while Convex owns persistence and backend
 functions.
 
+## Product philosophy
+
+Track unifies project communication and task management so teams do not need a
+chat product beside Linear, Jira, or another project-management tool. Tasks are
+first-class, user-creatable work objects with rich planning and accountability
+features, while conversation is their primary source of context: a task may be
+created manually, but the default product direction treats tasks as artifacts
+of discussion with durable links back to the messages and evidence that produced
+them. Board, list, task-detail, and conversation surfaces are different views of
+the same project work, so ownership and status changes should stay visible and
+easy to perform without leaving the discussion.
+
+Future communication sources may include inline video conferencing and
+transcripts, with human-confirmed task extraction or assignment from that
+material. Those conferencing capabilities are not part of the current
+task-management release unless an approved specification adds them; current
+architecture should preserve an extensible, permission-aware evidence boundary
+without introducing speculative meeting infrastructure.
+
 ## Repository map
 
 - `apps/web`: TanStack Start web application.
