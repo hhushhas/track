@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./domain": "./src/domain.ts",
+    "./feature-flags": "./src/feature-flags.ts",
     "./theme": "./src/theme.ts"
   },
   "scripts": {
