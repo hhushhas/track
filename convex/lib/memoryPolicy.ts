@@ -25,7 +25,7 @@ export const initialContextTemplate = `# Project Context
 ## Memory Hygiene
 `
 
-export type MemoryActorRole = 'owner' | 'admin' | 'staff' | 'client'
+export type MemoryActorRole = 'owner' | 'admin' | 'staff' | 'client' | 'manager' | 'member'
 
 export type BoxAccessScope = {
   projectId: Id<'projects'> | string

@@ -50,6 +50,7 @@
     }
   },
   "dependencies": {
+    "@track/shared": "workspace:*",
     "@convex-dev/better-auth": "^0.12.5",
     "@convex-dev/rate-limiter": "^0.3.2",
     "@openrouter/ai-sdk-provider": "^2.10.0",

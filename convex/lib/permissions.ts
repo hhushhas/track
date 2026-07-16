@@ -1,3 +1,4 @@
+import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 
@@ -21,6 +22,10 @@ export async function requireProjectMember(
   projectId: Id<'projects'>,
   userId: Id<'users'>,
 ) {
+  const project = await ctx.db.get(projectId)
+  if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy') {
+    throw new Error('company_policy_required')
+  }
   const member = await getProjectMember(ctx, projectId, userId)
   if (!member) {
     throw new Error('not_project_member')
@@ -63,7 +68,7 @@ export async function requireGroupMember(
       q.eq('groupId', groupId).eq('userId', userId),
     )
     .unique()
-  if (!membership) {
+  if (!membership || (membership.status && membership.status !== 'active')) {
     throw new Error('not_group_member')
   }
   return membership
@@ -74,7 +79,9 @@ export function canRoleJoinDefaultGroup(
   kind: Doc<'groups'>['kind'],
 ) {
   if (kind === 'general') return true
-  if (kind === 'internal') return role !== 'client'
+  if (kind === 'internal') {
+    return role === 'owner' || role === 'admin' || role === 'staff'
+  }
   if (kind === 'commercials') return role === 'owner' || role === 'admin'
   return false
 }

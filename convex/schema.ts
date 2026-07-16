@@ -1,12 +1,26 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
+import { companyTables } from './schema/companyTables'
+import {
+  channelStatus,
+  companyProjectRole,
+  projectMemberStatus,
+  projectOrigin,
+  projectStatus,
+} from './schema/foundationValidators'
+import { taskTables } from './schema/taskTables'
+import { threadTables } from './schema/threadTables'
+
 const projectRole = v.union(
   v.literal('owner'),
   v.literal('admin'),
   v.literal('staff'),
   v.literal('client'),
+  companyProjectRole,
 )
+
+const projectAccessProfile = v.union(v.literal('legacy'), v.literal('company'))
 
 const groupKind = v.union(
   v.literal('general'),
@@ -33,6 +47,9 @@ const contentReportTargetType = v.union(
   v.literal('attachment'),
   v.literal('voice_note'),
   v.literal('assistant_answer'),
+  v.literal('task'),
+  v.literal('task_comment'),
+  v.literal('task_suggestion'),
 )
 
 const contentReportReason = v.union(
@@ -97,6 +114,10 @@ const forwardedMessageSnapshot = v.object({
 })
 
 export default defineSchema({
+  ...companyTables,
+  ...taskTables,
+  ...threadTables,
+
   users: defineTable({
     googleSubject: v.string(),
     authUserId: v.optional(v.string()),
@@ -120,26 +141,49 @@ export default defineSchema({
   projects: defineTable({
     name: v.string(),
     clientLabel: v.optional(v.string()),
+    accessProfile: v.optional(projectAccessProfile),
+    relationshipId: v.optional(v.id('relationships')),
+    proposingCompanyId: v.optional(v.id('companies')),
+    origin: v.optional(projectOrigin),
+    status: v.optional(projectStatus),
+    participantRevision: v.optional(v.number()),
+    revision: v.optional(v.number()),
     createdBy: v.id('users'),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_created_by', ['createdBy']),
+  })
+    .index('by_created_by', ['createdBy'])
+    .index('by_relationship_status', ['relationshipId', 'status'])
+    .index('by_proposing_company_status', ['proposingCompanyId', 'status']),
 
   projectMembers: defineTable({
     projectId: v.id('projects'),
     userId: v.id('users'),
     role: projectRole,
+    companyId: v.optional(v.id('companies')),
+    projectCompanyId: v.optional(v.id('projectCompanies')),
+    status: v.optional(projectMemberStatus),
+    term: v.optional(v.number()),
+    invitedBy: v.optional(v.id('users')),
+    userDisplayNameSnapshot: v.optional(v.string()),
+    companyDisplayNameSnapshot: v.optional(v.string()),
+    endedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_project', ['projectId'])
     .index('by_user', ['userId'])
-    .index('by_project_user', ['projectId', 'userId']),
+    .index('by_project_user', ['projectId', 'userId'])
+    .index('by_project_company_status', ['projectId', 'companyId', 'status'])
+    .index('by_project_company_user_term', ['projectId', 'companyId', 'userId', 'term']),
 
   groups: defineTable({
     projectId: v.id('projects'),
     kind: groupKind,
     name: v.string(),
+    status: v.optional(channelStatus),
+    revision: v.optional(v.number()),
+    archivedAt: v.optional(v.number()),
     createdBy: v.id('users'),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -154,12 +198,20 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    status: v.optional(
+      v.union(v.literal('active'), v.literal('removed'), v.literal('archived')),
+    ),
+    isSteward: v.optional(v.boolean()),
+    endedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_group', ['groupId'])
     .index('by_user', ['userId'])
-    .index('by_group_user', ['groupId', 'userId']),
+    .index('by_group_user', ['groupId', 'userId'])
+    .index('by_group_project_member', ['groupId', 'projectMemberId'])
+    .index('by_project_member_status', ['projectMemberId', 'status']),
 
   invitations: defineTable({
     projectId: v.id('projects'),
@@ -188,6 +240,10 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     authorId: v.id('users'),
+    authorProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
+    channelThreadId: v.optional(v.id('channelThreads')),
+    channelSequence: v.optional(v.number()),
     body: v.string(),
     mentions: v.array(v.id('users')),
     attachmentIds: v.array(v.id('attachments')),
@@ -198,6 +254,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_group_created_at', ['groupId', 'createdAt'])
+    .index('by_group_channel_sequence', ['groupId', 'channelSequence'])
+    .index('by_thread_channel_sequence', ['channelThreadId', 'channelSequence'])
     .index('by_project_created_at', ['projectId', 'createdAt'])
     .searchIndex('search_body_by_project', {
       searchField: 'body',
@@ -208,17 +266,21 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
     lastReadMessageId: v.optional(v.id('messages')),
     lastReadAt: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_user_group', ['userId', 'groupId'])
+    .index('by_project_member_group', ['projectMemberId', 'groupId'])
     .index('by_user_project', ['userId', 'projectId'])
     .index('by_group', ['groupId']),
 
   lastActiveContexts: defineTable({
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     projectId: v.optional(v.id('projects')),
     groupId: v.optional(v.id('groups')),
     deviceId: v.optional(v.string()),
@@ -232,6 +294,7 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
     activity: v.optional(
       v.union(v.literal('typing'), v.literal('attaching'), v.literal('recording')),
     ),
@@ -240,6 +303,7 @@ export default defineSchema({
   })
     .index('by_group_updated_at', ['groupId', 'updatedAt'])
     .index('by_group_user', ['groupId', 'userId'])
+    .index('by_group_project_member', ['groupId', 'projectMemberId'])
     .index('by_user', ['userId']),
 
   attachments: defineTable({
@@ -253,6 +317,8 @@ export default defineSchema({
     kind: v.optional(attachmentKind),
     durationMs: v.optional(v.number()),
     uploadedBy: v.id('users'),
+    uploadedByProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
     extractionStatus: v.union(
       v.literal('preserved'),
       v.literal('pending'),
@@ -277,16 +343,24 @@ export default defineSchema({
 
   groupNotificationSettings: defineTable({
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
     groupId: v.id('groups'),
     mode: groupNotificationMode,
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_user_group', ['userId', 'groupId']),
+  })
+    .index('by_user_group', ['userId', 'groupId'])
+    .index('by_project_member_group', ['projectMemberId', 'groupId']),
 
   auditEvents: defineTable({
+    companyId: v.optional(v.id('companies')),
+    relationshipId: v.optional(v.id('relationships')),
     projectId: v.optional(v.id('projects')),
     groupId: v.optional(v.id('groups')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     actorId: v.optional(v.id('users')),
+    actorProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
     entityType: v.string(),
     entityId: v.string(),
     action: v.string(),
@@ -296,6 +370,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_project_created_at', ['projectId', 'createdAt'])
+    .index('by_company_created_at', ['companyId', 'createdAt'])
+    .index('by_relationship_created_at', ['relationshipId', 'createdAt'])
     .index('by_group_created_at', ['groupId', 'createdAt'])
     .index('by_entity', ['entityType', 'entityId']),
 
@@ -321,6 +397,8 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actorProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
     status: jobStatus,
     sourceKind: memoryImportSourceKind,
     sourceStorageIds: v.array(v.id('_storage')),
@@ -347,6 +425,7 @@ export default defineSchema({
 
   notificationSubscriptions: defineTable({
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
     platform: v.union(v.literal('web'), v.literal('ios'), v.literal('android')),
     tokenOrEndpoint: v.string(),
     enabled: v.boolean(),
@@ -358,13 +437,20 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.optional(v.id('groups')),
     reporterId: v.id('users'),
+    reporterProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     targetType: contentReportTargetType,
     targetMessageId: v.optional(v.id('messages')),
     targetAttachmentId: v.optional(v.id('attachments')),
     targetAssistantStreamId: v.optional(v.id('assistantStreams')),
+    targetTaskId: v.optional(v.id('tasks')),
+    targetTaskCommentId: v.optional(v.id('taskComments')),
+    targetTaskSuggestionId: v.optional(v.id('taskSuggestions')),
     reason: contentReportReason,
     note: v.optional(v.string()),
     status: v.union(
+      v.literal('unassigned'),
       v.literal('open'),
       v.literal('reviewed'),
       v.literal('dismissed'),
@@ -391,6 +477,9 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     requesterId: v.id('users'),
+    requesterProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     promptMessageId: v.optional(v.id('messages')),
     status: jobStatus,
     answer: v.string(),

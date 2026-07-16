@@ -27,5 +27,9 @@ export function readReleaseFeatureFlags(
 
 export const getReleaseConfig = query({
   args: {},
-  handler: () => readReleaseFeatureFlags(process.env),
+  handler: () => readReleaseFeatureFlags({
+    TRACK_COMPANY_MODEL_ENABLED: process.env.TRACK_COMPANY_MODEL_ENABLED,
+    TRACK_TASKS_ENABLED: process.env.TRACK_TASKS_ENABLED,
+    TRACK_THREADS_ENABLED: process.env.TRACK_THREADS_ENABLED,
+  }),
 })

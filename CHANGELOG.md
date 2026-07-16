@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-17
+
+- Added default-off Company, task-management, and Channel-thread release controls with fail-closed web, mobile, and Convex configuration.
+- Added framework-independent domain contracts, additive Convex schema and generated declarations, authenticated actor resolution, and a central legacy/company Project and Channel policy seam without enabling the pending feature domains.
+
 ## 2026-07-16
 
 - Reframed Track's target philosophy around conversation-led communication and first-class task management: peer Companies collaborate through Projects, Channels, Discord-style threads, scoped memory, and human-confirmed AI work.

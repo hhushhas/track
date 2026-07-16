@@ -1,15 +1,9 @@
 import { useQuery } from 'convex/react';
-import { makeFunctionReference } from 'convex/server';
 import {
   defaultReleaseFeatureFlags,
   type ReleaseFeatureFlags,
 } from '@track/shared/feature-flags';
-
-const releaseConfigQuery = makeFunctionReference<
-  'query',
-  Record<string, never>,
-  ReleaseFeatureFlags
->('releaseConfig:getReleaseConfig');
+import { api } from '../../../../convex/_generated/api';
 
 export function resolveReleaseConfig(
   serverProjection: ReleaseFeatureFlags | null | undefined,
@@ -18,5 +12,5 @@ export function resolveReleaseConfig(
 }
 
 export function useReleaseConfig() {
-  return resolveReleaseConfig(useQuery(releaseConfigQuery));
+  return resolveReleaseConfig(useQuery(api.releaseConfig.getReleaseConfig));
 }

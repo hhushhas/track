@@ -44,6 +44,8 @@ describe('central Project and Channel policy contract', () => {
       accessMode: 'active',
       projectRole: 'staff',
       channelMember: false,
+      channelActive: true,
+      channelSteward: false,
     })).toMatchObject({
       canReadProject: true,
       canWriteProject: true,
@@ -53,24 +55,37 @@ describe('central Project and Channel policy contract', () => {
     })
   })
 
-  it('requires exact Channel membership for a company-model manager to steward it', () => {
+  it('requires explicit Channel stewardship for a company-model manager', () => {
     const withoutChannel = resolveProjectChannelCapabilities({
       accessProfile: 'company',
       accessMode: 'active',
       projectRole: 'manager',
       channelMember: false,
+      channelActive: true,
+      channelSteward: false,
     })
     const withChannel = resolveProjectChannelCapabilities({
       accessProfile: 'company',
       accessMode: 'active',
       projectRole: 'manager',
       channelMember: true,
+      channelActive: true,
+      channelSteward: false,
+    })
+    const withStewardship = resolveProjectChannelCapabilities({
+      accessProfile: 'company',
+      accessMode: 'active',
+      projectRole: 'manager',
+      channelMember: true,
+      channelActive: true,
+      channelSteward: true,
     })
 
     expect(withoutChannel.canManageProject).toBe(true)
     expect(withoutChannel.canReadChannel).toBe(false)
     expect(withoutChannel.canStewardChannel).toBe(false)
-    expect(withChannel.canStewardChannel).toBe(true)
+    expect(withChannel.canStewardChannel).toBe(false)
+    expect(withStewardship.canStewardChannel).toBe(true)
   })
 
   it('makes an archive entitlement read-only without broadening its Channel set', () => {
@@ -79,6 +94,8 @@ describe('central Project and Channel policy contract', () => {
       accessMode: 'archive',
       projectRole: 'manager',
       channelMember: true,
+      channelActive: true,
+      channelSteward: true,
     })).toMatchObject({
       canReadProject: true,
       canWriteProject: false,
@@ -87,6 +104,21 @@ describe('central Project and Channel policy contract', () => {
       canWriteChannel: false,
       canStewardChannel: false,
       taskCollaboration: 'read_only',
+    })
+  })
+
+  it('keeps an archived Channel readable but blocks ordinary writes', () => {
+    expect(resolveProjectChannelCapabilities({
+      accessProfile: 'legacy',
+      accessMode: 'active',
+      projectRole: 'owner',
+      channelMember: true,
+      channelActive: false,
+      channelSteward: true,
+    })).toMatchObject({
+      canReadChannel: true,
+      canWriteChannel: false,
+      canStewardChannel: true,
     })
   })
 })

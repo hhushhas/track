@@ -57,7 +57,9 @@ export const getAccessScope = query({
           .query('groupMembers')
           .withIndex('by_user', (q) => q.eq('userId', args.actorId))
           .collect())
-          .filter((membership) => membership.projectId === args.projectId)
+          .filter((membership) =>
+            membership.projectId === args.projectId &&
+            (!membership.status || membership.status === 'active'))
           .map((membership) => membership.groupId)
     return {
       actorUserId: args.actorId,

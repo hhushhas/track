@@ -65,5 +65,5 @@ export const channelParticipationRequestStatuses = [
 export type ChannelParticipationRequestStatus =
   (typeof channelParticipationRequestStatuses)[number]
 
-export const archiveRetentionStatuses = ['active', 'expired', 'redacted'] as const
+export const archiveRetentionStatuses = ['active', 'revoked'] as const
 export type ArchiveRetentionStatus = (typeof archiveRetentionStatuses)[number]
