@@ -1,27 +1,31 @@
 # Track repository guide
 
-Track is a pnpm monorepo for a project-memory application. The web client and
-mobile client share domain contracts, while Convex owns persistence and backend
-functions.
+Track is a pnpm monorepo for a project communication and task-management
+application. The web client and mobile client share domain contracts, while
+Convex owns persistence and backend functions.
 
 ## Product philosophy
 
-Track unifies project communication and task management so teams do not need a
-chat product beside Linear, Jira, or another project-management tool. Tasks are
-first-class, user-creatable work objects with rich planning and accountability
-features, while conversation is their primary source of context: a task may be
-created manually, but the default product direction treats tasks as artifacts
-of discussion with durable links back to the messages and evidence that produced
-them. Board, list, task-detail, and conversation surfaces are different views of
-the same project work, so ownership and status changes should stay visible and
-easy to perform without leaving the discussion.
+Track unifies Project communication and task management so teams do not need a
+chat product beside Linear, Jira, or another work tracker. Conversation leads:
+tasks are first-class and manually creatable, but discussion is their default
+source of context, and conversation-derived tasks retain durable links to the
+messages and evidence that produced them. Board, list, task-detail, Channel, and
+thread surfaces are views of the same Project work, so ownership and status
+changes stay visible and actionable without copying context between tools.
+
+Companies collaborate through Projects and explicitly joined Channels. A
+Discord-style thread is a focused conversation inside one Channel and inherits
+that Channel's access boundary; Track has no direct-message surface outside
+Projects and Channels. Imported memory is explicitly Project- or Channel-scoped,
+and every retrieval, task, AI run, and evidence preview preserves that scope.
 
 Future communication sources may include inline video conferencing and
 transcripts, with human-confirmed task extraction or assignment from that
-material. Those conferencing capabilities are not part of the current
-task-management release unless an approved specification adds them; current
-architecture should preserve an extensible, permission-aware evidence boundary
-without introducing speculative meeting infrastructure.
+material. Those conferencing capabilities are not part of the approved thread
+or task-management releases; architecture should preserve an extensible,
+permission-aware evidence boundary without introducing speculative meeting
+infrastructure.
 
 ## Repository map
 
@@ -29,7 +33,8 @@ without introducing speculative meeting infrastructure.
 - `apps/mobile`: Expo mobile application.
 - `packages/shared`: framework-independent domain helpers and contracts.
 - `convex`: schema, queries, mutations, actions, and backend tests.
-- `docs`: current product, architecture, design, and roadmap documentation.
+- `docs`: target product, current architecture, design, specifications, and
+  roadmap documentation.
 
 ## Local setup
 
@@ -77,7 +82,8 @@ failure or report the exact blocker.
 
 ## Product boundary
 
-Track currently centers on projects, group conversations, evidence,
-attachments, search, assistant responses, and durable project memory. Records,
-Draft Records, AI review queues, and record exports are outside the product
-model. Do not reintroduce those concepts without an approved product decision.
+Track's target model centers on Companies, Projects, Channels, threads,
+conversation, evidence, tasks, boards, search, assistant responses, and scoped
+memory. Records, Draft Records, general AI review queues, record exports, and
+direct messages are outside the product model. Do not reintroduce those concepts
+without an approved product decision.

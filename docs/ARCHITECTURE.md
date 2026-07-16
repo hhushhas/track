@@ -1,5 +1,8 @@
 # Architecture
 
+Status: current running architecture. Approved target changes remain in the
+roadmap and companion specifications until their release gates pass.
+
 Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile application, shared TypeScript domain code, and a Convex backend.
 
 ## Runtime stack

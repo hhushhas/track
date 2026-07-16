@@ -2,11 +2,15 @@
 
 Status: approved product direction; implementation pending.
 
-This specification defines Track's first-class task-management release. The
-current shipped contract remains in [PRODUCT.md](./PRODUCT.md) until this work
-passes its release gate. The task release combines Channel conversation,
-permission-aware references, multiple Kanban boards, and human-controlled
-AI task suggestions in one workspace.
+This specification defines the first-class task-management release in Track's
+target [PRODUCT.md](./PRODUCT.md) contract. The running product is summarized in
+[README.md](../README.md) until this work passes its release gate. The release
+combines Channel conversation, permission-aware references, multiple Kanban
+boards, and human-controlled AI task suggestions in one workspace.
+
+Discord-style Channel threads are governed independently by
+[THREADS_SPEC.md](./THREADS_SPEC.md). Neither release depends on the other; the
+thread compatibility rules below apply when both features are enabled.
 
 ## Product intent
 
@@ -16,19 +20,22 @@ convert a message or assistant answer into a task, or accept a task suggestion
 that Track detected in conversation. Every chat-derived task remains connected
 to the evidence that produced it.
 
-The interaction should feel like chat and task planning are two views of the
-same project. Conversation remains optimized for reading and composing. Boards,
-lists, and task details provide the structure needed to plan and finish work.
+The interaction should feel like conversation and task planning are views of
+the same Project. Conversation remains optimized for reading and composing.
+Boards, lists, and task details provide the structure needed to plan and finish
+work.
 
 ## Goals
 
-- Make tasks durable project objects with ownership, workflow, priority, due
+- Make tasks durable Project objects with ownership, workflow, priority, due
   date, comments, subtasks, labels, activity, and references.
-- Support multiple boards with independent workflows at project or Channel scope.
-- Let people create tasks from the task surface, a Channel conversation, a source
-  message, or an assistant answer.
+- Support multiple boards with independent workflows at Project or Channel scope.
+- Let people create tasks from the task surface, a Channel conversation, a
+  source message, or an assistant answer.
 - Detect high-confidence action items in new Channel conversation and place
   grounded task suggestions in a shared suggestion inbox.
+- Let an authorized person explicitly scan Project- or Channel-scoped imported
+  memory into suggestions of the same scope.
 - Keep a person in control of every durable task created from AI output.
 - Preserve Track's Channel membership boundary in every query, mutation, search
   result, notification, AI run, deep link, and inline task card.
@@ -42,8 +49,9 @@ lists, and task details provide the structure needed to plan and finish work.
 The first release excludes epics, initiatives, sprints, cycles, estimates,
 dependencies, custom fields, time tracking, recurring tasks, workflow
 automation, external Jira/Linear synchronization, guest accounts, direct file
-uploads to tasks, and cross-project boards. Task comments can link existing
-conversation evidence; task-specific attachments can follow in a later release.
+uploads to tasks, cross-Project boards, direct messages, and Channel-thread
+creation or management. Task comments can link existing conversation evidence;
+task-specific attachments can follow in a later release.
 
 The task model has no Record, Draft Record, AI review, or record-export
 semantics. The task suggestion inbox contains only proposed tasks.
@@ -64,12 +72,13 @@ feature and follows its separately approved retention or deletion plan.
 - **Workflow state**: a board-specific task status rendered as a Kanban column.
 - **State category**: the stable semantic meaning of a workflow state:
   `backlog`, `unstarted`, `started`, `completed`, or `canceled`.
-- **Task suggestion**: an AI-proposed task grounded in one Channel's evidence. A
-  suggestion becomes a task only when a person accepts it.
+- **Task suggestion**: an AI-proposed task grounded in one Project or Channel
+  scope. A suggestion becomes a task only when a person accepts it.
 - **Suggestion inbox**: the shared list of pending task suggestions visible to
-  the members of their source Channels.
-- **Reference**: a message, attachment, assistant answer, or imported memory
-  excerpt that supports a task or suggestion.
+  members authorized for each suggestion's Project or Channel scope.
+- **Reference**: a message, attachment, assistant answer, or imported-memory
+  excerpt that supports a task or suggestion. A thread message uses its parent
+  Channel's scope when threads are enabled.
 - **Project-scoped**: visible to every active Project member and through an
   authorized read-only archive after Company exit.
 - **Channel-scoped**: visible only to members authorized for one Channel.
@@ -277,9 +286,9 @@ parent archives its subtasks; restoring the parent offers to restore them.
 
 Task scope normally matches its creation context:
 
-- a task created from a Channel message, Channel assistant answer, Channel panel, or
-  Channel task suggestion starts Channel-scoped;
-- a task created from a project task surface uses the selected board's scope;
+- a task created from a Channel message, Channel assistant answer, Channel panel,
+  or Channel task suggestion starts Channel-scoped;
+- a task created from a Project task surface uses the selected board's scope;
 - a subtask inherits its parent's scope.
 
 A task administrator who is also a member of the source Channel can promote a
@@ -336,6 +345,19 @@ project audit surface.
 
 ## Conversation integration
 
+### Thread compatibility
+
+Task management does not create or manage Channel threads. When the independent
+thread feature is enabled, a thread message behaves as a Channel message for
+task purposes: **Create task**, inline cards, linked-source navigation, evidence
+invalidation, automatic detection, and bounded history scans use the parent
+Channel's scope. Detection may use whole-Channel context, including threads, as
+defined by [THREADS_SPEC.md](./THREADS_SPEC.md).
+
+These combined behaviors are release-gating only when both feature flags are
+enabled. A task-only release works with Channels that have no thread records,
+and a thread-only release introduces no task dependency.
+
 ### Human-created tasks
 
 Every message and completed assistant answer has a **Create task** action. It
@@ -386,10 +408,9 @@ snapshots. Evidence snapshots never enter task search indexes.
 AI creates task suggestions. Accepting a suggestion creates the durable task in
 one audited transaction. The acceptance form lets the reviewer edit the title,
 description, board, state, assignee, priority, due date, labels, and evidence.
-The server derives the new task's Channel scope from the suggestion and accepts
-only an active board bound to that same Channel. Acceptance cannot select a
-project board or change scope. A task administrator can use the task-promotion flow
-after acceptance.
+The server derives the new task's Project or Channel scope from the suggestion
+and accepts only an active board with that exact scope. Acceptance cannot change
+scope. A task administrator can use the task scope-change flow after acceptance.
 
 Track never changes a committed task field from automatic inference. Explicit
 assistant actions may propose an edit or a follow-up task and require a person
@@ -408,10 +429,10 @@ it off for that Channel. The setting explains that eligible message content is
 sent to the configured model provider. Turning it off leaves manual **Create
 task** and explicit `@track` requests available.
 
-After a human message is committed, Track schedules a coalesced Channel detection
-run. A short debounce window lets one discussion turn settle and prevents one
-model call per message. Each run receives a bounded window of new Channel messages
-and reply context since the last successful checkpoint.
+After a human message is committed, Track schedules a coalesced Channel
+detection run. A short debounce window lets one discussion turn settle and
+prevents one model call per message. Each run receives a bounded window of new
+Channel messages and reply context since the last successful checkpoint.
 
 Detection settings carry a monotonically increasing generation and a
 high-water message cursor. Initial activation and every re-enable set the cursor
@@ -436,7 +457,7 @@ end cursor remain for a later run. Expired leases can be reclaimed without
 allowing two runs to commit the same window.
 
 Automatic detection uses only evidence from that Channel. It excludes other
-Channels, project-wide memory, hidden attachments, task content from another
+Channels, Project-scoped memory, hidden attachments, task content from another
 scope, and analytics data. Attachment text may be used only when the attachment
 belongs to the same Channel and its extraction passed existing safety limits.
 
@@ -456,18 +477,20 @@ configuration rather than user-facing controls.
 
 ### Deduplication
 
-Track computes a deterministic fingerprint from the Channel, source-message set,
-and normalized candidate. The fingerprint remains unique across pending and
-terminal suggestion states, which prevents job retries or later scans from
-recreating a decided suggestion. A candidate may resurface only when it cites
-materially new source-message evidence; the new evidence set produces a new
+Track computes a deterministic fingerprint from the suggestion scope, source
+message or import-excerpt set, and normalized candidate. The fingerprint remains
+unique across pending and terminal suggestion states, which prevents job retries
+or later scans from recreating a decided suggestion. A candidate may resurface
+only when it cites materially new evidence; the new evidence set produces a new
 fingerprint and remains subject to semantic duplicate review.
 
-Detection also compares a candidate with project-scoped and same-Channel open
-tasks and pending suggestions. It never compares against another Channel's work.
-A likely semantic duplicate is marked for review and linked to the existing
-task. Track offers **Open existing**, **Add evidence to existing**, and **Create
-separately**. A person chooses the outcome; the system performs no automatic
+Channel detection compares a candidate with Project-scoped and same-Channel
+open tasks and pending suggestions. It never compares against another Channel's
+work. A Project-scoped imported-memory scan compares only with Project-scoped
+open tasks and Project-scoped pending suggestions, so its broadly visible result
+cannot reveal restricted Channel work. A likely semantic duplicate is marked
+for review and linked to the existing task. Track offers **Open existing**,
+**Add evidence to existing**, and **Create separately**. A person chooses the outcome; the system performs no automatic
 merge.
 
 Suggestion status follows one server-enforced state machine:
@@ -488,11 +511,11 @@ target task and that each reference is compatible with its scope.
 
 ### Suggestion inbox
 
-The shared inbox shows pending suggestions from Channels where the current
-Project membership has active write access. Each row shows the proposed title,
-source Channel, evidence preview, proposed
-assignee and due date, possible duplicate, and detection time. Filters include
-Channel, board destination, assignee, duplicate state, and age.
+The shared inbox shows Project-scoped pending suggestions and Channel-scoped
+pending suggestions where the current Project membership has active write
+access. Each row shows the proposed title, source scope, evidence preview,
+proposed assignee and due date, possible duplicate, and detection time. Filters
+include scope, Channel, board destination, assignee, duplicate state, and age.
 
 Task administrators and full task collaborators can accept, edit, or dismiss
 any suggestion they can access. Scoped task collaborators can accept a
@@ -521,11 +544,15 @@ Feature activation starts detection with new messages. Track performs no
 automatic historical backfill.
 
 A task administrator who belongs to a Channel can explicitly run **Find tasks in
-history** for a bounded date range. Imported-memory scans are also explicit and
-require a traceable memory import, source Channel, and excerpt. Both flows create
-task suggestions under the same review, evidence, deduplication, and permission
-rules. Content without provable source scope is skipped and reported as
-unavailable for task extraction.
+history** for a bounded date range.
+
+Imported-memory scans are also explicit and require a traceable memory import,
+its declared Project or Channel scope, and bounded excerpts. A Project-scoped
+import creates Project-scoped suggestions accepted only into Project boards. A
+Channel-scoped import creates suggestions for that Channel and requires the
+administrator to belong to it. Both flows use the same human review, evidence,
+deduplication, and permission rules. Content without a provable source scope is
+skipped and reported as unavailable for task extraction.
 
 ## Permissions
 
@@ -710,8 +737,8 @@ dead or placeholder control.
 ## Loading, empty, error, and offline behavior
 
 Every task surface has explicit loading, empty, permission-lost, error, and
-retry states. Empty states distinguish no tasks, no filter matches, no accessible
-boards, and no pending suggestions.
+retry states. Empty states distinguish no tasks, no filter matches, no
+accessible boards, and no pending suggestions.
 
 Message sending completes independently of task detection. A model outage or
 detection failure never delays, rolls back, or duplicates a chat message.
@@ -791,10 +818,11 @@ suggestions, comments, and notification state. Proposed schema additions are:
 - `taskActivities`: task, immutable original visibility Channel, actor Project
   membership and Acting Company, action, safe before/after summary, correlation
   id, and timestamp;
-- `taskSuggestions`: project, source Channel, proposed fields, status, confidence,
-  grounding reason, fingerprint, possible duplicate, decision actor/reason,
-  decision Project membership and Acting Company, accepted or linked task,
-  duplicate override, archive state, model/prompt version, and timestamps;
+- `taskSuggestions`: Project, scope kind, optional source Channel, proposed
+  fields, status, confidence, grounding reason, fingerprint, possible duplicate,
+  decision actor/reason, decision Project membership and Acting Company,
+  accepted or linked task, duplicate override, archive state, model/prompt
+  version, and timestamps;
 - `taskSuggestionReferences` and `taskSuggestionHides`: scoped source references
   and per-Project-membership hidden state;
 - `taskDetectionSettings` and `taskDetectionRuns`: per-Channel enabled state,
@@ -823,10 +851,11 @@ The existing `contentReports` validator and references expand to support task,
 task comment, and task suggestion targets without copying restricted content
 into report rows.
 
-Indexes must support project and Channel authorization, board/state/rank queries,
-assignee/My tasks, parent/subtasks, task key, pending suggestions,
-fingerprint idempotency, followers, comments/activity pagination, due reminders,
-and task search. Index and search design must avoid whole-table filtering.
+Indexes must support Project and Channel authorization, board/state/rank
+queries, assignee/My tasks, parent/subtasks, task key, pending suggestions by
+scope, fingerprint idempotency, followers, comments/activity pagination, due
+reminders, and task search. Index and search design must avoid whole-table
+filtering.
 
 Shared enums and policy inputs live in `packages/shared` without framework
 imports and match Convex validators. The schema and generated Convex API remain
@@ -836,8 +865,8 @@ aligned through their generator.
 
 Every server mutation enforces these invariants:
 
-- referenced project, board, Channel, workflow state, task, parent, label,
-  assignee, suggestion, and evidence records belong to the same project;
+- referenced Project, board, Channel, workflow state, task, parent, label,
+  assignee, suggestion, and evidence records belong to the same Project;
 - a Channel task's board has the same Channel and a project task's board has no
   Channel;
 - a task's workflow state belongs to its board;
@@ -855,6 +884,8 @@ Every server mutation enforces these invariants:
   viewer may access that source;
 - a scope with active boards has exactly one active default, a scope with none
   has zero defaults, and each board has exactly one active default state;
+- a suggestion and its accepted task use the same Project or Channel scope, and
+  every suggestion reference is compatible with that scope;
 - task suggestion status is exactly `pending`, `accepted`, `linked`, or
   `dismissed`, and every terminal transition starts from `pending`;
 - a detection result commits only when its generation and starting cursor match
@@ -1002,9 +1033,10 @@ enables the Company model must additionally satisfy statements 16–18.
    send, creates only validated Channel-scoped suggestions, respects the
    per-Channel switch, and discards stale-generation results without advancing
    the cursor.
-9. A reviewer can edit, accept, dismiss, hide, or resolve a possible duplicate;
-   every concurrent decision returns one idempotent accepted, linked, or
-   dismissed terminal result.
+9. A reviewer can edit, accept, dismiss, hide, or resolve a possible duplicate
+   for an authorized Project- or Channel-scoped suggestion; acceptance uses a
+   same-scope board, and every concurrent decision returns one idempotent
+   accepted, linked, or dismissed terminal result.
 10. Channel-to-project promotion requires explicit declassification confirmation,
     moves the task and subtasks to a project board, and keeps references
     plus pre-promotion comments and activity restricted.
@@ -1027,11 +1059,15 @@ enables the Company model must additionally satisfy statements 16–18.
     and unread changes in `exit_pending`, completes the task snapshot manifest
     before `exited`, and preserves only the exact authorized read-only
     Project/Channel history; retry reuses the cutoff, safe-cancel cleans partial
-snapshots, and later task, comment, suggestion, label, or reference-link
+    snapshots, and later task, comment, suggestion, label, or reference-link
     changes remain invisible.
 18. Guided upgrade preserves every legacy Group task scope and evidence boundary,
     shows staff/client capability changes, and activates neutral manager/member
     policy only after the Company-model approvals succeed.
+
+When threads are also enabled, the combined integration criteria in
+[THREADS_SPEC.md](./THREADS_SPEC.md) apply without becoming a dependency for a
+task-only release.
 
 ## Testing and verification gate
 
@@ -1051,10 +1087,10 @@ Automated coverage must include:
 - schema-invariant and transactional tests for task-key collisions, defaults,
   workflow migration, ranking, subtasks, scope changes, suggestion terminal
   transitions, idempotent comments, and archive behavior;
-- AI structured-output validation, confidence gating, source scoping,
-  fingerprint deduplication, likely-duplicate handling, generation/lease races,
-  cursor compare-and-set, retry, and provider-failure tests with a fake model
-  adapter;
+- AI structured-output validation, Project- and Channel-suggestion scope,
+  confidence gating, source scoping, fingerprint deduplication, likely-duplicate
+  handling, generation/lease races, cursor compare-and-set, retry, and
+  provider-failure tests with a fake model adapter;
 - evidence invalidation tests for deletion, redaction, expiration, revocation,
   promotion, and membership loss;
 - search pagination and leak-resistance tests;
@@ -1062,7 +1098,8 @@ Automated coverage must include:
 - web component and route tests for board/list states, drawer routing, forms,
   conflicts, drag rollback, keyboard movement, inline cards, Inbox, and filters;
 - mobile tests for task navigation, status grouping, forms, message actions,
-  inline cards, error surfaces, and push routing.
+  inline cards, error surfaces, and push routing;
+- conditional thread integration tests when both feature flags are enabled.
 
 The implementation handoff runs and observes the repository gate:
 
@@ -1105,7 +1142,6 @@ time. Every phase ends with its targeted tests and an observed local workflow;
 code completion alone does not advance the phase.
 
 When Phase 8 ships, remove the task-management item from
-[ROADMAP.md](./ROADMAP.md), fold the running behavior into
-[PRODUCT.md](./PRODUCT.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and
-[DESIGN.md](./DESIGN.md), and update README and release notes in the same
-change.
+[ROADMAP.md](./ROADMAP.md), reconcile the running behavior with
+[PRODUCT.md](./PRODUCT.md), update [ARCHITECTURE.md](./ARCHITECTURE.md),
+[DESIGN.md](./DESIGN.md), README, and release notes in the same change.

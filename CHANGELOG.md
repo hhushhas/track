@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-16
+
+- Reframed Track's target philosophy around conversation-led communication and first-class task management: peer Companies collaborate through Projects, Channels, Discord-style threads, scoped memory, and human-confirmed AI work.
+- Split Channel threads into an independent implementation specification, kept task management conditionally thread-compatible, and added threads plus WhatsApp-style mobile push notifications to the roadmap.
+- Expanded the approved memory direction so imports may declare Project or Channel scope and explicit scans produce same-scope task suggestions.
+
 ## 2026-07-13
 
 - Completed the production removal of Records, Draft Records, AI review, and record exports by retiring the legacy Convex functions, data, fields, audit entries, and obsolete assistant prompts.

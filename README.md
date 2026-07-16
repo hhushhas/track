@@ -1,8 +1,16 @@
 # Track
 
-Track is a project collaboration workspace where client and vendor teams work in group conversations, retain references, and use permission-aware AI assistance. The web and mobile apps support realtime chat, attachments, voice notes, notifications, `@track` answers, project memory imports, search, and audit history.
+Track currently ships as a project collaboration workspace where client and
+vendor teams work in group conversations, retain references, and use
+permission-aware AI assistance. The web and mobile apps support realtime chat,
+attachments, voice notes, notifications, `@track` answers, project memory
+imports, search, and audit history.
 
-First-class task management and Kanban boards are the next major product direction in [docs/ROADMAP.md](./docs/ROADMAP.md).
+The [target product contract](./docs/PRODUCT.md) unifies Company-based Project
+and Channel conversation with Discord-style threads, first-class task
+management, Kanban boards, and dependable mobile push. These approved changes
+remain independent implementation work tracked in
+[docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Repository
 
@@ -17,12 +25,23 @@ assets/brand/svg/  Final brand masters
 
 Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained documentation is:
 
-- [Product](./docs/PRODUCT.md): current behavior, roles, and access invariants.
-- [Architecture](./docs/ARCHITECTURE.md): stack, boundaries, and data flow.
-- [Design](./docs/DESIGN.md): interface, tokens, interaction states, and accessibility.
-- [Roadmap](./docs/ROADMAP.md): agreed behavior that has not shipped.
-- [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): approved future task, board, chat, AI, access, and delivery contract.
-- [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md): approved future company, relationship, shared-project, channel, access, and migration contract.
+- [Product](./docs/PRODUCT.md): target philosophy, product model, and access
+  invariants.
+- [Architecture](./docs/ARCHITECTURE.md): current stack, boundaries, and data
+  flow.
+- [Design](./docs/DESIGN.md): interface, tokens, interaction states, and
+  accessibility.
+- [Roadmap](./docs/ROADMAP.md): approved target behavior that has not shipped.
+- [Channel threads specification](./docs/THREADS_SPEC.md): approved independent
+  thread, unread, lifecycle, AI-context, and integration contract.
+- [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): approved
+  independent task, board, AI, access, and delivery contract.
+- [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
+  approved future Company, Relationship, shared-Project, Channel, access, and
+  migration contract.
+- [Mobile push notification intent](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
+  approved reliability direction that still needs a complete implementation
+  contract.
 
 ## Requirements
 

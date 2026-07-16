@@ -1,44 +1,119 @@
 # Product
 
-Track is a project collaboration workspace built around group conversation, references, and permission-aware AI assistance. It helps client and vendor teams keep decisions, scope changes, tasks, blockers, and commercial context connected to the messages that produced them.
+Status: target product contract. Some capabilities described here remain approved
+implementation work; [README.md](../README.md) describes the running product,
+and [ROADMAP.md](./ROADMAP.md) tracks delivery.
 
-## Current product model
+## Product philosophy
 
-A project contains members and groups. Group membership controls access to its messages, attachments, and AI answers. Project membership alone does not grant access to every group.
+Track unifies project communication and task management so a team does not need
+a chat product beside a separate work tracker. The shorthand is “Slack + Jira
+had a baby,” but the integration is deeper than colocating two tools:
+conversation, evidence, boards, lists, and task details are views of the same
+Project work.
 
-The current application supports:
+Conversation leads. Tasks are first-class, manually creatable work objects, but
+discussion is their default source of context. A task created from conversation
+keeps durable links to the messages, assistant answers, attachments, or imported
+memory that produced it. Ownership and status changes stay visible and actionable
+from both task and conversation surfaces.
 
-- project and group creation, membership, invitations, and role management;
-- realtime group chat, replies, forwarding, mentions, typing state, attachments, and voice notes;
-- unread state, notification preferences, web push, and mobile push registration;
-- `@track` answers grounded in accessible conversation, attachments, and imported project memory;
-- project search, content reporting, account deletion, profile security, and two-factor authentication.
+Track may later add inline video conferencing and transcripts as communication
+sources. Those capabilities are outside the approved thread and first
+task-management releases, but the evidence model must allow a person to confirm
+tasks or assignments grounded in that material without introducing speculative
+meeting infrastructure now.
 
-## Roles and access
+## Product model
 
-Project roles are `owner`, `admin`, `staff`, and `client`.
+Companies are durable identities whose members can collaborate in Projects. Two
+or more peer Companies may form a Relationship and explicitly choose which
+Projects and people they share. A Relationship, Company role, or Project role
+never grants access to conversation by itself.
 
-- Owners and admins manage the project.
-- Staff and clients access only the groups they join.
-- Administrative authority never bypasses source-group membership.
+A Project is the operational boundary for communication, memory, tasks, search,
+and audit history. Project roles are the neutral `manager` and `member` roles.
+When one person represents more than one Company, every Project action uses one
+explicit Project membership and Acting Company; Track never unions the person's
+access across Companies.
 
-Default groups reflect common visibility:
+Channels organize Project conversation and evidence. Every Project member joins
+General explicitly, while every other Channel has explicit membership. Company
+owners, Company admins, and Project managers cannot discover or read a restricted
+Channel unless they belong to it. Track has no direct-message surface outside
+Projects and Channels.
 
-- General: owner, admin, staff, and client.
-- Internal: owner, admin, and staff.
-- Commercials: owner and admin.
+A Channel can contain named Discord-style threads created from an existing
+message or started directly. Threads are focused sub-conversations, not new
+permission scopes: every Channel member can discover and participate in them. Creating,
+replying to, or being mentioned in a thread follows it; followed threads drive
+thread unread state and notifications, and members may follow or unfollow them.
+A thread creator or Channel steward may manually archive or reopen it. Archived
+threads are read-only but remain searchable, referenceable, and governed by the
+parent Channel's retention and archive rules.
 
-Custom groups use explicit membership.
+## Conversation, memory, and evidence
 
-## References and AI rules
+Messages, replies, threads, attachments, voice notes, assistant answers, and
+evidence remain inside their Project and, where applicable, Channel boundary.
+Forwarding or promoting material into a broader audience requires an explicit
+disclosure confirmation and never silently broadens access to the source.
 
-AI output is a proposal or an answer, never silent authority.
+Imported memory declares its scope at import time. Project-scoped memory is
+available to every active Project member. Channel-scoped memory is available
+only to that Channel's members. Retrieval, search, assistant context, task
+creation, archive access, and evidence previews enforce the declared source
+scope.
 
-- `@track` uses only information the requesting user can access.
-- Factual answers should cite their supporting messages, attachments, or imported memory.
-- Unclear references produce an explicit uncertainty response.
-- Imported memory is project-scoped and remains subject to project and group access checks.
+A Company leaving a shared Project retains a frozen read-only record of only the
+Project and Channels its members could access at exit. Later work stays hidden,
+and no Company can unilaterally erase history already shared with another.
 
-## Platform coverage
+## Tasks and planning
 
-The web app is the complete workspace, search, profile, and administration surface. The mobile app focuses on authentication, projects, groups, conversation, attachments, voice notes, assistant interactions, notification settings, reporting, and account deletion.
+Tasks are durable Project work objects with ownership, workflow state, priority,
+due date, labels, subtasks, comments, activity, and permission-aware references.
+A person may create a task directly, convert a message or completed assistant
+answer, or accept an AI task suggestion. Thread-derived tasks use their parent
+Channel's scope.
+
+A Project can have multiple Project-wide or Channel-scoped boards with independent
+workflows. Board, list, task-detail, Channel panel, and inline task cards present
+the same live task state. Project-wide tasks are visible to active Project
+members; Channel tasks additionally require membership in their exact Channel.
+Evidence keeps its original access rule even if a task later moves to a broader
+scope.
+
+## AI authority
+
+AI may answer questions, retrieve evidence, and propose grounded tasks, but it
+never silently creates or changes durable work. A person confirms every task
+created from a suggestion and every proposed task edit.
+
+Assistant answers may use bounded context from the whole current Channel,
+including its threads, plus other evidence the selected Project membership is
+authorized to use. Automatic task detection uses bounded whole-Channel evidence
+and does not pull Project-scoped memory or another Channel into its run. Factual
+output cites its sources, uncertain grounding stays explicit, and model work
+never broadens permissions. Automatic detection produces Channel-scoped
+suggestions for review rather than committed tasks; an explicit scan of
+Project-scoped imported memory may produce Project-scoped suggestions.
+
+## Platform direction
+
+Web provides the full conversation, planning, search, Company, Project, Channel,
+and administration experience. Mobile supports the essential conversation and
+task workflows, including threads, task creation and updates, suggestions,
+comments, evidence, notifications, and deep links. Mobile conversation push
+should feel immediate and dependable while the app is foregrounded,
+backgrounded, or terminated. Administrative workflows may remain web-only when
+the maintained specification says so.
+
+The detailed approved contracts are
+[Company Relationships and Shared Projects](./COMPANY_RELATIONSHIPS_SPEC.md),
+[Channel Threads](./THREADS_SPEC.md), and
+[Task Management](./TASK_MANAGEMENT_SPEC.md). The enhanced mobile push direction
+is tracked separately in
+[MOBILE_PUSH_NOTIFICATIONS_SPEC.md](./MOBILE_PUSH_NOTIFICATIONS_SPEC.md). When
+implementation behavior changes this target, the product decision and every
+affected specification must be reconciled before release.

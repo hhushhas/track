@@ -2,14 +2,13 @@
 
 Status: approved product direction; implementation pending.
 
-This specification defines Track's company, relationship, shared-project, and
-channel model. The current shipped contract remains in
-[PRODUCT.md](./PRODUCT.md) until this work passes its release gate. Where this
-specification conflicts with the planned task model in
-[TASK_MANAGEMENT_SPEC.md](./TASK_MANAGEMENT_SPEC.md), this specification is
-authoritative for company identity, neutral roles, project participation,
-channel naming, and access control. The two specifications must be reconciled
-before either combined release ships.
+This specification defines the Company, Relationship, shared-Project, and
+Channel model in Track's target [PRODUCT.md](./PRODUCT.md) contract. The running
+product is summarized in [README.md](../README.md) until this work passes its
+release gate. Where this specification conflicts with the planned thread or task
+model, it is authoritative for Company identity, neutral roles, Project
+participation, Channel naming, and access control. The affected specifications
+must be reconciled before a combined release ships.
 
 ## Product intent
 
@@ -78,6 +77,8 @@ behavior without changing the access model defined here.
   that Company.
 - **Channel**: a conversation and evidence scope inside one Project. Channel is
   the forward product name for the current Group concept.
+- **Thread**: a focused conversation nested inside one Channel that inherits the
+  Channel's access boundary.
 - **Channel member**: a Project member explicitly allowed to read and
   contribute to one Channel.
 - **General**: the default shared Channel in a new Project.
@@ -127,6 +128,8 @@ The following rules apply to every platform and server function:
 13. Search results, counts, notification copy, audit payloads, assistant
     context, evidence previews, filenames, and error messages obey the same
     access boundary as the source object.
+14. A thread belongs to one Channel and never narrows or broadens that Channel's
+    audience.
 
 ## Information architecture
 
@@ -417,10 +420,12 @@ before adding other members. A steward manages only their Company's Channel
 members. Track blocks removal of the last eligible steward until a replacement
 is appointed or that Company's Channel members are removed.
 
-Channel membership is the only live content boundary. It governs messages,
-replies, typing state, read state, attachments, voice notes, assistant answers,
-Channel-scoped imported memory, search matches, reports, notifications,
-evidence previews, and future Channel-scoped boards and tasks.
+Channel membership is the live boundary for Channel-scoped content. It governs
+messages, replies, threads, typing state, read state, attachments, voice notes,
+assistant answers, Channel-scoped imported memory, search matches, reports,
+notifications, evidence previews, and future Channel-scoped boards and tasks.
+Project-scoped imported memory is the explicit exception and is available to
+every active Project member rather than one Channel.
 
 The current default `Internal` and `Commercials` kinds do not exist in new
 company-model Projects. Their meaning is relative to one vendor and is
@@ -473,9 +478,9 @@ new writes, notifications, assistant work, and memory mutation by the exiting
 Company. The archive freezes at the prepared exit cutoff. It includes messages,
 assistant answers, attachments, comments, activity, evidence, and audit events
 created before that cutoff that each former member could access. It stores
-exit-time snapshots for mutable Project, Channel, board, task,
-membership-label, and author-Company fields. Post-exit content and edits are
-invisible through the exited Company's membership. Files remain retrievable
+exit-time snapshots for mutable Project, Channel, thread when enabled, board,
+task, imported-memory, membership-label, and author-Company fields. Post-exit
+content and edits are invisible through the exited Company's membership. Files remain retrievable
 through archive-checked URLs unless a separately authorized security, legal, or
 retention action quarantines them.
 
@@ -496,13 +501,14 @@ Company's frozen view. A Company that rejoins starts a new versioned Project
 participation term and new live memberships; its prior archive remains a
 separate immutable historical entitlement.
 
-Project exit also captures the exact Project `context.md` bytes available at
-the cutoff. The memory gateway serializes context writes, copies that version
-to an immutable Company-exit archive path, and records its source revision,
-content hash, length, and snapshot identifier in Convex. Later Project-memory
-updates are invisible to the exited Company. Channel scratch material gains no
-new browse surface; retained source messages, attachments, and imports follow
-their existing Channel archive boundary.
+Project exit also captures the exact Project `context.md` bytes and every
+Project-scoped imported-memory version available at the cutoff. The memory
+gateway serializes writes, copies those versions to immutable Company-exit
+archive paths, and records each source revision, content hash, length, scope,
+and snapshot identifier in Convex. Channel-scoped imports follow the exact
+Channel archive entitlement held by each former Project membership. Later
+Project- or Channel-memory updates are invisible to the exited Company, and
+Channel scratch material gains no new browse surface.
 
 Exit is a retryable two-phase workflow because Convex and Upstash Box do not
 share a transaction. The prepare step blocks the exiting Company's writes and
@@ -529,16 +535,29 @@ Company admins, and Project managers receive no hidden Channel context.
 Scheduled and Node actions recheck access before model work and again before
 persisting or delivering output.
 
-Project memory remains Project-scoped. Only facts safe for every active Project
-member may enter shared `context.md`. Restricted Channel material may inform an
-authorized run but cannot be promoted into Project-wide memory unless an
-explicit declassification flow confirms the expanded audience. A read-only
-archive exposes only memory that was available to the former viewer at exit.
+Every imported-memory source declares either Project or Channel scope at import
+time. Project-scoped imports and shared `context.md` are available to every
+active Project member. Channel-scoped imports require membership in their exact
+Channel. Restricted Channel material may inform an authorized run but cannot be
+promoted into Project-wide memory unless an explicit declassification flow
+confirms the expanded audience. Search, assistant retrieval, task extraction,
+evidence previews, and read-only archives preserve the declared source scope.
 
 Evidence keeps the access scope of its source. Moving a future task or answer
 to a broader scope never broadens its evidence. Unauthorized viewers receive a
 generic restricted indicator without hidden Company, Channel, filename, quote,
 count, or identifier details.
+
+## Thread integration contract
+
+The companion [Channel Threads specification](./THREADS_SPEC.md) is an
+independent release. When enabled, every thread belongs to exactly one Channel,
+has no separate membership, and uses the authenticated actor's exact Project
+membership and Acting Company for messages, follows, unread state,
+notifications, search, AI context, audit, and archives. Project or Channel
+lifecycle applies to child threads without broadening access. The Company model
+can ship with no thread records, and the thread model can ship before or after
+Company migration through the same central policy adapter.
 
 ## Task-management integration contract
 
@@ -548,6 +567,11 @@ its core work model with these required reconciliations:
 - Replace the product noun Group with Channel. The initial physical
   `groupId` may remain during migration, but no parallel scope is created.
 - A board remains either Project-scoped or bound to exactly one Channel.
+- A Project-scoped suggestion is visible to active Project members and accepts
+  only into a Project board. A Channel-scoped suggestion additionally requires
+  exact Channel membership and accepts only into that Channel's board.
+- Imported-memory extraction preserves its source's declared Project or Channel
+  scope.
 - Project-scoped task access means active Project membership for one active
   Project participant Company. Relationship or Company membership is
   insufficient.
@@ -698,8 +722,9 @@ and reviewer access is rechecked before every read or decision.
 
 Convex is authoritative for Companies, memberships, Relationships, Projects,
 Channels, invitations, approvals, access state, messages, audit, and archive
-authorization. Upstash Box remains authoritative only for the Project memory
-files described in [ARCHITECTURE.md](./ARCHITECTURE.md).
+authorization. Upstash Box remains authoritative only for scoped
+imported-memory files and shared Project context; Convex retains their declared
+scope, access state, jobs, revisions, and audit metadata.
 
 Proposed schema additions and changes are:
 
@@ -732,8 +757,8 @@ Proposed schema additions and changes are:
   requester, status, votes, and timestamps;
 - `projectArchiveEntitlements` and exit snapshots: exited Company and Project,
   former Project membership, exit timestamp, authorized Channel set, frozen
-  mutable metadata, immutable Project-memory snapshot identifier/revision/hash,
-  retention status, and timestamps;
+  mutable metadata, immutable Project- and Channel-memory snapshot
+  identifiers/revisions/hashes/scopes, retention status, and timestamps;
 - `projectMembers`: versioned membership terms with Project, Project Company
   term, Company, user, neutral role, active/suspended/removed/archived status,
   immutable attribution fields, and timestamps; at most one term is live per
@@ -745,12 +770,17 @@ Proposed schema additions and changes are:
   user alone;
 - `channelParticipationRequests`: Channel, target Project Company, inviter,
   status, selected members, decision actor, and timestamps;
-- messages, assistant streams, future task activity, and audit events: immutable
-  author Project membership and Acting Company attribution;
+- messages, assistant streams, future thread messages, future task activity, and
+  audit events: immutable author Project membership and Acting Company
+  attribution;
+- future thread records and follow/read state: one parent Channel, no separate
+  membership boundary, and selected Project-membership state under
+  [THREADS_SPEC.md](./THREADS_SPEC.md);
 - read state, typing state, notification settings, active contexts, reports,
-  attachments, search filters, memory jobs, and future task tables: keyed by the
-  selected Project membership where representation matters and updated to
-  follow active or archive Project and Channel policy.
+  attachments, search filters, memory sources/jobs, and future task tables:
+  explicit Project or Channel scope where applicable, keyed by the selected
+  Project membership where representation matters, and updated to follow active
+  or archive Project and Channel policy.
 
 Invitation tokens are random, single-use, stored as hashes, compared in
 constant time where applicable, and expire. Acceptance, voting, member addition,
@@ -793,6 +823,9 @@ Every server mutation enforces these data rules:
 - every Project member belongs to the represented active Company;
 - every Channel member references an eligible Project membership from the same
   Project;
+- every enabled thread belongs to one Channel and inherits its exact access;
+- every imported-memory source declares Project or Channel scope, and a
+  Channel-scoped source belongs to the same Project as its Channel;
 - Channel membership, read state, notification state, typing state, and active
   context use the selected Project membership rather than a bare user id when a
   person may represent more than one Company;
@@ -953,8 +986,9 @@ production access or deployment approval.
 
 ## Acceptance criteria
 
-The company model is ready to ship only when all of these statements are
-observed in local production builds:
+The Company model is ready to ship when statements 1–18 are observed in local
+production builds. A release that also enables threads or tasks must
+additionally satisfy the applicable combined criteria 19–20.
 
 1. A user can create a Company, invite members, switch between multiple active
    Companies, and produce correctly attributed audited actions.
@@ -962,8 +996,8 @@ observed in local production builds:
    Company controls on web and mobile.
 3. Any active Relationship Company can invite another Company through private
    discovery, and only an authorized target owner/admin can accept.
-4. Joining a Relationship exposes no Project, Channel, member, message, task,
-   evidence, memory, search, notification, or audit content.
+4. Joining a Relationship exposes no Project, Channel, member, message, thread,
+   task, evidence, memory, search, notification, or audit content.
 5. A shared Project activates only after Company acceptance and one appointed
    manager per active participant.
 6. Joining a Project creates General membership and grants no other Channel
@@ -983,24 +1017,29 @@ observed in local production builds:
     only the former viewer's authorized read-only history.
 13. New Projects provision General only. Guided upgrades preserve every legacy
     Group membership without role-based Company inference.
-14. Message, attachment, evidence, assistant, memory, search, audit, report,
-    notification, typing, read-state, and mobile flows enforce the new central
-    policy end to end.
-15. The reconciled task model uses Project/Channel scope, neutral roles, Acting
-    Company attribution, and the same exit/archive rules.
-16. Account deletion, Company suspension, last-owner protection, expired
+14. Message, attachment, evidence, assistant, Project- and Channel-scoped
+    memory, search, audit, report, notification, typing, read-state, and mobile
+    flows enforce the new central policy end to end.
+15. Account deletion, Company suspension, last-owner protection, expired
     invitations, provider failures, stale forms, offline reconnect, and denied
     deep links produce the specified safe state without orphaned or phantom
     writes.
-17. A Company owner/admin with no Project membership can perform only the safe
+16. A Company owner/admin with no Project membership can perform only the safe
     Project-participation administration in this spec and cannot discover
     content.
-18. Suspending a Company pauses all of its live and archive access without
+17. Suspending a Company pauses all of its live and archive access without
     changing another Company's work; reactivation restores only still-valid
     access and produces no catch-up delivery.
-19. Last-participant Project exit creates a terminal archive, and every exit
-    archive exposes the exact frozen Project-memory version rather than later
-    `context.md` changes.
+18. Last-participant Project exit creates a terminal archive, and every exit
+    archive exposes the exact frozen Project- and Channel-memory versions rather
+    than later source changes.
+19. When threads are enabled, they inherit exact Channel access, preserve Acting
+    Company attribution and per-membership follow/unread state, and follow the
+    same exit/archive rules without becoming a Company-release dependency.
+20. When tasks are enabled, Project- and Channel-scoped suggestions and tasks use
+    neutral roles, Acting Company attribution, declared imported-memory scope,
+    and the same exit/archive rules without becoming a Company-release
+    dependency.
 
 ## Testing and verification gate
 
@@ -1026,9 +1065,13 @@ Automated coverage must include:
   upgrade, exit, archive, errors, and keyboard access;
 - mobile tests for Company switching, invitations, Project/Channel navigation,
   identity badges, read-only archives, access loss, and deep links;
-- task integration tests once the companion specification is merged.
+- conditional thread integration tests when both Company and thread features are
+  enabled;
+- conditional task integration tests when both Company and task features are
+  enabled; and
 - exit-saga tests covering Box snapshot failure, verified retry, safe cancel,
-  immutable memory version/hash, cutoff filtering, and orphan snapshot cleanup.
+  immutable Project- and Channel-memory versions/hashes/scopes, cutoff filtering,
+  and orphan snapshot cleanup.
 
 The implementation handoff runs and observes the repository gate:
 
@@ -1062,8 +1105,8 @@ Production deployment requires separate explicit approval.
 | 4. Channel policy | Channel naming, explicit membership, cross-Company participation, restricted administration, forwarding disclosure, archive approval, and conversation flows work end to end. | 3 |
 | 5. Cross-cutting authorization | Search, audit, AI, memory, immutable exit snapshots/finalization, attachments, notifications, reports, read/typing state, Company suspension, account deletion, and mobile APIs use the central policy with leak tests. | 3, 4 |
 | 6. Guided migration | Legacy mapping, counterpart confirmation, role review, exact Group preservation, diagnostics, cancellation, and idempotent activation work on representative data. | 3–5 |
-| 7. Task reconciliation | The task specification uses neutral roles, Channel scope, Company attribution, Company-specific membership management, and shared exit/archive policy. | 3–6 and task phases 0–1 |
-| 8. Hardening and rollout | Full gate, permission red-team, accessibility pass, performance checks, web/mobile local-production walkthroughs, docs transition, and controlled feature rollout are complete. | 1–7 |
+| 7. Optional thread/task reconciliation | Enabled companion features use neutral roles, Channel scope, Company attribution, Company-specific membership management, and shared exit/archive policy. This phase is required only for a combined release. | 3–6 and the enabled companion's contract/policy phase |
+| 8. Hardening and rollout | Full gate, permission red-team, accessibility pass, performance checks, web/mobile local-production walkthroughs, docs transition, and controlled feature rollout are complete. | 1–6; also 7 for a combined release |
 
 Schema, shared contracts, central authorization helpers, generated Convex
 declarations, route generation, workspace navigation, and migration adapters
@@ -1081,15 +1124,18 @@ and an observed local workflow pass.
   Group membership.
 - Do not let one Company manage another Company's people.
 - Do not let one Company hard-delete shared history.
-- Do not expose restricted Channel names, counts, snippets, filenames, member
-  activity, task metadata, or identifiers through administrative surfaces.
+- Do not expose restricted Channel names, thread/task counts, snippets,
+  filenames, member activity, task metadata, or identifiers through
+  administrative surfaces.
+- Do not let a thread create a permission boundary separate from its Channel.
+- Do not erase or guess an imported-memory source's Project or Channel scope.
 - Do not duplicate authorization logic across web, mobile, search, assistant,
-  memory, tasks, notifications, and reports.
+  memory, threads, tasks, notifications, and reports.
 - Do not trust actor identifiers supplied by a client.
 - Do not describe this planned behavior as shipped before Phase 8 passes.
 
-When Phase 8 ships, fold the running behavior into
-[PRODUCT.md](./PRODUCT.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and
-[DESIGN.md](./DESIGN.md), update README and release notes, reconcile or retire
-the companion planning specifications, and remove the delivered roadmap item in
-the same change.
+When Phase 8 ships, remove the delivered Company item from
+[ROADMAP.md](./ROADMAP.md), reconcile running behavior with
+[PRODUCT.md](./PRODUCT.md), update [ARCHITECTURE.md](./ARCHITECTURE.md),
+[DESIGN.md](./DESIGN.md), README, and release notes, and reconcile any enabled
+companion specification in the same change.
