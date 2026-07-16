@@ -8,16 +8,13 @@ The web tokens live in `apps/web/src/styles.css`; cross-platform primitives live
 
 - Primary stone: `#1b1917`.
 - Accent yellow: `#f0b100`.
-- Accent strong (text-safe amber): light `#8a6400`, dark `#f5c53d` (`--accent-strong`).
 - Paper: `#faf9f7`.
 - Secondary paper: `#f3f1ed`.
 - Success: `#15803d`.
 - Danger: `#b91c1c`.
 - Information: `#1d4ed8`.
-- Interface type: Inter (`--font-sans`).
-- Display type: SF Pro Rounded with `ui-rounded` / Inter fallback (`--font-display`). Do not bundle SF Pro Rounded.
-- Metadata: Geist (`--font-meta`).
-- Identifiers: Geist Mono (`--font-mono`) for task keys, keycaps, and extension badges.
+- Interface type: Inter.
+- Metadata and identifiers: JetBrains Mono.
 - Standard radii: 6px, 8px, and 12px.
 
 Use semantic CSS variables and shared theme values instead of copying raw colors into components. Preserve the maintained light and dark palettes.

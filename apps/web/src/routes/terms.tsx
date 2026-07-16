@@ -11,7 +11,7 @@ const sections = [
   },
   {
     title: 'Project Content',
-    body: 'Messages, attachments, voice notes, assistant interactions, reports, imported memory, and audit history may be visible to users with access to the relevant project or channel. Project owners are responsible for inviting the right collaborators and managing access.',
+    body: 'Messages, attachments, voice notes, assistant interactions, reports, imported memory, and audit history may be visible to users with access to the relevant project or group. Project owners are responsible for inviting the right collaborators and managing access.',
   },
   {
     title: 'AI Features',

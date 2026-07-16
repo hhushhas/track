@@ -7,7 +7,7 @@ describe('workspace project search sections', () => {
     expect(buildProjectSearchSections(null).map(({ key, label }) => [key, label])).toEqual([
       ['messages', 'Messages'],
       ['files', 'Files'],
-      ['groups', 'Channels'],
+      ['groups', 'Groups'],
     ])
   })
 

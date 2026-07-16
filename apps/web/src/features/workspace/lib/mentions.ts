@@ -61,7 +61,7 @@ export function buildWorkspaceMentionOptions(
       id: group._id,
       kind: 'group' as const,
       label: group.name,
-      sublabel: 'channel',
+      sublabel: 'group',
       handle: getMentionHandle(group.name),
       tone: getGroupAvatar(group).tone,
     }))
@@ -129,7 +129,7 @@ export function buildMentionSections(
 ): Array<WorkspaceMentionSection> {
   return [
     {
-      label: 'Channels',
+      label: 'Groups',
       options: mentionOptions.filter((option) => option.kind === 'group'),
     },
     {

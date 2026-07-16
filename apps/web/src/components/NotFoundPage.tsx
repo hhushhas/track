@@ -4,7 +4,7 @@ export function NotFoundPage() {
   return (
     <main className="grid min-h-dvh place-items-center bg-background px-6 py-16 text-foreground">
       <section className="max-w-md text-center" aria-labelledby="not-found-title">
-        <p className="text-sm font-semibold tracking-wide text-muted-foreground">404</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">404</p>
         <h1 id="not-found-title" className="mt-3 text-4xl font-semibold tracking-tight">Page not found</h1>
         <p className="mt-4 text-base leading-7 text-muted-foreground">
           This page may have moved, or the address may be incorrect.

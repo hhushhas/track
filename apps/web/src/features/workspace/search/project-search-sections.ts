@@ -28,7 +28,7 @@ export function buildProjectSearchSections(
     },
     {
       key: 'groups',
-      label: 'Channels',
+      label: 'Groups',
       results: results?.groups ?? [],
     },
   ]

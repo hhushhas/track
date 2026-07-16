@@ -2,7 +2,6 @@
 
 ## 2026-07-16
 
-- Refreshed the web design system, workspace header and rail, quotes, attachment marks, product vocabulary, and added the tested presentational task and thread component kits for upcoming feature releases.
 - Reframed Track's target philosophy around conversation-led communication and first-class task management: peer Companies collaborate through Projects, Channels, Discord-style threads, scoped memory, and human-confirmed AI work.
 - Split Channel threads into an independent implementation specification, kept task management conditionally thread-compatible, and added threads plus WhatsApp-style mobile push notifications to the roadmap.
 - Expanded the approved memory direction so imports may declare Project or Channel scope and explicit scans produce same-scope task suggestions.

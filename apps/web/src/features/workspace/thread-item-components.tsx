@@ -136,12 +136,7 @@ export function MessageRow({
           </Badge>*/}
           <time>{new Date(item.message.createdAt).toLocaleTimeString()}</time>
         </div>
-        {item.replyTo ? (
-          <QuotedMessageBlock
-            onJump={(messageId) => onOpenMessageSource(item.message.groupId, messageId)}
-            quote={item.replyTo}
-          />
-        ) : null}
+        {item.replyTo ? <QuotedMessageBlock quote={item.replyTo} /> : null}
         {item.forwardedFrom ? (
           <ForwardedMessageBlock
             forwarded={item.forwardedFrom}

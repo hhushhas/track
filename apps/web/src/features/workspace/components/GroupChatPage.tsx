@@ -340,7 +340,7 @@ export function GroupChatPage({
           ) : null}
           {!voiceRecordingActive ? (
             <Textarea
-              aria-label={`Message ${activeGroup?.name ?? 'Channel'}`}
+              aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
               disabled={!activeGroupId || busyAction === 'send-message'}
               onBlur={onComposerBlur}
               onChange={(event) => {

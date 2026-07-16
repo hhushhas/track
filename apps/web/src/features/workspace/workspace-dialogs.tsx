@@ -91,8 +91,8 @@ export function WorkspaceDialogs({
               <DialogTitle>{projectDialogMode === 'edit' ? 'Edit project' : 'Create project'}</DialogTitle>
               <DialogDescription>
                 {projectDialogMode === 'edit'
-                  ? 'Update the workspace name and project label.'
-                  : 'Add a workspace for your team’s project.'}
+                  ? 'Update the workspace name and client label.'
+                  : 'Add a workspace for a client/vendor project.'}
               </DialogDescription>
             </DialogHeader>
             <div className="track-dialog-fields">
@@ -105,7 +105,7 @@ export function WorkspaceDialogs({
                 />
               </label>
               <label className="track-dialog-field">
-                <span>Project label</span>
+                <span>Client label</span>
                 <Input
                   onChange={(event) => setProjectClientLabel(event.currentTarget.value)}
                   value={projectClientLabel}
@@ -132,7 +132,7 @@ export function WorkspaceDialogs({
         <DialogContent className="track-dialog">
           <form onSubmit={onCreateGroupSubmit}>
             <DialogHeader>
-              <DialogTitle>{groupDialogMode === 'edit' ? 'Edit channel' : 'Create channel'}</DialogTitle>
+              <DialogTitle>{groupDialogMode === 'edit' ? 'Edit group' : 'Create group'}</DialogTitle>
               <DialogDescription>
                 {groupDialogMode === 'edit'
                   ? 'Rename this project conversation lane.'
@@ -141,7 +141,7 @@ export function WorkspaceDialogs({
             </DialogHeader>
             <div className="track-dialog-fields">
               <label className="track-dialog-field">
-                <span>Channel name</span>
+                <span>Group name</span>
                 <Input
                   autoFocus
                   onChange={(event) => setGroupName(event.currentTarget.value)}
@@ -170,7 +170,7 @@ export function WorkspaceDialogs({
           <form onSubmit={onInviteSubmit}>
             <DialogHeader>
               <DialogTitle>Invite member</DialogTitle>
-              <DialogDescription>Send access to this project, or only the current channel.</DialogDescription>
+              <DialogDescription>Send access to this project, or only the current group.</DialogDescription>
             </DialogHeader>
             <div className="track-dialog-fields">
               <label className="track-dialog-field">
@@ -189,13 +189,13 @@ export function WorkspaceDialogs({
                   value={inviteRole}
                 >
                   <SelectTrigger className="track-dialog-select-trigger">
-                    <span className="track-dialog-select-value">{inviteRole === 'client' ? 'Collaborator' : inviteRole}</span>
+                    <span className="track-dialog-select-value">{inviteRole}</span>
                   </SelectTrigger>
                   <SelectContent className="track-dialog-select-content">
                     <SelectGroup>
                       <SelectItem value="admin">Admin</SelectItem>
                       <SelectItem value="staff">Staff</SelectItem>
-                      <SelectItem value="client">Collaborator</SelectItem>
+                      <SelectItem value="client">Client</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -223,7 +223,7 @@ export function WorkspaceDialogs({
                       <SelectItem value="project">Entire project</SelectItem>
                     </SelectGroup>
                     <SelectGroup>
-                      <SelectLabel>Channels</SelectLabel>
+                      <SelectLabel>Groups</SelectLabel>
                       {projectGroups.length > 0 ? (
                         projectGroups.map((group) => {
                           const { Icon, tone } = getGroupAvatar(group)
@@ -239,7 +239,7 @@ export function WorkspaceDialogs({
                               <span className="track-invite-access-option">
                                 <strong>{group.name}</strong>
                                 <small>
-                                  {group._id === activeGroupId ? 'Current channel' : `${group.kind.replaceAll('_', ' ')} channel`}
+                                  {group._id === activeGroupId ? 'Current group' : `${group.kind.replaceAll('_', ' ')} group`}
                                 </small>
                               </span>
                             </SelectItem>
@@ -247,7 +247,7 @@ export function WorkspaceDialogs({
                         })
                       ) : (
                         <SelectItem disabled value="no-groups">
-                          No channels yet
+                          No groups yet
                         </SelectItem>
                       )}
                     </SelectGroup>

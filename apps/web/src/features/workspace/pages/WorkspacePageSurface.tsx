@@ -242,7 +242,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         />
 
         {route.isProjectLoading || route.isGroupLoading ? (
-          <WorkspaceRouteLoader label={route.view === 'group' ? 'Opening channel conversation' : route.view === 'settings' ? 'Loading project settings' : 'Loading project channels'} />
+          <WorkspaceRouteLoader label={route.view === 'group' ? 'Opening group conversation' : route.view === 'settings' ? 'Loading project settings' : 'Loading project groups'} />
         ) : route.view === 'group' ? (
           <GroupChatPage
             activeGroup={activeGroup}
@@ -321,11 +321,11 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             onNotificationMode={notifications.handleNotificationMode}
           />
         ) : visibleGroups.length > 0 ? (
-          <WorkspaceRouteLoader label="Opening first channel" />
+          <WorkspaceRouteLoader label="Opening first group" />
         ) : (
           <div className="track-empty">
-            <p className="mono-label m-0">No channels</p>
-            <p>Create a channel to start tracking project conversations.</p>
+            <p className="mono-label m-0">No groups</p>
+            <p>Create a group to start tracking project conversations.</p>
           </div>
         )}
       </section>
@@ -338,10 +338,6 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           groupNotificationMode={notifications.groupNotificationMode}
           notificationPermission={notifications.notificationPermission}
           notificationStatus={notifications.notificationStatus}
-          references={presentation.visibleMessages.flatMap((item) => item.attachments).slice(-5).reverse().map(({ attachment, url }) => ({ id: attachment._id, filename: attachment.filename, contentType: attachment.contentType, url }))}
-          members={activeProjectMembers.flatMap((item) => item.user ? [{ id: item.user._id, name: item.user.displayName }] : [])}
-          projectName={activeProject?.project.name ?? null}
-          channelName={activeGroup?.name ?? null}
           onCollapse={() => update.setRailCollapsed(true)}
           onEnableBrowserNotifications={() => void notifications.handleEnableBrowserNotifications()}
           onExpand={() => update.setRailCollapsed(false)}

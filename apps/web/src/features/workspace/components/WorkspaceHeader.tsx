@@ -66,20 +66,16 @@ export function WorkspaceHeader({
       <div className="track-header-title">
         <h1>
           {view === 'group' && activeGroup
-            ? `${activeGroup.name} conversation`
+            ? `${activeGroup.name} Conversation`
               : view === 'settings' && activeProject
                 ? `${activeProject.project.name} Settings`
                 : activeProject
-                  ? `${activeProject.project.name} channels`
+                  ? `${activeProject.project.name} Groups`
                   : 'Select a Project'}
         </h1>
       </div>
       <div className="track-header-actions">
-        <div
-          className="track-header-members"
-          aria-label={`${headerMembers.length + extraHeaderMemberCount} Project members`}
-          title={`${headerMembers.length + extraHeaderMemberCount} Project members`}
-        >
+        <div className="track-header-members" aria-label="Project members">
           {headerMembers.map((item) => {
             const user = item.user as Doc<'users'>
             return (
@@ -151,7 +147,7 @@ export function WorkspaceHeader({
             type="button"
           >
             <MessageSquarePlus size={14} />
-            New Channel
+            New Group
           </Button>
         ) : null}
       </div>
