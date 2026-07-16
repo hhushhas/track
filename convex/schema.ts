@@ -3,6 +3,8 @@ import { v } from 'convex/values'
 
 import { companyCoreTables } from './schema/companyCoreTables'
 import { companyProjectTables } from './schema/companyProjectTables'
+import { taskAutomationTables } from './schema/taskAutomationTables'
+import { taskCoreTables } from './schema/taskCoreTables'
 import {
   channelStatus,
   companyProjectRole,
@@ -10,7 +12,6 @@ import {
   projectOrigin,
   projectStatus,
 } from './schema/companyValidators'
-import { taskTables } from './schema/taskTables'
 import { threadTables } from './schema/threadTables'
 
 const projectRole = v.union(
@@ -117,7 +118,8 @@ const forwardedMessageSnapshot = v.object({
 export default defineSchema({
   ...companyCoreTables,
   ...companyProjectTables,
-  ...taskTables,
+  ...taskCoreTables,
+  ...taskAutomationTables,
   ...threadTables,
 
   users: defineTable({

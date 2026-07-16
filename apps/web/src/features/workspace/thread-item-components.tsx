@@ -9,6 +9,7 @@ import { getGroupAvatar } from './group-avatar'
 import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
 import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
+import { MessageInlineTasks } from '#/features/tasks/ConversationTaskActions'
 
 export type ReplyToMessagePreview = {
   messageId: Id<'messages'>
@@ -229,6 +230,7 @@ export function MessageRow({
             })}
           </div>
         ) : null}
+        <MessageInlineTasks message={item.message} />
       </Card>
     </article>
   )

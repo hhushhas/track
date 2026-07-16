@@ -9,6 +9,18 @@
 
 ### Added
 
+- Default-off task management across shared contracts, Convex, web, and mobile,
+  including scoped boards and workflows, ranked tasks and subtasks, labels,
+  comments, evidence, activity, task search, notification feeds, due reminders,
+  Company-exit archives, and legacy/Company authorization.
+- Human-reviewed task suggestions from automatic Channel detection, explicit
+  assistant requests, bounded history scans, and traceable memory imports through
+  the existing model provider and a deterministic fake test adapter.
+- Web Kanban/list planning, routable task details, keyboard movement, task
+  administration, conversation cards, and URL filters; plus native state-grouped
+  task lists, editing, Inbox decisions, deep links, long-press creation, and
+  inline cards.
+
 - Default-off Company collaboration across web and mobile, including private
   Company discovery, memberships, peer Relationships, shared Project proposals,
   explicit Channels, represented identity, and Company-aware conversation.

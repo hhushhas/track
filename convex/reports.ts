@@ -1,14 +1,19 @@
 import { v } from 'convex/values'
 
 import { mutation } from './_generated/server'
+import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { requireTaskAccess, resolveTaskRequestContext } from './lib/taskPolicy'
 
 const targetType = v.union(
   v.literal('message'),
   v.literal('attachment'),
   v.literal('voice_note'),
   v.literal('assistant_answer'),
+  v.literal('task'),
+  v.literal('task_comment'),
+  v.literal('task_suggestion'),
 )
 
 const reason = v.union(
@@ -31,10 +36,14 @@ export const create = mutation({
     targetMessageId: v.optional(v.id('messages')),
     targetAttachmentId: v.optional(v.id('attachments')),
     targetAssistantStreamId: v.optional(v.id('assistantStreams')),
+    targetTaskId: v.optional(v.id('tasks')),
+    targetTaskCommentId: v.optional(v.id('taskComments')),
+    targetTaskSuggestionId: v.optional(v.id('taskSuggestions')),
     reason,
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
     const baseAccess = await authorizeScopedRequest(ctx, {
       projectId: args.projectId,
       groupId: args.groupId,
@@ -58,6 +67,30 @@ export const create = mutation({
       if (!stream || stream.projectId !== args.projectId) throw new Error('assistant_answer_not_found')
       await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: stream.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
+    if (args.targetTaskId) {
+      const access = await requireTaskAccess(ctx, actor, args.targetTaskId, args)
+      if (access.task.projectId !== args.projectId || access.task.groupId !== args.groupId) {
+        throw new Error('task_access_changed')
+      }
+    }
+    if (args.targetTaskCommentId) {
+      const comment = await ctx.db.get(args.targetTaskCommentId)
+      if (!comment) throw new Error('task_access_changed')
+      const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
+      if (access.task.projectId !== args.projectId || comment.originalGroupId !== args.groupId) {
+        throw new Error('task_access_changed')
+      }
+    }
+    if (args.targetTaskSuggestionId) {
+      const suggestion = await ctx.db.get(args.targetTaskSuggestionId)
+      if (!suggestion || suggestion.projectId !== args.projectId || suggestion.groupId !== args.groupId) {
+        throw new Error('task_access_changed')
+      }
+      const access = await resolveTaskRequestContext(
+        ctx, actor, suggestion.projectId, args, suggestion.groupId,
+      )
+      if (suggestion.groupId && !access.capabilities.canReadChannel) throw new Error('task_access_changed')
+    }
 
     const now = Date.now()
     const note = args.note?.trim()
@@ -71,6 +104,9 @@ export const create = mutation({
       targetMessageId: args.targetMessageId,
       targetAttachmentId: args.targetAttachmentId,
       targetAssistantStreamId: args.targetAssistantStreamId,
+      targetTaskId: args.targetTaskId,
+      targetTaskCommentId: args.targetTaskCommentId,
+      targetTaskSuggestionId: args.targetTaskSuggestionId,
       reason: args.reason,
       note: note || undefined,
       status: 'open',

@@ -8,6 +8,7 @@ describe('workspace project search sections', () => {
       ['messages', 'Messages'],
       ['files', 'Files'],
       ['groups', 'Groups'],
+      ['tasks', 'Tasks'],
     ])
   })
 
@@ -20,6 +21,7 @@ describe('workspace project search sections', () => {
     expect(sections.map((section) => section.results.map((result) => result.id))).toEqual([
       ['message'],
       ['file-1', 'file-2'],
+      [],
       [],
     ])
     expect(getProjectSearchTotal(sections)).toBe(3)

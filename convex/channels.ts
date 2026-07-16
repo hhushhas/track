@@ -9,6 +9,7 @@ import {
   requireCompanyProjectManager,
   resolveCompanyProjectAccess,
 } from './lib/companyPolicy'
+import { removeTaskMemberFromScope } from './lib/taskLifecycle'
 
 export const list = query({
   args: {
@@ -316,6 +317,9 @@ export const updateOwnCompanyMember = mutation({
         isSteward: args.active && args.steward,
         endedAt: args.active ? undefined : now,
         updatedAt: now,
+      })
+      if (!args.active) await removeTaskMemberFromScope(ctx, {
+        projectId: args.projectId, groupId: args.groupId, projectMemberId: target._id,
       })
       return membership._id
     }

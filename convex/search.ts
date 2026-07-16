@@ -1,13 +1,17 @@
 import { v } from 'convex/values'
 
 import { query } from './_generated/server'
+import type { Id } from './_generated/dataModel'
+import { requireAuthenticatedActor } from './lib/actorContext'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { resolveTaskRequestContext } from './lib/taskPolicy'
 
 const searchScope = v.union(
   v.literal('all'),
   v.literal('messages'),
   v.literal('files'),
   v.literal('groups'),
+  v.literal('tasks'),
 )
 
 function compactPreview(value: string, fallback = 'No preview available') {
@@ -156,10 +160,54 @@ export const project = query({
         title: channelSnapshots.get(String(group._id))?.name ?? group.name,
       }))
 
+    const taskCandidates = process.env.TRACK_TASKS_ENABLED === 'true' && enabled(filter, 'tasks')
+      ? access.companyAccess?.projectMember.status === 'archived' && access.companyAccess.entitlement
+        ? (await ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_table', (q) =>
+            q.eq('entitlementId', access.companyAccess!.entitlement!._id).eq('sourceTable', 'tasks'),
+          ).collect()).map((row) => row.payload as {
+            _id: string; archivedAt?: number; boardId: string; dueDate?: string; groupId?: Id<'groups'>;
+            priority: string; publicKey: string; searchText: string; title: string; workflowStateId: string; createdAt: number
+          }).filter((task) => task.searchText.toLowerCase().includes(term.toLowerCase())).slice(0, perSectionLimit)
+        : await ctx.db.query('tasks').withSearchIndex('search_tasks', (q) =>
+            q.search('searchText', term).eq('projectId', args.projectId),
+          ).take(perSectionLimit * 4)
+      : []
+    const actor = taskCandidates.length ? await requireAuthenticatedActor(ctx) : null
+    const taskResults = []
+    for (const task of taskCandidates) {
+      if (task.archivedAt) continue
+      if (!access.companyAccess?.entitlement) {
+        try {
+          const taskAccess = await resolveTaskRequestContext(ctx, actor!, args.projectId, args, task.groupId)
+          if (task.groupId && !taskAccess.capabilities.canReadChannel) continue
+        } catch {
+          continue
+        }
+      }
+      const archived = Boolean(access.companyAccess?.entitlement)
+      const board = archived ? null : await ctx.db.get(task.boardId as Id<'taskBoards'>)
+      const state = archived ? null : await ctx.db.get(task.workflowStateId as Id<'taskWorkflowStates'>)
+      const assignee = archived || !('assigneeProjectMemberId' in task) || !task.assigneeProjectMemberId
+        ? null : await ctx.db.get(task.assigneeProjectMemberId as Id<'projectMembers'>)
+      taskResults.push({
+        createdAt: task.createdAt,
+        groupId: task.groupId,
+        groupName: task.groupId ? 'Channel task' : 'Project task',
+        id: String(task._id),
+        kind: 'task' as const,
+        preview: `${state?.name ?? 'Archived status'} · ${task.priority}${task.dueDate ? ` · due ${task.dueDate}` : ''}`,
+        subtitle: `${board?.name ?? 'Archived board'}${assignee ? ' · assigned' : ''}`,
+        taskKey: task.publicKey,
+        title: task.title,
+      })
+      if (taskResults.length >= perSectionLimit) break
+    }
+
     return {
       files: fileResults,
       groups: groupResults,
       messages: messageResults,
+      tasks: taskResults,
     }
   },
 })

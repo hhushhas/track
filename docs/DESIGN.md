@@ -66,6 +66,5 @@ assistant grounded in accessible references. Do not describe AI answers as
 durable work items. Task, board, and thread presentation follows the approved
 [task](./TASK_MANAGEMENT_SPEC.md), [thread](./THREADS_SPEC.md), and
 [UI refresh](./UI_REFRESH_SPEC.md) contracts when their server-authoritative
-flags expose those surfaces. Until the combined local gate passes, those
-capabilities remain implementation-pending and must not be described as
-deployed.
+flags expose those surfaces. Task management is implemented but default off;
+neither local availability nor a passing gate means it is deployed.

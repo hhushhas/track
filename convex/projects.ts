@@ -5,6 +5,8 @@ import { internal } from './_generated/api'
 import { appendAuditEvent } from './lib/audit'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import { canRoleJoinDefaultGroup, requireProjectManager, requireProjectMember, requireProjectOwner } from './lib/permissions'
+import { invalidateTaskEvidence } from './lib/taskEvidence'
+import { deleteTaskProjectData } from './lib/taskLifecycle'
 
 const defaultGroups = [
   { kind: 'general', name: 'General' },
@@ -236,6 +238,12 @@ export const remove = mutation({
 
     const projectAttachments = attachments.filter((attachment) => attachment.projectId === args.projectId)
     await Promise.all(projectAttachments.map((attachment) => ctx.storage.delete(attachment.storageId).catch(() => undefined)))
+    for (const message of messages) await invalidateTaskEvidence(ctx, { messageId: message._id })
+    for (const attachment of projectAttachments) await invalidateTaskEvidence(ctx, { attachmentId: attachment._id })
+    for (const stream of assistantStreams.filter((candidate) => candidate.projectId === args.projectId)) {
+      await invalidateTaskEvidence(ctx, { assistantStreamId: stream._id })
+    }
+    await deleteTaskProjectData(ctx, args.projectId)
     for (const row of memoryBoxes) {
       await ctx.scheduler.runAfter(0, (internal as any).memoryActions.deleteMemoryBoxById, {
         actorId: args.userId,

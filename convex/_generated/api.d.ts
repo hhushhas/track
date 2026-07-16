@@ -61,6 +61,18 @@ import type * as schema_threadTables from "../schema/threadTables.js";
 import type * as relationships from "../relationships.js";
 import type * as search from "../search.js";
 import type * as sharedProjects from "../sharedProjects.js";
+import type * as taskBoards from "../taskBoards.js";
+import type * as taskComments from "../taskComments.js";
+import type * as taskDetection from "../taskDetection.js";
+import type * as taskDetectionNode from "../taskDetectionNode.js";
+import type * as taskLabels from "../taskLabels.js";
+import type * as taskMemoryExtraction from "../taskMemoryExtraction.js";
+import type * as taskMemoryExtractionNode from "../taskMemoryExtractionNode.js";
+import type * as taskNotifications from "../taskNotifications.js";
+import type * as taskReminders from "../taskReminders.js";
+import type * as taskSearch from "../taskSearch.js";
+import type * as tasks from "../tasks.js";
+import type * as taskSuggestions from "../taskSuggestions.js";
 import type * as typingIndicators from "../typingIndicators.js";
 
 /**
@@ -120,6 +132,18 @@ declare const fullApi: ApiFromModules<{
   relationships: typeof relationships;
   search: typeof search;
   sharedProjects: typeof sharedProjects;
+  taskBoards: typeof taskBoards;
+  taskComments: typeof taskComments;
+  taskDetection: typeof taskDetection;
+  taskDetectionNode: typeof taskDetectionNode;
+  taskLabels: typeof taskLabels;
+  taskMemoryExtraction: typeof taskMemoryExtraction;
+  taskMemoryExtractionNode: typeof taskMemoryExtractionNode;
+  taskNotifications: typeof taskNotifications;
+  taskReminders: typeof taskReminders;
+  taskSearch: typeof taskSearch;
+  tasks: typeof tasks;
+  taskSuggestions: typeof taskSuggestions;
   typingIndicators: typeof typingIndicators;
 }>;
 export declare const api: FilterApi<

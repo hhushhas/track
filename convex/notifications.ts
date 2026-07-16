@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 
+import type { Id } from './_generated/dataModel'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
@@ -218,6 +219,7 @@ export const registerSubscription = mutation({
 export const registerNativeToken = mutation({
   args: {
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
     platform: v.union(v.literal('ios'), v.literal('android')),
     token: v.string(),
   },
@@ -226,6 +228,13 @@ export const registerNativeToken = mutation({
     assertActorMatches(actor, args.userId)
     const token = args.token.trim()
     if (!token) throw new Error('push_token_required')
+    if (args.projectMemberId) {
+      const projectMember = await ctx.db.get(args.projectMemberId)
+      if (!projectMember || projectMember.userId !== actor.userId ||
+        (projectMember.status !== undefined && projectMember.status !== 'active')) {
+        throw new Error('notification_membership_invalid')
+      }
+    }
     const now = Date.now()
     const subscriptions = await ctx.db
       .query('notificationSubscriptions')
@@ -233,7 +242,8 @@ export const registerNativeToken = mutation({
       .collect()
     const existing = subscriptions.find(
       (subscription) =>
-        subscription.platform === args.platform && subscription.tokenOrEndpoint === token,
+        subscription.platform === args.platform && subscription.tokenOrEndpoint === token &&
+        subscription.projectMemberId === args.projectMemberId,
     )
 
     if (existing) {
@@ -246,6 +256,7 @@ export const registerNativeToken = mutation({
 
     const subscriptionId = await ctx.db.insert('notificationSubscriptions', {
       userId: args.userId,
+      projectMemberId: args.projectMemberId,
       platform: args.platform,
       tokenOrEndpoint: token,
       enabled: true,
@@ -289,6 +300,8 @@ export const collectMessageNotificationTargets = internalQuery({
         if (membership.status && membership.status !== 'active') return []
         if (membership.userId === message.authorId) return []
 
+        let actingCompanyId: Id<'companies'> | undefined
+        let projectMemberId: Id<'projectMembers'> | undefined
         if (project.accessProfile === 'company') {
           if (!membership.projectMemberId) return []
           const projectMember = await ctx.db.get(membership.projectMemberId)
@@ -301,6 +314,8 @@ export const collectMessageNotificationTargets = internalQuery({
             ctx.db.get(projectMember.projectCompanyId),
           ])
           if (!company || company.status !== 'active' || companyMember?.status !== 'active' || projectCompany?.status !== 'active') return []
+          actingCompanyId = projectMember.companyId
+          projectMemberId = projectMember._id
         }
 
         const [globalSettings, groupSettings, subscriptions] = await Promise.all([
@@ -334,6 +349,8 @@ export const collectMessageNotificationTargets = internalQuery({
             id: subscription._id,
             platform: subscription.platform,
             tokenOrEndpoint: subscription.tokenOrEndpoint,
+            actingCompanyId,
+            projectMemberId,
           }))
       }),
     )

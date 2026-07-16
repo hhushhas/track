@@ -15,6 +15,7 @@ import { TrackUserProvider } from '@/contexts/track-user-context';
 import { CompanyProvider } from '@/contexts/company-context';
 import { ThemeOverrideProvider } from '@/contexts/theme-override-context';
 import { Colors } from '@/constants/theme';
+import { PushNotificationBridge } from '@/lib/push-notifications';
 
 const NAV_THEME_LIGHT = {
   ...DefaultTheme,
@@ -58,6 +59,7 @@ export default function RootLayout() {
         <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
           <ThemeProvider value={navTheme}>
             <TrackUserProvider>
+              <PushNotificationBridge />
               <CompanyProvider>
                 <StatusBar style="auto" />
                 <Stack
@@ -79,6 +81,8 @@ export default function RootLayout() {
                 <Stack.Screen name="company" options={{ title: 'Companies' }} />
                 <Stack.Screen name="groups" options={{ title: 'Channels' }} />
                 <Stack.Screen name="conversation" options={{ title: 'Conversation' }} />
+                <Stack.Screen name="tasks" options={{ title: 'Tasks' }} />
+                <Stack.Screen name="task" options={{ title: 'Task' }} />
                 </Stack>
               </CompanyProvider>
             </TrackUserProvider>

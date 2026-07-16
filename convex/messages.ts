@@ -204,12 +204,19 @@ export const send = mutation({
         throw new Error('reply_scope_mismatch')
       }
     }
+    const latestChannelMessage = await ctx.db
+      .query('messages')
+      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .order('desc')
+      .first()
+    const channelSequence = (latestChannelMessage?.channelSequence ?? 0) + 1
     const messageId = await ctx.db.insert('messages', {
       projectId: args.projectId,
       groupId: args.groupId,
       authorId: args.authorId,
       authorProjectMemberId: access.companyAccess?.projectMember._id,
       actingCompanyId: access.companyAccess?.company._id,
+      channelSequence,
       body: args.body,
       mentions: args.mentions ?? [],
       attachmentIds: [],
@@ -237,6 +244,9 @@ export const send = mutation({
     await ctx.scheduler.runAfter(0, internal.pushNotifications.deliverMessageNotifications, {
       messageId,
     })
+    if (process.env.TRACK_TASKS_ENABLED === 'true') {
+      await ctx.scheduler.runAfter(0, (internal as any).taskDetection.queueForMessage, { messageId })
+    }
 
     return messageId
   },

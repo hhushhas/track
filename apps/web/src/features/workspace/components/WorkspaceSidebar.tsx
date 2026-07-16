@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Building2, ChevronDown, FolderKanban, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
+import { Building2, ChevronDown, FolderKanban, ListTodo, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import ThemeToggle from '#/components/ThemeToggle'
@@ -231,6 +231,22 @@ export function WorkspaceSidebar({
                   <span className="track-nav-meta">Messages and files</span>
                 </span>
               </Button>
+              {releaseConfig.tasks ? (
+                <Link
+                  activeProps={{ className: 'track-nav-item active' }}
+                  className="track-nav-item"
+                  params={{ projectId: activeProjectId }}
+                  search={{ view: 'board' }}
+                  title={navCollapsed ? 'Tasks' : undefined}
+                  to="/workspace/projects/$projectId/tasks"
+                >
+                  <ListTodo className="track-nav-icon" size={14} />
+                  <span className="track-nav-copy">
+                    <span className="track-nav-title">Tasks</span>
+                    <span className="track-nav-meta">Boards, work, Inbox</span>
+                  </span>
+                </Link>
+              ) : null}
               <Button
                 className={view === 'settings' ? 'track-nav-item active' : 'track-nav-item'}
                 onFocus={onPreloadProjectSettingsRoute}

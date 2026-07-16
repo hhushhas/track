@@ -1,8 +1,8 @@
 # Architecture
 
-Status: current running architecture. Company collaboration is implemented
-behind its default-off server release flag. Other approved target changes remain
-in the roadmap and companion specifications until their release gates pass.
+Status: current running architecture. Company collaboration and task management
+are implemented behind independent default-off server release flags. Other
+approved target changes remain in the roadmap and companion specifications.
 
 Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile application, shared TypeScript domain code, and a Convex backend.
 
@@ -19,7 +19,7 @@ Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile a
 
 ## Package boundaries
 
-`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral Company, Project, Channel, role, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
+`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral Company, Project, Channel, task-policy, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
 
 Clients may hide unavailable controls for usability, but Convex functions enforce every permission boundary. Public functions validate identity and access before reading or mutating data. Internal functions are used for trusted jobs and multi-step workflows.
 
@@ -65,6 +65,28 @@ or Group access.
 Assistant requests start from the current group and may broaden only to other accessible project context. Model calls receive bounded conversation, attachment text, and imported memory. Results stream through Convex and cite evidence where available.
 
 Project-memory imports are asynchronous jobs. Convex tracks import ownership and status while Upstash Box stores the imported content. Typed public and internal Convex references preserve the trust boundary between user actions and background processing.
+
+## Task management
+
+Convex is authoritative for boards, workflow states, ranked tasks, labels,
+references, comments, followers, activity, suggestion decisions, detection
+cursors, reminders, notifications, and Company-exit snapshots. One central task
+policy resolves legacy or exact Acting Company membership and rechecks Channel
+access for every read and write. Project and Channel boards share the same task
+model; original-scope evidence and history retain their own access boundary
+after a task scope change.
+
+New Channel messages schedule debounced, generation-safe detection jobs. The
+Node task adapter routes live, bounded history, and traceable memory-import scans
+through the existing OpenRouter provider. Structured output is validated before
+suggestions are persisted, cursor advancement and candidate persistence share a
+transaction, and durable tasks still require a human decision. The same adapter
+has a deterministic fake for tests.
+
+Web supplies Kanban/list views, routable task details, administration, Project
+search, Channel panels, inline conversation cards, and suggestion review. Expo
+uses state-grouped lists and status pickers, preserves task deep-link context,
+and exposes no task dependency when the release flag is off.
 
 ## Generated files
 

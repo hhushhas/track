@@ -48,7 +48,7 @@ const taskTableNames = [
   'taskNotifications',
   'taskReminderJobs',
   'taskArchiveSnapshots',
-  'taskArchiveSnapshotItems',
+  'taskExitSnapshotStaging',
 ] as const
 
 const threadTableNames = [
@@ -85,8 +85,8 @@ describe('combined foundation schema', () => {
 
   it('exports permission-filterable task, thread, and message search indexes', () => {
     expect(tables.get('tasks')?.searchIndexes).toContainEqual(expect.objectContaining({
-      indexDescriptor: 'search_title_by_project',
-      filterFields: ['projectId', 'groupId', 'archiveState'],
+      indexDescriptor: 'search_tasks',
+      filterFields: ['projectId', 'groupId', 'archivedAt'],
     }))
     expect(tables.get('messages')?.searchIndexes).toContainEqual(expect.objectContaining({
       indexDescriptor: 'search_body_by_project',
