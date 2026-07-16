@@ -16,31 +16,6 @@ management. When both features are enabled, thread messages support task
 creation, inline task cards, whole-Channel detection context, and durable task
 evidence without making either standalone release depend on the other.
 
-## Task management and Kanban
-
-Track will add first-class task management. The target experience combines
-conversation-derived work with Kanban boards, explicit ownership, workflow
-status, references, and Project/Channel visibility.
-
-The approved product and implementation contract is in
-[TASK_MANAGEMENT_SPEC.md](./TASK_MANAGEMENT_SPEC.md).
-
-The replacement needs:
-
-- a task domain model with boards, workflow states, assignee, priority, due date,
-  and references;
-- Project boards with Channel-aware visibility;
-- explicit conversion from source messages or assistant output into tasks;
-- task creation and management independent of AI;
-- Project- or Channel-scoped imported memory with scope-preserving task evidence;
-- permission rules for viewing, creating, assigning, moving, and closing tasks;
-- notifications, audit events, search, and mobile behavior; and
-- migration rules for task-like information that users choose to bring forward
-  from conversation or imported memory.
-
-Until this ships, Track remains a conversation, references, memory, and search
-workspace without a durable work-item model.
-
 ## WhatsApp-style mobile push notifications
 
 Track will make mobile conversation notifications feel immediate and dependable

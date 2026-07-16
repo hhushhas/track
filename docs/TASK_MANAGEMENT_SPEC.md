@@ -1,6 +1,6 @@
 # Task Management Specification
 
-Status: approved product direction; implementation pending; not deployed.
+Status: implemented behind a default-off server release flag; not deployed.
 
 This specification defines the first-class task-management release in Track's
 target [PRODUCT.md](./PRODUCT.md) contract. The running product is summarized in
@@ -30,11 +30,8 @@ redaction, account-deletion, Company-exit, and retention cleanup active.
 Disabling the Company flag never reinterprets a Company-profile Project as
 legacy.
 
-This specification remains implementation-pending until the combined local
-gate passes. After that proof, maintained documentation may describe task
-management as implemented and locally verified, default off, and not
-production deployed. Local implementation acceptance does not authorize a
-production deployment or flag activation.
+The implementation is locally release-gated and default off. Local acceptance
+does not authorize a production deployment or flag activation.
 
 ## Product intent
 

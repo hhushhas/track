@@ -6,10 +6,14 @@ adds peer Relationships, shared Projects, explicit Channels, immutable Company
 exit archives, and guided migration from the legacy Project model across web,
 mobile, shared contracts, and Convex.
 
+The default-off task release adds scoped Project and Channel boards, configurable
+workflows, task details and lists, conversation evidence, human-reviewed AI
+suggestions, search, notifications, and essential native workflows. It operates
+with legacy Projects and does not require Channel threads or Company collaboration.
+
 The [target product contract](./docs/PRODUCT.md) also defines Discord-style
-threads, first-class task management, Kanban boards, and dependable mobile push.
-Those companion capabilities remain independently controlled implementation
-work tracked in [docs/ROADMAP.md](./docs/ROADMAP.md).
+threads and dependable mobile push. Those companion capabilities remain
+independently controlled implementation work tracked in [docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Repository
 
@@ -33,8 +37,8 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
 - [Roadmap](./docs/ROADMAP.md): approved target behavior that has not shipped.
 - [Channel threads specification](./docs/THREADS_SPEC.md): approved independent
   thread, unread, lifecycle, AI-context, and integration contract.
-- [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): approved
-  independent task, board, AI, access, and delivery contract.
+- [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): implemented
+  default-off task, board, AI, access, and delivery contract.
 - [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
   implemented Company, Relationship, shared-Project, Channel, access, exit, and
   migration contract.
@@ -75,6 +79,10 @@ Company collaboration. The flag is server-authoritative and independent from
 `TRACK_THREADS_ENABLED` and `TRACK_TASKS_ENABLED`. Archive, Company-exit,
 redaction, account-deletion, and cleanup enforcement remains server-side even
 when Company creation surfaces are disabled.
+
+Set `TRACK_TASKS_ENABLED=true` to expose task routes and controls and to start
+new-message detection. This flag is independent from Company and thread flags;
+existing conversation remains usable when tasks are disabled.
 
 ## Local mobile setup
 
