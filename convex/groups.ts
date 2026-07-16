@@ -165,8 +165,8 @@ export const remove = mutation({
     ])
     const channelThreadIds = new Set(channelThreads.map((thread) => String(thread._id)))
     const [threadFollowers, threadReadStates] = await Promise.all([
-      ctx.db.query('channelThreadFollowers').collect(),
-      ctx.db.query('channelThreadReadStates').collect(),
+      ctx.db.query('channelThreadFollowers').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('channelThreadReadStates').withIndex('by_group_project_member', (q) => q.eq('groupId', args.groupId)).collect(),
     ])
 
     await appendAuditEvent(ctx, {

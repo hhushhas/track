@@ -302,7 +302,13 @@ export const collectMessageNotificationTargets = internalQuery({
             .unique())?._id
         }
         const projectMember = projectMemberId ? await ctx.db.get(projectMemberId) : null
-        const mentioned = message.mentions.some((userId) => userId === membership.userId)
+        const mentioned = message.mentionedProjectMemberIds
+          ? Boolean(
+              membership.projectMemberId &&
+              message.mentionedProjectMemberIds.includes(membership.projectMemberId) &&
+              message.mentions.includes(membership.userId),
+            )
+          : project.accessProfile !== 'company' && message.mentions.some((userId) => userId === membership.userId)
         if (message.channelThreadId) {
           if (!projectMemberId) return []
           const follower = await ctx.db

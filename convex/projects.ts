@@ -205,6 +205,9 @@ export const remove = mutation({
       memoryBoxes,
       memoryImports,
       memoryPathLocks,
+      channelThreads,
+      channelThreadFollowers,
+      channelThreadReadStates,
     ] = await Promise.all([
       ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
@@ -222,6 +225,9 @@ export const remove = mutation({
       ctx.db.query('projectMemoryBoxes').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('memoryImports').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('memoryPathLocks').collect(),
+      ctx.db.query('channelThreads').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('channelThreadFollowers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('channelThreadReadStates').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
     ])
     const groupIds = new Set(groups.map((group) => group._id))
 
@@ -252,6 +258,9 @@ export const remove = mutation({
     }
     for (const row of memoryImports) await ctx.db.delete(row._id)
     for (const row of memoryBoxes) await ctx.db.delete(row._id)
+    for (const row of channelThreadReadStates) await ctx.db.delete(row._id)
+    for (const row of channelThreadFollowers) await ctx.db.delete(row._id)
+    for (const row of channelThreads) await ctx.db.delete(row._id)
     for (const row of assistantStreams) {
       if (row.projectId === args.projectId) await ctx.db.delete(row._id)
     }

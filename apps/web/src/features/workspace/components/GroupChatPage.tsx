@@ -183,7 +183,7 @@ export function GroupChatPage({
           <ChannelThreadBrowser
             groupId={activeGroupId}
             projectId={activeProjectId}
-            readOnly={false}
+            readOnly={activeGroup?.status === 'archived'}
             timelineMessages={visibleMessages}
             userId={currentUserId}
           />

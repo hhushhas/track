@@ -299,20 +299,38 @@ export function fmtTime(ts: number) {
 }
 
 export function resolveMentionIds(body: string, members: ProjectMemberRow[]) {
+  return resolveMentionMembers(body, members).map((member) => member.userId);
+}
+
+export function resolveMentionProjectMemberIds(body: string, members: ProjectMemberRow[]) {
+  return resolveMentionMembers(body, members).map((member) => member.projectMemberId);
+}
+
+function resolveMentionMembers(body: string, members: ProjectMemberRow[]) {
   const tokens = parseMentions(body).filter((t) => t !== 'track');
   if (!tokens.length) return [];
   const tokenSet = new Set(tokens.map(norm));
-  const ids = new Set<Id<'users'>>();
-  for (const { user } of members) {
+  const matches = new Map<string, Array<{ projectMemberId: Id<'projectMembers'>; userId: Id<'users'> }>>();
+  for (const { membership, user } of members) {
     if (!user) continue;
     const keys = new Set(
       [user.displayName, user.email, user.email?.split('@')[0]]
         .filter(Boolean)
         .map((v) => norm(String(v))),
     );
-    if ([...keys].some((k) => tokenSet.has(k))) ids.add(user._id);
+    for (const key of keys) {
+      if (!tokenSet.has(key)) continue;
+      matches.set(key, [
+        ...(matches.get(key) ?? []),
+        { projectMemberId: membership._id, userId: user._id },
+      ]);
+    }
   }
-  return [...ids];
+  const resolved = new Map<string, { projectMemberId: Id<'projectMembers'>; userId: Id<'users'> }>();
+  for (const candidates of matches.values()) {
+    if (candidates.length === 1) resolved.set(String(candidates[0].projectMemberId), candidates[0]);
+  }
+  return [...resolved.values()];
 }
 
 function norm(v: string) {

@@ -245,6 +245,7 @@ export default defineSchema({
     idempotencyKey: v.optional(v.string()),
     body: v.string(),
     mentions: v.array(v.id('users')),
+    mentionedProjectMemberIds: v.optional(v.array(v.id('projectMembers'))),
     attachmentIds: v.array(v.id('attachments')),
     replyToMessageId: v.optional(v.id('messages')),
     forwardedFrom: v.optional(forwardedMessageSnapshot),
@@ -273,11 +274,15 @@ export default defineSchema({
     actingCompanyId: v.optional(v.id('companies')),
     status: v.union(v.literal('active'), v.literal('archived')),
     revision: v.number(),
+    replyCount: v.optional(v.number()),
+    latestReplyAt: v.optional(v.number()),
+    latestChannelSequence: v.optional(v.number()),
     idempotencyKey: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
     archivedAt: v.optional(v.number()),
   })
+    .index('by_project', ['projectId'])
     .index('by_group_status_updated_at', ['groupId', 'status', 'updatedAt'])
     .index('by_group_source', ['groupId', 'sourceMessageId'])
     .index('by_creator_idempotency', ['creatorProjectMemberId', 'idempotencyKey'])
@@ -304,6 +309,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index('by_project', ['projectId'])
+    .index('by_group', ['groupId'])
     .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
     .index('by_project_member_preference', ['projectMemberId', 'preference'])
     .index('by_thread_preference', ['channelThreadId', 'preference']),
@@ -319,6 +326,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index('by_project', ['projectId'])
     .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
     .index('by_project_member_thread', ['projectMemberId', 'channelThreadId'])
     .index('by_group_project_member', ['groupId', 'projectMemberId']),
@@ -371,6 +379,7 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     messageId: v.id('messages'),
+    channelThreadId: v.optional(v.id('channelThreads')),
     storageId: v.id('_storage'),
     filename: v.string(),
     contentType: v.string(),

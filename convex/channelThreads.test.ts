@@ -33,6 +33,43 @@ describe('Channel threads', () => {
     })).rejects.toThrow('threads_disabled')
   })
 
+  it('hides persisted thread evidence when the release is disabled', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const threadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'disabled-existing-thread',
+      name: 'Persisted while disabled',
+      projectId,
+    })
+    const messageId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Hidden persisted reply',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'disabled-existing-message',
+      projectId,
+    })
+
+    process.env.TRACK_THREADS_ENABLED = 'false'
+    expect(await actor.query(api.channelThreads.get, { threadId, userId: owner })).toBeNull()
+    expect(await actor.query(api.channelThreads.listMessages, { threadId, userId: owner })).toEqual([])
+    expect(await actor.query(api.assistant.listForThread, { threadId, userId: owner })).toEqual([])
+    expect((await actor.query(api.search.project, {
+      projectId,
+      query: 'Hidden persisted',
+      userId: owner,
+    })).messages).toEqual([])
+    await expect(actor.mutation(api.reports.create, {
+      projectId,
+      reason: 'other',
+      reporterId: owner,
+      targetMessageId: messageId,
+      targetType: 'message',
+    })).rejects.toThrow('threads_disabled')
+  })
+
   it('converges create and send retries while keeping thread messages out of the timeline', async () => {
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const ownerActor = asUser(t, owner)
@@ -132,6 +169,89 @@ describe('Channel threads', () => {
       .toMatchObject({ following: false, unread: false })
   })
 
+  it('advances read state while an archived parent Channel remains readable', async () => {
+    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
+    const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'archived-parent-thread',
+      name: 'Archived parent',
+      projectId,
+    })
+    await asUser(t, member).mutation(api.channelThreads.setFollowing, {
+      following: true,
+      threadId,
+      userId: member,
+    })
+    await asUser(t, owner).mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Read after the Channel archives',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'archived-parent-reply',
+      projectId,
+    })
+    await t.run(async (ctx) => await ctx.db.patch(groupId, { status: 'archived' }))
+
+    await asUser(t, member).mutation(api.channelThreads.markRead, { threadId, userId: member })
+    expect(await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))
+      .toMatchObject({ unread: false })
+  })
+
+  it('paginates long history and includes an exact deep-link target', async () => {
+    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'long-history-thread',
+      name: 'Long history',
+      projectId,
+    })
+    const targetMessageId = await t.run(async (ctx) => {
+      let firstMessageId: Id<'messages'> | null = null
+      const startedAt = Date.now()
+      for (let index = 1; index <= 130; index += 1) {
+        const messageId = await ctx.db.insert('messages', {
+          projectId,
+          groupId,
+          authorId: owner,
+          authorProjectMemberId: ownerMembershipId,
+          channelThreadId: threadId,
+          channelSequence: index,
+          body: `History reply ${index}`,
+          mentions: [],
+          attachmentIds: [],
+          createdAt: startedAt + index,
+        })
+        firstMessageId ??= messageId
+      }
+      await ctx.db.patch(threadId, {
+        replyCount: 130,
+        latestReplyAt: startedAt + 130,
+        latestChannelSequence: 130,
+      })
+      return firstMessageId!
+    })
+
+    const firstPage = await asUser(t, owner).query(api.channelThreads.listMessagePage, {
+      threadId,
+      userId: owner,
+      targetMessageId,
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+    expect(firstPage.isDone).toBe(false)
+    expect(firstPage.page).toHaveLength(51)
+    expect(firstPage.page.some((item) => item.message._id === targetMessageId)).toBe(true)
+    const secondPage = await asUser(t, owner).query(api.channelThreads.listMessagePage, {
+      threadId,
+      userId: owner,
+      paginationOpts: { cursor: firstPage.continueCursor, numItems: 50 },
+    })
+    expect(secondPage.page).toHaveLength(50)
+    expect(await asUser(t, owner).query(api.channelThreads.get, { threadId, userId: owner }))
+      .toMatchObject({ replyCount: 130 })
+  })
+
   it('enforces creator or steward lifecycle authority and revision conflicts', async () => {
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
@@ -215,6 +335,10 @@ describe('Channel threads', () => {
 
     expect(await asUser(t, outsider).query(api.channelThreads.get, { threadId, userId: outsider }))
       .toBeNull()
+    expect(await asUser(t, outsider).query(api.channelThreads.listMessages, { threadId, userId: outsider }))
+      .toEqual([])
+    expect(await asUser(t, outsider).query(api.assistant.listForThread, { threadId, userId: outsider }))
+      .toEqual([])
     await t.run(async (ctx) => await ctx.db.delete(sourceMessageId))
     const retained = await actor.query(api.channelThreads.get, { threadId, userId: owner })
     expect(retained?.thread._id).toBe(threadId)
@@ -223,7 +347,19 @@ describe('Channel threads', () => {
 
   it('keeps follow and unread state separate across Acting Company memberships', async () => {
     process.env.TRACK_COMPANY_MODEL_ENABLED = 'true'
-    const { firstCompanyId, firstMembershipId, groupId, projectId, secondCompanyId, secondMembershipId, t, userId } =
+    const {
+      firstCompanyId,
+      firstMembershipId,
+      firstRecipientMembershipId,
+      groupId,
+      projectId,
+      recipientUserId,
+      secondCompanyId,
+      secondMembershipId,
+      secondRecipientMembershipId,
+      t,
+      userId,
+    } =
       await seedMultiCompanyChannel()
     const actor = asUser(t, userId)
     const firstContext = {
@@ -279,6 +415,74 @@ describe('Channel threads', () => {
       userId,
       ...secondContext,
     })).toMatchObject({ unread: true })
+    expect((await actor.query(api.mobile.listGroups, {
+      projectId,
+      userId,
+      ...firstContext,
+    }))[0]).toMatchObject({ unreadCount: 0 })
+    expect((await actor.query(api.mobile.listGroups, {
+      projectId,
+      userId,
+      ...secondContext,
+    }))[0]).toMatchObject({ unreadCount: 1 })
+    expect(await actor.query(api.channelThreads.listGroupUnread, {
+      projectId,
+      userId,
+      ...firstContext,
+    })).toEqual([])
+    expect(await actor.query(api.channelThreads.listGroupUnread, {
+      projectId,
+      userId,
+      ...secondContext,
+    })).toEqual([{ groupId, unreadCount: 1 }])
+
+    await actor.mutation(api.messages.send, {
+      authorId: userId,
+      body: 'Ambiguous @recipient mention',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'ambiguous-company-mention',
+      mentions: [recipientUserId],
+      projectId,
+      ...firstContext,
+    })
+    const recipient = asUser(t, recipientUserId)
+    expect(await recipient.query(api.channelThreads.get, {
+      threadId,
+      userId: recipientUserId,
+      actingCompanyId: firstCompanyId,
+      projectMemberId: firstRecipientMembershipId,
+    })).toMatchObject({ following: false })
+    expect(await recipient.query(api.channelThreads.get, {
+      threadId,
+      userId: recipientUserId,
+      actingCompanyId: secondCompanyId,
+      projectMemberId: secondRecipientMembershipId,
+    })).toMatchObject({ following: false })
+
+    await actor.mutation(api.messages.send, {
+      authorId: userId,
+      body: 'Exact @recipient mention',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'exact-company-mention',
+      mentionedProjectMemberIds: [secondRecipientMembershipId],
+      mentions: [recipientUserId],
+      projectId,
+      ...firstContext,
+    })
+    expect(await recipient.query(api.channelThreads.get, {
+      threadId,
+      userId: recipientUserId,
+      actingCompanyId: firstCompanyId,
+      projectMemberId: firstRecipientMembershipId,
+    })).toMatchObject({ following: false })
+    expect(await recipient.query(api.channelThreads.get, {
+      threadId,
+      userId: recipientUserId,
+      actingCompanyId: secondCompanyId,
+      projectMemberId: secondRecipientMembershipId,
+    })).toMatchObject({ following: true })
   })
 
   it('searches and reports thread evidence without copying message content', async () => {
@@ -327,6 +531,64 @@ describe('Channel threads', () => {
     const report = await t.run(async (ctx) => await ctx.db.get(reportId))
     expect(report).toMatchObject({ channelThreadId: threadId, groupId, targetMessageId: messageId })
     expect(report).not.toHaveProperty('messageBody')
+  })
+
+  it('applies Channel access before capping thread search results', async () => {
+    const { groupId, member, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    const visibleThreadId = await asUser(t, owner).mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'visible-search-thread',
+      name: 'Needle visible',
+      projectId,
+    })
+    await t.run(async (ctx) => {
+      const now = Date.now()
+      const hiddenGroupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: 'custom',
+        name: 'Hidden',
+        status: 'active',
+        revision: 1,
+        createdBy: owner,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('groupMembers', {
+        projectId,
+        groupId: hiddenGroupId,
+        userId: owner,
+        projectMemberId: ownerMembershipId,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+      for (let index = 0; index < 30; index += 1) {
+        await ctx.db.insert('channelThreads', {
+          projectId,
+          groupId: hiddenGroupId,
+          name: `Needle hidden ${index}`,
+          creatorUserId: owner,
+          creatorProjectMemberId: ownerMembershipId,
+          status: 'active',
+          revision: 1,
+          replyCount: 0,
+          latestChannelSequence: 0,
+          idempotencyKey: `hidden-search-${index}`,
+          createdAt: now + index,
+          updatedAt: now + index,
+        })
+      }
+    })
+
+    const results = await asUser(t, member).query(api.search.project, {
+      filter: 'threads',
+      limit: 3,
+      projectId,
+      query: 'Needle',
+      userId: member,
+    })
+    expect(results.threads.map((thread) => thread.threadId)).toEqual([visibleThreadId])
   })
 
   it('collects bounded whole-Channel assistant context including threads but excludes another Channel', async () => {
@@ -475,6 +737,34 @@ describe('Channel threads', () => {
     ])
     expect(mentionDelivery?.url).toContain(`#message-${mentionMessageId}`)
   })
+
+  it('removes thread-owned rows during a legacy Project hard delete', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const threadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'cleanup-thread',
+      name: 'Cleanup thread',
+      projectId,
+    })
+    await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Cleanup reply',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'cleanup-reply',
+      projectId,
+    })
+
+    await actor.mutation(api.projects.remove, { projectId, userId: owner })
+    const remains = await t.run(async (ctx) => ({
+      followers: await ctx.db.query('channelThreadFollowers').collect(),
+      reads: await ctx.db.query('channelThreadReadStates').collect(),
+      threads: await ctx.db.query('channelThreads').collect(),
+    }))
+    expect(remains).toEqual({ followers: [], reads: [], threads: [] })
+  })
 })
 
 async function seedLegacyChannel() {
@@ -564,6 +854,7 @@ async function seedMultiCompanyChannel() {
   const t = convexTest(schema, modules)
   registerRateLimiter(t)
   const userId = await seedUser(t, 'multi-company-thread-user')
+  const recipientUserId = await seedUser(t, 'multi-company-thread-recipient')
   const now = Date.now()
   const fixture = await t.run(async (ctx) => {
     const firstCompanyId = await ctx.db.insert('companies', {
@@ -594,6 +885,16 @@ async function seedMultiCompanyChannel() {
         role: 'owner',
         status: 'active',
         userDisplayNameSnapshot: 'Multi Company User',
+        companyDisplayNameSnapshot: displayName,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('companyMembers', {
+        companyId,
+        userId: recipientUserId,
+        role: 'member',
+        status: 'active',
+        userDisplayNameSnapshot: 'Multi Company Recipient',
         companyDisplayNameSnapshot: displayName,
         createdAt: now,
         updatedAt: now,
@@ -652,6 +953,28 @@ async function seedMultiCompanyChannel() {
       createdAt: now,
       updatedAt: now,
     })
+    const firstRecipientMembershipId = await ctx.db.insert('projectMembers', {
+      projectId,
+      userId: recipientUserId,
+      role: 'member',
+      companyId: firstCompanyId,
+      projectCompanyId: firstProjectCompanyId,
+      status: 'active',
+      term: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const secondRecipientMembershipId = await ctx.db.insert('projectMembers', {
+      projectId,
+      userId: recipientUserId,
+      role: 'member',
+      companyId: secondCompanyId,
+      projectCompanyId: secondProjectCompanyId,
+      status: 'active',
+      term: 1,
+      createdAt: now,
+      updatedAt: now,
+    })
     const groupId = await ctx.db.insert('groups', {
       projectId,
       kind: 'general',
@@ -662,11 +985,17 @@ async function seedMultiCompanyChannel() {
       createdAt: now,
       updatedAt: now,
     })
-    for (const projectMemberId of [firstMembershipId, secondMembershipId]) {
+    for (const projectMemberId of [
+      firstMembershipId,
+      secondMembershipId,
+      firstRecipientMembershipId,
+      secondRecipientMembershipId,
+    ]) {
+      const membership = await ctx.db.get(projectMemberId)
       await ctx.db.insert('groupMembers', {
         projectId,
         groupId,
-        userId,
+        userId: membership!.userId,
         projectMemberId,
         status: 'active',
         createdAt: now,
@@ -676,10 +1005,13 @@ async function seedMultiCompanyChannel() {
     return {
       firstCompanyId,
       firstMembershipId,
+      firstRecipientMembershipId,
       groupId,
       projectId,
+      recipientUserId,
       secondCompanyId,
       secondMembershipId,
+      secondRecipientMembershipId,
     }
   })
   return { ...fixture, t, userId }

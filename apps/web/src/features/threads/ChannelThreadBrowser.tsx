@@ -36,6 +36,7 @@ export function ChannelThreadBrowser({
   const releaseConfig = useReleaseConfig()
   const [status, setStatus] = useState<'active' | 'archived'>('active')
   const [name, setName] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [sourceMessageId, setSourceMessageId] = useState<Id<'messages'> | ''>('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -50,11 +51,52 @@ export function ChannelThreadBrowser({
       }
     : 'skip'
   const threads = useQuery(api.channelThreads.list, queryArgs)
+  const searchTerm = searchQuery.trim()
+  const searchResults = useQuery(
+    api.search.project,
+    releaseConfig.threads && searchTerm.length >= 2
+      ? {
+          projectId,
+          query: searchTerm,
+          userId,
+          actingCompanyId: context?.actingCompanyId,
+          projectMemberId: context?.projectMemberId,
+          filter: 'all',
+          limit: 12,
+        }
+      : 'skip',
+  )
   const createThread = useMutation(api.channelThreads.create)
   const availableSources = useMemo(
     () => timelineMessages.filter((item) => !item.channelThread),
     [timelineMessages],
   )
+  const searchRows = useMemo(() => [
+    ...(searchResults?.threads ?? []).map((item) => ({
+      id: `thread-${item.id}`,
+      groupId: item.groupId,
+      messageId: undefined,
+      threadId: item.threadId,
+      title: item.title,
+      detail: `${item.preview} · ${item.groupName}`,
+    })),
+    ...(searchResults?.messages ?? []).flatMap((item) => item.threadId ? [{
+      id: `message-${item.id}`,
+      groupId: item.groupId,
+      messageId: item.messageId,
+      threadId: item.threadId,
+      title: item.threadName ?? 'Thread reply',
+      detail: `${item.preview} · ${item.groupName}`,
+    }] : []),
+    ...(searchResults?.files ?? []).flatMap((item) => item.threadId ? [{
+      id: `file-${item.id}`,
+      groupId: item.groupId,
+      messageId: item.messageId,
+      threadId: item.threadId,
+      title: item.title,
+      detail: `${item.threadName ?? 'Thread attachment'} · ${item.groupName}`,
+    }] : []),
+  ], [searchResults])
 
   if (!releaseConfig.threads) return null
 
@@ -107,7 +149,28 @@ export function ChannelThreadBrowser({
         </div>
       </header>
 
-      {threads === undefined ? (
+      <Input
+        aria-label="Search Project threads and replies"
+        onChange={(event) => setSearchQuery(event.target.value)}
+        placeholder="Search Project threads and replies"
+        value={searchQuery}
+      />
+
+      {searchTerm.length >= 2 ? searchResults === undefined ? (
+        <p role="status">Searching threads…</p>
+      ) : searchRows.length === 0 ? (
+        <p className="track-thread-empty">No thread results for “{searchTerm}”.</p>
+      ) : (
+        <ul className="track-thread-list" aria-label="Thread search results">
+          {searchRows.map((item) => (
+            <li key={item.id}>
+              <a href={threadHref(projectId, item.groupId, item.threadId, context, item.messageId)}>
+                <span><strong>{item.title}</strong><small>{item.detail}</small></span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : threads === undefined ? (
         <p role="status">Loading threads…</p>
       ) : threads.length === 0 ? (
         <p className="track-thread-empty">No {status} threads.</p>

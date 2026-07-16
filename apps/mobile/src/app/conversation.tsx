@@ -40,7 +40,7 @@ export default function ConversationScreen() {
   const router = useRouter();
   const { trackUserId } = useTrackUser();
   const releaseConfig = useReleaseConfig();
-  const { groupId, projectId, companyId, membershipId, archive } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
+  const { groupId, projectId, companyId, membershipId, archive, messageId } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string; messageId?: string }>();
 
   const sendMessage = useMutation(api.messages.send);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
@@ -56,6 +56,7 @@ export default function ConversationScreen() {
   const pid = projectId as Id<'projects'> | undefined;
   const cid = companyId as Id<'companies'> | undefined;
   const pmid = membershipId as Id<'projectMembers'> | undefined;
+  const targetMessageId = messageId as Id<'messages'> | undefined;
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const readOnly = archive === '1' || navigation?.archived === true;
 
@@ -122,6 +123,12 @@ export default function ConversationScreen() {
 
     return result;
   }, [assistantStreams, messages]);
+  useEffect(() => {
+    if (!targetMessageId) return;
+    const index = threadItems.findIndex((item) => item.kind === 'message' && item.item.message._id === targetMessageId);
+    if (index < 0) return;
+    requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.5 }));
+  }, [targetMessageId, threadItems]);
 
   const messageActions = useMemo(() => {
     if (!actionTarget || actionTarget.kind === 'date-sep') return [];
@@ -336,6 +343,7 @@ export default function ConversationScreen() {
           contentContainerStyle={styles.thread}
           contentInsetAdjustmentBehavior="automatic"
           data={threadItems}
+          onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           initialNumToRender={24}
           keyExtractor={(item) => item.key}
           maxToRenderPerBatch={16}

@@ -108,6 +108,7 @@ export async function followMentionedThreadMembers(
   ctx: MutationCtx,
   thread: Doc<'channelThreads'>,
   mentionedUserIds: Array<Id<'users'>>,
+  mentionedProjectMemberIds?: Array<Id<'projectMembers'>>,
 ) {
   if (mentionedUserIds.length === 0) return
   const mentionedUsers = new Set(mentionedUserIds.map(String))
@@ -115,6 +116,7 @@ export async function followMentionedThreadMembers(
     .query('groupMembers')
     .withIndex('by_group', (q) => q.eq('groupId', thread.groupId))
     .collect()
+  const eligible = []
   for (const channelMembership of channelMemberships) {
     if (channelMembership.status && channelMembership.status !== 'active') continue
     const projectMember = channelMembership.projectMemberId
@@ -132,6 +134,20 @@ export async function followMentionedThreadMembers(
       (projectMember.status && projectMember.status !== 'active') ||
       !mentionedUsers.has(String(projectMember.userId))
     ) continue
+    eligible.push({ channelMembership, projectMember })
+  }
+  const selectedMemberships = mentionedProjectMemberIds
+    ? new Set(mentionedProjectMemberIds.map(String))
+    : null
+  const eligibleCounts = new Map<string, number>()
+  for (const { projectMember } of eligible) {
+    const userId = String(projectMember.userId)
+    eligibleCounts.set(userId, (eligibleCounts.get(userId) ?? 0) + 1)
+  }
+  for (const { projectMember } of eligible) {
+    if (selectedMemberships
+      ? !selectedMemberships.has(String(projectMember._id))
+      : eligibleCounts.get(String(projectMember.userId)) !== 1) continue
     await upsertThreadFollower(ctx, {
       thread,
       userId: projectMember.userId,

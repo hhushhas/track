@@ -125,22 +125,28 @@ export const listForThread = query({
   handler: async (ctx, args) => {
     if (!threadsEnabled()) return []
     const thread = await ctx.db.get(args.threadId)
-    if (!thread) throw new Error('thread_unavailable')
-    const access = await authorizeScopedRequest(ctx, {
-      projectId: thread.projectId,
-      groupId: thread.groupId,
-      claimedUserId: args.userId,
-      actingCompanyId: args.actingCompanyId,
-      projectMemberId: args.projectMemberId,
-    }, 'readChannel')
-    const cutoff = access.companyAccess?.entitlement?.exitAt
-    return await ctx.db
-      .query('assistantStreams')
-      .withIndex('by_thread_created_at', (q) => cutoff
-        ? q.eq('channelThreadId', thread._id).lte('createdAt', cutoff)
-        : q.eq('channelThreadId', thread._id))
-      .order('desc')
-      .take(args.limit ?? 20)
+    if (!thread) return []
+    try {
+      const access = await authorizeScopedRequest(ctx, {
+        projectId: thread.projectId,
+        groupId: thread.groupId,
+        claimedUserId: args.userId,
+        actingCompanyId: args.actingCompanyId,
+        projectMemberId: args.projectMemberId,
+      }, 'readChannel')
+      const cutoff = access.companyAccess?.entitlement?.exitAt
+      if (cutoff && !(access.companyAccess?.entitlement?.threadSnapshots ?? [])
+        .some((snapshot: { _id?: Id<'channelThreads'> }) => snapshot._id === thread._id)) return []
+      return await ctx.db
+        .query('assistantStreams')
+        .withIndex('by_thread_created_at', (q) => cutoff
+          ? q.eq('channelThreadId', thread._id).lte('createdAt', cutoff)
+          : q.eq('channelThreadId', thread._id))
+        .order('desc')
+        .take(args.limit ?? 20)
+    } catch {
+      return []
+    }
   },
 })
 

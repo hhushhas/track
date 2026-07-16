@@ -31,6 +31,41 @@ async function getGroupMembership(
     .unique()
 }
 
+async function markThreadAuthorRead(
+  ctx: MutationCtx,
+  thread: Doc<'channelThreads'>,
+  projectMember: Doc<'projectMembers'>,
+  userId: Id<'users'>,
+  channelSequence: number,
+  actingCompanyId?: Id<'companies'>,
+) {
+  const existing = await ctx.db
+    .query('channelThreadReadStates')
+    .withIndex('by_thread_project_member', (q) =>
+      q.eq('channelThreadId', thread._id).eq('projectMemberId', projectMember._id),
+    )
+    .unique()
+  const now = Date.now()
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      lastReadChannelSequence: Math.max(existing.lastReadChannelSequence, channelSequence),
+      updatedAt: now,
+    })
+    return
+  }
+  await ctx.db.insert('channelThreadReadStates', {
+    projectId: thread.projectId,
+    groupId: thread.groupId,
+    channelThreadId: thread._id,
+    userId,
+    projectMemberId: projectMember._id,
+    actingCompanyId,
+    lastReadChannelSequence: channelSequence,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
 export async function buildMessageDetail(
   ctx: MessageDetailCtx,
   message: Doc<'messages'>,
@@ -42,6 +77,8 @@ export async function buildMessageDetail(
     _id: Id<'channelThreads'>
     name: string
     status: 'active' | 'archived'
+    replyCount?: number
+    latestReplyAt?: number
   }>,
 ) {
   const author = await ctx.db.get(message.authorId)
@@ -83,17 +120,6 @@ export async function buildMessageDetail(
         )
         .unique()
     : null
-  const sourceThreadMessages = sourceThread
-    ? await ctx.db
-        .query('messages')
-        .withIndex('by_thread_created_at', (q) =>
-          q.eq('channelThreadId', sourceThread._id),
-        )
-        .collect()
-    : []
-  const visibleSourceThreadMessages = sourceThreadMessages.filter(
-    (item) => !cutoff || item.createdAt <= cutoff,
-  )
   const sourceThreadSnapshot = sourceThread
     ? archivedThreadSnapshots?.find((snapshot) => snapshot._id === sourceThread._id)
     : undefined
@@ -138,11 +164,8 @@ export async function buildMessageDetail(
           threadId: sourceThread._id,
           name: sourceThreadSnapshot?.name ?? sourceThread.name,
           status: sourceThreadSnapshot?.status ?? sourceThread.status,
-          replyCount: visibleSourceThreadMessages.length,
-          latestReplyAt: visibleSourceThreadMessages.reduce<number | null>(
-            (latest, item) => latest === null || item.createdAt > latest ? item.createdAt : latest,
-            null,
-          ),
+          replyCount: sourceThreadSnapshot?.replyCount ?? sourceThread.replyCount ?? 0,
+          latestReplyAt: sourceThreadSnapshot?.latestReplyAt ?? sourceThread.latestReplyAt ?? null,
         }
       : null,
   }
@@ -227,6 +250,7 @@ export const send = mutation({
     projectMemberId: v.optional(v.id('projectMembers')),
     body: v.string(),
     mentions: v.optional(v.array(v.id('users'))),
+    mentionedProjectMemberIds: v.optional(v.array(v.id('projectMembers'))),
     replyToMessageId: v.optional(v.id('messages')),
     notificationPreview: v.optional(v.string()),
     channelThreadId: v.optional(v.id('channelThreads')),
@@ -306,6 +330,7 @@ export const send = mutation({
       idempotencyKey: args.idempotencyKey,
       body: args.body,
       mentions: args.mentions ?? [],
+      mentionedProjectMemberIds: args.mentionedProjectMemberIds,
       attachmentIds: [],
       replyToMessageId: args.replyToMessageId,
       notificationPreview: args.notificationPreview,
@@ -313,6 +338,13 @@ export const send = mutation({
     })
 
     if (channelThread) {
+      const createdAt = Date.now()
+      await ctx.db.patch(channelThread._id, {
+        replyCount: (channelThread.replyCount ?? 0) + 1,
+        latestReplyAt: createdAt,
+        latestChannelSequence: channelSequence,
+        updatedAt: createdAt,
+      })
       await upsertThreadFollower(ctx, {
         thread: channelThread,
         userId: args.authorId,
@@ -320,7 +352,13 @@ export const send = mutation({
         actingCompanyId: access.companyAccess?.company._id,
         reason: 'replied',
       })
-      await followMentionedThreadMembers(ctx, channelThread, args.mentions ?? [])
+      await followMentionedThreadMembers(
+        ctx,
+        channelThread,
+        args.mentions ?? [],
+        args.mentionedProjectMemberIds,
+      )
+      await markThreadAuthorRead(ctx, channelThread, projectMember, args.authorId, channelSequence, access.companyAccess?.company._id)
     }
 
     await appendAuditEvent(ctx, {
@@ -362,6 +400,7 @@ export const forwardMessage = mutation({
     audienceExpansionConfirmed: v.optional(v.boolean()),
     body: v.optional(v.string()),
     mentions: v.optional(v.array(v.id('users'))),
+    mentionedProjectMemberIds: v.optional(v.array(v.id('projectMembers'))),
     idempotencyKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -467,6 +506,7 @@ export const forwardMessage = mutation({
       idempotencyKey: args.idempotencyKey,
       body,
       mentions: args.mentions ?? [],
+      mentionedProjectMemberIds: args.mentionedProjectMemberIds,
       attachmentIds: [],
       forwardedFrom: {
         sourceProjectId: sourceMessage.projectId,
@@ -489,6 +529,13 @@ export const forwardMessage = mutation({
       createdAt: Date.now(),
     })
     if (targetThread) {
+      const createdAt = Date.now()
+      await ctx.db.patch(targetThread._id, {
+        replyCount: (targetThread.replyCount ?? 0) + 1,
+        latestReplyAt: createdAt,
+        latestChannelSequence: channelSequence,
+        updatedAt: createdAt,
+      })
       await upsertThreadFollower(ctx, {
         thread: targetThread,
         userId: args.actorId,
@@ -496,7 +543,13 @@ export const forwardMessage = mutation({
         actingCompanyId: access.companyAccess?.company._id,
         reason: 'replied',
       })
-      await followMentionedThreadMembers(ctx, targetThread, args.mentions ?? [])
+      await followMentionedThreadMembers(
+        ctx,
+        targetThread,
+        args.mentions ?? [],
+        args.mentionedProjectMemberIds,
+      )
+      await markThreadAuthorRead(ctx, targetThread, projectMember, args.actorId, channelSequence, access.companyAccess?.company._id)
     }
 
     const copiedAttachmentIds = await Promise.all(
@@ -505,6 +558,7 @@ export const forwardMessage = mutation({
           projectId: args.projectId,
           groupId: args.targetGroupId,
           messageId,
+          channelThreadId: args.targetChannelThreadId,
           storageId: attachment.storageId,
           filename: attachment.filename,
           contentType: attachment.contentType,
@@ -646,6 +700,7 @@ export const attachFile = mutation({
       projectId: args.projectId,
       groupId: args.groupId,
       messageId: args.messageId,
+      channelThreadId: message.channelThreadId,
       storageId: args.storageId,
       filename: args.filename,
       contentType: args.contentType,

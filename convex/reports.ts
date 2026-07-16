@@ -3,7 +3,7 @@ import { v } from 'convex/values'
 import { mutation } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
-import { resolveActorProjectMember } from './lib/channelThreadPolicy'
+import { resolveActorProjectMember, threadsEnabled } from './lib/channelThreadPolicy'
 
 const targetType = v.union(
   v.literal('message'),
@@ -68,6 +68,7 @@ export const create = mutation({
       channelThreadId = stream.channelThreadId
       await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: stream.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
+    if (channelThreadId && !threadsEnabled()) throw new Error('threads_disabled')
 
     const now = Date.now()
     const note = args.note?.trim()

@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 
+import type { Id } from './_generated/dataModel'
 import { query } from './_generated/server'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import { threadsEnabled } from './lib/channelThreadPolicy'
@@ -60,11 +61,9 @@ export const project = query({
             q.eq('projectMemberId', access.companyAccess!.projectMember._id).eq('status', 'active'),
           ).collect()
       : await ctx.db.query('groupMembers').withIndex('by_user', (q) => q.eq('userId', args.userId)).collect()
-    const visibleGroupIds = new Set(
-      (access.companyAccess?.entitlement?.channelIds ?? groupMemberships
+    const visibleGroupIdValues = access.companyAccess?.entitlement?.channelIds ?? groupMemberships
         .filter((membership) => membership.projectId === args.projectId)
-        .map((membership) => membership.groupId)).map(String),
-    )
+        .map((membership) => membership.groupId)
     const cutoff = access.companyAccess?.entitlement?.exitAt
     const channelSnapshots = new Map(
       (access.companyAccess?.entitlement?.channelSnapshots ?? []).map((channel: { _id: string; name: string }) => [channel._id, channel]),
@@ -78,21 +77,31 @@ export const project = query({
     )
 
     const messages = enabled(filter, 'messages')
+      && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('messages')
           .withSearchIndex('search_body_by_project', (q) =>
             q.search('body', term).eq('projectId', args.projectId),
           )
-          .take(perSectionLimit * 2)
+          .filter((q) => q.and(
+            q.or(...visibleGroupIdValues.map((groupId) => q.eq(q.field('groupId'), groupId))),
+            ...(cutoff ? [q.lte(q.field('createdAt'), cutoff)] : []),
+            ...(!threadsEnabled()
+              ? [q.eq(q.field('channelThreadId'), undefined)]
+              : cutoff
+                ? [q.or(
+                    q.eq(q.field('channelThreadId'), undefined),
+                    ...[...threadSnapshots.keys()].map((threadId) =>
+                      q.eq(q.field('channelThreadId'), threadId as Id<'channelThreads'>),
+                    ),
+                  )]
+                : []),
+          ))
+          .take(perSectionLimit)
       : []
     const messageResults = (
       await Promise.all(
-        messages
-          .filter((message) => visibleGroupIds.has(String(message.groupId)) && (!cutoff || message.createdAt <= cutoff))
-          .slice(0, perSectionLimit)
-          .map(async (message) => {
-            if (message.channelThreadId && !threadsEnabled()) return null
-            if (cutoff && message.channelThreadId && !threadSnapshots.has(String(message.channelThreadId))) return null
+        messages.map(async (message) => {
             const [author, group, channelThread] = await Promise.all([
               ctx.db.get(message.authorId),
               ctx.db.get(message.groupId),
@@ -121,19 +130,31 @@ export const project = query({
     ).filter((result) => result !== null)
 
     const files = enabled(filter, 'files')
+      && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('attachments')
           .withSearchIndex('search_filename_by_project', (q) =>
             q.search('filename', term).eq('projectId', args.projectId),
           )
-          .take(perSectionLimit * 2)
+          .filter((q) => q.and(
+            q.or(...visibleGroupIdValues.map((groupId) => q.eq(q.field('groupId'), groupId))),
+            ...(cutoff ? [q.lte(q.field('createdAt'), cutoff)] : []),
+            ...(!threadsEnabled()
+              ? [q.eq(q.field('channelThreadId'), undefined)]
+              : cutoff
+                ? [q.or(
+                    q.eq(q.field('channelThreadId'), undefined),
+                    ...[...threadSnapshots.keys()].map((threadId) =>
+                      q.eq(q.field('channelThreadId'), threadId as Id<'channelThreads'>),
+                    ),
+                  )]
+                : []),
+          ))
+          .take(perSectionLimit)
       : []
     const fileResults = (
       await Promise.all(
-        files
-          .filter((file) => visibleGroupIds.has(String(file.groupId)) && (!cutoff || file.createdAt <= cutoff))
-          .slice(0, perSectionLimit)
-          .map(async (file) => {
+        files.map(async (file) => {
             const [group, message] = await Promise.all([
               ctx.db.get(file.groupId),
               ctx.db.get(file.messageId),
@@ -166,16 +187,18 @@ export const project = query({
     ).filter((result) => result !== null)
 
     const groups = enabled(filter, 'groups')
+      && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('groups')
           .withSearchIndex('search_name_by_project', (q) =>
             q.search('name', term).eq('projectId', args.projectId),
           )
-          .take(perSectionLimit * 2)
+          .filter((q) => q.or(
+            ...visibleGroupIdValues.map((groupId) => q.eq(q.field('_id'), groupId)),
+          ))
+          .take(perSectionLimit)
       : []
     const groupResults = groups
-      .filter((group) => visibleGroupIds.has(String(group._id)))
-      .slice(0, perSectionLimit)
       .map((group) => ({
         createdAt: group.createdAt,
         groupId: group._id,
@@ -188,21 +211,25 @@ export const project = query({
       }))
 
     const channelThreads = threadsEnabled() && enabled(filter, 'threads')
+      && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('channelThreads')
           .withSearchIndex('search_name_by_project', (q) =>
             q.search('name', term).eq('projectId', args.projectId),
           )
-          .take(perSectionLimit * 2)
+          .filter((q) => q.and(
+            q.or(...visibleGroupIdValues.map((groupId) => q.eq(q.field('groupId'), groupId))),
+            ...(cutoff ? [q.or(
+              ...[...threadSnapshots.keys()].map((threadId) =>
+                q.eq(q.field('_id'), threadId as Id<'channelThreads'>),
+              ),
+            )] : []),
+          ))
+          .take(perSectionLimit)
       : []
     const threadResults = (
       await Promise.all(
-        channelThreads
-          .filter((thread) => visibleGroupIds.has(String(thread.groupId)) && (
-            cutoff ? threadSnapshots.has(String(thread._id)) : true
-          ))
-          .slice(0, perSectionLimit)
-          .map(async (thread) => {
+        channelThreads.map(async (thread) => {
             const group = await ctx.db.get(thread.groupId)
             const snapshot = threadSnapshots.get(String(thread._id))
             const groupName = channelSnapshots.get(String(thread.groupId))?.name ?? group?.name ?? 'Unknown channel'

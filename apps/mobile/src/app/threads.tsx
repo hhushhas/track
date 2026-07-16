@@ -16,6 +16,16 @@ import { hapticLight } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
 import { threadConversationHref } from '@/lib/thread-navigation';
 
+type ThreadListRow = {
+  key: string;
+  groupId: Id<'groups'> | undefined;
+  threadId: Id<'channelThreads'>;
+  messageId?: Id<'messages'>;
+  title: string;
+  subtitle: string;
+  unread: boolean;
+};
+
 export default function ThreadsScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -70,10 +80,11 @@ export default function ThreadsScreen() {
       : 'skip',
   );
   const searchActive = searchTerm.length >= 2;
-  const rows = useMemo(() => searchActive
+  const rows = useMemo<ThreadListRow[]>(() => searchActive
     ? [
         ...(searchResults?.threads ?? []).map((item) => ({
           key: `thread-${item.id}`,
+          groupId: item.groupId,
           threadId: item.threadId,
           messageId: undefined,
           title: item.title,
@@ -82,15 +93,26 @@ export default function ThreadsScreen() {
         })),
         ...(searchResults?.messages ?? []).flatMap((item) => item.threadId ? [{
           key: `message-${item.id}`,
+          groupId: item.groupId,
           threadId: item.threadId,
           messageId: item.messageId,
           title: item.threadName ?? 'Thread reply',
           subtitle: item.preview,
           unread: false,
         }] : []),
+        ...(searchResults?.files ?? []).flatMap((item) => item.threadId ? [{
+          key: `file-${item.id}`,
+          groupId: item.groupId,
+          threadId: item.threadId,
+          messageId: item.messageId,
+          title: item.title,
+          subtitle: `${item.threadName ?? 'Thread attachment'} · ${item.groupName}`,
+          unread: false,
+        }] : []),
       ]
     : (threads ?? []).map((item) => ({
         key: `thread-${item.thread._id}`,
+        groupId: gid,
         threadId: item.thread._id,
         messageId: undefined,
         title: item.thread.name,
@@ -163,7 +185,7 @@ export default function ThreadsScreen() {
         renderItem={({ item }) => (
           <Pressable
             accessibilityHint={item.unread ? 'Unread followed thread' : undefined}
-            onPress={() => pid && gid && item.threadId && router.push(threadConversationHref(pid, gid, item.threadId, context, item.messageId) as never)}
+            onPress={() => pid && item.groupId && item.threadId && router.push(threadConversationHref(pid, item.groupId, item.threadId, context, item.messageId) as never)}
             style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
             <View style={styles.rowCopy}>
               <ThemedText type="smallBold">{item.title}</ThemedText>

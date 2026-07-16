@@ -1,5 +1,5 @@
 import { parseMentions } from '@track/shared'
-import { useAction, useMutation, useQuery } from 'convex/react'
+import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
@@ -46,7 +46,18 @@ export function ThreadConversationPage({
       }
     : null, [context?.actingCompanyId, context?.projectMemberId, currentUser, navigation?.available, threadId])
   const thread = useQuery(api.channelThreads.get, scopedArgs ?? 'skip')
-  const messages = useQuery(api.channelThreads.listMessages, scopedArgs ? { ...scopedArgs, limit: 120 } : 'skip')
+  const targetMessageId = typeof window !== 'undefined' && window.location.hash.startsWith('#message-')
+    ? decodeURIComponent(window.location.hash.slice('#message-'.length)) as Id<'messages'>
+    : undefined
+  const {
+    results: messages,
+    status: messagePageStatus,
+    loadMore: loadMoreMessages,
+  } = usePaginatedQuery(
+    api.channelThreads.listMessagePage,
+    scopedArgs ? { ...scopedArgs, targetMessageId } : 'skip',
+    { initialNumItems: 50 },
+  )
   const assistantStreams = useQuery(api.assistant.listForThread, scopedArgs ? { ...scopedArgs, limit: 40 } : 'skip')
   const projectMembers = useQuery(
     api.mobile.listProjectMembers,
@@ -93,13 +104,26 @@ export function ThreadConversationPage({
     })
   }, [messages])
 
-  const memberHandles = useMemo(() => new Map(
-    (projectMembers ?? []).flatMap((item) => item.user
-      ? [[getMentionHandle(item.user.displayName), item.user._id] as const]
-      : []),
-  ), [projectMembers])
+  const memberHandles = useMemo(() => {
+    const handles = new Map<string, Array<{
+      projectMemberId: Id<'projectMembers'>
+      userId: Id<'users'>
+    }>>()
+    for (const item of projectMembers ?? []) {
+      if (!item.user) continue
+      const handle = getMentionHandle(item.user.displayName)
+      handles.set(handle, [
+        ...(handles.get(handle) ?? []),
+        { projectMemberId: item.membership._id, userId: item.user._id },
+      ])
+    }
+    return handles
+  }, [projectMembers])
   const streamItems = useMemo(() => [
-    ...((messages ?? []) as Array<ThreadMessageDetail>).map((item) => ({
+    ...[...new Map(
+      ((messages ?? []) as Array<ThreadMessageDetail>)
+        .map((item) => [item.message._id, item] as const),
+    ).values()].map((item) => ({
       at: item.message.createdAt,
       id: item.message._id,
       kind: 'message' as const,
@@ -114,7 +138,7 @@ export function ThreadConversationPage({
   ].sort((a, b) => a.at - b.at), [assistantStreams, messages])
 
   const backHref = context
-    ? `/workspace/company-projects/${projectId}?companyId=${context.actingCompanyId}&membershipId=${context.projectMemberId}`
+    ? `/workspace/company-projects/${projectId}?companyId=${context.actingCompanyId}&membershipId=${context.projectMemberId}&groupId=${groupId}`
     : `/workspace/projects/${projectId}/groups/${groupId}`
 
   async function submitMessage(event: FormEvent) {
@@ -126,9 +150,9 @@ export function ThreadConversationPage({
     setError(null)
     sendKey.current ??= crypto.randomUUID()
     try {
-      const mentions = parseMentions(body).flatMap((handle) => {
-        const userId = memberHandles.get(handle)
-        return userId ? [userId] : []
+      const mentionedMembers = parseMentions(body).flatMap((handle) => {
+        const matches = memberHandles.get(handle) ?? []
+        return matches.length === 1 ? matches : []
       })
       const messageId = await sendMessage({
         projectId,
@@ -139,7 +163,8 @@ export function ThreadConversationPage({
         projectMemberId: context?.projectMemberId,
         idempotencyKey: sendKey.current,
         body,
-        mentions,
+        mentions: mentionedMembers.map((member) => member.userId),
+        mentionedProjectMemberIds: mentionedMembers.map((member) => member.projectMemberId),
         replyToMessageId: replyTo ?? undefined,
         notificationPreview: attachment && !body ? 'Sent an attachment.' : undefined,
       })
@@ -302,7 +327,10 @@ export function ThreadConversationPage({
       {error ? <p className="track-error" role="alert">{error}. Your unsent reply is still here.</p> : null}
       {archived ? <p className="track-thread-archived" role="status">This thread is read-only.</p> : null}
       <section className="track-thread-message-list" role="log" aria-label="Thread messages">
-        {streamItems.length === 0 ? <p>No replies yet.</p> : streamItems.map((entry) => entry.kind === 'assistant' ? (
+        {messagePageStatus === 'CanLoadMore' ? (
+          <Button onClick={() => loadMoreMessages(50)} variant="outline">Load older replies</Button>
+        ) : null}
+        {streamItems.length === 0 ? <p>{messagePageStatus === 'LoadingFirstPage' ? 'Loading replies…' : 'No replies yet.'}</p> : streamItems.map((entry) => entry.kind === 'assistant' ? (
           <article className="track-thread-message assistant" key={entry.id}>
             <strong>Track Assistant</strong>
             <MarkdownText text={entry.item.answer || entry.item.status} />

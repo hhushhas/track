@@ -1,4 +1,4 @@
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useNetworkState } from 'expo-network';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -12,7 +12,7 @@ import { EmptyState } from '@/components/empty-state';
 import { MessageActions } from '@/components/message-actions';
 import { OptionsSheet, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
-import { ThreadRow, type DetailedMessage, type GroupedThreadItem, type ProjectMemberRow, resolveMentionIds } from '@/components/thread-row';
+import { ThreadRow, type DetailedMessage, type GroupedThreadItem, type ProjectMemberRow, resolveMentionIds, resolveMentionProjectMemberIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, TouchTarget } from '@/constants/theme';
@@ -52,7 +52,11 @@ export default function ThreadScreen() {
     ? { userId: trackUserId, threadId: tid, actingCompanyId: cid, projectMemberId: pmid }
     : null, [cid, navigation?.available, pmid, tid, trackUserId]);
   const thread = useQuery(api.channelThreads.get, queryArgs ?? 'skip');
-  const messages = useQuery(api.channelThreads.listMessages, queryArgs ? { ...queryArgs, limit: 120 } : 'skip');
+  const { results: messages, status: messagePageStatus, loadMore: loadMoreMessages } = usePaginatedQuery(
+    api.channelThreads.listMessagePage,
+    queryArgs ? { ...queryArgs, targetMessageId } : 'skip',
+    { initialNumItems: 50 },
+  );
   const assistantStreams = useQuery(api.assistant.listForThread, queryArgs ? { ...queryArgs, limit: 40 } : 'skip');
   const projectMembers = useQuery(api.mobile.listProjectMembers, trackUserId && pid && navigation?.available
     ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid }
@@ -89,7 +93,10 @@ export default function ThreadScreen() {
   }, [markRead, messages, navigation?.archived, queryArgs]);
 
   const threadItems = useMemo<GroupedThreadItem[]>(() => {
-    const messageItems = [...((messages ?? []) as DetailedMessage[])].reverse().map((item) => ({
+    const uniqueMessages = [...new Map(
+      ((messages ?? []) as DetailedMessage[]).map((item) => [item.message._id, item] as const),
+    ).values()];
+    const messageItems = uniqueMessages.reverse().map((item) => ({
       kind: 'message' as const,
       key: item.message._id,
       at: item.message.createdAt,
@@ -131,6 +138,7 @@ export default function ThreadScreen() {
         idempotencyKey: sendKey.current,
         body,
         mentions: resolveMentionIds(body, memberItems),
+        mentionedProjectMemberIds: resolveMentionProjectMemberIds(body, memberItems),
         replyToMessageId: replyTo?.message._id,
         notificationPreview: body,
       });
@@ -176,6 +184,7 @@ export default function ThreadScreen() {
         idempotencyKey: sendKey.current,
         body,
         mentions: resolveMentionIds(body, memberItems),
+        mentionedProjectMemberIds: resolveMentionProjectMemberIds(body, memberItems),
         replyToMessageId: replyTo?.message._id,
         notificationPreview: body,
       });
@@ -275,6 +284,7 @@ export default function ThreadScreen() {
   if (!trackUserId || navigation === undefined || thread === undefined) {
     return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Thread' }} /><EmptyState body="Opening the authorized conversation…" icon="forum-outline" title="Loading thread" /></ThemedView>;
   }
+  const source = thread.source
 
   return (
     <ThemedView style={styles.screen}>
@@ -282,11 +292,16 @@ export default function ThreadScreen() {
         title: thread.thread.name,
         headerRight: () => <Pressable accessibilityLabel="Thread options" hitSlop={8} onPress={() => setToolsOpen(true)} style={styles.headerButton}><PlatformIcon color={theme.text} name="dots-horizontal" size={22} /></Pressable>,
       }} />
-      {thread.source ? <Pressable
-        onPress={() => pid && gid && router.push(channelHref(pid, gid, context) as never)}
+      {source ? <Pressable
+        onPress={() => pid && gid && router.push(channelHref(
+          pid,
+          gid,
+          context,
+          'unavailable' in source ? undefined : source.messageId,
+        ) as never)}
         style={[styles.source, { backgroundColor: theme.backgroundElement }]}>
         <ThemedText type="code">SOURCE MESSAGE</ThemedText>
-        <ThemedText numberOfLines={2} type="small">{'unavailable' in thread.source ? 'Source message unavailable.' : thread.source.body || 'Attachment message'}</ThemedText>
+        <ThemedText numberOfLines={2} type="small">{'unavailable' in source ? 'Source message unavailable.' : source.body || 'Attachment message'}</ThemedText>
       </Pressable> : null}
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={styles.notice} type="small">{notice}</ThemedText> : null}
       {error ? <ThemedText accessibilityLiveRegion="assertive" style={styles.error} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}
@@ -296,7 +311,15 @@ export default function ThreadScreen() {
           contentContainerStyle={styles.list}
           data={threadItems}
           keyExtractor={(item) => item.key}
-          ListEmptyComponent={<EmptyState body="Start the focused conversation." icon="forum-outline" title="No replies yet" />}
+          ListEmptyComponent={messagePageStatus === 'LoadingFirstPage'
+            ? <ThemedText style={{ color: theme.textSecondary, padding: Spacing.three }}>Loading replies…</ThemedText>
+            : <EmptyState body="Start the focused conversation." icon="forum-outline" title="No replies yet" />}
+          ListHeaderComponent={messagePageStatus === 'CanLoadMore' ? <Pressable
+            accessibilityRole="button"
+            onPress={() => loadMoreMessages(50)}
+            style={styles.loadMore}>
+            <ThemedText type="smallBold">Load older replies</ThemedText>
+          </Pressable> : null}
           onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           ref={listRef}
           renderItem={renderItem}
@@ -339,6 +362,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   list: { flexGrow: 1, paddingVertical: Spacing.two },
+  loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
   notice: { color: '#166534', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   retry: { alignItems: 'center', alignSelf: 'center', borderRadius: 9, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   screen: { flex: 1 },

@@ -623,6 +623,7 @@ export function CompanyHubPage() {
                   params={{ projectId: item.project._id }}
                   search={{
                     companyId: actingCompanyId,
+                    groupId: '',
                     membershipId: item.membership._id,
                   }}
                   to="/workspace/company-projects/$projectId"

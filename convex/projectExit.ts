@@ -1,12 +1,14 @@
 import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import {
   internalMutation,
   internalQuery,
   mutation,
   query,
 } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireAuthenticatedActor } from "./lib/actorContext";
 import {
   requireActiveCompanyMembership,
@@ -16,6 +18,37 @@ import {
   bumpProjectParticipants,
   revokePendingProjectInvitations,
 } from "./lib/companyProjectLifecycle";
+
+async function threadStateAtCutoff(
+  ctx: MutationCtx,
+  thread: Pick<Doc<"channelThreads">, "_id" | "name" | "revision" | "status">,
+  cutoff: number,
+) {
+  const events = await ctx.db
+    .query("auditEvents")
+    .withIndex("by_entity", (q) =>
+      q.eq("entityType", "channelThread").eq("entityId", thread._id),
+    )
+    .collect();
+  const state = {
+    name: thread.name,
+    revision: thread.revision,
+    status: thread.status,
+  };
+  for (const event of events
+    .filter((item: { createdAt: number }) => item.createdAt > cutoff)
+    .sort((left: { createdAt: number }, right: { createdAt: number }) => right.createdAt - left.createdAt)) {
+    const before = event.before as {
+      name?: string;
+      revision?: number;
+      status?: "active" | "archived";
+    } | undefined;
+    if (before?.name) state.name = before.name;
+    if (before?.revision !== undefined) state.revision = before.revision;
+    if (before?.status) state.status = before.status;
+  }
+  return state;
+}
 
 export const prepare = mutation({
   args: { actingCompanyId: v.id("companies"), projectId: v.id("projects") },
@@ -263,7 +296,7 @@ export const finalize = mutation({
         threads
           .filter((thread) => thread.createdAt <= participation.exitCutoff!)
           .map(async (thread) => {
-            const [sourceMessage, follower, readState] = await Promise.all([
+            const [sourceMessage, follower, readState, cutoffState, messages] = await Promise.all([
               thread.sourceMessageId ? ctx.db.get(thread.sourceMessageId) : null,
               ctx.db
                 .query("channelThreadFollowers")
@@ -281,12 +314,26 @@ export const finalize = mutation({
                     .eq("projectMemberId", projectMember._id),
                 )
                 .unique(),
+              threadStateAtCutoff(ctx, thread, participation.exitCutoff!),
+              ctx.db
+                .query("messages")
+                .withIndex("by_thread_created_at", (q) =>
+                  q
+                    .eq("channelThreadId", thread._id)
+                    .lte("createdAt", participation.exitCutoff!),
+                )
+                .collect(),
             ]);
+            const latestMessage = messages.reduce<Doc<"messages"> | null>(
+              (latest, message) =>
+                !latest || message.createdAt > latest.createdAt ? message : latest,
+              null,
+            );
             return {
               _id: thread._id,
-              name: thread.name,
-              status: thread.status,
-              revision: thread.revision,
+              name: cutoffState.name,
+              status: cutoffState.status,
+              revision: cutoffState.revision,
               sourceAvailable: Boolean(
                 sourceMessage &&
                   sourceMessage.createdAt <= participation.exitCutoff!,
@@ -294,6 +341,9 @@ export const finalize = mutation({
               following: follower?.preference === "following",
               lastReadChannelSequence:
                 readState?.lastReadChannelSequence ?? 0,
+              replyCount: messages.length,
+              latestReplyAt: latestMessage?.createdAt,
+              latestChannelSequence: latestMessage?.channelSequence ?? 0,
             };
           }),
       );

@@ -17,6 +17,7 @@ describe('Company mobile navigation presenter', () => {
     const context = { archived: false, companyId, membershipId };
     expect(projectChannelsHref(projectId, context)).toContain('companyId=company-id&membershipId=membership-id');
     expect(channelHref(projectId, groupId, context)).toBe('/conversation?groupId=group-id&projectId=project-id&companyId=company-id&membershipId=membership-id');
+    expect(channelHref(projectId, groupId, context, 'message-id' as Id<'messages'>)).toBe('/conversation?groupId=group-id&projectId=project-id&companyId=company-id&membershipId=membership-id&messageId=message-id');
   });
 
   it('marks exit archives as read-only and presents denied deep links without metadata', () => {

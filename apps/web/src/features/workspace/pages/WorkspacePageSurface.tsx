@@ -178,6 +178,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         currentUserDesignation={state.currentUserDesignation}
         currentUserEmail={state.currentUserEmail}
         currentUserName={state.currentUserName}
+        currentUserId={auth.trackUserId}
         logoutConfirmOpen={state.logoutConfirmOpen}
         mobileNavOpen={state.mobileNavOpen}
         navCollapsed={state.navCollapsed}

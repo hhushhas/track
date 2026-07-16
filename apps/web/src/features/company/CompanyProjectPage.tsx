@@ -11,12 +11,14 @@ import { threadHref } from "#/features/threads/thread-navigation";
 
 type Props = {
   actingCompanyId: Id<"companies">;
+  initialGroupId?: Id<"groups">;
   projectId: Id<"projects">;
   projectMemberId: Id<"projectMembers">;
 };
 
 export function CompanyProjectPage({
   actingCompanyId,
+  initialGroupId,
   projectId,
   projectMemberId,
 }: Props) {
@@ -71,7 +73,7 @@ export function CompanyProjectPage({
       : "skip",
   );
   const [activeChannelId, setActiveChannelId] = useState<Id<"groups"> | null>(
-    null,
+    initialGroupId ?? null,
   );
   const [composer, setComposer] = useState("");
   const [channelName, setChannelName] = useState("");
@@ -88,6 +90,21 @@ export function CompanyProjectPage({
           userId: currentUser._id,
         }
       : "skip",
+  );
+  const threadUnread = useQuery(
+    api.channelThreads.listGroupUnread,
+    currentUser && canReadChannels
+      ? {
+          actingCompanyId,
+          projectId,
+          projectMemberId,
+          userId: currentUser._id,
+        }
+      : "skip",
+  );
+  const threadUnreadByChannel = useMemo(
+    () => new Map((threadUnread ?? []).map((entry) => [entry.groupId, entry.unreadCount])),
+    [threadUnread],
   );
   const createChannel = useMutation(api.channels.create);
   const addProjectMember = useMutation(api.sharedProjects.addMember);
@@ -129,6 +146,14 @@ export function CompanyProjectPage({
         : null,
     );
   }, [activeChannelId, channels]);
+  useEffect(() => {
+    if (!messages || typeof window === "undefined" || !window.location.hash.startsWith("#message-")) return;
+    requestAnimationFrame(() => {
+      const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+      target?.scrollIntoView({ block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+  }, [messages]);
 
   const channelItems = useMemo(
     () =>
@@ -252,6 +277,9 @@ export function CompanyProjectPage({
             >
               # {channel.name}
               {channel.status === "archived" ? " · archived" : ""}
+              {threadUnreadByChannel.get(channel._id)
+                ? ` · ${threadUnreadByChannel.get(channel._id)} unread ${threadUnreadByChannel.get(channel._id) === 1 ? "thread" : "threads"}`
+                : ""}
             </button>
           ))}
         </nav>
@@ -319,7 +347,7 @@ export function CompanyProjectPage({
               ?.slice()
               .reverse()
               .map((detail) => (
-                <article id={`message-${detail.message._id}`} key={detail.message._id}>
+                <article id={`message-${detail.message._id}`} key={detail.message._id} tabIndex={-1}>
                   <div>
                     <strong>
                       {detail.author?.displayName ?? "Unknown member"}

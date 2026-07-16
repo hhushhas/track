@@ -41,7 +41,10 @@ async function getGroupUnreadCount(
 
   const timelineUnread = messages.filter((message) => {
     if (cutoff && message.createdAt > cutoff) return false
-    if (message.authorId === userId) return false
+    const authoredBySelectedMembership = message.authorProjectMemberId
+      ? message.authorProjectMemberId === resolvedProjectMemberId
+      : message.authorId === userId
+    if (authoredBySelectedMembership) return false
     if (!readState) return true
     return message.createdAt > readState.lastReadAt
   }).length
@@ -65,19 +68,19 @@ async function getGroupUnreadCount(
               .eq('projectMemberId', resolvedProjectMemberId),
           )
           .unique()
-        const threadMessages = await ctx.db
-          .query('messages')
-          .withIndex('by_thread_created_at', (q) =>
-            q.eq('channelThreadId', follower.channelThreadId),
-          )
-          .collect()
-        return threadMessages.filter((message) =>
-          (!cutoff || message.createdAt <= cutoff) &&
-          message.authorId !== userId &&
-          (message.channelSequence ?? 0) > (readState?.lastReadChannelSequence ?? 0),
-        ).length
+        const thread = await ctx.db.get(follower.channelThreadId)
+        const latestChannelSequence = cutoff
+          ? (await ctx.db
+              .query('messages')
+              .withIndex('by_thread_created_at', (q) =>
+                q.eq('channelThreadId', follower.channelThreadId).lte('createdAt', cutoff),
+              )
+              .order('desc')
+              .first())?.channelSequence ?? 0
+          : thread?.latestChannelSequence ?? 0
+        return latestChannelSequence > (readState?.lastReadChannelSequence ?? 0) ? 1 : 0
       }),
-  )).reduce((total, count) => total + count, 0)
+  )).reduce<number>((total, count) => total + count, 0)
   return timelineUnread + threadUnread
 }
 
