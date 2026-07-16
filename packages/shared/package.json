@@ -5,8 +5,12 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./company": "./src/company.ts",
     "./domain": "./src/domain.ts",
     "./feature-flags": "./src/feature-flags.ts",
+    "./project-policy": "./src/project-policy.ts",
+    "./tasks": "./src/tasks.ts",
+    "./threads": "./src/threads.ts",
     "./theme": "./src/theme.ts"
   },
   "scripts": {
