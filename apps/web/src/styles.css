@@ -35,6 +35,8 @@
   --success: #15803d;
   --danger: #b91c1c;
   --info: #1d4ed8;
+  --shadow-pop: 0 12px 32px rgba(27, 25, 23, 0.14);
+  --shadow-sheet: 0 22px 70px rgba(27, 25, 23, 0.18);
   --background: var(--paper);
   --foreground: var(--ink);
   --card: var(--paper);
@@ -92,6 +94,8 @@
   --success: #5bbf74;
   --danger: #f87171;
   --info: #7ea7ff;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 22px 70px rgba(0, 0, 0, 0.6);
   --background: var(--paper);
   --foreground: var(--ink);
   --card: var(--paper);
@@ -2863,12 +2867,56 @@ button {
 }
 
 .track-avatar-tooltip {
-  border: 1px solid color-mix(in srgb, var(--hairline-strong) 84%, var(--ink-4));
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
   background: var(--paper);
-  box-shadow: 0 12px 30px rgba(27, 25, 23, 0.15);
+  box-shadow: var(--shadow-pop);
   color: var(--ink);
   overflow: hidden;
   padding: 0;
+}
+
+/* Compact person popover (mockup) — scoped to the hover card so the settings
+   profile-card preview keeps the full banner surface. */
+.track-avatar-tooltip .track-avatar-card {
+  width: 232px;
+}
+
+.track-avatar-tooltip .track-avatar-card-banner {
+  height: 40px;
+}
+
+.track-avatar-tooltip .track-avatar-card-body {
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.track-avatar-tooltip .track-avatar-card-avatar {
+  width: 36px;
+  height: 36px;
+  margin-top: -18px;
+  border-width: 3px;
+  font-size: 13px;
+}
+
+.track-avatar-tooltip .track-avatar-card-copy strong {
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.track-avatar-tooltip .track-avatar-card-copy small {
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+
+.track-avatar-tooltip .track-avatar-card-copy p {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .track-avatar-tooltip .bg-foreground {
