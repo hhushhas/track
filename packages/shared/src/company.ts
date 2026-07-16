@@ -22,7 +22,13 @@ export type RelationshipStatus = (typeof relationshipStatuses)[number]
 export const relationshipCompanyStatuses = ['active', 'left', 'removed'] as const
 export type RelationshipCompanyStatus = (typeof relationshipCompanyStatuses)[number]
 
-export const approvalRequestStatuses = ['pending', 'approved', 'canceled'] as const
+export const approvalRequestStatuses = [
+  'pending',
+  'approved',
+  'cancelled',
+  'stale',
+  'expired',
+] as const
 export type ApprovalRequestStatus = (typeof approvalRequestStatuses)[number]
 
 export const approvalDecisions = ['approved', 'rejected'] as const
@@ -65,5 +71,74 @@ export const channelParticipationRequestStatuses = [
 export type ChannelParticipationRequestStatus =
   (typeof channelParticipationRequestStatuses)[number]
 
-export const archiveRetentionStatuses = ['active', 'expired', 'redacted'] as const
+export const archiveRetentionStatuses = ['active', 'revoked'] as const
 export type ArchiveRetentionStatus = (typeof archiveRetentionStatuses)[number]
+
+export const companyHandlePattern = /^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])?$/
+
+const reservedCompanyHandles = new Set([
+  'admin',
+  'api',
+  'help',
+  'root',
+  'security',
+  'support',
+  'track',
+  'www',
+])
+
+export function normalizeCompanyHandle(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-')
+}
+
+export function isCompanyHandleAllowed(value: string) {
+  const handle = normalizeCompanyHandle(value)
+  return companyHandlePattern.test(handle) && !reservedCompanyHandles.has(handle)
+}
+
+export function canAdministerCompany(role: CompanyRole) {
+  return role === 'owner' || role === 'admin'
+}
+
+export function canManageProject(role: CompanyProjectRole) {
+  return role === 'manager'
+}
+
+export function resolveRelationshipStatus(activeCompanyCount: number) {
+  if (activeCompanyCount < 1) return 'closed' as const
+  if (activeCompanyCount === 1) return 'inactive' as const
+  return 'active' as const
+}
+
+export function hasUnanimousApproval(
+  eligibleIds: readonly string[],
+  approvals: ReadonlyMap<string, ApprovalDecision>,
+) {
+  return eligibleIds.length > 0 && eligibleIds.every((id) => approvals.get(id) === 'approved')
+}
+
+export function canTransitionCompany(from: CompanyStatus, to: CompanyStatus) {
+  return (
+    (from === 'active' && (to === 'suspended' || to === 'closed')) ||
+    (from === 'suspended' && (to === 'active' || to === 'closed'))
+  )
+}
+
+export function canTransitionProject(from: ProjectStatus, to: ProjectStatus) {
+  return (
+    (from === 'proposed' && to === 'active') ||
+    (from === 'active' && (to === 'archive_pending' || to === 'archived')) ||
+    (from === 'archive_pending' && (to === 'active' || to === 'archived')) ||
+    (from === 'archived' && to === 'active')
+  )
+}
+
+export function canTransitionProjectCompany(
+  from: ProjectCompanyStatus,
+  to: ProjectCompanyStatus,
+) {
+  return (
+    (from === 'active' && to === 'exit_pending') ||
+    (from === 'exit_pending' && (to === 'active' || to === 'exited'))
+  )
+}

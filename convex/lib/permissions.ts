@@ -1,5 +1,6 @@
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
+import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
 
 export type AppCtx = QueryCtx | MutationCtx
 
@@ -21,6 +22,10 @@ export async function requireProjectMember(
   projectId: Id<'projects'>,
   userId: Id<'users'>,
 ) {
+  const project = await ctx.db.get(projectId)
+  if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy') {
+    throw new Error('company_policy_required')
+  }
   const member = await getProjectMember(ctx, projectId, userId)
   if (!member) {
     throw new Error('not_project_member')
@@ -65,6 +70,10 @@ export async function requireGroupMember(
     .unique()
   if (!membership) {
     throw new Error('not_group_member')
+  }
+  const project = await ctx.db.get(membership.projectId)
+  if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy') {
+    throw new Error('company_policy_required')
   }
   return membership
 }

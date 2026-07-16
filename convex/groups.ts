@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
+import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import {
   canRoleJoinDefaultGroup,
   requireGroupMember,
@@ -22,6 +23,8 @@ export const listVisible = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectMember(ctx, args.projectId, args.userId)
     const memberships = await ctx.db
       .query('groupMembers')
@@ -46,12 +49,16 @@ export const create = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectManager(ctx, args.projectId, args.userId)
     const now = Date.now()
     const groupId = await ctx.db.insert('groups', {
       projectId: args.projectId,
       kind: 'custom',
       name: args.name,
+      status: 'active',
+      revision: 1,
       createdBy: args.userId,
       createdAt: now,
       updatedAt: now,
@@ -60,6 +67,7 @@ export const create = mutation({
       projectId: args.projectId,
       groupId,
       userId: args.userId,
+      status: 'active',
       createdAt: now,
       updatedAt: now,
     })
@@ -84,6 +92,8 @@ export const update = mutation({
     name: v.string(),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectManager(ctx, args.projectId, args.userId)
     const group = await ctx.db.get(args.groupId)
     if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
@@ -115,6 +125,8 @@ export const remove = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectManager(ctx, args.projectId, args.userId)
     const group = await ctx.db.get(args.groupId)
     if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
@@ -176,6 +188,8 @@ export const addProjectMember = mutation({
     role,
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.actorId)
     await requireProjectManager(ctx, args.projectId, args.actorId)
     const now = Date.now()
     const existing = await ctx.db
@@ -195,6 +209,8 @@ export const addProjectMember = mutation({
         projectId: args.projectId,
         userId: args.userId,
         role: args.role,
+        status: 'active',
+        term: 1,
         createdAt: now,
         updatedAt: now,
       })
@@ -218,6 +234,7 @@ export const addProjectMember = mutation({
           projectId: args.projectId,
           groupId: group._id,
           userId: args.userId,
+          status: 'active',
           createdAt: now,
           updatedAt: now,
         })
@@ -246,6 +263,8 @@ export const addGroupMember = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.actorId)
     await requireProjectManager(ctx, args.projectId, args.actorId)
     await requireProjectMember(ctx, args.projectId, args.userId)
     const now = Date.now()
@@ -260,6 +279,7 @@ export const addGroupMember = mutation({
         projectId: args.projectId,
         groupId: args.groupId,
         userId: args.userId,
+        status: 'active',
         createdAt: now,
         updatedAt: now,
       })
@@ -282,6 +302,8 @@ export const listMembers = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireGroupMember(ctx, args.groupId, args.userId)
     const memberships = await ctx.db
       .query('groupMembers')

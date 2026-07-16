@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
-import { requireGroupMember, requireProjectMember } from './lib/permissions'
+import { authorizeScopedRequest } from './lib/requestAuthorization'
 
 const targetType = v.union(
   v.literal('message'),
@@ -24,6 +24,8 @@ export const create = mutation({
   args: {
     projectId: v.id('projects'),
     reporterId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     targetType,
     groupId: v.optional(v.id('groups')),
     targetMessageId: v.optional(v.id('messages')),
@@ -33,23 +35,28 @@ export const create = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireProjectMember(ctx, args.projectId, args.reporterId)
-    if (args.groupId) await requireGroupMember(ctx, args.groupId, args.reporterId)
+    const baseAccess = await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      claimedUserId: args.reporterId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, args.groupId ? 'readChannel' : 'readProject')
 
     if (args.targetMessageId) {
       const message = await ctx.db.get(args.targetMessageId)
       if (!message || message.projectId !== args.projectId) throw new Error('message_not_found')
-      await requireGroupMember(ctx, message.groupId, args.reporterId)
+      await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: message.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
     if (args.targetAttachmentId) {
       const attachment = await ctx.db.get(args.targetAttachmentId)
       if (!attachment || attachment.projectId !== args.projectId) throw new Error('attachment_not_found')
-      await requireGroupMember(ctx, attachment.groupId, args.reporterId)
+      await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: attachment.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
     if (args.targetAssistantStreamId) {
       const stream = await ctx.db.get(args.targetAssistantStreamId)
       if (!stream || stream.projectId !== args.projectId) throw new Error('assistant_answer_not_found')
-      await requireGroupMember(ctx, stream.groupId, args.reporterId)
+      await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: stream.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
 
     const now = Date.now()
@@ -58,6 +65,8 @@ export const create = mutation({
       projectId: args.projectId,
       groupId: args.groupId,
       reporterId: args.reporterId,
+      reporterProjectMemberId: baseAccess.companyAccess?.projectMember._id,
+      actingCompanyId: baseAccess.companyAccess?.company._id,
       targetType: args.targetType,
       targetMessageId: args.targetMessageId,
       targetAttachmentId: args.targetAttachmentId,
@@ -73,6 +82,8 @@ export const create = mutation({
       projectId: args.projectId,
       groupId: args.groupId,
       actorId: args.reporterId,
+      actorProjectMemberId: baseAccess.companyAccess?.projectMember._id,
+      actingCompanyId: baseAccess.companyAccess?.company._id,
       entityType: 'contentReport',
       entityId: reportId,
       action: 'content_report.created',

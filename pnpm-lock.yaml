@@ -20,6 +20,9 @@ importers:
       '@openrouter/ai-sdk-provider':
         specifier: ^2.10.0
         version: 2.10.0(ai@6.0.223(zod@4.4.3))(zod@4.4.3)
+      '@track/shared':
+        specifier: workspace:*
+        version: link:packages/shared
       '@upstash/box':
         specifier: 0.4.4
         version: 0.4.4(zod@4.4.3)

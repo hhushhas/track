@@ -43,6 +43,9 @@ export const startImport = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    scope: v.optional(v.union(v.literal('project'), v.literal('channel'))),
     pastedText: v.optional(v.string()),
     sourceStorageIds: v.optional(v.array(v.id('_storage'))),
     sourceFiles: v.optional(v.array(sourceFileValidator)),
@@ -51,6 +54,8 @@ export const startImport = action({
   handler: async (ctx, args): Promise<{ importId: Id<'memoryImports'>; summary: string }> => {
     await ctx.runMutation(internal.memory.authorizeGroupMemoryWrite, {
       actorId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
       groupId: args.groupId,
       projectId: args.projectId,
     })
@@ -69,6 +74,9 @@ export const startImport = action({
     const now = Date.now()
     const importId: Id<'memoryImports'> = await ctx.runMutation(internal.memory.createImportJob, {
       actorId: args.actorId,
+      actorProjectMemberId: args.projectMemberId,
+      actingCompanyId: args.actingCompanyId,
+      scope: args.scope ?? 'channel',
       createdAt: now,
       groupId: args.groupId,
       projectId: args.projectId,
@@ -85,6 +93,8 @@ export const startImport = action({
       })
       const { boxId } = await ensureProjectBox(ctx, {
         actorId: args.actorId,
+        actingCompanyId: args.actingCompanyId,
+        projectMemberId: args.projectMemberId,
         projectId: args.projectId,
       })
       const adapter = createLiveMemoryBoxAdapter()
@@ -183,6 +193,8 @@ export const readTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     path: v.string(),
     offset: v.optional(v.number()),
     limit: v.optional(v.number()),
@@ -220,6 +232,8 @@ export const writeTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     path: v.string(),
     content: v.string(),
     mode: v.optional(v.union(v.literal('init'), v.literal('write'), v.literal('compaction'))),
@@ -254,6 +268,8 @@ export const editTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     path: v.string(),
     edits: v.array(contextEditValidator),
     mode: v.optional(v.union(v.literal('edit'), v.literal('compaction'))),
@@ -310,6 +326,8 @@ export const bashTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     command: v.string(),
     timeoutMs: v.optional(v.number()),
     runId: v.string(),
@@ -353,6 +371,8 @@ export const loadContextForAssistant = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args): Promise<{
     boxId: string | null
@@ -362,20 +382,31 @@ export const loadContextForAssistant = action({
     reason?: string
   }> => {
     await ctx.runMutation(internal.memory.authorizeGroupMemoryWrite, args)
-    let boxRow: Pick<Doc<'projectMemoryBoxes'>, 'boxId' | 'error' | 'lastContextUpdatedAt' | 'status'> | null = await ctx.runQuery(api.memory.getStatus, {
+    const initialBoxResult = await ctx.runQuery(api.memory.getStatus, {
       projectId: args.projectId,
       userId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
     })
+    let boxRow: Pick<Doc<'projectMemoryBoxes'>, 'boxId' | 'error' | 'lastContextUpdatedAt' | 'status'> | null =
+      initialBoxResult && 'boxId' in initialBoxResult ? initialBoxResult : null
     if (!boxRow || boxRow.status === 'deleted') {
       try {
         const ensured = await ensureProjectBox(ctx, {
           actorId: args.actorId,
+          actingCompanyId: args.actingCompanyId,
+          projectMemberId: args.projectMemberId,
           projectId: args.projectId,
         })
-        boxRow = await ctx.runQuery(api.memory.getStatus, {
+        const ensuredBoxResult = await ctx.runQuery(api.memory.getStatus, {
           projectId: args.projectId,
           userId: args.actorId,
-        }) ?? { boxId: ensured.boxId, lastContextUpdatedAt: undefined, status: 'ready' }
+          actingCompanyId: args.actingCompanyId,
+          projectMemberId: args.projectMemberId,
+        })
+        boxRow = ensuredBoxResult && 'boxId' in ensuredBoxResult
+          ? ensuredBoxResult
+          : { boxId: ensured.boxId, lastContextUpdatedAt: undefined, status: 'ready' }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'memory_box_create_failed'
         await ctx.runMutation(internal.memory.auditMemoryEvent, {
@@ -515,7 +546,12 @@ export const deleteMemoryBoxById = internalAction({
 
 async function ensureProjectBox(
   ctx: ActionCtx,
-  input: { projectId: Id<'projects'>; actorId: Id<'users'> },
+  input: {
+    projectId: Id<'projects'>
+    actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
+  },
 ): Promise<{ boxId: string }> {
   const existing = await getProjectMemoryBox(ctx, input)
   if (existing && existing.status !== 'deleted') {
@@ -564,17 +600,29 @@ async function ensureProjectBox(
 
 async function getProjectMemoryBox(
   ctx: ActionCtx,
-  input: { projectId: Id<'projects'>; actorId: Id<'users'> },
+  input: {
+    projectId: Id<'projects'>
+    actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
+  },
 ): Promise<Doc<'projectMemoryBoxes'> | null> {
   return await ctx.runQuery(api.memory.getMemoryBoxForProject, {
     actorId: input.actorId,
+    actingCompanyId: input.actingCompanyId,
+    projectMemberId: input.projectMemberId,
     projectId: input.projectId,
   })
 }
 
 async function waitForProjectMemoryBox(
   ctx: ActionCtx,
-  input: { projectId: Id<'projects'>; actorId: Id<'users'> },
+  input: {
+    projectId: Id<'projects'>
+    actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
+  },
 ) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await sleep(250)
@@ -590,12 +638,16 @@ async function getAccessScope(
     projectId: Id<'projects'>
     groupId: Id<'groups'>
     actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
     boxId: string
     runId?: string
   },
 ) {
   return await ctx.runQuery(api.memory.getAccessScope, {
     actorId: input.actorId,
+    actingCompanyId: input.actingCompanyId,
+    projectMemberId: input.projectMemberId,
     boxId: input.boxId,
     groupId: input.groupId,
     projectId: input.projectId,

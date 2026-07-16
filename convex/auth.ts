@@ -10,6 +10,7 @@ import { components } from './_generated/api'
 import type { DataModel, Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
+import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 
 const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
 const trustedOrigins = [
@@ -272,10 +273,14 @@ export const syncGoogleUser = mutation({
     displayName: v.string(),
   },
   handler: async (ctx, args) => {
+    const authUser = await getOptionalAuthUser(ctx)
+    if (!authUser || authUser._id !== args.googleSubject || normalizeEmail(authUser.email ?? '') !== normalizeEmail(args.email)) {
+      throw new Error('actor_mismatch')
+    }
     return await upsertTrackUserFromAuth(ctx, {
-      _id: args.googleSubject,
-      email: args.email,
-      name: args.displayName,
+      _id: authUser._id,
+      email: authUser.email,
+      name: authUser.name ?? args.displayName,
     })
   },
 })
@@ -332,6 +337,8 @@ export const getUser = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     return await ctx.db.get(args.userId)
   },
 })
@@ -379,6 +386,7 @@ export const getAvatarUrl = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    await requireAuthenticatedActor(ctx)
     const user = await ctx.db.get(args.userId)
     if (!user?.avatarStorageId) return null
     return await ctx.storage.getUrl(user.avatarStorageId)
@@ -390,6 +398,7 @@ export const getAvatarUrls = query({
     userIds: v.array(v.id('users')),
   },
   handler: async (ctx, args) => {
+    await requireAuthenticatedActor(ctx)
     const uniqueUserIds = Array.from(new Set(args.userIds))
     return await Promise.all(uniqueUserIds.map(async (userId) => {
       const user = await ctx.db.get(userId)
@@ -457,6 +466,8 @@ export const getProfileStatus = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const user = await ctx.db.get(args.userId)
     if (!user) return null
     return {
@@ -531,6 +542,8 @@ export const hasFreshStepUp = query({
     action: v.string(),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const stepUp = await ctx.db
       .query('securityStepUps')
       .withIndex('by_user_action', (q) =>
@@ -565,6 +578,19 @@ export const requestAccountDeletion = mutation({
   handler: async (ctx, args) => {
     const { authUser, trackUser } = await assertCanManageTrackUser(ctx, args.userId)
     const now = Date.now()
+    const companyMemberships = await ctx.db
+      .query('companyMembers')
+      .withIndex('by_user_status', (q) => q.eq('userId', args.userId).eq('status', 'active'))
+      .collect()
+    for (const membership of companyMemberships.filter((item) => item.role === 'owner')) {
+      const owners = await ctx.db
+        .query('companyMembers')
+        .withIndex('by_company_status_role', (q) =>
+          q.eq('companyId', membership.companyId).eq('status', 'active').eq('role', 'owner'),
+        )
+        .collect()
+      if (owners.length <= 1) throw new Error('company_ownership_transfer_required')
+    }
     const existing = await ctx.db
       .query('accountDeletionRequests')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
@@ -601,6 +627,9 @@ export const requestAccountDeletion = mutation({
         }),
       ),
     )
+    await Promise.all(companyMemberships.map((membership) =>
+      ctx.db.patch(membership._id, { status: 'removed', endedAt: now, updatedAt: now }),
+    ))
 
     await ctx.db.patch(args.userId, {
       displayName: 'Deleted Track user',

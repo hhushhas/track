@@ -2,7 +2,8 @@ import { v } from 'convex/values'
 
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
-import { requireGroupMember } from './lib/permissions'
+import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
+import { authorizeScopedRequest } from './lib/requestAuthorization'
 
 const notificationMode = v.union(
   v.literal('all'),
@@ -31,16 +32,23 @@ function shouldNotifyForMessage(input: {
 export const getSettings = query({
   args: {
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const global = await ctx.db
       .query('notificationSettings')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .unique()
-    const groups = await ctx.db
+    const allGroups = await ctx.db
       .query('groupNotificationSettings')
       .withIndex('by_user_group', (q) => q.eq('userId', args.userId))
       .collect()
+    const groups = allGroups.filter((setting) => args.projectMemberId
+      ? setting.projectMemberId === args.projectMemberId
+      : !setting.projectMemberId,
+    )
     return { global, groups }
   },
 })
@@ -56,6 +64,8 @@ export const setGlobalMode = mutation({
     mode: notificationMode,
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const now = Date.now()
     const existing = await ctx.db
       .query('notificationSettings')
@@ -84,16 +94,27 @@ export const setGroupMode = mutation({
     groupId: v.id('groups'),
     userId: v.id('users'),
     mode: groupNotificationMode,
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
     const now = Date.now()
-    const existing = await ctx.db
-      .query('groupNotificationSettings')
-      .withIndex('by_user_group', (q) =>
-        q.eq('userId', args.userId).eq('groupId', args.groupId),
-      )
-      .unique()
+    const existing = args.projectMemberId
+      ? await ctx.db.query('groupNotificationSettings').withIndex('by_project_member_group', (q) =>
+          q.eq('projectMemberId', args.projectMemberId).eq('groupId', args.groupId),
+        ).unique()
+      : await ctx.db.query('groupNotificationSettings').withIndex('by_user_group', (q) =>
+          q.eq('userId', args.userId).eq('groupId', args.groupId),
+        ).unique()
 
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -105,6 +126,7 @@ export const setGroupMode = mutation({
 
     return await ctx.db.insert('groupNotificationSettings', {
       userId: args.userId,
+      projectMemberId: args.projectMemberId,
       groupId: args.groupId,
       mode: args.mode,
       createdAt: now,
@@ -125,6 +147,8 @@ export const registerSubscription = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     console.info('[Track push] registerSubscription called', {
       endpointPrefix: args.endpoint.slice(0, 80),
       platform: args.platform,
@@ -198,6 +222,8 @@ export const registerNativeToken = mutation({
     token: v.string(),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const token = args.token.trim()
     if (!token) throw new Error('push_token_required')
     const now = Date.now()
@@ -260,19 +286,35 @@ export const collectMessageNotificationTargets = internalQuery({
 
     const targets = await Promise.all(
       groupMembers.map(async (membership) => {
+        if (membership.status && membership.status !== 'active') return []
         if (membership.userId === message.authorId) return []
+
+        if (project.accessProfile === 'company') {
+          if (!membership.projectMemberId) return []
+          const projectMember = await ctx.db.get(membership.projectMemberId)
+          if (!projectMember || projectMember.status !== 'active' || !projectMember.companyId || !projectMember.projectCompanyId) return []
+          const [company, companyMember, projectCompany] = await Promise.all([
+            ctx.db.get(projectMember.companyId),
+            ctx.db.query('companyMembers').withIndex('by_company_user', (q) =>
+              q.eq('companyId', projectMember.companyId!).eq('userId', projectMember.userId),
+            ).unique(),
+            ctx.db.get(projectMember.projectCompanyId),
+          ])
+          if (!company || company.status !== 'active' || companyMember?.status !== 'active' || projectCompany?.status !== 'active') return []
+        }
 
         const [globalSettings, groupSettings, subscriptions] = await Promise.all([
           ctx.db
             .query('notificationSettings')
             .withIndex('by_user', (q) => q.eq('userId', membership.userId))
             .unique(),
-          ctx.db
-            .query('groupNotificationSettings')
-            .withIndex('by_user_group', (q) =>
-              q.eq('userId', membership.userId).eq('groupId', message.groupId),
-            )
-            .unique(),
+          membership.projectMemberId
+            ? ctx.db.query('groupNotificationSettings').withIndex('by_project_member_group', (q) =>
+                q.eq('projectMemberId', membership.projectMemberId).eq('groupId', message.groupId),
+              ).unique()
+            : ctx.db.query('groupNotificationSettings').withIndex('by_user_group', (q) =>
+                q.eq('userId', membership.userId).eq('groupId', message.groupId),
+              ).unique(),
           ctx.db
             .query('notificationSubscriptions')
             .withIndex('by_user', (q) => q.eq('userId', membership.userId))
@@ -303,7 +345,7 @@ export const collectMessageNotificationTargets = internalQuery({
       projectId: message.projectId,
       projectName: project.name,
       senderName: author?.displayName ?? 'Track',
-      targets: targets.flat(),
+      targets: Array.from(new Map(targets.flat().map((target) => [target.id, target])).values()),
       url: `/workspace/projects/${message.projectId}/groups/${message.groupId}`,
     }
   },
@@ -314,6 +356,8 @@ export const collectUserNotificationTargets = internalQuery({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const subscriptions = await ctx.db
       .query('notificationSubscriptions')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))

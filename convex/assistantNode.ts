@@ -289,6 +289,8 @@ export const answerStream = internalAction({
     projectId: v.id('projects'),
     question: v.string(),
     requesterId: v.id('users'),
+    requesterProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
     streamId: v.id('assistantStreams'),
   },
   handler: async (ctx, args): Promise<{ answer: string; streamId: Id<'assistantStreams'> }> => {
@@ -320,6 +322,8 @@ export const answerStream = internalAction({
       })
       const memoryContext: AssistantMemoryContext = await ctx.runAction((api as any).memoryActions.loadContextForAssistant, {
         actorId: args.requesterId,
+        projectMemberId: args.requesterProjectMemberId,
+        actingCompanyId: args.actingCompanyId,
         groupId: args.groupId,
         projectId: args.projectId,
       })

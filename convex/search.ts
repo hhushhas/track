@@ -1,7 +1,7 @@
 import { v } from 'convex/values'
 
 import { query } from './_generated/server'
-import { requireProjectMember } from './lib/permissions'
+import { authorizeScopedRequest } from './lib/requestAuthorization'
 
 const searchScope = v.union(
   v.literal('all'),
@@ -27,9 +27,16 @@ export const project = query({
     projectId: v.id('projects'),
     query: v.string(),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args) => {
-    await requireProjectMember(ctx, args.projectId, args.userId)
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readProject')
 
     const term = args.query.trim()
     const filter = args.filter ?? 'all'
@@ -43,14 +50,21 @@ export const project = query({
       }
     }
 
-    const groupMemberships = await ctx.db
-      .query('groupMembers')
-      .withIndex('by_user', (q) => q.eq('userId', args.userId))
-      .collect()
+    const groupMemberships = access.companyAccess
+      ? access.companyAccess.projectMember.status === 'archived'
+        ? []
+        : await ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) =>
+            q.eq('projectMemberId', access.companyAccess!.projectMember._id).eq('status', 'active'),
+          ).collect()
+      : await ctx.db.query('groupMembers').withIndex('by_user', (q) => q.eq('userId', args.userId)).collect()
     const visibleGroupIds = new Set(
-      groupMemberships
+      (access.companyAccess?.entitlement?.channelIds ?? groupMemberships
         .filter((membership) => membership.projectId === args.projectId)
-        .map((membership) => membership.groupId),
+        .map((membership) => membership.groupId)).map(String),
+    )
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    const channelSnapshots = new Map(
+      (access.companyAccess?.entitlement?.channelSnapshots ?? []).map((channel: { _id: string; name: string }) => [channel._id, channel]),
     )
 
     const messages = enabled(filter, 'messages')
@@ -64,22 +78,23 @@ export const project = query({
     const messageResults = (
       await Promise.all(
         messages
-          .filter((message) => visibleGroupIds.has(message.groupId))
+          .filter((message) => visibleGroupIds.has(String(message.groupId)) && (!cutoff || message.createdAt <= cutoff))
           .slice(0, perSectionLimit)
           .map(async (message) => {
             const [author, group] = await Promise.all([
               ctx.db.get(message.authorId),
               ctx.db.get(message.groupId),
             ])
+            const groupName = channelSnapshots.get(String(message.groupId))?.name ?? group?.name ?? 'Unknown channel'
             return {
               createdAt: message.createdAt,
               groupId: message.groupId,
-              groupName: group?.name ?? 'Unknown group',
+              groupName,
               id: message._id,
               kind: 'message' as const,
               messageId: message._id,
               preview: compactPreview(message.body, 'Attachment message'),
-              subtitle: `${author?.displayName ?? 'Unknown member'} in ${group?.name ?? 'Unknown group'}`,
+              subtitle: `${author?.displayName ?? 'Unknown member'} in ${groupName}`,
               title: author?.displayName ?? 'Message',
             }
           }),
@@ -97,21 +112,22 @@ export const project = query({
     const fileResults = (
       await Promise.all(
         files
-          .filter((file) => visibleGroupIds.has(file.groupId))
+          .filter((file) => visibleGroupIds.has(String(file.groupId)) && (!cutoff || file.createdAt <= cutoff))
           .slice(0, perSectionLimit)
           .map(async (file) => {
             const group = await ctx.db.get(file.groupId)
+            const groupName = channelSnapshots.get(String(file.groupId))?.name ?? group?.name ?? 'Unknown channel'
             return {
               attachmentId: file._id,
               contentType: file.contentType,
               createdAt: file.createdAt,
               groupId: file.groupId,
-              groupName: group?.name ?? 'Unknown group',
+              groupName,
               id: file._id,
               kind: 'file' as const,
               messageId: file.messageId,
               preview: `${file.contentType || 'file'} · ${file.size.toLocaleString()} bytes`,
-              subtitle: group?.name ?? 'Unknown group',
+              subtitle: groupName,
               title: file.filename,
             }
           }),
@@ -127,17 +143,17 @@ export const project = query({
           .take(perSectionLimit * 2)
       : []
     const groupResults = groups
-      .filter((group) => visibleGroupIds.has(group._id))
+      .filter((group) => visibleGroupIds.has(String(group._id)))
       .slice(0, perSectionLimit)
       .map((group) => ({
         createdAt: group.createdAt,
         groupId: group._id,
-        groupName: group.name,
+        groupName: channelSnapshots.get(String(group._id))?.name ?? group.name,
         id: group._id,
         kind: 'group' as const,
         preview: `${group.kind.replaceAll('_', ' ')} group`,
-        subtitle: 'Group',
-        title: group.name,
+        subtitle: 'Channel',
+        title: channelSnapshots.get(String(group._id))?.name ?? group.name,
       }))
 
     return {

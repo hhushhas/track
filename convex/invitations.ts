@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
+import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import {
   canRoleJoinDefaultGroup,
   requireProjectManager,
@@ -29,6 +30,8 @@ export const listForProject = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectMember(ctx, args.projectId, args.userId)
     return await ctx.db
       .query('invitations')
@@ -47,6 +50,8 @@ export const create = mutation({
     role,
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.invitedBy)
     await requireProjectManager(ctx, args.projectId, args.invitedBy)
     const email = normalizeEmail(args.email)
     if (!email.includes('@')) throw new Error('invalid_email')
@@ -88,6 +93,8 @@ export const acceptPendingForCurrentUser = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const user = await ctx.db.get(args.userId)
     if (!user) throw new Error('user_not_found')
     const now = Date.now()
@@ -126,6 +133,8 @@ export const acceptPendingForCurrentUser = mutation({
           projectId: invite.projectId,
           userId: args.userId,
           role: invite.role,
+          status: 'active',
+          term: 1,
           createdAt: now,
           updatedAt: now,
         })
@@ -152,6 +161,7 @@ export const acceptPendingForCurrentUser = mutation({
             projectId: invite.projectId,
             groupId: group._id,
             userId: args.userId,
+            status: 'active',
             createdAt: now,
             updatedAt: now,
           })

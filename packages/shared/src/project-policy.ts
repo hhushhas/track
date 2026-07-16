@@ -8,6 +8,8 @@ export type ProjectAccessMode = (typeof projectAccessModes)[number]
 type PolicyScope = {
   accessMode: ProjectAccessMode
   channelMember: boolean
+  channelActive?: boolean
+  channelSteward?: boolean
 }
 
 export type ProjectChannelPolicyInput =
@@ -40,6 +42,9 @@ export function resolveProjectChannelCapabilities(
     input.accessProfile === 'legacy'
       ? input.projectRole === 'owner' || input.projectRole === 'admin'
       : input.projectRole === 'manager'
+  const channelActive = input.channelActive ?? true
+  const authorizedSteward =
+    input.accessProfile === 'legacy' ? manager : manager && input.channelSteward === true
 
   let taskCollaboration: ProjectChannelCapabilities['taskCollaboration'] = 'scoped'
   if (readOnly) {
@@ -57,8 +62,8 @@ export function resolveProjectChannelCapabilities(
     canWriteProject: !readOnly,
     canManageProject: !readOnly && manager,
     canReadChannel: input.channelMember,
-    canWriteChannel: !readOnly && input.channelMember,
-    canStewardChannel: !readOnly && input.channelMember && manager,
+    canWriteChannel: !readOnly && input.channelMember && channelActive,
+    canStewardChannel: !readOnly && input.channelMember && authorizedSteward,
     taskCollaboration,
   }
 }

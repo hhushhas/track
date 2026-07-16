@@ -3,6 +3,7 @@ import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import { appendAuditEvent } from './lib/audit'
+import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import { canRoleJoinDefaultGroup, requireProjectManager, requireProjectMember, requireProjectOwner } from './lib/permissions'
 
 const defaultGroups = [
@@ -16,6 +17,8 @@ export const list = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const memberships = await ctx.db
       .query('projectMembers')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
@@ -24,7 +27,7 @@ export const list = query({
     const projects = await Promise.all(
       memberships.map(async (membership) => {
         const project = await ctx.db.get(membership.projectId)
-        return project ? { project, membership } : null
+        return project && (!project.accessProfile || project.accessProfile === 'legacy') ? { project, membership } : null
       }),
     )
 
@@ -38,6 +41,8 @@ export const listMembers = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectMember(ctx, args.projectId, args.userId)
     const memberships = await ctx.db
       .query('projectMembers')
@@ -60,6 +65,8 @@ export const create = mutation({
     clientLabel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const now = Date.now()
     const existingMembership = await ctx.db
       .query('projectMembers')
@@ -80,15 +87,22 @@ export const create = mutation({
     const projectId = await ctx.db.insert('projects', {
       name: args.name,
       clientLabel: args.clientLabel,
+      accessProfile: 'legacy',
+      origin: 'single_company',
+      status: 'active',
+      participantRevision: 0,
+      revision: 1,
       createdBy: args.userId,
       createdAt: now,
       updatedAt: now,
     })
 
-    await ctx.db.insert('projectMembers', {
+    const projectMemberId = await ctx.db.insert('projectMembers', {
       projectId,
       userId: args.userId,
       role: 'owner',
+      status: 'active',
+      term: 1,
       createdAt: now,
       updatedAt: now,
     })
@@ -98,6 +112,8 @@ export const create = mutation({
         projectId,
         kind: group.kind,
         name: group.name,
+        status: 'active',
+        revision: 1,
         createdBy: args.userId,
         createdAt: now,
         updatedAt: now,
@@ -108,6 +124,8 @@ export const create = mutation({
           projectId,
           groupId,
           userId: args.userId,
+          projectMemberId,
+          status: 'active',
           createdAt: now,
           updatedAt: now,
         })
@@ -135,6 +153,8 @@ export const update = mutation({
     clientLabel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectManager(ctx, args.projectId, args.userId)
     const project = await ctx.db.get(args.projectId)
     if (!project) throw new Error('project_not_found')
@@ -166,6 +186,8 @@ export const remove = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectOwner(ctx, args.projectId, args.userId)
     const project = await ctx.db.get(args.projectId)
     if (!project) throw new Error('project_not_found')
@@ -251,6 +273,8 @@ export const ensureStarter = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     const existingMembership = await ctx.db
       .query('projectMembers')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
@@ -262,15 +286,22 @@ export const ensureStarter = mutation({
     const projectId = await ctx.db.insert('projects', {
       name: 'Default',
       clientLabel: 'Internal product build',
+      accessProfile: 'legacy',
+      origin: 'single_company',
+      status: 'active',
+      participantRevision: 0,
+      revision: 1,
       createdBy: args.userId,
       createdAt: now,
       updatedAt: now,
     })
 
-    await ctx.db.insert('projectMembers', {
+    const projectMemberId = await ctx.db.insert('projectMembers', {
       projectId,
       userId: args.userId,
       role: 'owner',
+      status: 'active',
+      term: 1,
       createdAt: now,
       updatedAt: now,
     })
@@ -280,6 +311,8 @@ export const ensureStarter = mutation({
         projectId,
         kind: group.kind,
         name: group.name,
+        status: 'active',
+        revision: 1,
         createdBy: args.userId,
         createdAt: now,
         updatedAt: now,
@@ -289,6 +322,8 @@ export const ensureStarter = mutation({
         projectId,
         groupId,
         userId: args.userId,
+        projectMemberId,
+        status: 'active',
         createdAt: now,
         updatedAt: now,
       })
@@ -313,6 +348,8 @@ export const getOverview = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
     await requireProjectMember(ctx, args.projectId, args.userId)
     const project = await ctx.db.get(args.projectId)
     const groups = await ctx.db

@@ -14,8 +14,9 @@ describe('memory import metadata', () => {
     const t = convexTest(schema, modules)
     const now = Date.now()
     const { actorId, groupId, projectId } = await seedProjectMembership(t, now)
+    const actor = t.withIdentity({ subject: 'memory-tester' })
 
-    await t.mutation((internal as any).memory.authorizeGroupMemoryWrite, {
+    await actor.mutation((internal as any).memory.authorizeGroupMemoryWrite, {
       actorId,
       groupId,
       projectId,
@@ -80,6 +81,7 @@ describe('memory import metadata', () => {
     const t = convexTest(schema, modules)
     const now = Date.now()
     const { actorId, projectId } = await seedProjectMembership(t, now)
+    const actor = t.withIdentity({ subject: 'memory-tester' })
     const otherProjectId = await t.run(async (ctx) => {
       const otherProjectId = await ctx.db.insert('projects', {
         createdAt: now,
@@ -100,7 +102,7 @@ describe('memory import metadata', () => {
       })
     })
 
-    await expect(t.mutation((internal as any).memory.authorizeGroupMemoryWrite, {
+    await expect(actor.mutation((internal as any).memory.authorizeGroupMemoryWrite, {
       actorId,
       groupId: otherGroupId,
       projectId,
