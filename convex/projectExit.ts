@@ -16,6 +16,11 @@ import {
   bumpProjectParticipants,
   revokePendingProjectInvitations,
 } from "./lib/companyProjectLifecycle";
+import {
+  captureTaskExitStaging,
+  clearTaskExitStaging,
+  materializeTaskArchiveSnapshots,
+} from "./lib/taskLifecycle";
 
 export const prepare = mutation({
   args: { actingCompanyId: v.id("companies"), projectId: v.id("projects") },
@@ -62,6 +67,11 @@ export const prepare = mutation({
       memorySnapshotPath: snapshotPath,
       memorySnapshotError: undefined,
       updatedAt: now,
+    });
+    await captureTaskExitStaging(ctx, {
+      projectCompanyId: participation._id,
+      projectId: project._id,
+      cutoff: now,
     });
     await bumpProjectParticipants(ctx, project._id, now);
     await ctx.scheduler.runAfter(
@@ -124,6 +134,7 @@ export const cancel = mutation({
     );
     if (!participation) throw new Error("exit_not_pending");
     const snapshotPath = participation.memorySnapshotPath;
+    await clearTaskExitStaging(ctx, participation._id);
     await ctx.db.patch(participation._id, {
       status: "active",
       exitPreparedBy: undefined,
@@ -305,6 +316,12 @@ export const finalize = mutation({
         createdAt: now,
         updatedAt: now,
       });
+      await materializeTaskArchiveSnapshots(ctx, {
+        entitlementId,
+        projectCompanyId: participation._id,
+        projectId: project._id,
+        channelIds,
+      });
       const manifest = participation.memorySnapshotManifest as {
         sources?: Array<{
           scope: "project" | "channel";
@@ -357,6 +374,7 @@ export const finalize = mutation({
       exitedAt: now,
       updatedAt: now,
     });
+    await clearTaskExitStaging(ctx, participation._id);
     await bumpProjectParticipants(ctx, project._id, now);
     const remaining = await ctx.db
       .query("projectCompanies")

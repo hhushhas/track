@@ -3,6 +3,8 @@ import { v } from 'convex/values'
 
 import { companyCoreTables } from './schema/companyCoreTables'
 import { companyProjectTables } from './schema/companyProjectTables'
+import { taskAutomationTables } from './schema/taskAutomationTables'
+import { taskCoreTables } from './schema/taskCoreTables'
 import {
   channelStatus,
   companyProjectRole,
@@ -46,6 +48,9 @@ const contentReportTargetType = v.union(
   v.literal('attachment'),
   v.literal('voice_note'),
   v.literal('assistant_answer'),
+  v.literal('task'),
+  v.literal('task_comment'),
+  v.literal('task_suggestion'),
 )
 
 const contentReportReason = v.union(
@@ -112,6 +117,8 @@ const forwardedMessageSnapshot = v.object({
 export default defineSchema({
   ...companyCoreTables,
   ...companyProjectTables,
+  ...taskCoreTables,
+  ...taskAutomationTables,
 
   users: defineTable({
     googleSubject: v.string(),
@@ -438,6 +445,9 @@ export default defineSchema({
     targetMessageId: v.optional(v.id('messages')),
     targetAttachmentId: v.optional(v.id('attachments')),
     targetAssistantStreamId: v.optional(v.id('assistantStreams')),
+    targetTaskId: v.optional(v.id('tasks')),
+    targetTaskCommentId: v.optional(v.id('taskComments')),
+    targetTaskSuggestionId: v.optional(v.id('taskSuggestions')),
     reason: contentReportReason,
     note: v.optional(v.string()),
     status: v.union(
