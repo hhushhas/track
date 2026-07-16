@@ -10,6 +10,7 @@ import { useTrackUser } from '@/contexts/track-user-context';
 import { Composer } from '@/components/composer';
 import { MessageActions } from '@/components/message-actions';
 import { PlatformIcon } from '@/components/platform-icon';
+import { TaskInlineCards } from '@/components/task-inline-cards';
 import { DateSeparator, ThreadRow, type DetailedMessage, type GroupedThreadItem, type ProjectMemberRow, resolveMentionIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -18,6 +19,8 @@ import { Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
+import { useReleaseConfig } from '@/lib/release-config';
+import type { MobileTaskIdentity } from '@/lib/task-navigation';
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
 
@@ -36,6 +39,7 @@ function dateSepLabel(ts: number) {
 export default function ConversationScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
   const { groupId, projectId, companyId, membershipId, archive } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
 
@@ -48,6 +52,7 @@ export default function ConversationScreen() {
   const setGlobalNotif = useMutation(api.notifications.setGlobalMode);
   const setGroupNotif = useMutation(api.notifications.setGroupMode);
   const createReport = useMutation(api.reports.create);
+  const createTask = useMutation(api.tasks.create);
 
   const gid = groupId as Id<'groups'> | undefined;
   const pid = projectId as Id<'projects'> | undefined;
@@ -55,6 +60,11 @@ export default function ConversationScreen() {
   const pmid = membershipId as Id<'projectMembers'> | undefined;
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const readOnly = archive === '1' || navigation?.archived === true;
+  const taskIdentity: MobileTaskIdentity | null = cid && pmid ? {
+    archived: readOnly,
+    companyId: cid,
+    membershipId: pmid,
+  } : null;
 
   const groups = useQuery(api.mobile.listGroups, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const messages = useQuery(api.messages.listDetailed, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 120 } : 'skip');
@@ -130,6 +140,27 @@ export default function ConversationScreen() {
           if (actionTarget.kind === 'message') setReplyTo(actionTarget.item);
         },
       }] : []),
+      ...(!readOnly && release.tasks ? [{
+        label: 'Create task',
+        icon: 'plus' as const,
+        onPress: () => {
+          const source = actionTarget.kind === 'message' ? actionTarget.item.message.body : actionTarget.stream.answer;
+          const reference = actionTarget.kind === 'message'
+            ? { type: 'message' as const, messageId: actionTarget.item.message._id, isPrimary: true }
+            : { type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true };
+          if (!pid || !gid) return;
+          void createTask({
+            projectId: pid,
+            groupId: gid,
+            title: source.trim().slice(0, 180) || 'Follow up',
+            priority: 'none',
+            references: [reference],
+            idempotencyKey: `${actionTarget.key}:${Date.now()}`,
+            actingCompanyId: cid,
+            projectMemberId: pmid,
+          });
+        },
+      }] : []),
       {
         label: 'Report',
         icon: 'trash-can-outline' as const,
@@ -137,7 +168,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget, readOnly]);
+  }, [actionTarget, cid, createTask, gid, pid, pmid, readOnly, release.tasks]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {
@@ -266,22 +297,30 @@ export default function ConversationScreen() {
     if (item.kind === 'date-sep') return <DateSeparator label={item.label} />;
     const isOwnMessage = item.kind === 'message' && item.item.author?._id === trackUserId;
     return (
-      <ThreadRow
-        item={item}
-        isFirstInGroup={item.isFirstInGroup}
-        isOwnMessage={isOwnMessage}
-        onLongPress={() => {
-          hapticLight();
-          setActionTarget(item);
-          setActionSheetOpen(true);
-        }}
-        onSwipeReply={readOnly ? undefined : () => {
-          hapticLight();
-          if (item.kind === 'message') setReplyTo(item.item);
-        }}
-      />
+      <View>
+        <ThreadRow
+          item={item}
+          isFirstInGroup={item.isFirstInGroup}
+          isOwnMessage={isOwnMessage}
+          onLongPress={() => {
+            hapticLight();
+            setActionTarget(item);
+            setActionSheetOpen(true);
+          }}
+          onSwipeReply={readOnly ? undefined : () => {
+            hapticLight();
+            if (item.kind === 'message') setReplyTo(item.item);
+          }}
+        />
+        {release.tasks && pid ? <TaskInlineCards
+          assistantStreamId={item.kind === 'assistant' ? item.stream._id : undefined}
+          identity={taskIdentity}
+          messageId={item.kind === 'message' ? item.item.message._id : undefined}
+          projectId={pid}
+        /> : null}
+      </View>
     );
-  }, [readOnly, trackUserId]);
+  }, [pid, readOnly, release.tasks, taskIdentity, trackUserId]);
 
   if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
 

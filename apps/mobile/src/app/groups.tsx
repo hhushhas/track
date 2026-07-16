@@ -16,6 +16,8 @@ import { Spacing } from '@/constants/theme';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
+import { useReleaseConfig } from '@/lib/release-config';
+import { taskListHref } from '@/lib/task-navigation';
 
 type MobileGroup = {
   group: Doc<'groups'>;
@@ -27,6 +29,7 @@ type MobileGroup = {
 export default function GroupsScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
   const { projectId, companyId, membershipId, archive } = useLocalSearchParams<{ projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
   const [refreshing, setRefreshing] = useState(false);
@@ -77,6 +80,19 @@ export default function GroupsScreen() {
           headerLargeTitle: Platform.OS === 'ios',
           headerTransparent: Platform.OS === 'ios',
           headerBlurEffect: 'systemMaterial',
+          headerRight: () => release.tasks ? (
+            <Pressable
+              accessibilityLabel="Open tasks"
+              hitSlop={8}
+              onPress={() => router.push(taskListHref(projectId as Id<'projects'>, companyId && membershipId ? {
+                archived: archive === '1',
+                companyId: companyId as Id<'companies'>,
+                membershipId: membershipId as Id<'projectMembers'>,
+              } : null))}
+              style={styles.headerButton}>
+              <PlatformIcon color={theme.accent} name="briefcase-outline" size={22} />
+            </Pressable>
+          ) : null,
         }}
       />
 
@@ -156,6 +172,12 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     padding: Spacing.three,
     paddingTop: Spacing.two,
+  },
+  headerButton: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
   },
   row: {
     alignItems: 'center',
