@@ -20,6 +20,7 @@ import {
   Presentation,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import type { ReactElement } from 'react'
 
 type AttachmentTone =
   | 'archive'
@@ -269,6 +270,52 @@ function matchesAnySubstring(substrings: string[] | undefined, value: string) {
   return value.length > 0 && Boolean(substrings?.some((substring) => value.includes(substring)))
 }
 
+type BrandMark = { className: string; glyph: ReactElement }
+
+/**
+ * Brand-colored file marks for the common types the design system calls out
+ * (spreadsheet, PDF, Figma, Markdown/text). Brand hexes are the file-type logo
+ * exception to the token-only rule. Everything else keeps the neutral tile.
+ */
+function getBrandMark(tone: AttachmentTone, extension: string): BrandMark | null {
+  if (extension === 'fig') return { className: 'ft-fig', glyph: <FigmaMark /> }
+  switch (tone) {
+    case 'sheet':
+      return { className: 'ft-xlsx', glyph: <SpreadsheetMark /> }
+    case 'pdf':
+      return { className: 'ft-pdf', glyph: <span className="track-ft-text">PDF</span> }
+    case 'markdown':
+      return { className: 'ft-md', glyph: <span className="track-ft-text">MD</span> }
+    case 'text':
+      return {
+        className: 'ft-md',
+        glyph: <span className="track-ft-text">{extension ? extension.toUpperCase().slice(0, 4) : 'TXT'}</span>,
+      }
+    default:
+      return null
+  }
+}
+
+function SpreadsheetMark() {
+  return (
+    <svg aria-hidden="true" fill="none" height="14" stroke="#fff" strokeLinecap="round" strokeWidth="2.4" viewBox="0 0 24 24" width="14">
+      <path d="M6 5l12 14M18 5 6 19" />
+    </svg>
+  )
+}
+
+function FigmaMark() {
+  return (
+    <svg aria-hidden="true" height="16" viewBox="0 0 12 18" width="11">
+      <path d="M6 0H3a3 3 0 0 0 0 6h3z" fill="#f24e1e" />
+      <path d="M6 0h3a3 3 0 0 1 0 6H6z" fill="#ff7262" />
+      <path d="M6 6H3a3 3 0 0 0 0 6h3z" fill="#a259ff" />
+      <circle cx="9" cy="9" fill="#1abcfe" r="3" />
+      <path d="M6 12H3a3 3 0 1 0 3 3z" fill="#0acf83" />
+    </svg>
+  )
+}
+
 export function AttachmentTypeIcon({
   contentType,
   filename,
@@ -279,6 +326,17 @@ export function AttachmentTypeIcon({
   size?: number
 }) {
   const kind = getAttachmentKind({ contentType, filename })
+  const extension = filename.split('.').pop()?.toLowerCase() ?? ''
+  const brandMark = getBrandMark(kind.tone, extension)
+
+  if (brandMark) {
+    return (
+      <span aria-label={kind.label} className={`track-attachment-type-icon track-ft ${brandMark.className}`} role="img">
+        {brandMark.glyph}
+      </span>
+    )
+  }
+
   const Icon = kind.icon
 
   return (

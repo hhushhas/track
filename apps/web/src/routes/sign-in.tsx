@@ -24,14 +24,14 @@ const previewMessages = [
     name: 'Reem Haddad',
     tone: 's-2',
     time: '4:45:45 PM',
-    body: 'Please make vendor verification visible. Our promise is that every seller and product is reviewed before it reaches shoppers.',
+    body: 'Please make supplier verification visible. Our promise is that every seller and product is reviewed before it reaches shoppers.',
   },
   {
     initials: 'SK',
     name: 'Sara Khan',
     tone: 's-2',
     time: '4:52:45 PM',
-    body: 'capture vendor verification and product review as an official launch requirement.',
+    body: 'capture supplier verification and product review as an official launch requirement.',
     mention: '@track',
   },
   {
@@ -74,7 +74,7 @@ const previewMessages = [
     name: 'Reem Haddad',
     tone: 's-2',
     time: '5:41:45 PM',
-    body: 'Can the client summary show which requests are billable versus included? That would help me share it internally.',
+    body: 'Can the account summary show which requests are billable versus included? That would help me share it internally.',
   },
   {
     initials: 'OF',
@@ -95,7 +95,7 @@ const previewMessages = [
     name: 'Track Assistant',
     tone: 's-3',
     time: '5:59:45 PM',
-    body: 'I am keeping the vendor review, delivery promise, and reorder workflow in this thread for the next pass.',
+    body: 'I am keeping the supplier review, delivery promise, and reorder workflow in this thread for the next pass.',
   },
 ]
 
@@ -299,7 +299,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
               <div>
                 <h1>Keep project conversation and evidence connected.</h1>
                 <p>
-                  Track keeps client and vendor teams aligned around decisions,
+                  Track keeps project teams aligned around decisions,
                   source context, shared memory, and permission-aware answers.
                 </p>
               </div>

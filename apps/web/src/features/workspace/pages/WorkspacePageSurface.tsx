@@ -242,7 +242,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         />
 
         {route.isProjectLoading || route.isGroupLoading ? (
-          <WorkspaceRouteLoader label={route.view === 'group' ? 'Opening group conversation' : route.view === 'settings' ? 'Loading project settings' : 'Loading project groups'} />
+          <WorkspaceRouteLoader label={route.view === 'group' ? 'Opening channel conversation' : route.view === 'settings' ? 'Loading project settings' : 'Loading project channels'} />
         ) : route.view === 'group' ? (
           <GroupChatPage
             activeGroup={activeGroup}
@@ -321,11 +321,11 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             onNotificationMode={notifications.handleNotificationMode}
           />
         ) : visibleGroups.length > 0 ? (
-          <WorkspaceRouteLoader label="Opening first group" />
+          <WorkspaceRouteLoader label="Opening first channel" />
         ) : (
           <div className="track-empty">
-            <p className="mono-label m-0">No groups</p>
-            <p>Create a group to start tracking project conversations.</p>
+            <p className="mono-label m-0">No channels</p>
+            <p>Create a channel to start tracking project conversations.</p>
           </div>
         )}
       </section>

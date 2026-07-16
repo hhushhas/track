@@ -6,9 +6,9 @@ import PwaInstallPrompt from '../components/PwaInstallPrompt'
 import appCss from '../styles.css?url'
 
 const SITE_URL = 'https://track.q9labs.ai'
-const SITE_TITLE = 'Track - Project Memory for Client and Vendor Teams'
+const SITE_TITLE = 'Track - Conversation and Task Memory for Your Team'
 const SITE_DESCRIPTION =
-  'Track keeps client and vendor project conversations, evidence, shared memory, and permission-aware AI assistance in one workspace.'
+  'Track keeps project conversations, tasks, evidence, shared memory, and permission-aware AI assistance in one workspace.'
 
 const THEME_COLOR_LIGHT = '#faf9f7'
 const THEME_COLOR_DARK = '#151412'
