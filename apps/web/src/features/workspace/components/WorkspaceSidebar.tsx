@@ -137,7 +137,7 @@ export function WorkspaceSidebar({
               <FolderKanban className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
-                <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No client label'}</span>
+                <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No label'}</span>
               </span>
               <ChevronDown className="track-nav-icon track-project-chevron" size={14} />
             </DropdownMenuTrigger>

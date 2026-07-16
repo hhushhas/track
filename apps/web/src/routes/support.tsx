@@ -11,7 +11,7 @@ const supportItems = [
   },
   {
     title: 'Project Support',
-    body: 'For project membership, conversation, memory, notifications, or workspace questions, include your project name, affected group, and a brief description of what happened.',
+    body: 'For project membership, conversation, memory, notifications, or workspace questions, include your project name, affected channel, and a brief description of what happened.',
   },
   {
     title: 'Privacy and Deletion',

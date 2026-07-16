@@ -53,11 +53,11 @@ export function ProjectSettingsPage({
             <strong>{activeProject?.name ?? 'Untitled project'}</strong>
           </div>
           <div className="track-settings-row">
-            <span>Client label</span>
+            <span>Label</span>
             <strong>{activeProject?.clientLabel ?? 'None'}</strong>
           </div>
           <div className="track-settings-row">
-            <span>Groups</span>
+            <span>Channels</span>
             <strong>{groups.length}</strong>
           </div>
           {canManageProject && activeProject ? (
@@ -71,7 +71,7 @@ export function ProjectSettingsPage({
                   className="track-button danger"
                   disabled={busyAction === 'delete-project'}
                   onClick={() => {
-                    if (window.confirm(`Delete ${activeProject.name}? This removes its groups, messages, files, and members.`)) {
+                    if (window.confirm(`Delete ${activeProject.name}? This removes its channels, messages, files, and members.`)) {
                       void onDeleteProject()
                     }
                   }}
@@ -89,7 +89,7 @@ export function ProjectSettingsPage({
           <div className="track-settings-section">
             <div className="track-settings-section-head">
               <div>
-                <span className="mono-label">Groups</span>
+                <span className="mono-label">Channels</span>
                 <h2>Conversation lanes</h2>
               </div>
               <Settings2 size={14} />
@@ -104,7 +104,7 @@ export function ProjectSettingsPage({
                     </span>
                     <span className="track-settings-group-copy">
                       <strong>{group.name}</strong>
-                      <small>{group.kind.replaceAll('_', ' ')} group</small>
+                      <small>{group.kind.replaceAll('_', ' ')} channel</small>
                     </span>
                     <Button
                       aria-label={`Edit ${group.name}`}
@@ -132,7 +132,7 @@ export function ProjectSettingsPage({
                   </div>
                 )
               })}
-              {groups.length === 0 ? <p className="track-settings-empty">No groups yet.</p> : null}
+              {groups.length === 0 ? <p className="track-settings-empty">No channels yet.</p> : null}
             </div>
           </div>
         ) : null}
@@ -164,7 +164,7 @@ export function ProjectSettingsPage({
             ))}
           </ToggleGroup>
           <div className="track-settings-row">
-            <span>Group overrides</span>
+            <span>Channel overrides</span>
             <strong>{groupNotificationSettings.length}</strong>
           </div>
         </div>

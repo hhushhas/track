@@ -70,7 +70,7 @@ export function WorkspaceHeader({
               : view === 'settings' && activeProject
                 ? `${activeProject.project.name} Settings`
                 : activeProject
-                  ? `${activeProject.project.name} Groups`
+                  ? `${activeProject.project.name} Channels`
                   : 'Select a Project'}
         </h1>
       </div>
@@ -147,7 +147,7 @@ export function WorkspaceHeader({
             type="button"
           >
             <MessageSquarePlus size={14} />
-            New Group
+            New Channel
           </Button>
         ) : null}
       </div>
