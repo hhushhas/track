@@ -241,6 +241,62 @@ export const finalize = mutation({
       const channelIds = channelMemberships.map(
         (membership) => membership.groupId,
       );
+      const threads = (
+        await Promise.all(
+          channelIds.map(async (groupId) => [
+            ...(await ctx.db
+              .query("channelThreads")
+              .withIndex("by_group_status_updated_at", (q) =>
+                q.eq("groupId", groupId).eq("status", "active"),
+              )
+              .collect()),
+            ...(await ctx.db
+              .query("channelThreads")
+              .withIndex("by_group_status_updated_at", (q) =>
+                q.eq("groupId", groupId).eq("status", "archived"),
+              )
+              .collect()),
+          ]),
+        )
+      ).flat();
+      const threadSnapshots = await Promise.all(
+        threads
+          .filter((thread) => thread.createdAt <= participation.exitCutoff!)
+          .map(async (thread) => {
+            const [sourceMessage, follower, readState] = await Promise.all([
+              thread.sourceMessageId ? ctx.db.get(thread.sourceMessageId) : null,
+              ctx.db
+                .query("channelThreadFollowers")
+                .withIndex("by_thread_project_member", (q) =>
+                  q
+                    .eq("channelThreadId", thread._id)
+                    .eq("projectMemberId", projectMember._id),
+                )
+                .unique(),
+              ctx.db
+                .query("channelThreadReadStates")
+                .withIndex("by_thread_project_member", (q) =>
+                  q
+                    .eq("channelThreadId", thread._id)
+                    .eq("projectMemberId", projectMember._id),
+                )
+                .unique(),
+            ]);
+            return {
+              _id: thread._id,
+              name: thread.name,
+              status: thread.status,
+              revision: thread.revision,
+              sourceAvailable: Boolean(
+                sourceMessage &&
+                  sourceMessage.createdAt <= participation.exitCutoff!,
+              ),
+              following: follower?.preference === "following",
+              lastReadChannelSequence:
+                readState?.lastReadChannelSequence ?? 0,
+            };
+          }),
+      );
       const entitlementId = await ctx.db.insert("projectArchiveEntitlements", {
         projectId: project._id,
         projectCompanyId: participation._id,
@@ -263,6 +319,7 @@ export const finalize = mutation({
             name: group.name,
             status: group.status,
           })),
+        threadSnapshots,
         memberSnapshots: await Promise.all(
           (await ctx.db
             .query("projectMembers")

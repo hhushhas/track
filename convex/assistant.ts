@@ -13,6 +13,11 @@ import {
 import { emitOperationalEvent } from './lib/observability'
 import { rateLimiter } from './lib/rateLimit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import {
+  requireThreadsEnabled,
+  resolveActorProjectMember,
+  threadsEnabled,
+} from './lib/channelThreadPolicy'
 
 const lowSignalQuestionPattern =
   /^(hi|hello|hey|yo|sup|ok|okay|thanks|thank you|cool|nice|great|good|good good|test|testing)[.!?\s]*$/i
@@ -101,9 +106,39 @@ export const listForGroup = query({
     const cutoff = access.companyAccess?.entitlement?.exitAt
     return await ctx.db
       .query('assistantStreams')
-      .withIndex('by_group_created_at', (q) => cutoff
-        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
-        : q.eq('groupId', args.groupId))
+      .withIndex('by_group_thread_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).eq('channelThreadId', undefined).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId).eq('channelThreadId', undefined))
+      .order('desc')
+      .take(args.limit ?? 20)
+  },
+})
+
+export const listForThread = query({
+  args: {
+    threadId: v.id('channelThreads'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    if (!threadsEnabled()) return []
+    const thread = await ctx.db.get(args.threadId)
+    if (!thread) throw new Error('thread_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: thread.projectId,
+      groupId: thread.groupId,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    return await ctx.db
+      .query('assistantStreams')
+      .withIndex('by_thread_created_at', (q) => cutoff
+        ? q.eq('channelThreadId', thread._id).lte('createdAt', cutoff)
+        : q.eq('channelThreadId', thread._id))
       .order('desc')
       .take(args.limit ?? 20)
   },
@@ -116,24 +151,28 @@ export const ask = action({
     requesterId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     promptMessageId: v.optional(v.id('messages')),
     question: v.string(),
   },
   handler: async (ctx, args): Promise<{ answer: string; streamId: Id<'assistantStreams'> }> => {
-    await ctx.runMutation(internal.assistant.authorizeAsk, {
+    const actorContext = await ctx.runMutation(internal.assistant.authorizeAsk, {
       groupId: args.groupId,
       requesterId: args.requesterId,
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
+      channelThreadId: args.channelThreadId,
+      promptMessageId: args.promptMessageId,
     })
     const context: CollectedAssistantContext = await ctx.runQuery(api.assistant.collectContext, args)
     const now = Date.now()
     const streamId: Id<'assistantStreams'> = await ctx.runMutation(internal.assistant.createStream, {
       projectId: args.projectId,
       groupId: args.groupId,
+      channelThreadId: args.channelThreadId,
       requesterId: args.requesterId,
-      actingCompanyId: args.actingCompanyId,
-      requesterProjectMemberId: args.projectMemberId,
+      actingCompanyId: actorContext.actingCompanyId,
+      requesterProjectMemberId: actorContext.projectMemberId,
       promptMessageId: args.promptMessageId,
       status: 'completed',
       answer: '',
@@ -150,8 +189,8 @@ export const ask = action({
       projectId: args.projectId,
       question: args.question,
       requesterId: args.requesterId,
-      requesterProjectMemberId: args.projectMemberId,
-      actingCompanyId: args.actingCompanyId,
+      requesterProjectMemberId: actorContext.projectMemberId,
+      actingCompanyId: actorContext.actingCompanyId,
       streamId,
     })
   },
@@ -164,6 +203,7 @@ export const collectContext = query({
     requesterId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     promptMessageId: v.optional(v.id('messages')),
     question: v.string(),
   },
@@ -182,7 +222,10 @@ export const collectContext = query({
       .order('desc')
       .take(80)
     const orderedMessages = messages
-      .filter((message) => !access.companyAccess?.entitlement?.exitAt || message.createdAt <= access.companyAccess.entitlement.exitAt)
+      .filter((message) =>
+        (!message.channelThreadId || threadsEnabled()) &&
+        (!access.companyAccess?.entitlement?.exitAt || message.createdAt <= access.companyAccess.entitlement.exitAt),
+      )
       .reverse()
 
     const users = await Promise.all(
@@ -302,21 +345,56 @@ export const authorizeAsk = internalMutation({
     requesterId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
+    channelThreadId: v.optional(v.id('channelThreads')),
+    promptMessageId: v.optional(v.id('messages')),
   },
   handler: async (ctx, args) => {
     const group = await ctx.db.get(args.groupId)
     if (!group) throw new Error('channel_unavailable')
-    await authorizeScopedRequest(ctx, {
+    const access = await authorizeScopedRequest(ctx, {
       projectId: group.projectId,
       groupId: group._id,
       claimedUserId: args.requesterId,
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'writeChannel')
+    if (args.channelThreadId) {
+      requireThreadsEnabled()
+      if (
+        (group.status && group.status !== 'active') ||
+        (access.project.status && access.project.status !== 'active')
+      ) {
+        throw new Error('thread_parent_read_only')
+      }
+      const thread = await ctx.db.get(args.channelThreadId)
+      if (!thread || thread.groupId !== group._id || thread.status !== 'active') {
+        throw new Error(thread?.status === 'archived' ? 'thread_archived' : 'thread_access_changed')
+      }
+    }
+    if (args.promptMessageId) {
+      const promptMessage = await ctx.db.get(args.promptMessageId)
+      if (
+        !promptMessage ||
+        promptMessage.groupId !== group._id ||
+        promptMessage.channelThreadId !== args.channelThreadId
+      ) {
+        throw new Error('assistant_prompt_scope_mismatch')
+      }
+    }
     await rateLimiter.limit(ctx, 'askTrack', {
       key: args.requesterId,
       throws: true,
     })
+    const projectMember = await resolveActorProjectMember(
+      ctx,
+      group.projectId,
+      args.requesterId,
+      access.companyAccess?.projectMember,
+    )
+    return {
+      projectMemberId: projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
+    }
   },
 })
 
@@ -324,6 +402,7 @@ export const createStream = internalMutation({
   args: {
     projectId: v.id('projects'),
     groupId: v.id('groups'),
+    channelThreadId: v.optional(v.id('channelThreads')),
     requesterId: v.id('users'),
     requesterProjectMemberId: v.optional(v.id('projectMembers')),
     actingCompanyId: v.optional(v.id('companies')),
@@ -394,6 +473,7 @@ export const completeStream = internalMutation({
     await appendAuditEvent(ctx, {
       projectId: stream.projectId,
       groupId: stream.groupId,
+      channelThreadId: stream.channelThreadId,
       actorId: stream.requesterId,
       actorProjectMemberId: stream.requesterProjectMemberId,
       actingCompanyId: stream.actingCompanyId,

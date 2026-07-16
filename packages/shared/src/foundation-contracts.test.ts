@@ -19,7 +19,14 @@ import {
   taskPriorities,
   taskStateCategories,
 } from './tasks'
-import { channelThreadFollowReasons, channelThreadStatuses } from './threads'
+import {
+  channelThreadFollowPreferences,
+  channelThreadFollowReasons,
+  channelThreadNameMaxLength,
+  channelThreadStatuses,
+  normalizeChannelThreadName,
+  validateChannelThreadName,
+} from './threads'
 
 describe('foundation domain contracts', () => {
   it('publishes stable Company, task, and thread vocabulary', () => {
@@ -36,6 +43,15 @@ describe('foundation domain contracts', () => {
     expect(taskPriorities).toEqual(['none', 'urgent', 'high', 'medium', 'low'])
     expect(channelThreadStatuses).toEqual(['active', 'archived'])
     expect(channelThreadFollowReasons).toEqual(['created', 'replied', 'mentioned', 'explicit'])
+    expect(channelThreadFollowPreferences).toEqual(['following', 'unfollowed'])
+  })
+
+  it('normalizes and bounds thread names at the shared boundary', () => {
+    expect(normalizeChannelThreadName('  Decision   log  ')).toBe('Decision log')
+    expect(validateChannelThreadName('  Decision   log  ')).toBe('Decision log')
+    expect(() => validateChannelThreadName('   ')).toThrow('thread_name_required')
+    expect(() => validateChannelThreadName('x'.repeat(channelThreadNameMaxLength + 1)))
+      .toThrow('thread_name_too_long')
   })
 
   it('keeps date and terminal-state rules framework independent', () => {

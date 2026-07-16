@@ -7,8 +7,10 @@ import { internal } from './_generated/api'
 import { action, internalAction } from './_generated/server'
 
 type NotificationTarget = {
+  actingCompanyId?: string
   id: string
   platform: 'web' | 'ios' | 'android'
+  projectMemberId?: string
   tokenOrEndpoint: string
 }
 
@@ -72,21 +74,31 @@ export const deliverMessageNotifications = internalAction({
       webPush.setVapidDetails(subject, publicKey, privateKey)
     }
 
-    const payload = JSON.stringify({
-      body: notification.body.slice(0, 160),
-      icon: '/logo192.png',
-      tag: `track-message-${args.messageId}`,
-      title: `${notification.senderName} in ${notification.groupName}`,
-      url: notification.url,
-    })
-
     await Promise.all(
       notification.targets.map(async (target) => {
         try {
+          const representedSearch = target.actingCompanyId && target.projectMemberId
+            ? `?companyId=${encodeURIComponent(target.actingCompanyId)}&membershipId=${encodeURIComponent(target.projectMemberId)}`
+            : ''
+          const webUrl = notification.channelThreadId
+            ? `/workspace/projects/${notification.projectId}/groups/${notification.groupId}/threads/${notification.channelThreadId}${representedSearch}#message-${args.messageId}`
+            : notification.url
           if (target.platform === 'web') {
             if (!publicKey || !privateKey) return
-            await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), payload)
+            await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
+              body: notification.body.slice(0, 160),
+              icon: '/logo192.png',
+              tag: `track-message-${args.messageId}`,
+              title: `${notification.senderName} in ${notification.groupName}`,
+              url: webUrl,
+            }))
           } else {
+            const mobileContext = target.actingCompanyId && target.projectMemberId
+              ? `&companyId=${encodeURIComponent(target.actingCompanyId)}&membershipId=${encodeURIComponent(target.projectMemberId)}`
+              : ''
+            const mobileUrl = notification.channelThreadId
+              ? `/thread?projectId=${notification.projectId}&groupId=${notification.groupId}&threadId=${notification.channelThreadId}${mobileContext}&messageId=${args.messageId}`
+              : `/conversation?projectId=${notification.projectId}&groupId=${notification.groupId}${mobileContext}`
             await sendExpoPush({
               target,
               title: `${notification.senderName} in ${notification.groupName}`,
@@ -95,7 +107,12 @@ export const deliverMessageNotifications = internalAction({
                 groupId: String(notification.groupId),
                 messageId: String(args.messageId),
                 projectId: String(notification.projectId),
-                url: notification.url,
+                ...(notification.channelThreadId
+                  ? { threadId: String(notification.channelThreadId) }
+                  : {}),
+                ...(target.actingCompanyId ? { companyId: String(target.actingCompanyId) } : {}),
+                ...(target.projectMemberId ? { membershipId: String(target.projectMemberId) } : {}),
+                url: mobileUrl,
               },
             })
           }

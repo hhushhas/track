@@ -2,12 +2,14 @@ import { v } from 'convex/values'
 
 import { query } from './_generated/server'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { threadsEnabled } from './lib/channelThreadPolicy'
 
 const searchScope = v.union(
   v.literal('all'),
   v.literal('messages'),
   v.literal('files'),
   v.literal('groups'),
+  v.literal('threads'),
 )
 
 function compactPreview(value: string, fallback = 'No preview available') {
@@ -47,6 +49,7 @@ export const project = query({
         files: [],
         groups: [],
         messages: [],
+        threads: [],
       }
     }
 
@@ -66,6 +69,13 @@ export const project = query({
     const channelSnapshots = new Map(
       (access.companyAccess?.entitlement?.channelSnapshots ?? []).map((channel: { _id: string; name: string }) => [channel._id, channel]),
     )
+    const threadSnapshots = new Map(
+      (access.companyAccess?.entitlement?.threadSnapshots ?? []).map((thread: {
+        _id: string
+        name: string
+        status: 'active' | 'archived'
+      }) => [thread._id, thread]),
+    )
 
     const messages = enabled(filter, 'messages')
       ? await ctx.db
@@ -81,9 +91,12 @@ export const project = query({
           .filter((message) => visibleGroupIds.has(String(message.groupId)) && (!cutoff || message.createdAt <= cutoff))
           .slice(0, perSectionLimit)
           .map(async (message) => {
-            const [author, group] = await Promise.all([
+            if (message.channelThreadId && !threadsEnabled()) return null
+            if (cutoff && message.channelThreadId && !threadSnapshots.has(String(message.channelThreadId))) return null
+            const [author, group, channelThread] = await Promise.all([
               ctx.db.get(message.authorId),
               ctx.db.get(message.groupId),
+              message.channelThreadId ? ctx.db.get(message.channelThreadId) : null,
             ])
             const groupName = channelSnapshots.get(String(message.groupId))?.name ?? group?.name ?? 'Unknown channel'
             return {
@@ -93,13 +106,19 @@ export const project = query({
               id: message._id,
               kind: 'message' as const,
               messageId: message._id,
+              threadId: message.channelThreadId,
+              threadName: message.channelThreadId
+                ? threadSnapshots.get(String(message.channelThreadId))?.name ?? channelThread?.name
+                : undefined,
               preview: compactPreview(message.body, 'Attachment message'),
-              subtitle: `${author?.displayName ?? 'Unknown member'} in ${groupName}`,
+              subtitle: channelThread
+                ? `${author?.displayName ?? 'Unknown member'} in ${threadSnapshots.get(String(channelThread._id))?.name ?? channelThread.name} · ${groupName}`
+                : `${author?.displayName ?? 'Unknown member'} in ${groupName}`,
               title: author?.displayName ?? 'Message',
             }
           }),
       )
-    )
+    ).filter((result) => result !== null)
 
     const files = enabled(filter, 'files')
       ? await ctx.db
@@ -115,7 +134,15 @@ export const project = query({
           .filter((file) => visibleGroupIds.has(String(file.groupId)) && (!cutoff || file.createdAt <= cutoff))
           .slice(0, perSectionLimit)
           .map(async (file) => {
-            const group = await ctx.db.get(file.groupId)
+            const [group, message] = await Promise.all([
+              ctx.db.get(file.groupId),
+              ctx.db.get(file.messageId),
+            ])
+            if (message?.channelThreadId && !threadsEnabled()) return null
+            if (cutoff && message?.channelThreadId && !threadSnapshots.has(String(message.channelThreadId))) return null
+            const channelThread = message?.channelThreadId
+              ? await ctx.db.get(message.channelThreadId)
+              : null
             const groupName = channelSnapshots.get(String(file.groupId))?.name ?? group?.name ?? 'Unknown channel'
             return {
               attachmentId: file._id,
@@ -126,13 +153,17 @@ export const project = query({
               id: file._id,
               kind: 'file' as const,
               messageId: file.messageId,
+              threadId: message?.channelThreadId,
+              threadName: channelThread
+                ? threadSnapshots.get(String(channelThread._id))?.name ?? channelThread.name
+                : undefined,
               preview: `${file.contentType || 'file'} · ${file.size.toLocaleString()} bytes`,
               subtitle: groupName,
               title: file.filename,
             }
           }),
       )
-    )
+    ).filter((result) => result !== null)
 
     const groups = enabled(filter, 'groups')
       ? await ctx.db
@@ -156,10 +187,46 @@ export const project = query({
         title: channelSnapshots.get(String(group._id))?.name ?? group.name,
       }))
 
+    const channelThreads = threadsEnabled() && enabled(filter, 'threads')
+      ? await ctx.db
+          .query('channelThreads')
+          .withSearchIndex('search_name_by_project', (q) =>
+            q.search('name', term).eq('projectId', args.projectId),
+          )
+          .take(perSectionLimit * 2)
+      : []
+    const threadResults = (
+      await Promise.all(
+        channelThreads
+          .filter((thread) => visibleGroupIds.has(String(thread.groupId)) && (
+            cutoff ? threadSnapshots.has(String(thread._id)) : true
+          ))
+          .slice(0, perSectionLimit)
+          .map(async (thread) => {
+            const group = await ctx.db.get(thread.groupId)
+            const snapshot = threadSnapshots.get(String(thread._id))
+            const groupName = channelSnapshots.get(String(thread.groupId))?.name ?? group?.name ?? 'Unknown channel'
+            return {
+              createdAt: thread.createdAt,
+              groupId: thread.groupId,
+              groupName,
+              id: thread._id,
+              kind: 'thread' as const,
+              preview: (snapshot?.status ?? thread.status) === 'archived' ? 'Archived thread' : 'Active thread',
+              subtitle: groupName,
+              threadId: thread._id,
+              threadName: snapshot?.name ?? thread.name,
+              title: snapshot?.name ?? thread.name,
+            }
+          }),
+      )
+    )
+
     return {
       files: fileResults,
       groups: groupResults,
       messages: messageResults,
+      threads: threadResults,
     }
   },
 })
