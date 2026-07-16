@@ -1,5 +1,15 @@
 const avatarToneClasses = ['s-1', 's-2', 's-3', 's-4'] as const
-const avatarToneColors = {
+
+/** CSS custom property names defined in styles.css (:root / .dark). */
+const avatarToneCssVars = {
+  's-1': '--avatar-tone-1',
+  's-2': '--avatar-tone-2',
+  's-3': '--avatar-tone-3',
+  's-4': '--avatar-tone-4',
+} as const
+
+/** Light-mode fallbacks matching --avatar-tone-* when CSS is unavailable (SSR). */
+const avatarToneLightFallbacks = {
   's-1': '#8f6a1f',
   's-2': '#5b6d4a',
   's-3': '#7a4a3a',
@@ -17,7 +27,15 @@ export function getAvatarTone(value: string) {
 }
 
 export function getAvatarToneColor(tone: AvatarTone) {
-  return avatarToneColors[tone]
+  if (typeof document === 'undefined') {
+    return avatarToneLightFallbacks[tone]
+  }
+
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(avatarToneCssVars[tone])
+    .trim()
+
+  return value || avatarToneLightFallbacks[tone]
 }
 
 export function getInitials(value: string) {
