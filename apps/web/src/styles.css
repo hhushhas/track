@@ -4524,6 +4524,45 @@ button {
   white-space: nowrap;
 }
 
+/* Brand-colored file-type marks (fixed brand hexes across both themes). */
+.track-attachment-type-icon.track-ft {
+  gap: 0;
+  border: 0;
+  background: var(--paper-3);
+  color: #fff;
+}
+
+.track-attachment-type-icon.track-ft .track-ft-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.track-attachment-type-icon.track-ft.ft-xlsx {
+  background: #107c41;
+}
+
+.track-attachment-type-icon.track-ft.ft-pdf {
+  background: #d93025;
+}
+
+.track-attachment-type-icon.track-ft.ft-md {
+  background: #24292f;
+}
+
+.track-attachment-type-icon.track-ft.ft-fig {
+  background: #ffffff;
+  border: 1px solid var(--hairline);
+  color: var(--ink-3);
+}
+
+.dark .track-attachment-type-icon.track-ft.ft-fig {
+  background: var(--paper-3);
+  border-color: var(--hairline-strong);
+}
+
 .track-attachment-type-icon.pdf {
   color: #bd2f2f;
 }
