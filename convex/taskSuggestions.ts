@@ -14,6 +14,7 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { appendTaskActivity, createUniqueTaskPublicKey, getDefaultWorkflowState, rankForIndex } from './lib/taskData'
+import { createTaskNotification } from './lib/taskNotifications'
 import {
   assertCanAssignTaskMember,
   requireEligibleTaskMember,
@@ -21,6 +22,7 @@ import {
   resolveTaskRequestContext,
 } from './lib/taskPolicy'
 import { taskPriority, taskSuggestionDismissalReason } from './schema/taskValidators'
+import { rescheduleTaskReminders } from './taskReminders'
 
 const identityArgs = {
   actingCompanyId: v.optional(v.id('companies')),
@@ -326,6 +328,15 @@ export const accept = mutation({
       task, action: 'created', actorProjectMemberId: access.projectMember._id,
       actingCompanyId: access.actingCompanyId, after: { suggestionId: suggestion._id },
     })
+    if (assignee) await createTaskNotification(ctx, {
+      task,
+      recipient: assignee,
+      actorProjectMemberId: access.projectMember._id,
+      eventType: 'assignment',
+      payload: { publicKey: task.publicKey },
+      idempotencyKey: `assignment:${task._id}:${assignee._id}:1`,
+    })
+    await rescheduleTaskReminders(ctx, task)
     await appendAuditEvent(ctx, {
       projectId: task.projectId, groupId: task.groupId, actorId: actor.userId,
       actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,

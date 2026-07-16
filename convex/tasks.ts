@@ -296,6 +296,7 @@ export const listEligibleAssignees = query({
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args, args.groupId)
     if (args.groupId && !access.capabilities.canReadChannel) throw new Error('task_access_changed')
+    if (access.capabilities.accessMode !== 'active') return []
     const members = await ctx.db.query('projectMembers')
       .withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect()
     const eligible = []
@@ -325,6 +326,13 @@ export const listForMessage = query({
     if (!message) return []
     const access = await resolveTaskRequestContext(ctx, actor, message.projectId, args, message.groupId)
     if (!access.capabilities.canReadChannel) return []
+    if (access.capabilities.accessMode === 'archive' && access.entitlement) {
+      return (await archivedTaskViews(ctx, access.entitlement._id))
+        .filter((view) => !view.task.archivedAt && view.task.groupId === message.groupId &&
+          view.references.some((reference) => reference.messageId === message._id &&
+            reference.availability === 'available'))
+        .map(({ task, state, assignee }) => ({ task, state, assignee }))
+    }
     const references = await ctx.db.query('taskReferences')
       .withIndex('by_message', (q) => q.eq('messageId', message._id)).collect()
     const cards = []
@@ -350,6 +358,13 @@ export const listForAssistant = query({
     if (!stream || stream.status !== 'completed') return []
     const access = await resolveTaskRequestContext(ctx, actor, stream.projectId, args, stream.groupId)
     if (!access.capabilities.canReadChannel) return []
+    if (access.capabilities.accessMode === 'archive' && access.entitlement) {
+      return (await archivedTaskViews(ctx, access.entitlement._id))
+        .filter((view) => !view.task.archivedAt && view.task.groupId === stream.groupId &&
+          view.references.some((reference) => reference.assistantStreamId === stream._id &&
+            reference.availability === 'available'))
+        .map(({ task, state, assignee }) => ({ task, state, assignee }))
+    }
     const references = await ctx.db.query('taskReferences')
       .withIndex('by_assistant_stream', (q) => q.eq('assistantStreamId', stream._id)).collect()
     const cards = []
@@ -543,7 +558,17 @@ export const update = mutation({
     }
     if (args.assigneeProjectMemberId !== undefined) {
       const nextAssigneeId = args.assigneeProjectMemberId || undefined
-      assertCanAssignTaskMember(access.projectMember._id, nextAssigneeId, access.taskCapabilities.canAssignOthers)
+      if (nextAssigneeId !== access.task.assigneeProjectMemberId) {
+        if (!nextAssigneeId && access.task.assigneeProjectMemberId !== access.projectMember._id &&
+          !access.taskCapabilities.canAssignOthers) {
+          throw new Error('task_assignment_forbidden')
+        }
+        assertCanAssignTaskMember(
+          access.projectMember._id,
+          nextAssigneeId,
+          access.taskCapabilities.canAssignOthers,
+        )
+      }
       const assignee = nextAssigneeId ? await requireEligibleTaskMember(ctx, {
         projectId: access.task.projectId, groupId: access.task.groupId, projectMemberId: nextAssigneeId,
       }) : null
@@ -571,7 +596,10 @@ export const update = mutation({
       changes.push({ action: 'state_changed', before: access.task.workflowStateId, after: state._id })
     }
     if (!changes.length) return access.task.revision
-    patch.searchText = `${patch.title ?? access.task.title} ${patch.description ?? access.task.description ?? ''} `
+    const nextDescription = args.description !== undefined
+      ? args.description?.trim() || undefined
+      : access.task.description
+    patch.searchText = `${patch.title ?? access.task.title} ${nextDescription ?? ''} `
     const now = Date.now()
     await ctx.db.patch(access.task._id, { ...patch, revision: access.task.revision + 1, updatedAt: now })
     const updated = await ctx.db.get(access.task._id)
@@ -717,7 +745,12 @@ export const changeScope = mutation({
     const destination = await ctx.db.get(args.destinationBoardId)
     if (!destination || destination.archivedAt || destination.projectId !== access.task.projectId ||
       destination.groupId === access.task.groupId) throw new Error('task_destination_invalid')
-    await resolveTaskRequestContext(ctx, actor, access.task.projectId, args, destination.groupId)
+    const destinationAccess = await resolveTaskRequestContext(
+      ctx, actor, access.task.projectId, args, destination.groupId,
+    )
+    if (destination.groupId && !destinationAccess.capabilities.canReadChannel) {
+      throw new Error('task_destination_invalid')
+    }
     if (access.task.groupId && !destination.groupId && !args.declassificationConfirmed) {
       throw new Error('task_declassification_confirmation_required')
     }

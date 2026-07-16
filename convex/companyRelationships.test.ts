@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
 import type { Id } from './_generated/dataModel'
+import { captureTaskExitStaging, materializeTaskArchiveSnapshots } from './lib/taskLifecycle'
 import schema from './schema'
 
 const modules = (import.meta as ImportMeta & {
@@ -91,6 +92,111 @@ describe('Company model authorization and lifecycle', () => {
     await expect(actor.query(api.tasks.list, {
       projectId, actingCompanyId: otherCompanyId, projectMemberId,
     })).rejects.toThrow('project_unavailable')
+  })
+
+  it('serves archived inline task cards only from the exit snapshot', async () => {
+    const t = convexTest(schema, modules)
+    const user = await seedUser(t, 'company-task-archive-user')
+    const companyId = await createCompany(t, user, 'Task Archive Company', 'task-archive-company')
+    const projectId = await seedCompanyProject(t, user, companyId, 'Archived Company Tasks')
+    const { groupId, projectMemberId, projectCompanyId, messageId } = await t.run(async (ctx) => {
+      const projectMember = (await ctx.db.query('projectMembers')
+        .withIndex('by_project', (q) => q.eq('projectId', projectId)).collect())[0]!
+      const group = (await ctx.db.query('groups')
+        .withIndex('by_project', (q) => q.eq('projectId', projectId)).collect())[0]!
+      const messageId = await ctx.db.insert('messages', {
+        projectId,
+        groupId: group._id,
+        authorId: user,
+        authorProjectMemberId: projectMember._id,
+        channelSequence: 1,
+        body: 'Snapshot this task evidence.',
+        mentions: [],
+        attachmentIds: [],
+        createdAt: Date.now(),
+      })
+      return {
+        groupId: group._id,
+        projectMemberId: projectMember._id,
+        projectCompanyId: projectMember.projectCompanyId!,
+        messageId,
+      }
+    })
+    const actor = asUser(t, user)
+    const created = await actor.mutation(api.tasks.create, {
+      projectId,
+      groupId,
+      actingCompanyId: companyId,
+      projectMemberId,
+      title: 'Title at exit',
+      assigneeProjectMemberId: projectMemberId,
+      priority: 'none',
+      references: [{ type: 'message', messageId, isPrimary: true }],
+      idempotencyKey: 'archived-inline-card',
+    })
+    const cutoff = Date.now()
+    await t.run(async (ctx) => await captureTaskExitStaging(ctx, {
+      projectCompanyId,
+      projectId,
+      cutoff,
+    }))
+    await actor.mutation(api.tasks.update, {
+      taskId: created.taskId,
+      expectedRevision: 1,
+      title: 'Live title after exit',
+      actingCompanyId: companyId,
+      projectMemberId,
+    })
+    await actor.mutation(api.tasks.create, {
+      projectId,
+      groupId,
+      actingCompanyId: companyId,
+      projectMemberId,
+      title: 'Created after exit',
+      priority: 'none',
+      references: [{ type: 'message', messageId, isPrimary: true }],
+      idempotencyKey: 'post-exit-inline-card',
+    })
+    const entitlementId = await t.run(async (ctx) => {
+      const now = Date.now()
+      await ctx.db.patch(projectMemberId, { status: 'archived', endedAt: now, updatedAt: now })
+      await ctx.db.patch(projectCompanyId, { status: 'exited', exitedAt: now, updatedAt: now })
+      const entitlementId = await ctx.db.insert('projectArchiveEntitlements', {
+        projectId,
+        projectCompanyId,
+        companyId,
+        projectMemberId,
+        exitAt: cutoff,
+        channelIds: [groupId],
+        projectSnapshot: {},
+        channelSnapshots: [],
+        retentionStatus: 'active',
+        manifestHash: 'archived-inline-cards',
+        createdAt: now,
+        updatedAt: now,
+      })
+      await materializeTaskArchiveSnapshots(ctx, {
+        entitlementId,
+        projectCompanyId,
+        projectId,
+        channelIds: [groupId],
+      })
+      return entitlementId
+    })
+    expect(entitlementId).toBeDefined()
+    const cards = await actor.query(api.tasks.listForMessage, {
+      messageId,
+      actingCompanyId: companyId,
+      projectMemberId,
+    })
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ task: { title: 'Title at exit' }, assignee: null })
+    await expect(actor.query(api.tasks.listEligibleAssignees, {
+      projectId,
+      groupId,
+      actingCompanyId: companyId,
+      projectMemberId,
+    })).resolves.toEqual([])
   })
 
   it('suspends all Company access and restores only still-valid represented memberships', async () => {

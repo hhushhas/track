@@ -83,7 +83,9 @@ export const taskAutomationTables = {
     updatedByProjectMemberId: v.optional(v.id('projectMembers')),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_group', ['groupId']),
+  })
+    .index('by_group', ['groupId'])
+    .index('by_project', ['projectId']),
 
   taskDetectionRuns: defineTable({
     projectId: v.id('projects'),
@@ -105,6 +107,7 @@ export const taskAutomationTables = {
     updatedAt: v.number(),
   })
     .index('by_group_status', ['groupId', 'status'])
+    .index('by_project', ['projectId'])
     .index('by_group_generation_start', [
       'groupId',
       'generation',
@@ -132,7 +135,8 @@ export const taskAutomationTables = {
     ])
     .index('by_message', ['messageId'])
     .index('by_attachment', ['attachmentId'])
-    .index('by_assistant_stream', ['assistantStreamId']),
+    .index('by_assistant_stream', ['assistantStreamId'])
+    .index('by_project', ['projectId']),
 
   taskExitSnapshotStaging: defineTable({
     projectCompanyId: v.id('projectCompanies'),
@@ -145,5 +149,6 @@ export const taskAutomationTables = {
     createdAt: v.number(),
   })
     .index('by_project_company', ['projectCompanyId'])
-    .index('by_project_company_table', ['projectCompanyId', 'sourceTable']),
+    .index('by_project_company_table', ['projectCompanyId', 'sourceTable'])
+    .index('by_project', ['projectId']),
 } as const

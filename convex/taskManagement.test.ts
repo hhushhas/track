@@ -82,7 +82,7 @@ describe('task management authorization and invariants', () => {
     const owner = fixture.t.withIdentity({ subject: 'owner' })
     const outsider = fixture.t.withIdentity({ subject: 'outsider' })
 
-    await owner.mutation(api.taskBoards.create, {
+    const boardId = await owner.mutation(api.taskBoards.create, {
       projectId: fixture.projectId,
       groupId: fixture.groupId,
       name: 'Private delivery',
@@ -100,6 +100,10 @@ describe('task management authorization and invariants', () => {
     expect(outsiderBoards.map((item) => item.board.name)).not.toContain(
       'Private delivery',
     )
+    await expect(outsider.mutation(api.taskBoards.update, {
+      boardId,
+      name: 'Leaked administration',
+    })).rejects.toThrow('task_board_manage_forbidden')
   })
 
   it('enforces scoped-client editing and assignment while staff can triage', async () => {
@@ -132,6 +136,11 @@ describe('task management authorization and invariants', () => {
       expectedRevision: 1,
       assigneeProjectMemberId: fixture.staffMemberId,
     })
+    await expect(client.mutation(api.tasks.update, {
+      taskId: created.taskId,
+      expectedRevision: 2,
+      assigneeProjectMemberId: null,
+    })).rejects.toThrow('task_assignment_forbidden')
 
     const ownerCreated = await owner.mutation(api.tasks.create, {
       projectId: fixture.projectId,
@@ -147,6 +156,106 @@ describe('task management authorization and invariants', () => {
         title: 'Unauthorized edit',
       }),
     ).rejects.toThrow('task_edit_forbidden')
+  })
+
+  it('revalidates destination scope and earlier comment scope after task promotion', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const outsider = fixture.t.withIdentity({ subject: 'outsider' })
+    const client = fixture.t.withIdentity({ subject: 'client' })
+    const projectBoardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Project planning',
+    })
+    const channelTask = await client.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      title: 'Promote this task',
+      priority: 'none',
+      idempotencyKey: 'promoted-comment-task',
+    })
+    const commentId = await client.mutation(api.taskComments.create, {
+      taskId: channelTask.taskId,
+      body: 'Channel-only context',
+      mentionedProjectMemberIds: [],
+      idempotencyKey: 'promoted-comment',
+    })
+    await owner.mutation(api.tasks.changeScope, {
+      taskId: channelTask.taskId,
+      destinationBoardId: projectBoardId,
+      declassificationConfirmed: true,
+    })
+    await fixture.t.run(async (ctx) => {
+      const membership = await ctx.db.query('groupMembers')
+        .withIndex('by_group_project_member', (q) => q
+          .eq('groupId', fixture.groupId)
+          .eq('projectMemberId', fixture.clientMemberId))
+        .unique()
+      if (membership) await ctx.db.delete(membership._id)
+    })
+    await expect(client.mutation(api.taskComments.edit, {
+      commentId,
+      expectedRevision: 1,
+      body: 'Should stay inaccessible',
+    })).rejects.toThrow('task_access_changed')
+
+    const hiddenGroupId = await fixture.t.run(async (ctx) => {
+      const now = Date.now()
+      const groupId = await ctx.db.insert('groups', {
+        projectId: fixture.projectId,
+        kind: 'custom',
+        name: 'Owner only',
+        createdBy: fixture.ownerId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('groupMembers', {
+        projectId: fixture.projectId,
+        groupId,
+        userId: fixture.ownerId,
+        projectMemberId: fixture.ownerMemberId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return groupId
+    })
+    const hiddenBoardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      groupId: hiddenGroupId,
+      name: 'Hidden destination',
+    })
+    const projectTask = await outsider.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId: projectBoardId,
+      title: 'Do not leak into hidden Channel',
+      priority: 'none',
+      idempotencyKey: 'hidden-destination-task',
+    })
+    await expect(outsider.mutation(api.tasks.changeScope, {
+      taskId: projectTask.taskId,
+      destinationBoardId: hiddenBoardId,
+      audienceReductionConfirmed: true,
+    })).rejects.toThrow('task_destination_invalid')
+  })
+
+  it('removes cleared descriptions from search text', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const created = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      title: 'Clear stale text',
+      description: 'obsolete-search-marker',
+      priority: 'none',
+      idempotencyKey: 'clear-description',
+    })
+    await owner.mutation(api.tasks.update, {
+      taskId: created.taskId,
+      expectedRevision: 1,
+      description: null,
+    })
+    const task = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
+    expect(task?.description).toBeUndefined()
+    expect(task?.searchText).not.toContain('obsolete-search-marker')
   })
 
   it('creates scoped evidence, live view data, and one-level subtasks idempotently', async () => {
@@ -241,6 +350,17 @@ describe('task management authorization and invariants', () => {
         attachmentIds: [],
         createdAt: now,
       })
+      await ctx.db.insert('messages', {
+        projectId: fixture.projectId,
+        groupId: fixture.groupId,
+        authorId: fixture.staffId,
+        authorProjectMemberId: fixture.staffMemberId,
+        channelSequence: 2,
+        body: 'Then publish the notes.',
+        mentions: [],
+        attachmentIds: [],
+        createdAt: now + 1,
+      })
       await ctx.db.insert('taskDetectionSettings', {
         projectId: fixture.projectId,
         groupId: fixture.groupId,
@@ -286,6 +406,18 @@ describe('task management authorization and invariants', () => {
       projectId: fixture.projectId,
     })
     expect(inbox).toHaveLength(1)
+    const continued = await fixture.t.run(async (ctx) => ({
+      setting: await ctx.db.query('taskDetectionSettings')
+        .withIndex('by_group', (q) => q.eq('groupId', fixture.groupId))
+        .unique(),
+      runs: await ctx.db.query('taskDetectionRuns')
+        .withIndex('by_group_status', (q) => q.eq('groupId', fixture.groupId))
+        .collect(),
+    }))
+    expect(continued.setting?.highWaterSequence).toBe(1)
+    expect(continued.runs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ startSequence: 1, endSequence: 2 }),
+    ]))
 
     const staleRunId = await fixture.t.run(
       async (ctx) =>
@@ -360,6 +492,7 @@ describe('task management authorization and invariants', () => {
       async (ctx) => await ctx.db.get(created.taskId),
     )
     expect(task?.workflowStateId).toBe(done._id)
+    expect(task?.terminalAt).toBeTypeOf('number')
     expect(
       (await fixture.t.run(async (ctx) => await ctx.db.get(todo._id)))
         ?.archivedAt,
@@ -404,6 +537,54 @@ describe('task management authorization and invariants', () => {
     )
     expect(first).toMatchObject({ status: 'ready' })
     expect(second).toEqual(first)
+  })
+
+  it('schedules assignment delivery and due reminders for accepted suggestions', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const boardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Suggestion delivery',
+    })
+    const suggestionId = await fixture.t.run(async (ctx) => {
+      const now = Date.now()
+      return await ctx.db.insert('taskSuggestions', {
+        projectId: fixture.projectId,
+        proposedTitle: 'Accept with lifecycle effects',
+        proposedPriority: 'high',
+        status: 'pending',
+        confidence: 0.95,
+        groundingReason: 'Grounded test suggestion.',
+        fingerprint: 'accepted-lifecycle-effects',
+        modelVersion: 'fake-v1',
+        promptVersion: 'task-detection-v1',
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+    const dueDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1_000)
+      .toISOString().slice(0, 10)
+    const accepted = await owner.mutation(api.taskSuggestions.accept, {
+      suggestionId,
+      boardId,
+      title: 'Accept with lifecycle effects',
+      assigneeProjectMemberId: fixture.staffMemberId,
+      priority: 'high',
+      dueDate,
+      idempotencyKey: 'accept-lifecycle-effects',
+    })
+    const effects = await fixture.t.run(async (ctx) => ({
+      notifications: await ctx.db.query('taskNotifications')
+        .withIndex('by_member_created_at', (q) => q.eq('recipientProjectMemberId', fixture.staffMemberId))
+        .collect(),
+      reminders: accepted.taskId ? await ctx.db.query('taskReminderJobs')
+        .withIndex('by_task_status', (q) => q.eq('taskId', accepted.taskId!).eq('status', 'scheduled'))
+        .collect() : [],
+    }))
+    expect(effects.notifications).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: 'assignment', taskId: accepted.taskId }),
+    ]))
+    expect(effects.reminders.map((job) => job.kind).sort()).toEqual(['due_soon', 'overdue'])
   })
 
   it('keeps explicit history scans independent from the live detection cursor', async () => {
@@ -471,6 +652,32 @@ describe('task management authorization and invariants', () => {
           .unique(),
     )
     expect(setting?.highWaterSequence).toBe(9)
+
+    const revokedRunId = await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(fixture.ownerMemberId, { status: 'suspended', updatedAt: Date.now() })
+      return await ctx.db.insert('taskDetectionRuns', {
+        projectId: fixture.projectId,
+        groupId: fixture.groupId,
+        generation: 4,
+        mode: 'history',
+        requestedByProjectMemberId: fixture.ownerMemberId,
+        startSequence: 4,
+        endSequence: 5,
+        status: 'running',
+        leaseToken: 'history-revoked',
+        leaseExpiresAt: Date.now() + 60_000,
+        attempts: 1,
+        correlationId: 'history-revoked-run',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
+    })
+    await expect(fixture.t.mutation(internal.taskDetection.commitRun, {
+      runId: revokedRunId,
+      leaseToken: 'history-revoked',
+      model: 'fake-history',
+      candidates: [],
+    })).resolves.toBe(false)
   })
 
   it('targets task push deep links only to the selected Project membership preference', async () => {
@@ -518,6 +725,82 @@ describe('task management authorization and invariants', () => {
         notificationId: notification._id,
       }),
     ).resolves.toBeNull()
+  })
+
+  it('cascades all live task data when a legacy Project is deleted', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const boardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Disposable tasks',
+    })
+    const created = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      title: 'Delete with Project',
+      description: 'No task content may survive.',
+      assigneeProjectMemberId: fixture.staffMemberId,
+      priority: 'high',
+      dueDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10),
+      idempotencyKey: 'project-delete-task',
+    })
+    await owner.mutation(api.taskComments.create, {
+      taskId: created.taskId,
+      body: 'Delete this comment too.',
+      mentionedProjectMemberIds: [],
+      idempotencyKey: 'project-delete-comment',
+    })
+    await fixture.t.run(async (ctx) => {
+      const now = Date.now()
+      await ctx.db.insert('taskSuggestions', {
+        projectId: fixture.projectId,
+        proposedTitle: 'Delete suggestion',
+        proposedPriority: 'none',
+        status: 'pending',
+        confidence: 0.9,
+        groundingReason: 'Delete fixture.',
+        fingerprint: 'project-delete-suggestion',
+        modelVersion: 'fake-v1',
+        promptVersion: 'task-detection-v1',
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('taskDetectionSettings', {
+        projectId: fixture.projectId,
+        groupId: fixture.groupId,
+        enabled: true,
+        generation: 1,
+        highWaterSequence: 0,
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+    await owner.mutation(api.projects.remove, {
+      projectId: fixture.projectId,
+      userId: fixture.ownerId,
+    })
+    const counts = await fixture.t.run(async (ctx) => ({
+      boards: (await ctx.db.query('taskBoards').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      states: (await ctx.db.query('taskWorkflowStates').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      tasks: (await ctx.db.query('tasks').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      labels: (await ctx.db.query('taskLabels').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      links: (await ctx.db.query('taskLabelLinks').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      references: (await ctx.db.query('taskReferences').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      comments: (await ctx.db.query('taskComments').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      followers: (await ctx.db.query('taskFollowers').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      activities: (await ctx.db.query('taskActivities').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      notificationSettings: (await ctx.db.query('taskNotificationSettings').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      notifications: (await ctx.db.query('taskNotifications').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      reminders: (await ctx.db.query('taskReminderJobs').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      suggestions: (await ctx.db.query('taskSuggestions').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      suggestionReferences: (await ctx.db.query('taskSuggestionReferences').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      suggestionHides: (await ctx.db.query('taskSuggestionHides').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      detectionSettings: (await ctx.db.query('taskDetectionSettings').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      detectionRuns: (await ctx.db.query('taskDetectionRuns').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      archiveSnapshots: (await ctx.db.query('taskArchiveSnapshots').collect()).filter((row) => row.projectId === fixture.projectId).length,
+      exitStaging: (await ctx.db.query('taskExitSnapshotStaging').collect()).filter((row) => row.projectId === fixture.projectId).length,
+    }))
+    expect(counts).toEqual(Object.fromEntries(Object.keys(counts).map((key) => [key, 0])))
   })
 
   it('materializes Company-exit task archives from the cutoff snapshot and only allowed Channels', async () => {
@@ -678,7 +961,7 @@ async function seedLegacyProject() {
     const ownerMemberId = await member(ownerId, 'owner')
     const staffMemberId = await member(staffId, 'staff')
     const clientMemberId = await member(clientId, 'client')
-    await member(outsiderId, 'admin')
+    const outsiderMemberId = await member(outsiderId, 'admin')
     const groupId = await ctx.db.insert('groups', {
       projectId,
       kind: 'custom',
@@ -708,6 +991,7 @@ async function seedLegacyProject() {
       ownerMemberId,
       staffMemberId,
       clientMemberId,
+      outsiderMemberId,
     }
   })
   return { t, ...fixture }

@@ -96,6 +96,10 @@ export const deliverMessageNotifications = internalAction({
                 groupId: String(notification.groupId),
                 messageId: String(args.messageId),
                 projectId: String(notification.projectId),
+                ...(target.actingCompanyId && target.projectMemberId ? {
+                  companyId: String(target.actingCompanyId),
+                  membershipId: String(target.projectMemberId),
+                } : {}),
                 url: notification.url,
               },
             })

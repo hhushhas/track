@@ -244,11 +244,29 @@ export const commitRun = internalMutation({
   handler: async (ctx, args) => {
     requireTasksEnabled()
     const run = await ctx.db.get(args.runId)
-    if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken) return false
-    const setting = await ctx.db.query('taskDetectionSettings')
-      .withIndex('by_group', (q) => q.eq('groupId', run.groupId)).unique()
+    if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken ||
+      run.leaseExpiresAt < Date.now()) return false
+    const [setting, group, project] = await Promise.all([
+      ctx.db.query('taskDetectionSettings')
+        .withIndex('by_group', (q) => q.eq('groupId', run.groupId)).unique(),
+      ctx.db.get(run.groupId),
+      ctx.db.get(run.projectId),
+    ])
     if (!setting) return null
-    if (run.mode !== 'history' && (!setting?.enabled || setting.generation !== run.generation || setting.highWaterSequence !== run.startSequence)) {
+    const historyAuthorized = run.mode === 'history' && run.requestedByProjectMemberId
+      ? await requireEligibleTaskMember(ctx, {
+          projectId: run.projectId,
+          groupId: run.groupId,
+          projectMemberId: run.requestedByProjectMemberId,
+        }).then(() => true, () => false)
+      : false
+    const lifecycleValid = Boolean(group && project && group.projectId === run.projectId &&
+      group.status !== 'archived' && project.status !== 'archived')
+    const modeValid = run.mode === 'history'
+      ? historyAuthorized
+      : setting.enabled && setting.generation === run.generation &&
+        setting.highWaterSequence === run.startSequence
+    if (!lifecycleValid || !modeValid) {
       await ctx.db.patch(run._id, { status: 'canceled', updatedAt: Date.now() })
       return false
     }
@@ -313,12 +331,27 @@ export const commitRun = internalMutation({
     }
     const now = Date.now()
     await ctx.db.patch(run._id, { status: 'completed', candidateCount, lowConfidenceCount, updatedAt: now })
-    await ctx.db.patch(setting._id, run.mode === 'history' ? {
+    if (run.mode === 'history') await ctx.db.patch(setting._id, {
       lastRunStatus: 'completed', lastErrorCategory: undefined, updatedAt: now,
-    } : {
-      highWaterSequence: run.endSequence, lastRunStatus: 'completed',
-      lastErrorCategory: undefined, updatedAt: now,
     })
+    else {
+      const morePending = windowMessages.some((message) =>
+        (message.channelSequence ?? 0) > run.endSequence,
+      )
+      const scheduledJobId = morePending
+        ? await ctx.scheduler.runAfter(0, (internal as any).taskDetection.startRun, {
+            groupId: run.groupId,
+            generation: run.generation,
+          })
+        : undefined
+      await ctx.db.patch(setting._id, {
+        highWaterSequence: run.endSequence,
+        scheduledJobId,
+        lastRunStatus: morePending ? 'queued' : 'completed',
+        lastErrorCategory: undefined,
+        updatedAt: now,
+      })
+    }
     return true
   },
 })

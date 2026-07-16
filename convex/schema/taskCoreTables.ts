@@ -178,7 +178,9 @@ export const taskCoreTables = {
     mode: taskNotificationMode,
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_member', ['projectMemberId']),
+  })
+    .index('by_member', ['projectMemberId'])
+    .index('by_project', ['projectId']),
 
   taskNotifications: defineTable({
     projectId: v.id('projects'),
@@ -194,7 +196,8 @@ export const taskCoreTables = {
   })
     .index('by_member_read', ['recipientProjectMemberId', 'readAt'])
     .index('by_member_created_at', ['recipientProjectMemberId', 'createdAt'])
-    .index('by_member_idempotency', ['recipientProjectMemberId', 'idempotencyKey']),
+    .index('by_member_idempotency', ['recipientProjectMemberId', 'idempotencyKey'])
+    .index('by_project', ['projectId']),
 
   taskReminderJobs: defineTable({
     projectId: v.id('projects'),
@@ -210,5 +213,6 @@ export const taskCoreTables = {
     updatedAt: v.number(),
   })
     .index('by_task_status', ['taskId', 'status'])
-    .index('by_member_status', ['recipientProjectMemberId', 'status']),
+    .index('by_member_status', ['recipientProjectMemberId', 'status'])
+    .index('by_project', ['projectId']),
 } as const

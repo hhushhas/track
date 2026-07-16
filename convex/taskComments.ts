@@ -5,7 +5,7 @@ import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { appendTaskActivity } from './lib/taskData'
 import { createTaskNotification, notifyTaskFollowers } from './lib/taskNotifications'
-import { requireEligibleTaskMember, requireTaskAccess } from './lib/taskPolicy'
+import { requireEligibleTaskMember, requireTaskAccess, resolveTaskRequestContext } from './lib/taskPolicy'
 
 const identityArgs = {
   actingCompanyId: v.optional(v.id('companies')),
@@ -104,6 +104,12 @@ export const edit = mutation({
     if (!comment) throw new Error('task_access_changed')
     const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
     if (comment.authorProjectMemberId !== access.projectMember._id) throw new Error('task_comment_edit_forbidden')
+    if (comment.originalGroupId && comment.originalGroupId !== access.task.groupId) {
+      const originalAccess = await resolveTaskRequestContext(
+        ctx, actor, comment.projectId, args, comment.originalGroupId,
+      )
+      if (!originalAccess.capabilities.canReadChannel) throw new Error('task_access_changed')
+    }
     if (comment.revision !== args.expectedRevision) throw new Error(`task_conflict:${comment.revision}`)
     await ctx.db.patch(comment._id, {
       body: validateCommentBody(args.body), revision: comment.revision + 1, updatedAt: Date.now(),
@@ -124,6 +130,12 @@ export const archive = mutation({
     const comment = await ctx.db.get(args.commentId)
     if (!comment) throw new Error('task_access_changed')
     const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
+    if (comment.originalGroupId && comment.originalGroupId !== access.task.groupId) {
+      const originalAccess = await resolveTaskRequestContext(
+        ctx, actor, comment.projectId, args, comment.originalGroupId,
+      )
+      if (!originalAccess.capabilities.canReadChannel) throw new Error('task_access_changed')
+    }
     if (comment.authorProjectMemberId !== access.projectMember._id && !access.taskCapabilities.canArchive) {
       throw new Error('task_comment_archive_forbidden')
     }

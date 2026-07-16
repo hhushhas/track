@@ -16,6 +16,88 @@ const snapshotTables = [
 
 type SnapshotTable = (typeof snapshotTables)[number]
 
+export async function deleteTaskProjectData(
+  ctx: MutationCtx,
+  projectId: Id<'projects'>,
+) {
+  const [
+    boards,
+    tasks,
+    labels,
+    suggestions,
+    activities,
+    notificationSettings,
+    notifications,
+    reminderJobs,
+    detectionSettings,
+    detectionRuns,
+    archiveSnapshots,
+    exitStaging,
+  ] = await Promise.all([
+    ctx.db.query('taskBoards').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskLabels').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskSuggestions').withIndex('by_project_status', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskActivities').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskNotificationSettings').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskNotifications').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskReminderJobs').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskDetectionSettings').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskDetectionRuns').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskArchiveSnapshots').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskExitSnapshotStaging').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect(),
+  ])
+  const workflowStates = (await Promise.all(boards.map((board) =>
+    ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).collect(),
+  ))).flat()
+  const [labelLinks, references, comments, followers] = await Promise.all([
+    Promise.all(tasks.map((task) => ctx.db.query('taskLabelLinks')
+      .withIndex('by_task', (q) => q.eq('taskId', task._id)).collect())).then((rows) => rows.flat()),
+    Promise.all(tasks.map((task) => ctx.db.query('taskReferences')
+      .withIndex('by_task_rank', (q) => q.eq('taskId', task._id)).collect())).then((rows) => rows.flat()),
+    Promise.all(tasks.map((task) => ctx.db.query('taskComments')
+      .withIndex('by_task_created_at', (q) => q.eq('taskId', task._id)).collect())).then((rows) => rows.flat()),
+    Promise.all(tasks.map((task) => ctx.db.query('taskFollowers')
+      .withIndex('by_task_enabled', (q) => q.eq('taskId', task._id)).collect())).then((rows) => rows.flat()),
+  ])
+  const [suggestionReferences, suggestionHides] = await Promise.all([
+    Promise.all(suggestions.map((suggestion) => ctx.db.query('taskSuggestionReferences')
+      .withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestion._id)).collect()))
+      .then((rows) => rows.flat()),
+    Promise.all(suggestions.map((suggestion) => ctx.db.query('taskSuggestionHides')
+      .withIndex('by_suggestion', (q) => q.eq('suggestionId', suggestion._id)).collect()))
+      .then((rows) => rows.flat()),
+  ])
+
+  for (const job of reminderJobs) {
+    if (job.status === 'scheduled' && job.scheduledJobId) {
+      await ctx.scheduler.cancel(job.scheduledJobId).catch(() => undefined)
+    }
+  }
+  for (const setting of detectionSettings) {
+    if (setting.scheduledJobId) await ctx.scheduler.cancel(setting.scheduledJobId).catch(() => undefined)
+  }
+  for (const row of labelLinks) await ctx.db.delete(row._id)
+  for (const row of references) await ctx.db.delete(row._id)
+  for (const row of comments) await ctx.db.delete(row._id)
+  for (const row of followers) await ctx.db.delete(row._id)
+  for (const row of activities) await ctx.db.delete(row._id)
+  for (const row of notifications) await ctx.db.delete(row._id)
+  for (const row of reminderJobs) await ctx.db.delete(row._id)
+  for (const row of tasks) await ctx.db.delete(row._id)
+  for (const row of suggestionReferences) await ctx.db.delete(row._id)
+  for (const row of suggestionHides) await ctx.db.delete(row._id)
+  for (const row of suggestions) await ctx.db.delete(row._id)
+  for (const row of workflowStates) await ctx.db.delete(row._id)
+  for (const row of boards) await ctx.db.delete(row._id)
+  for (const row of labels) await ctx.db.delete(row._id)
+  for (const row of notificationSettings) await ctx.db.delete(row._id)
+  for (const row of detectionRuns) await ctx.db.delete(row._id)
+  for (const row of detectionSettings) await ctx.db.delete(row._id)
+  for (const row of archiveSnapshots) await ctx.db.delete(row._id)
+  for (const row of exitStaging) await ctx.db.delete(row._id)
+}
+
 export async function removeTaskMemberFromScope(
   ctx: MutationCtx,
   input: {

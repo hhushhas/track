@@ -27,6 +27,15 @@ function validBoardName(value: string) {
   return name
 }
 
+function requireBoardManagement(
+  capabilities: { canManageProject: boolean; canReadChannel: boolean },
+  groupId?: Id<'groups'>,
+) {
+  if (!capabilities.canManageProject || (groupId && !capabilities.canReadChannel)) {
+    throw new Error('task_board_manage_forbidden')
+  }
+}
+
 async function activeBoardsForScope(
   ctx: MutationCtx,
   projectId: Id<'projects'>,
@@ -197,7 +206,7 @@ export const update = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     await ctx.db.patch(board._id, {
       name: validBoardName(args.name),
       description: args.description?.trim() || undefined,
@@ -214,7 +223,7 @@ export const reorder = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     const boards = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     boards.sort((left, right) => (left.rank ?? String(left.createdAt)).localeCompare(right.rank ?? String(right.createdAt)))
     const without = boards.filter((candidate) => candidate._id !== board._id)
@@ -245,7 +254,7 @@ export const configureWorkflow = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board || board.archivedAt) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     if (args.states.length < 2 || args.defaultIndex < 0 || args.defaultIndex >= args.states.length) {
       throw new Error('task_workflow_invalid')
     }
@@ -282,13 +291,24 @@ export const configureWorkflow = mutation({
     const destinationId = args.replacementStateId && retainedIds.has(String(args.replacementStateId))
       ? args.replacementStateId
       : resolved[args.defaultIndex]!
+    const destinationState = await ctx.db.get(destinationId)
+    if (!destinationState || destinationState.boardId !== board._id || destinationState.archivedAt) {
+      throw new Error('task_workflow_invalid')
+    }
     for (const removed of existing.filter((state) => !retainedIds.has(String(state._id)))) {
       const affected = await ctx.db.query('tasks')
         .withIndex('by_board_state_rank', (q) => q.eq('boardId', board._id).eq('workflowStateId', removed._id))
         .collect()
       if (affected.length && !args.replacementStateId) throw new Error('task_workflow_replacement_required')
       for (const task of affected) {
-        await ctx.db.patch(task._id, { workflowStateId: destinationId, revision: task.revision + 1, updatedAt: now })
+        await ctx.db.patch(task._id, {
+          workflowStateId: destinationId,
+          terminalAt: destinationState.category === 'completed' || destinationState.category === 'canceled'
+            ? task.terminalAt ?? now
+            : undefined,
+          revision: task.revision + 1,
+          updatedAt: now,
+        })
         await ctx.db.insert('taskActivities', {
           projectId: task.projectId, taskId: task._id, originalGroupId: task.groupId,
           actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,
@@ -314,7 +334,7 @@ export const setDefault = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board || board.archivedAt) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     const now = Date.now()
     await Promise.all(active.map((candidate) =>
@@ -331,7 +351,7 @@ export const archive = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     if (board.archivedAt) return board._id
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     const replacement = active.find((candidate) => candidate._id !== board._id)
@@ -359,7 +379,7 @@ export const restore = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     const now = Date.now()
     await ctx.db.patch(board._id, { archivedAt: undefined, isDefault: active.length === 0, updatedAt: now })
@@ -377,7 +397,7 @@ export const addWorkflowState = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board || board.archivedAt) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     const states = await ctx.db.query('taskWorkflowStates')
       .withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).collect()
     const now = Date.now()
@@ -401,7 +421,7 @@ export const removeWorkflowState = mutation({
     const board = await ctx.db.get(state.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
-    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    requireBoardManagement(access.capabilities, board.groupId)
     const tasks = await ctx.db.query('tasks')
       .withIndex('by_board_state_rank', (q) => q.eq('boardId', board._id).eq('workflowStateId', state._id))
       .collect()

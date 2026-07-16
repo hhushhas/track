@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 
+import type { Id } from './_generated/dataModel'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
@@ -299,6 +300,8 @@ export const collectMessageNotificationTargets = internalQuery({
         if (membership.status && membership.status !== 'active') return []
         if (membership.userId === message.authorId) return []
 
+        let actingCompanyId: Id<'companies'> | undefined
+        let projectMemberId: Id<'projectMembers'> | undefined
         if (project.accessProfile === 'company') {
           if (!membership.projectMemberId) return []
           const projectMember = await ctx.db.get(membership.projectMemberId)
@@ -311,6 +314,8 @@ export const collectMessageNotificationTargets = internalQuery({
             ctx.db.get(projectMember.projectCompanyId),
           ])
           if (!company || company.status !== 'active' || companyMember?.status !== 'active' || projectCompany?.status !== 'active') return []
+          actingCompanyId = projectMember.companyId
+          projectMemberId = projectMember._id
         }
 
         const [globalSettings, groupSettings, subscriptions] = await Promise.all([
@@ -344,6 +349,8 @@ export const collectMessageNotificationTargets = internalQuery({
             id: subscription._id,
             platform: subscription.platform,
             tokenOrEndpoint: subscription.tokenOrEndpoint,
+            actingCompanyId,
+            projectMemberId,
           }))
       }),
     )
