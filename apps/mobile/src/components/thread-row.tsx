@@ -20,6 +20,13 @@ export type DetailedMessage = {
   authorCompany?: { companyId: Id<'companies'>; displayName: string } | null;
   attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>;
   replyTo?: { messageId: Id<'messages'>; authorName: string; body: string; createdAt: number } | null;
+  channelThread?: {
+    threadId: Id<'channelThreads'>;
+    name: string;
+    status: 'active' | 'archived';
+    replyCount: number;
+    latestReplyAt: number | null;
+  } | null;
 };
 
 export type ThreadItem =
@@ -209,6 +216,15 @@ export function ThreadRow({ item, isFirstInGroup, isOwnMessage, onLongPress, onS
 
             <HighlightedText body={item.item.message.body} />
 
+            {item.item.channelThread ? (
+              <View style={[styles.threadChip, { backgroundColor: theme.accentSoft }]}>
+                <PlatformIcon color={theme.accent} name="forum-outline" size={14} />
+                <ThemedText numberOfLines={1} style={{ color: theme.accent }} type="code">
+                  {item.item.channelThread.name} · {item.item.channelThread.replyCount} {item.item.channelThread.replyCount === 1 ? 'reply' : 'replies'}
+                </ThemedText>
+              </View>
+            ) : null}
+
             {item.item.attachments.map(({ attachment, url }) =>
               attachment.kind === 'voice_note' && url ? (
                 <VoiceRow attachment={attachment} key={attachment._id} url={url} />
@@ -311,6 +327,7 @@ const styles = StyleSheet.create({
   dotsRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   thinkingLabel: { marginTop: 2 },
   thinkingWrap: { gap: 4 },
+  threadChip: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: 8, flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.two, maxWidth: '100%', paddingHorizontal: Spacing.two, paddingVertical: 4 },
   body: { flex: 1, gap: 4, minWidth: 0 },
   dateSep: { alignItems: 'center', marginVertical: Spacing.four, paddingHorizontal: Spacing.four },
   dateSepLabel: { fontSize: 11, letterSpacing: 0.5 },

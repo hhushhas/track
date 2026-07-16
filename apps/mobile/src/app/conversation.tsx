@@ -18,6 +18,8 @@ import { Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
+import { useReleaseConfig } from '@/lib/release-config';
+import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
 
@@ -37,6 +39,7 @@ export default function ConversationScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { trackUserId } = useTrackUser();
+  const releaseConfig = useReleaseConfig();
   const { groupId, projectId, companyId, membershipId, archive } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
 
   const sendMessage = useMutation(api.messages.send);
@@ -123,6 +126,17 @@ export default function ConversationScreen() {
   const messageActions = useMemo(() => {
     if (!actionTarget || actionTarget.kind === 'date-sep') return [];
     return [
+      ...(releaseConfig.threads && actionTarget.kind === 'message' && pid && gid ? [{
+        label: actionTarget.item.channelThread ? 'Open thread' : 'Start thread',
+        icon: 'forum-outline' as const,
+        onPress: () => {
+          if (actionTarget.item.channelThread) {
+            router.push(threadConversationHref(pid, gid, actionTarget.item.channelThread.threadId, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
+            return;
+          }
+          router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null, actionTarget.item.message._id) as never);
+        },
+      }] : []),
       ...(!readOnly ? [{
         label: 'Reply',
         icon: 'arrow-up' as const,
@@ -137,7 +151,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget, readOnly]);
+  }, [actionTarget, cid, gid, pid, pmid, readOnly, releaseConfig.threads, router]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {
@@ -386,6 +400,16 @@ export default function ConversationScreen() {
       </OptionsSheet>
 
       <OptionsSheet onClose={() => setToolsOpen(false)} title="Notifications" visible={toolsOpen}>
+        {releaseConfig.threads && pid && gid ? <SheetSection title="Conversation">
+          <SheetRow
+            icon="forum-outline"
+            label="Threads"
+            onPress={() => {
+              setToolsOpen(false);
+              router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
+            }}
+          />
+        </SheetSection> : null}
         <SheetSection title="Global">
           {(['all', 'mentions', 'none'] as const).map((mode) => (
             <SheetRow
