@@ -1,4 +1,4 @@
-import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search } from 'lucide-react'
+import { ArrowUpRight, CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitl
 import { Textarea } from '#/components/ui/textarea'
 import type { GroupMessageItem, ReplyToMessagePreview } from '../thread-item-components'
 import { getGroupAvatar } from '../group-avatar'
+import { getAvatarTone, getInitials } from '../identity'
 
 export function MessageActions({
   activeGroupId,
@@ -149,13 +150,13 @@ function ForwardMessagePopover({
       </PopoverTrigger>
       <PopoverContent align="end" className="track-forward-popover" side="top" sideOffset={8}>
         <PopoverHeader>
-          <PopoverTitle>Forward to Group</PopoverTitle>
+          <PopoverTitle>Forward to channel</PopoverTitle>
           <PopoverDescription>Send a copied snapshot with an optional note.</PopoverDescription>
         </PopoverHeader>
         <div className="track-forward-search">
           <Search size={13} />
           <Input
-            aria-label="Search Groups"
+            aria-label="Search channels"
             autoComplete="off"
             onChange={(event) => setQuery(event.currentTarget.value)}
             onKeyDown={(event) => {
@@ -164,7 +165,7 @@ function ForwardMessagePopover({
                 focusTargetAt(0)
               }
             }}
-            placeholder="Search groups..."
+            placeholder="Search channels..."
             value={query}
           />
         </div>
@@ -173,11 +174,11 @@ function ForwardMessagePopover({
           aria-label="Optional forwarding note"
           className="track-forward-note"
           onChange={(event) => setNote(event.currentTarget.value)}
-          placeholder="Add a note for this Group..."
+          placeholder="Add a note for this channel..."
           value={note}
         />
         <div
-          aria-label="Groups you can forward to"
+          aria-label="Channels you can forward to"
           className="track-forward-targets"
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
@@ -226,7 +227,7 @@ function ForwardMessagePopover({
                   </span>
                   <span>
                     <strong>{group.name}</strong>
-                    <small>{group.kind.replaceAll('_', ' ')} Group</small>
+                    <small>{group.kind.replaceAll('_', ' ')} channel</small>
                   </span>
                   <CornerUpRight size={13} />
                 </button>
@@ -234,8 +235,8 @@ function ForwardMessagePopover({
             })
           ) : (
             <div className="track-forward-empty">
-              <strong>No Groups available</strong>
-              <span>You need access to another Group where you can send messages.</span>
+              <strong>No channels available</strong>
+              <span>You need access to another channel where you can send messages.</span>
             </div>
           )}
         </div>
@@ -244,12 +245,31 @@ function ForwardMessagePopover({
   )
 }
 
-export function QuotedMessageBlock({ quote }: { quote: ReplyToMessagePreview }) {
+export function QuotedMessageBlock({
+  onJump,
+  quote,
+}: {
+  onJump: (messageId: Id<'messages'>) => void
+  quote: ReplyToMessagePreview
+}) {
   return (
-    <div className="track-message-quote">
-      <span>{quote.authorName}</span>
-      <p>{quote.body || 'Attachment message'}</p>
-    </div>
+    <button
+      aria-label={`Jump to message from ${quote.authorName}`}
+      className="track-message-quote"
+      onClick={() => onJump(quote.messageId)}
+      type="button"
+    >
+      <span className={`track-message-quote-avatar ${getAvatarTone(quote.authorName)}`}>
+        {getInitials(quote.authorName)}
+      </span>
+      <span className="track-message-quote-copy">
+        <span className="track-message-quote-author">
+          {quote.authorName} <time>· {new Date(quote.createdAt).toLocaleTimeString()}</time>
+        </span>
+        <span className="track-message-quote-excerpt">{quote.body || 'Attachment message'}</span>
+      </span>
+      <ArrowUpRight aria-hidden="true" className="track-message-quote-jump" size={13} />
+    </button>
   )
 }
 

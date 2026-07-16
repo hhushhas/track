@@ -161,7 +161,7 @@ export function ProjectMemoryImportDialog({
           <div className="flex flex-col gap-1">
             <DialogTitle>Import project memory</DialogTitle>
             <DialogDescription>
-              Bring conversations, notes, and docs into {groupName ?? 'this group'} so Track keeps
+              Bring conversations, notes, and docs into {groupName ?? 'this channel'} so Track keeps
               the context for you.
             </DialogDescription>
           </div>

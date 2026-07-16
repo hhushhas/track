@@ -1,9 +1,11 @@
 const avatarToneClasses = ['s-1', 's-2', 's-3', 's-4'] as const
-const avatarToneColors = {
-  's-1': '#8f6a1f',
-  's-2': '#5b6d4a',
-  's-3': '#7a4a3a',
-  's-4': '#3a4a6d',
+
+/** CSS custom property names defined in styles.css (:root / .dark). */
+const avatarToneCssVars = {
+  's-1': '--avatar-tone-1',
+  's-2': '--avatar-tone-2',
+  's-3': '--avatar-tone-3',
+  's-4': '--avatar-tone-4',
 } as const
 
 export type AvatarTone = (typeof avatarToneClasses)[number]
@@ -17,7 +19,14 @@ export function getAvatarTone(value: string) {
 }
 
 export function getAvatarToneColor(tone: AvatarTone) {
-  return avatarToneColors[tone]
+  const cssValue = `var(${avatarToneCssVars[tone]})`
+  if (typeof document === 'undefined') return cssValue
+
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(avatarToneCssVars[tone])
+    .trim()
+
+  return value || cssValue
 }
 
 export function getInitials(value: string) {

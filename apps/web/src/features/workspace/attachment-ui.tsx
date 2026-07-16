@@ -279,12 +279,38 @@ export function AttachmentTypeIcon({
   size?: number
 }) {
   const kind = getAttachmentKind({ contentType, filename })
+  const extension = filename.split('.').pop()?.toLowerCase() ?? ''
   const Icon = kind.icon
+  const brand = ['xlsx', 'xls', 'csv'].includes(extension)
+    ? 'spreadsheet'
+    : extension === 'pdf'
+      ? 'pdf-brand'
+      : extension === 'fig'
+        ? 'figma'
+        : ['md', 'markdown', 'txt', 'text'].includes(extension)
+          ? 'markdown-brand'
+          : null
 
   return (
-    <span aria-label={kind.label} className={`track-attachment-type-icon ${kind.tone}`} role="img">
-      <Icon aria-hidden="true" size={size} />
-      <small>{kind.label}</small>
+    <span aria-label={kind.label} className={`track-attachment-type-icon ${brand ?? kind.tone}`} role="img">
+      {brand === 'spreadsheet' ? <strong aria-hidden="true">X</strong> : null}
+      {brand === 'pdf-brand' ? <small aria-hidden="true">PDF</small> : null}
+      {brand === 'markdown-brand' ? <small aria-hidden="true">MD</small> : null}
+      {brand === 'figma' ? (
+        <svg aria-hidden="true" className="track-figma-mark" viewBox="0 0 16 24">
+          <path d="M4 0h4v8H4a4 4 0 0 1 0-8Z" fill="#f24e1e" />
+          <path d="M8 0h4a4 4 0 0 1 0 8H8Z" fill="#ff7262" />
+          <path d="M4 8h4v8H4a4 4 0 0 1 0-8Z" fill="#a259ff" />
+          <circle cx="12" cy="12" r="4" fill="#1abcfe" />
+          <path d="M4 16h4v4a4 4 0 1 1-4-4Z" fill="#0acf83" />
+        </svg>
+      ) : null}
+      {!brand ? (
+        <>
+          <Icon aria-hidden="true" size={size} />
+          <small>{kind.label}</small>
+        </>
+      ) : null}
     </span>
   )
 }

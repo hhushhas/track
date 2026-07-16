@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -8,7 +8,10 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "SF Pro Rounded", ui-rounded, "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-meta: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: var(--font-display);
 }
 
 :root {
@@ -24,6 +27,11 @@
   --accent: #f0b100;
   --accent-soft: #fef3c7;
   --accent-tint: #fdf8e8;
+  --accent-strong: #8a6400;
+  --avatar-tone-1: #8f6a1f;
+  --avatar-tone-2: #5b6d4a;
+  --avatar-tone-3: #7a4a3a;
+  --avatar-tone-4: #3a4a6d;
   --success: #15803d;
   --danger: #b91c1c;
   --info: #1d4ed8;
@@ -61,6 +69,7 @@
   --scrollbar-thumb: #a09a90;
   --scrollbar-thumb-hover: #86817a;
   --scrollbar-track: transparent;
+  --shadow-pop: 0 12px 30px color-mix(in srgb, var(--ink) 15%, transparent);
 }
 
 .dark {
@@ -76,6 +85,11 @@
   --accent: #f3b70b;
   --accent-soft: #5f450a;
   --accent-tint: #312815;
+  --accent-strong: #f5c53d;
+  --avatar-tone-1: #c9a24a;
+  --avatar-tone-2: #8fa67a;
+  --avatar-tone-3: #c4846e;
+  --avatar-tone-4: #7a8ab5;
   --success: #5bbf74;
   --danger: #f87171;
   --info: #7ea7ff;
@@ -160,6 +174,7 @@ body {
   margin: 0;
   color: var(--ink);
   font-family: var(--font-sans);
+  letter-spacing: -0.02em;
   background: var(--paper);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -206,7 +221,7 @@ button {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--accent);
   color: #17130a;
   flex: 0 0 auto;
@@ -238,7 +253,7 @@ button {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper);
   color: var(--ink);
   cursor: pointer;
@@ -270,11 +285,10 @@ button {
 
 .mono-label {
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .track-button {
@@ -1185,7 +1199,7 @@ button {
   align-items: center;
   gap: 10px;
   border: 1px solid color-mix(in srgb, var(--hairline-strong) 82%, var(--ink-4));
-  border-radius: 7px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--paper-2) 44%, var(--paper));
   color: var(--ink-3);
   padding: 0 11px;
@@ -1326,7 +1340,7 @@ button {
   justify-content: space-between;
   gap: 10px;
   border: 1px solid color-mix(in srgb, var(--hairline-strong) 82%, var(--ink-4));
-  border-radius: 7px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--paper-2) 44%, var(--paper));
   color: var(--ink);
   cursor: pointer;
@@ -1491,7 +1505,7 @@ button {
 
 .track-profile-backup-codes code {
   border: 1px solid var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper-2);
   color: var(--ink);
   font-size: 12px;
@@ -1675,11 +1689,10 @@ button {
 .track-dialog-field span,
 .track-switch-row span {
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .track-dialog-field input,
@@ -1729,7 +1742,7 @@ button {
 
 .track-dialog-select-content {
   border: 1px solid var(--hairline);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper);
   color: var(--ink);
   box-shadow: 0 18px 42px rgba(27, 25, 23, 0.16);
@@ -1762,10 +1775,11 @@ button {
 
 .track-invite-access-option small {
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 9px;
+  font-family: var(--font-meta);
+  font-size: 9.5px;
+  font-weight: 600;
   line-height: 1.15;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .track-switch-row {
@@ -1991,10 +2005,11 @@ button {
 }
 
 .track-brand-word {
+  font-family: var(--font-display);
   color: var(--ink);
   font-size: 15px;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   line-height: 1;
   transition:
     opacity 120ms ease,
@@ -2058,7 +2073,7 @@ button {
   flex: 0 0 24px;
   margin-left: 0;
   border-color: transparent;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-4);
   box-shadow: inset 0 0 0 1px rgba(27, 25, 23, 0.02);
@@ -2091,12 +2106,11 @@ button {
 
 .track-nav-section-label {
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   padding: 0 8px;
-  text-transform: uppercase;
   transition:
     opacity 120ms ease,
     transform 190ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -2119,7 +2133,7 @@ button {
   justify-content: flex-start;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
@@ -2165,11 +2179,10 @@ button {
   justify-content: space-between;
   padding: 13px 10px 4px 16px;
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .track-nav.collapsed .track-nav-section {
@@ -2198,7 +2211,7 @@ button {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-3);
   cursor: pointer;
@@ -2262,7 +2275,7 @@ button {
   height: auto;
   min-height: 34px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-2);
   cursor: pointer;
@@ -2331,7 +2344,7 @@ button {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper-3);
   color: var(--ink-3);
 }
@@ -2457,13 +2470,13 @@ button {
 .track-nav-count {
   margin-left: auto;
   border: 1px solid var(--hairline-strong);
-  border-radius: 3px;
+  border-radius: 6px;
   padding: 1px 5px;
   color: var(--ink-2);
-  font-family: var(--font-mono);
-  font-size: 8.5px;
+  font-family: var(--font-meta);
+  font-size: 9.5px;
   font-weight: 600;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .track-nav.collapsed .track-nav-count {
@@ -2538,7 +2551,7 @@ button {
 .track-project-switcher-menu {
   width: 216px;
   border-color: var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper-2);
   padding: 3px;
   box-shadow: 0 10px 28px rgba(27, 25, 23, 0.12);
@@ -2551,7 +2564,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 4px 7px;
 }
 
@@ -2591,12 +2604,12 @@ button {
 .track-menu-project-role {
   border: 0;
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 8px;
+  font-family: var(--font-meta);
+  font-size: 9.5px;
   font-weight: 600;
   line-height: 1;
+  letter-spacing: 0.01em;
   padding: 0;
-  text-transform: uppercase;
 }
 
 .track-project-switcher-item.active .track-menu-project-role {
@@ -2799,25 +2812,25 @@ button {
 .track-avatar.s-1,
 .track-message-avatar.s-1,
 .track-avatar-card-avatar.s-1 {
-  background: #8f6a1f;
+  background: var(--avatar-tone-1);
 }
 
 .track-avatar.s-2,
 .track-message-avatar.s-2,
 .track-avatar-card-avatar.s-2 {
-  background: #5b6d4a;
+  background: var(--avatar-tone-2);
 }
 
 .track-avatar.s-3,
 .track-message-avatar.s-3,
 .track-avatar-card-avatar.s-3 {
-  background: #7a4a3a;
+  background: var(--avatar-tone-3);
 }
 
 .track-avatar.s-4,
 .track-message-avatar.s-4,
 .track-avatar-card-avatar.s-4 {
-  background: #3a4a6d;
+  background: var(--avatar-tone-4);
 }
 
 .track-avatar [data-slot="avatar-fallback"],
@@ -3167,6 +3180,8 @@ button {
 }
 
 .track-thread-header h1 {
+  font-family: var(--font-display);
+  letter-spacing: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3181,10 +3196,11 @@ button {
   max-width: 260px;
   overflow: hidden;
   border: 1px solid var(--hairline-strong);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper-2);
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 11px;
   font-weight: 500;
   padding: 2px 6px;
@@ -3231,7 +3247,8 @@ button {
   border-radius: 999px;
   background: var(--paper-2);
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
   font-weight: 500;
 }
@@ -3240,7 +3257,7 @@ button {
   width: 210px;
   height: 30px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper);
   color: var(--ink);
   font-size: 12.5px;
@@ -3258,7 +3275,7 @@ button {
   align-items: center;
   gap: 4px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper);
   color: var(--ink-3);
   box-shadow: 0 12px 30px rgba(12, 11, 10, 0.16);
@@ -3296,7 +3313,8 @@ button {
 .track-chat-search-count {
   min-width: 38px;
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
   text-align: center;
 }
@@ -3309,7 +3327,7 @@ button {
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-3);
   padding: 0;
@@ -3420,10 +3438,10 @@ button {
   place-items: center;
   gap: 10px;
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .track-route-loader-icon {
@@ -3499,7 +3517,7 @@ button {
   gap: 10px;
   margin: 10px 12px 8px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper-2);
   color: var(--ink-3);
   padding: 7px 9px;
@@ -3522,7 +3540,8 @@ button {
 
 .track-project-search-box > span {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10.5px;
   white-space: nowrap;
 }
@@ -3542,7 +3561,7 @@ button {
   justify-content: center;
   gap: 6px;
   border: 1px solid var(--hairline);
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink-3);
   cursor: pointer;
@@ -3610,11 +3629,10 @@ button {
 .track-project-search-section-label {
   margin: 4px 8px 4px;
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .track-project-search-result {
@@ -3623,7 +3641,7 @@ button {
   grid-template-columns: 28px 1fr;
   gap: 8px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
@@ -3649,7 +3667,7 @@ button {
   height: 28px;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--accent-tint);
   color: #7a5800;
 }
@@ -3879,7 +3897,8 @@ button {
   background: color-mix(in srgb, var(--paper) 88%, transparent);
   box-shadow: 0 6px 18px rgba(27, 25, 23, 0.08);
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
   line-height: 1;
   padding: 6px 9px;
@@ -3896,7 +3915,7 @@ button {
 
 .track-message-row.flashing .track-message-body {
   animation: track-message-target-flash 1400ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  border-radius: 7px;
+  border-radius: 8px;
 }
 
 @keyframes track-message-target-flash {
@@ -3960,7 +3979,8 @@ button {
 
 .track-message-meta time {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -4021,7 +4041,6 @@ button {
   width: 124px;
 }
 
-.track-message-quote,
 .track-forwarded-card,
 .track-forward-preview {
   display: grid;
@@ -4033,12 +4052,87 @@ button {
 }
 
 .track-message-quote {
-  max-width: 560px;
+  display: flex;
+  width: min(100%, 560px);
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
   margin: 5px 0 7px;
-  border-radius: 0 7px 7px 0;
+  border: 0;
+  border-left: 2.5px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--paper-2);
+  color: var(--ink);
+  padding: 6px 8px;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease;
 }
 
-.track-message-quote span,
+.track-message-quote:hover {
+  border-left-color: var(--accent);
+  background: var(--paper-3);
+}
+
+.track-message-quote:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.track-message-quote-avatar {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.track-message-quote-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.track-message-quote-author {
+  overflow: hidden;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-message-quote-author time {
+  color: var(--ink-4);
+  font-weight: 500;
+}
+
+.track-message-quote-excerpt {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-message-quote-jump {
+  flex: 0 0 auto;
+  color: var(--ink-4);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.track-message-quote:hover .track-message-quote-jump,
+.track-message-quote:focus-visible .track-message-quote-jump {
+  opacity: 1;
+}
+
 .track-forwarded-card span,
 .track-forward-preview span {
   color: var(--ink);
@@ -4047,7 +4141,6 @@ button {
   line-height: 1.2;
 }
 
-.track-message-quote p,
 .track-forwarded-card p,
 .track-forward-preview p {
   display: -webkit-box;
@@ -4073,7 +4166,8 @@ button {
   align-items: center;
   gap: 5px;
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
   line-height: 1;
 }
@@ -4089,7 +4183,8 @@ button {
   align-items: center;
   gap: 5px;
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -4119,7 +4214,7 @@ button {
   align-items: center;
   gap: 7px;
   border: 1px solid var(--hairline);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper);
   padding: 0 8px;
 }
@@ -4151,7 +4246,7 @@ button {
   gap: 8px;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
@@ -4186,7 +4281,8 @@ button {
 
 .track-forward-target small {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -4194,7 +4290,7 @@ button {
   display: grid;
   gap: 3px;
   border: 1px dashed var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--ink-4);
   padding: 10px;
 }
@@ -4242,7 +4338,7 @@ button {
 }
 
 .track-search-highlight {
-  border-radius: 3px;
+  border-radius: 6px;
   background: rgba(240, 177, 0, 0.3);
   color: var(--ink);
   padding: 0 2px;
@@ -4261,7 +4357,7 @@ button {
   gap: 8px;
   min-width: min(220px, 100%);
   border: 1px solid var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper-2);
   color: var(--ink-2);
   padding: 7px;
@@ -4299,7 +4395,7 @@ button {
   gap: 8px;
   width: min(330px, 100%);
   border: 1px solid var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--ink);
   padding: 6px 8px;
@@ -4347,7 +4443,8 @@ button {
 
 .track-voice-duration {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
   white-space: nowrap;
 }
@@ -4418,7 +4515,7 @@ button {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 10;
-  border-radius: 5px;
+  border-radius: 6px;
   object-fit: cover;
   background: var(--paper);
 }
@@ -4441,7 +4538,8 @@ button {
 
 .track-attachment-card small {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -4452,7 +4550,7 @@ button {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
 }
 
@@ -4467,7 +4565,7 @@ button {
   justify-content: center;
   gap: 1px;
   border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
-  border-radius: 7px;
+  border-radius: 8px;
   background: color-mix(in srgb, currentColor 10%, var(--paper));
   color: var(--ink-3);
 }
@@ -4477,13 +4575,59 @@ button {
   max-width: 30px;
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 7.5px;
+  font-size: 9.5px;
   font-weight: 750;
   letter-spacing: 0;
   line-height: 1;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
+}
+
+.track-attachment-type-icon.spreadsheet,
+.track-attachment-type-icon.pdf-brand,
+.track-attachment-type-icon.markdown-brand,
+.track-attachment-type-icon.figma {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 8px;
+  color: white;
+}
+
+.track-attachment-type-icon.spreadsheet {
+  background: #107c41;
+}
+
+.track-attachment-type-icon.pdf-brand {
+  background: #d93025;
+}
+
+.track-attachment-type-icon.markdown-brand {
+  background: #24292f;
+}
+
+.track-attachment-type-icon.spreadsheet strong,
+.track-attachment-type-icon.pdf-brand small,
+.track-attachment-type-icon.markdown-brand small {
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.track-attachment-type-icon.figma {
+  background: white;
+}
+
+.dark .track-attachment-type-icon.figma {
+  background: var(--paper-3);
+}
+
+.track-figma-mark {
+  width: 14px;
+  height: 21px;
 }
 
 .track-attachment-type-icon.pdf {
@@ -4571,15 +4715,14 @@ button {
   height: auto;
   min-height: 18px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 3px;
+  border-radius: 6px;
   background: var(--paper-2);
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.05em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   padding: 1px 5px;
-  text-transform: uppercase;
 }
 
 .track-role-chip.accent,
@@ -4620,7 +4763,7 @@ button {
   gap: 6px;
   min-height: 22px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper-2);
   color: var(--ink-2);
   font-size: 11.5px;
@@ -4641,11 +4784,10 @@ button {
   gap: 8px;
   margin-bottom: 9px;
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .track-evidence-list {
@@ -4660,7 +4802,7 @@ button {
   gap: 8px;
   align-items: start;
   border: 1px solid var(--hairline);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper-2);
   color: var(--ink-2);
   padding: 7px 10px;
@@ -4684,7 +4826,7 @@ button {
   border-radius: 999px;
   background: var(--ink-2);
   color: var(--paper);
-  font-size: 9px;
+  font-size: 9.5px;
   font-weight: 650;
 }
 
@@ -4696,10 +4838,11 @@ button {
   min-height: 22px;
   margin: 0 3px;
   border: 1px solid rgba(240, 177, 0, 0.5);
-  border-radius: 4px;
+  border-radius: 6px;
   background: rgba(240, 177, 0, 0.1);
   color: #7a5800;
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
   font-weight: 650;
   line-height: 1;
@@ -4752,11 +4895,11 @@ button.track-citation-chip:hover {
 
 .track-assistant-sources-label {
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 650;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
   line-height: 1;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .track-assistant-source-list {
@@ -4799,7 +4942,7 @@ button.track-citation-chip:hover {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper);
   color: var(--ink-3);
 }
@@ -4838,7 +4981,7 @@ button.track-citation-chip:hover {
   min-height: 20px;
   border: 0;
   margin: 0 1px;
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper);
   color: var(--ink);
   cursor: default;
@@ -4955,7 +5098,7 @@ button.track-mention-inline.group:focus-visible {
 
 .track-markdown code {
   border: 1px solid var(--hairline);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper-2);
   color: var(--ink);
   font-family: var(--font-mono);
@@ -5028,7 +5171,7 @@ button.track-mention-inline.group:focus-visible {
   border: 2px solid var(--paper);
   border-radius: 999px;
   box-shadow: 0 1px 5px rgba(27, 25, 23, 0.08);
-  font-size: 7px;
+  font-size: 9.5px;
   font-weight: 700;
   line-height: 1;
 }
@@ -5045,7 +5188,8 @@ button.track-mention-inline.group:focus-visible {
   margin-left: -7px;
   background: var(--paper-2);
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
 }
 
 .track-typing-text {
@@ -5182,7 +5326,7 @@ button.track-mention-inline.group:focus-visible {
   width: min(238px, 100%);
   min-height: 54px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--paper-2);
   padding: 5px 6px;
 }
@@ -5236,7 +5380,7 @@ button.track-mention-inline.group:focus-visible {
 .track-composer-file-icon {
   width: 42px;
   height: 42px;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
 }
 
@@ -5269,7 +5413,8 @@ button.track-mention-inline.group:focus-visible {
 
 .track-composer-attachment-meta small {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -5381,7 +5526,8 @@ button.track-mention-inline.group:focus-visible {
 
 .track-voice-recorder-copy small {
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -5465,13 +5611,12 @@ button.track-mention-inline.group:focus-visible {
 .track-mention-section-label {
   margin: 0;
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0;
+  font-family: var(--font-meta);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1;
   padding: 2px 4px;
-  text-transform: uppercase;
 }
 
 .track-mention-option {
@@ -5480,7 +5625,7 @@ button.track-mention-inline.group:focus-visible {
   gap: 8px;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
@@ -5544,19 +5689,19 @@ button.track-mention-inline.group:focus-visible {
 }
 
 .track-mention-avatar.s-1 {
-  background: #1b1917;
+  background: var(--ink);
 }
 
 .track-mention-avatar.s-2 {
-  background: #5b6d4a;
+  background: var(--avatar-tone-2);
 }
 
 .track-mention-avatar.s-3 {
-  background: #7a4a3a;
+  background: var(--avatar-tone-3);
 }
 
 .track-mention-avatar.s-4 {
-  background: #3a4a6d;
+  background: var(--avatar-tone-4);
 }
 
 .track-mention-avatar.bot {
@@ -5690,7 +5835,7 @@ button.track-mention-inline.group:focus-visible {
   min-width: 17px;
   height: 17px;
   border: 1px solid rgba(250, 249, 247, 0.25);
-  border-radius: 3px;
+  border-radius: 6px;
   color: rgba(250, 249, 247, 0.65);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -5793,10 +5938,10 @@ button.track-mention-inline.group:focus-visible {
 
 .track-rail-sub {
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .track-pulse {
@@ -5864,7 +6009,7 @@ button.track-mention-inline.group:focus-visible {
 .track-rail-menu {
   width: 188px;
   border-color: var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper-2);
   padding: 3px;
   box-shadow: 0 10px 28px rgba(27, 25, 23, 0.12);
@@ -5873,7 +6018,7 @@ button.track-mention-inline.group:focus-visible {
 .track-rail-menu [role="menuitem"],
 .track-rail-menu [role="menuitemradio"] {
   min-height: 28px;
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--ink-2);
   font-size: 12px;
   padding: 4px 7px;
@@ -5889,12 +6034,11 @@ button.track-mention-inline.group:focus-visible {
 
 .track-rail-menu [data-slot="dropdown-menu-label"] {
   color: var(--ink-4);
-  font-family: var(--font-mono);
-  font-size: 9px;
+  font-family: var(--font-meta);
+  font-size: 9.5px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.01em;
   padding: 5px 7px 4px;
-  text-transform: uppercase;
 }
 
 .track-rail-menu-link,
@@ -5902,7 +6046,7 @@ button.track-mention-inline.group:focus-visible {
   display: flex;
   min-height: 26px;
   align-items: center;
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--ink-2);
   font-size: 12px;
   padding: 4px 7px;
@@ -5942,7 +6086,7 @@ button.track-mention-inline.group:focus-visible {
 .track-count-cell span {
   margin-top: 3px;
   color: var(--ink-3);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 10px;
   letter-spacing: 0;
 }
@@ -5959,11 +6103,12 @@ button.track-mention-inline.group:focus-visible {
   min-height: 26px;
   width: 100%;
   border: 1px solid var(--hairline-strong);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper);
   color: var(--ink-2);
   cursor: pointer;
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 9.5px;
   transition:
     background-color 140ms ease,
@@ -6003,7 +6148,8 @@ button.track-mention-inline.group:focus-visible {
   gap: 4px;
   padding: 0 7px;
   color: var(--ink-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
   font-size: 10px;
 }
 
@@ -6040,26 +6186,25 @@ button.track-mention-inline.group:focus-visible {
   border-color: var(--hairline-strong);
   background: var(--paper);
   color: var(--ink-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
 }
 
 .track-status-menu-trigger {
   display: inline-flex;
-  width: 100%;
-  min-height: 26px;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   border: 1px solid var(--hairline-strong);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--paper);
   color: var(--ink-2);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   padding: 4px 7px;
   text-align: left;
-  text-transform: uppercase;
   transition:
     background-color 140ms ease,
     border-color 140ms ease,
@@ -6082,7 +6227,7 @@ button.track-mention-inline.group:focus-visible {
 .track-status-menu {
   width: 156px;
   border-color: var(--hairline);
-  border-radius: 5px;
+  border-radius: 6px;
   background: var(--paper-2);
   padding: 3px;
   box-shadow: 0 10px 28px rgba(27, 25, 23, 0.12);
@@ -6090,7 +6235,7 @@ button.track-mention-inline.group:focus-visible {
 
 .track-status-menu-item {
   min-height: 27px;
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--ink-2);
   font-size: 11.5px;
   padding: 4px 7px;
@@ -6113,7 +6258,8 @@ button.track-mention-inline.group:focus-visible {
 
 .track-audit-list small {
   color: var(--ink-4);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
+  letter-spacing: 0.01em;
 }
 
 .track-settings-actions {
@@ -6700,8 +6846,90 @@ button:disabled:hover {
   }
 }
 
+/* Compact workspace chrome and calm detail surfaces. */
+.track-thread-header {
+  min-height: 48px;
+  height: 48px;
+  padding: 8px 16px;
+}
+
+.track-thread-header h1 { font-size: 15px; font-weight: 600; }
+.track-thread-header .icon-button { width: 28px; height: 28px; color: var(--ink-3); }
+.track-thread-header .icon-button:hover { background: var(--paper-3); }
+
+.track-header-members .track-avatar-tooltip-trigger,
+.track-header-members .track-avatar,
+.track-member-more { width: 22px; height: 22px; min-width: 22px; }
+.track-header-members .track-avatar-tooltip-trigger,
+.track-member-more { margin-left: -5px; }
+
+.track-rail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.track-rail-stack { display: grid; gap: 18px; padding: 14px 12px; }
+.track-rail-group { display: grid; gap: 7px; }
+.track-rail-heading {
+  margin: 0;
+  color: var(--ink-3);
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+.track-rail-card {
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--paper);
+  transition: border-color 160ms ease;
+}
+.track-rail-card:hover { border-color: var(--hairline-strong); }
+.track-rail-empty {
+  padding: 10px;
+  color: var(--ink-3);
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.track-avatar-tooltip { border-radius: 10px; box-shadow: var(--shadow-pop); }
+.track-avatar-card { --track-avatar-card-radius: 10px; width: 232px; }
+.track-avatar-card-banner { height: 44px; }
+.track-avatar-card-body { gap: 8px; padding: 0 12px 12px; }
+.track-avatar-card-avatar {
+  width: 36px;
+  height: 36px;
+  margin-top: -18px;
+  border-width: 3px;
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 700;
+}
+.track-avatar-card-copy strong { font-size: 13.5px; font-weight: 650; line-height: 1.2; }
+.track-avatar-card-copy small {
+  color: var(--ink-3);
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-transform: none;
+}
+.track-avatar-card-presence { display: flex; align-items: center; gap: 5px; }
+.track-avatar-card-presence > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--success);
+}
+.track-avatar-card-copy p { margin-top: 5px; font-size: 12px; }
+
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

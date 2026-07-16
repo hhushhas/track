@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ComponentProps, CSSProperties, ReactNode } from 'react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '#/components/ui/tooltip'
 import { getAvatarTone, getAvatarToneColor, getInitials } from './identity'
 import {
   ProfileBannerBackground,
@@ -89,7 +89,12 @@ export function TeamMemberCard({
         <div className="track-avatar-card-copy">
           <strong>{name}</strong>
           {detail ? <small>{detail}</small> : null}
-          {localTime ? <small>{localTime}</small> : null}
+          {localTime ? (
+            <small className="track-avatar-card-presence">
+              <span aria-hidden="true" />
+              {localTime}
+            </small>
+          ) : null}
           {bio ? <p>{bio}</p> : null}
         </div>
       </div>
@@ -104,27 +109,29 @@ export function AvatarNameTooltip({
   ...cardProps
 }: AvatarNameTooltipProps) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        closeOnClick={false}
-        render={(props) => (
-          <span
-            {...props}
-            className={['track-avatar-tooltip-trigger', props.className].filter(Boolean).join(' ')}
-          >
-            {children}
-          </span>
-        )}
-      />
-      <TooltipContent
-        align={align}
-        className="track-avatar-tooltip"
-        side={side}
-        sideOffset={8}
-      >
-        <TeamMemberCard {...cardProps} />
-      </TooltipContent>
-    </Tooltip>
+    <TooltipProvider closeDelay={250} delay={350}>
+      <Tooltip>
+        <TooltipTrigger
+          closeOnClick={false}
+          render={(props) => (
+            <span
+              {...props}
+              className={['track-avatar-tooltip-trigger', props.className].filter(Boolean).join(' ')}
+            >
+              {children}
+            </span>
+          )}
+        />
+        <TooltipContent
+          align={align}
+          className="track-avatar-tooltip"
+          side={side}
+          sideOffset={8}
+        >
+          <TeamMemberCard {...cardProps} />
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 

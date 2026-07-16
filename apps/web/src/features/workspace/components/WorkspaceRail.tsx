@@ -1,7 +1,6 @@
 import { Bell, GripVertical, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
-import { Card } from '#/components/ui/card'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
+import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
 import { formatRailLabel } from '#/features/workspace/lib/formatting'
 import { notificationModes } from '#/features/workspace/constants'
 import { notificationPermissionLabels, type WebNotificationPermission } from '#/features/workspace/web-notifications'
@@ -24,6 +24,10 @@ type WorkspaceRailProps = {
   groupNotificationMode: (typeof notificationModes)[number]
   notificationPermission: WebNotificationPermission
   notificationStatus: string | null
+  references: Array<{ id: string; filename: string; contentType: string; url: string | null }>
+  members: Array<{ id: string; name: string }>
+  projectName: string | null
+  channelName: string | null
   onCollapse: () => void
   onExpand: () => void
   onNotificationMode: (mode: (typeof notificationModes)[number]) => void
@@ -108,6 +112,10 @@ export function WorkspaceRail({
   groupNotificationMode,
   notificationPermission,
   notificationStatus,
+  references,
+  members,
+  projectName,
+  channelName,
   onCollapse,
   onExpand,
   onNotificationMode,
@@ -159,34 +167,49 @@ export function WorkspaceRail({
           <GripVertical size={14} />
         </span>
       </button>
-      <Card className="track-rail-section" size="sm">
-        <div className="track-rail-title">
-          <span>
-            <span className="track-rail-heading">Workspace</span>
-          </span>
-          <div className="track-rail-icon-actions">
-            <button
-              aria-label="Collapse workspace details"
-              className="track-rail-icon-button"
-              onClick={onCollapse}
-              type="button"
-            >
-              <PanelRightClose size={14} />
-            </button>
-            <NotificationMenu
-              activeProjectId={activeProjectId}
-              busyAction={busyAction}
-              globalNotificationMode={globalNotificationMode}
-              groupNotificationMode={groupNotificationMode}
-              notificationPermission={notificationPermission}
-              notificationStatus={notificationStatus}
-              onEnableBrowserNotifications={onEnableBrowserNotifications}
-              onNotificationMode={onNotificationMode}
-              onSendTestNotification={onSendTestNotification}
-            />
-          </div>
+      <div className="track-rail-toolbar">
+        <span className="track-rail-heading">Workspace details</span>
+        <div className="track-rail-icon-actions">
+          <button
+            aria-label="Collapse workspace details"
+            className="track-rail-icon-button"
+            onClick={onCollapse}
+            type="button"
+          >
+            <PanelRightClose size={14} />
+          </button>
+          <NotificationMenu
+            activeProjectId={activeProjectId}
+            busyAction={busyAction}
+            globalNotificationMode={globalNotificationMode}
+            groupNotificationMode={groupNotificationMode}
+            notificationPermission={notificationPermission}
+            notificationStatus={notificationStatus}
+            onEnableBrowserNotifications={onEnableBrowserNotifications}
+            onNotificationMode={onNotificationMode}
+            onSendTestNotification={onSendTestNotification}
+          />
         </div>
-      </Card>
+      </div>
+      <div className="track-rail-stack">
+        <section className="track-rail-group" aria-labelledby="rail-references-heading">
+          <h2 className="track-rail-heading" id="rail-references-heading">Pinned and recent references</h2>
+          {references.length > 0 ? references.map((reference) => {
+            const content = <><AttachmentTypeIcon contentType={reference.contentType} filename={reference.filename} size={18} /><span>{reference.filename}</span></>
+            return reference.url ? <a className="track-rail-card" href={reference.url} key={reference.id} rel="noreferrer" target="_blank">{content}</a> : <div className="track-rail-card" key={reference.id}>{content}</div>
+          }) : <div className="track-rail-card track-rail-empty">No recent references</div>}
+        </section>
+        <section className="track-rail-group" aria-labelledby="rail-members-heading">
+          <h2 className="track-rail-heading" id="rail-members-heading">Members</h2>
+          {members.length > 0 ? members.map((member) => <div className="track-rail-card" key={member.id}>{member.name}</div>) : <div className="track-rail-card track-rail-empty">No members available</div>}
+        </section>
+        <section className="track-rail-group" aria-labelledby="rail-context-heading">
+          <h2 className="track-rail-heading" id="rail-context-heading">Project context</h2>
+          <div className="track-rail-card track-rail-empty">
+            {activeProjectId && projectName ? <>{projectName}{channelName ? ` · ${channelName}` : ''}</> : 'Select a Project'}
+          </div>
+        </section>
+      </div>
     </aside>
   )
 }

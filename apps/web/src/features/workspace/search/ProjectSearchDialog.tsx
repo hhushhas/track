@@ -108,7 +108,7 @@ export function ProjectSearchDialog({
     { Icon: Search, label: 'All', value: 'all' },
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
     { Icon: Paperclip, label: 'Files', value: 'files' },
-    { Icon: FolderKanban, label: 'Groups', value: 'groups' },
+    { Icon: FolderKanban, label: 'Channels', value: 'groups' },
   ]
   const hasQuery = query.trim().length >= 2
   let resultIndex = -1
@@ -137,7 +137,7 @@ export function ProjectSearchDialog({
             autoFocus
             className="track-project-search-input"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
-            placeholder="Search messages, files, and groups..."
+            placeholder="Search messages, files, and channels..."
             value={query}
           />
           <span>{total} results</span>
@@ -161,7 +161,7 @@ export function ProjectSearchDialog({
             <div className="track-project-search-state">
               <Search size={18} />
               <p>Type at least 2 characters to search this project.</p>
-              <small>Use ⌘K anywhere, or / inside a group when the composer is not focused.</small>
+              <small>Use ⌘K anywhere, or / inside a channel when the composer is not focused.</small>
             </div>
           ) : loading ? (
             <div className="track-project-search-state">

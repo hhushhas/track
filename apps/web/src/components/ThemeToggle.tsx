@@ -18,6 +18,16 @@ function getInitialMode(): ThemeMode {
   return 'auto'
 }
 
+const THEME_COLOR_LIGHT = '#faf9f7'
+const THEME_COLOR_DARK = '#151412'
+
+function applyThemeColor(resolved: 'light' | 'dark') {
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) {
+    meta.setAttribute('content', resolved === 'dark' ? THEME_COLOR_DARK : THEME_COLOR_LIGHT)
+  }
+}
+
 function applyThemeMode(mode: ThemeMode) {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
   const resolved = mode === 'auto' ? (prefersDark ? 'dark' : 'light') : mode
@@ -32,6 +42,7 @@ function applyThemeMode(mode: ThemeMode) {
   }
 
   document.documentElement.style.colorScheme = resolved
+  applyThemeColor(resolved)
 }
 
 export default function ThemeToggle() {

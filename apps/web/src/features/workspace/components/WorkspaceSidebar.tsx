@@ -134,7 +134,7 @@ export function WorkspaceSidebar({
               <FolderKanban className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
-                <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No client label'}</span>
+                <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No project label'}</span>
               </span>
               <ChevronDown className="track-nav-icon track-project-chevron" size={14} />
             </DropdownMenuTrigger>
@@ -168,13 +168,13 @@ export function WorkspaceSidebar({
           <div className="track-nav-secondary">
             <div className="track-sidebar-groups">
               <div className="track-nav-section">
-                <span>Groups</span>
+                <span>Channels</span>
                 <button
-                  aria-label="Create group"
+                  aria-label="Create channel"
                   className="track-nav-action"
                   disabled={busyAction === 'create-group'}
                   onClick={onCreateGroup}
-                  title={navCollapsed ? 'Create group' : undefined}
+                  title={navCollapsed ? 'Create channel' : undefined}
                   type="button"
                 >
                   <Plus aria-hidden="true" size={13} />
@@ -204,7 +204,7 @@ export function WorkspaceSidebar({
                   )
                 })}
                 {visibleGroups.length === 0 ? (
-                  <span className="track-nav-empty">No groups yet</span>
+                  <span className="track-nav-empty">No channels yet</span>
                 ) : null}
               </div>
             </div>

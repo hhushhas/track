@@ -197,7 +197,7 @@ export function useWorkspaceSynchronization({
       if (firstGroupId && projectIdToOpen) {
         void navigate({ to: '/workspace/projects/$projectId/groups/$groupId', params: { groupId: firstGroupId, projectId: projectIdToOpen } })
       } else if (!visibleGroups.length) {
-        setUiError('This group is not visible in the selected project.')
+        setUiError('This channel is not visible in the selected project.')
       }
       return
     }

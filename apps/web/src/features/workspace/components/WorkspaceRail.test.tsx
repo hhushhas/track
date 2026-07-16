@@ -11,6 +11,10 @@ const baseProps = {
   groupNotificationMode: 'all' as const,
   notificationPermission: 'default' as const,
   notificationStatus: null,
+  references: [{ id: 'attachment-id', filename: 'launch.pdf', contentType: 'application/pdf', url: 'https://example.test/launch.pdf' }],
+  members: [{ id: 'user-id', name: 'Ada Lovelace' }],
+  projectName: 'Launch',
+  channelName: 'Planning',
   onCollapse: vi.fn(),
   onEnableBrowserNotifications: vi.fn(),
   onExpand: vi.fn(),
@@ -32,10 +36,22 @@ describe('WorkspaceRail', () => {
     ])
   })
 
-  it('does not render invitation emails or audit history when expanded', () => {
+  it('renders privacy-safe references, members, and Project context already supplied by the workspace', () => {
     render(<WorkspaceRail {...baseProps} railCollapsed={false} />)
 
+    expect(screen.getByRole('heading', { name: 'Pinned and recent references' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Members' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Project context' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /launch\.pdf/ }).getAttribute('href')).toBe('https://example.test/launch.pdf')
+    expect(screen.getByText('Ada Lovelace')).toBeTruthy()
+    expect(screen.getByText('Launch · Planning')).toBeTruthy()
     expect(screen.queryByText('Invitations')).toBeNull()
     expect(screen.queryByText('Audit Trail')).toBeNull()
+  })
+
+  it('uses accurate empty states when no visible reference or member data is supplied', () => {
+    render(<WorkspaceRail {...baseProps} references={[]} members={[]} railCollapsed={false} />)
+    expect(screen.getByText('No recent references')).toBeTruthy()
+    expect(screen.getByText('No members available')).toBeTruthy()
   })
 })
