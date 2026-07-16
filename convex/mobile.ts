@@ -135,6 +135,9 @@ export const listProjectMembers = query({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'readProject')
+    if (access.companyAccess?.entitlement) {
+      return access.companyAccess.entitlement.memberSnapshots ?? []
+    }
     const memberships = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect()
     const visible = access.companyAccess
       ? memberships.filter((membership) => membership.status === 'active')
@@ -182,16 +185,17 @@ export const listGroups = query({
       visibleMemberships.map(async (membership) => {
         const group = await ctx.db.get(membership.groupId)
         if (!group) return null
+        const cutoff = access.companyAccess?.entitlement?.exitAt
         const lastMessage = await ctx.db
           .query('messages')
-          .withIndex('by_group_created_at', (q) => q.eq('groupId', group._id))
+          .withIndex('by_group_created_at', (q) => cutoff
+            ? q.eq('groupId', group._id).lte('createdAt', cutoff)
+            : q.eq('groupId', group._id))
           .order('desc')
           .first()
-        const cutoff = access.companyAccess?.entitlement?.exitAt
-        const visibleLastMessage = lastMessage && (!cutoff || lastMessage.createdAt <= cutoff) ? lastMessage : null
         const unreadCount = await getGroupUnreadCount(ctx, group._id, args.userId, args.projectMemberId, cutoff)
         const snapshot = access.companyAccess?.entitlement?.channelSnapshots.find((item: { _id?: string }) => item._id === group._id)
-        return { group: snapshot ?? group, membership, lastMessage: visibleLastMessage, unreadCount }
+        return { group: snapshot ?? group, membership, lastMessage, unreadCount }
       }),
     )
 

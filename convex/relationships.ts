@@ -246,11 +246,19 @@ export const decideInvitation = mutation({
       await ctx.db.patch(invitation._id, { status: 'declined', decidedBy: actor.userId, decidedAt: now, updatedAt: now })
       return invitation._id
     }
-    const [relationship, target] = await Promise.all([
+    const [relationship, target, invitingCompany] = await Promise.all([
       ctx.db.get(invitation.relationshipId),
       ctx.db.get(args.actingCompanyId),
+      ctx.db.get(invitation.invitingCompanyId),
     ])
-    if (!relationship || relationship.status === 'closed' || !target || target.status !== 'active') {
+    if (
+      !relationship ||
+      relationship.status === 'closed' ||
+      !target ||
+      target.status !== 'active' ||
+      !invitingCompany ||
+      invitingCompany.status !== 'active'
+    ) {
       throw new Error('relationship_unavailable')
     }
     const terms = await ctx.db

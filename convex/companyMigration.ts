@@ -17,6 +17,66 @@ const mappingInput = v.object({
   neutralRole: v.union(v.literal('manager'), v.literal('member')),
 })
 
+function sourceFingerprint(rows: Array<{ id: string } & Record<string, unknown>>) {
+  return JSON.stringify([...rows].sort((left, right) => left.id.localeCompare(right.id)))
+}
+
+function memberFingerprint(members: Array<{
+  _id: unknown
+  companyId?: unknown
+  projectCompanyId?: unknown
+  role?: unknown
+  status?: unknown
+  updatedAt?: unknown
+  userId: unknown
+}>) {
+  return sourceFingerprint(members.map((member) => ({
+    id: String(member._id),
+    companyId: member.companyId ? String(member.companyId) : null,
+    projectCompanyId: member.projectCompanyId ? String(member.projectCompanyId) : null,
+    role: member.role,
+    status: member.status,
+    updatedAt: member.updatedAt,
+    userId: String(member.userId),
+  })))
+}
+
+function groupFingerprint(groups: Array<{
+  _id: unknown
+  kind?: unknown
+  name: unknown
+  status?: unknown
+  updatedAt?: unknown
+}>) {
+  return sourceFingerprint(groups.map((group) => ({
+    id: String(group._id),
+    kind: group.kind,
+    name: group.name,
+    status: group.status,
+    updatedAt: group.updatedAt,
+  })))
+}
+
+function groupMembershipFingerprint(memberships: Array<{
+  _id: unknown
+  groupId: unknown
+  isSteward?: unknown
+  projectMemberId?: unknown
+  status?: unknown
+  updatedAt?: unknown
+  userId: unknown
+}>) {
+  return sourceFingerprint(memberships.map((membership) => ({
+    id: String(membership._id),
+    groupId: String(membership.groupId),
+    isSteward: membership.isSteward,
+    projectMemberId: membership.projectMemberId ? String(membership.projectMemberId) : null,
+    status: membership.status,
+    updatedAt: membership.updatedAt,
+    userId: String(membership.userId),
+  })))
+}
+
 export const listPendingForCompany = query({
   args: { actingCompanyId: v.id('companies') },
   handler: async (ctx, args) => {
@@ -92,6 +152,10 @@ export const initiate = mutation({
       .unique()
     if (existing) return existing._id
     const members = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect()
+    const groups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect()
+    const groupMemberships = (await Promise.all(groups.map((group) =>
+      ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect(),
+    ))).flat()
     const mappingIds = new Set(args.mappings.map((mapping) => mapping.projectMemberId))
     if (mappingIds.size !== members.length || members.some((member) => !mappingIds.has(member._id))) {
       throw new Error('every_project_member_must_be_mapped')
@@ -121,6 +185,13 @@ export const initiate = mutation({
       initiatingCompanyId: args.initiatingCompanyId,
       status: companyIds.length === 1 ? 'ready' : 'awaiting_confirmation',
       sourceRevision: project.revision ?? 0,
+      sourceUpdatedAt: project.updatedAt,
+      sourceMemberIds: members.map((member) => member._id),
+      sourceGroupIds: groups.map((group) => group._id),
+      sourceGroupMembershipIds: groupMemberships.map((membership) => membership._id),
+      sourceMemberFingerprint: memberFingerprint(members),
+      sourceGroupFingerprint: groupFingerprint(groups),
+      sourceGroupMembershipFingerprint: groupMembershipFingerprint(groupMemberships),
       idempotencyKey: args.idempotencyKey,
       createdAt: now,
       updatedAt: now,
@@ -220,14 +291,71 @@ export const activate = mutation({
     if (upgrade.status !== 'ready') throw new Error('upgrade_not_ready')
     await requireProjectOwner(ctx, upgrade.projectId, actor.userId)
     const project = await ctx.db.get(upgrade.projectId)
-    if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy' || (project.revision ?? 0) !== upgrade.sourceRevision) {
+    if (
+      !project ||
+      resolveProjectAccessProfile(project.accessProfile) !== 'legacy' ||
+      (project.revision ?? 0) !== upgrade.sourceRevision ||
+      project.updatedAt !== upgrade.sourceUpdatedAt
+    ) {
       throw new Error('upgrade_source_changed')
     }
-    const [mappings, confirmations] = await Promise.all([
+    const [mappings, confirmations, currentMembers, currentGroups] = await Promise.all([
       ctx.db.query('legacyProjectUpgradeMappings').withIndex('by_upgrade', (q) => q.eq('upgradeId', upgrade._id)).collect(),
       ctx.db.query('legacyProjectUpgradeCompanies').withIndex('by_upgrade', (q) => q.eq('upgradeId', upgrade._id)).collect(),
+      ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect(),
+      ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect(),
     ])
+    const currentGroupMemberships = (await Promise.all(currentGroups.map((group) =>
+      ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect(),
+    ))).flat()
+    const sameIds = (left: Array<unknown>, right: Array<unknown>) =>
+      left.map(String).sort().join('|') === right.map(String).sort().join('|')
+    if (
+      !sameIds(currentMembers.map((member) => member._id), upgrade.sourceMemberIds) ||
+      !sameIds(currentGroups.map((group) => group._id), upgrade.sourceGroupIds) ||
+      !sameIds(currentGroupMemberships.map((membership) => membership._id), upgrade.sourceGroupMembershipIds) ||
+      memberFingerprint(currentMembers) !== upgrade.sourceMemberFingerprint ||
+      groupFingerprint(currentGroups) !== upgrade.sourceGroupFingerprint ||
+      groupMembershipFingerprint(currentGroupMemberships) !== upgrade.sourceGroupMembershipFingerprint
+    ) throw new Error('upgrade_source_changed')
     if (!confirmations.every((confirmation) => confirmation.status === 'confirmed')) throw new Error('upgrade_not_confirmed')
+    const confirmedCompanyIds = new Set(confirmations.map((confirmation) => String(confirmation.companyId)))
+    for (const confirmation of confirmations) {
+      const company = await ctx.db.get(confirmation.companyId)
+      if (!company || company.status !== 'active') throw new Error('mapped_company_unavailable')
+      if (upgrade.relationshipId) {
+        await requireActiveRelationshipParticipant(ctx, upgrade.relationshipId, company._id)
+      }
+    }
+    for (const mapping of mappings) {
+      if (!confirmedCompanyIds.has(String(mapping.companyId))) throw new Error('upgrade_mapping_stale')
+      const member = currentMembers.find((candidate) => candidate._id === mapping.legacyProjectMemberId)
+      if (!member) throw new Error('upgrade_mapping_stale')
+      const companyMembership = await ctx.db
+        .query('companyMembers')
+        .withIndex('by_company_user', (q) =>
+          q.eq('companyId', mapping.companyId).eq('userId', member.userId),
+        )
+        .unique()
+      if (!companyMembership || companyMembership.status !== 'active') {
+        throw new Error('mapped_company_member_unavailable')
+      }
+    }
+    const mappingByUser = new Map(currentMembers.map((member) => [
+      String(member.userId),
+      mappings.find((mapping) => mapping.legacyProjectMemberId === member._id),
+    ]))
+    for (const group of currentGroups) {
+      const groupMappings = currentGroupMemberships
+        .filter((membership) => membership.groupId === group._id)
+        .map((membership) => mappingByUser.get(String(membership.userId)))
+        .filter((mapping) => mapping !== undefined)
+      for (const companyId of new Set(groupMappings.map((mapping) => mapping.companyId))) {
+        if (!groupMappings.some((mapping) =>
+          mapping.companyId === companyId && mapping.neutralRole === 'manager',
+        )) throw new Error('channel_company_steward_required')
+      }
+    }
     const now = Date.now()
     const projectCompanyByCompany = new Map()
     for (const confirmation of confirmations) {

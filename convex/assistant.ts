@@ -98,14 +98,14 @@ export const listForGroup = query({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
     return await ctx.db
       .query('assistantStreams')
-      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .withIndex('by_group_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId))
       .order('desc')
       .take(args.limit ?? 20)
-      .then((streams) => access.companyAccess?.entitlement?.exitAt
-        ? streams.filter((stream) => stream.createdAt <= access.companyAccess!.entitlement!.exitAt)
-        : streams)
   },
 })
 

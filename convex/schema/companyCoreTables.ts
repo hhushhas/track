@@ -108,6 +108,7 @@ export const companyCoreTables = {
   })
     .index('by_relationship_status', ['relationshipId', 'status'])
     .index('by_target_status', ['targetCompanyId', 'status'])
+    .index('by_inviting_status', ['invitingCompanyId', 'status'])
     .index('by_token_hash', ['tokenHash']),
 
   relationshipRemovalRequests: defineTable({

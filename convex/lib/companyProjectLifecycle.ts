@@ -99,6 +99,24 @@ export async function invalidateProjectArchiveRequests(
   await Promise.all(requests.map((request) =>
     ctx.db.patch(request._id, { status: 'stale', updatedAt: now }),
   ))
+  const project = await ctx.db.get(projectId)
+  if (project?.status === 'archive_pending') {
+    await ctx.db.patch(project._id, { status: 'active', updatedAt: now })
+  }
+}
+
+export async function revokePendingProjectInvitations(
+  ctx: MutationCtx,
+  projectId: Id<'projects'>,
+  now: number,
+) {
+  const invitations = await ctx.db
+    .query('projectCompanyInvitations')
+    .withIndex('by_project_status', (q) => q.eq('projectId', projectId).eq('status', 'pending'))
+    .collect()
+  await Promise.all(invitations.map((invitation) =>
+    ctx.db.patch(invitation._id, { status: 'revoked', updatedAt: now }),
+  ))
 }
 
 export async function bumpProjectParticipants(

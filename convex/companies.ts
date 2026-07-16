@@ -2,6 +2,8 @@ import { isCompanyHandleAllowed, normalizeCompanyHandle } from '@track/shared/co
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
+import type { Id } from './_generated/dataModel'
+import type { MutationCtx } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import {
@@ -19,6 +21,27 @@ import {
 } from './lib/companyInvitations'
 
 const invitationRole = v.union(v.literal('admin'), v.literal('member'))
+
+async function revokeCompanyMemberArchives(
+  ctx: MutationCtx,
+  companyId: Id<'companies'>,
+  userId: Id<'users'>,
+  now: number,
+) {
+  const projectMemberships = await ctx.db
+    .query('projectMembers')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .collect()
+  for (const projectMembership of projectMemberships.filter((item) => item.companyId === companyId)) {
+    const entitlement = await ctx.db
+      .query('projectArchiveEntitlements')
+      .withIndex('by_member', (q) => q.eq('projectMemberId', projectMembership._id))
+      .unique()
+    if (entitlement?.retentionStatus === 'active') {
+      await ctx.db.patch(entitlement._id, { retentionStatus: 'revoked', updatedAt: now })
+    }
+  }
+}
 
 export const listMine = query({
   args: {},
@@ -240,6 +263,7 @@ export const decideInvitation = mutation({
     if (!company || company.status !== 'active') throw new Error('company_unavailable')
     const existing = await getCompanyMembership(ctx, company._id, actor.userId)
     if (existing) {
+      if (existing.status === 'active') throw new Error('company_member_already_active')
       await ctx.db.patch(existing._id, {
         role: invitation.role,
         status: 'active',
@@ -297,6 +321,9 @@ export const updateMember = mutation({
       if (owners.length <= 1) throw new Error('last_company_owner')
     }
     const now = Date.now()
+    if (args.status === 'suspended' || args.status === 'removed') {
+      await revokeCompanyMemberArchives(ctx, args.companyId, target.userId, now)
+    }
     await ctx.db.patch(target._id, {
       role: args.role ?? target.role,
       status: args.status ?? target.status,
@@ -346,7 +373,45 @@ export const close = mutation({
       project: await ctx.db.get(participation.projectId),
     })))).filter(({ project }) => project && (project.origin === 'shared' || project.status !== 'archived'))
     if (liveParticipations.length || pendingExits.length) throw new Error('company_projects_must_exit')
+    const activeRelationships = await ctx.db
+      .query('relationshipCompanies')
+      .withIndex('by_company_status', (q) => q.eq('companyId', company._id).eq('status', 'active'))
+      .collect()
+    if (activeRelationships.length) throw new Error('company_relationships_must_exit')
     const now = Date.now()
+    const [
+      pendingCompanyInvitations,
+      incomingRelationshipInvitations,
+      outgoingRelationshipInvitations,
+      incomingProjectInvitations,
+      outgoingProjectInvitations,
+    ] = await Promise.all([
+      ctx.db.query('companyInvitations').withIndex('by_company_status', (q) =>
+        q.eq('companyId', company._id).eq('status', 'pending'),
+      ).collect(),
+      ctx.db.query('relationshipInvitations').withIndex('by_target_status', (q) =>
+        q.eq('targetCompanyId', company._id).eq('status', 'pending'),
+      ).collect(),
+      ctx.db.query('relationshipInvitations').withIndex('by_inviting_status', (q) =>
+        q.eq('invitingCompanyId', company._id).eq('status', 'pending'),
+      ).collect(),
+      ctx.db.query('projectCompanyInvitations').withIndex('by_target_status', (q) =>
+        q.eq('targetCompanyId', company._id).eq('status', 'pending'),
+      ).collect(),
+      ctx.db.query('projectCompanyInvitations').withIndex('by_inviting_status', (q) =>
+        q.eq('invitingCompanyId', company._id).eq('status', 'pending'),
+      ).collect(),
+    ])
+    const invitationsToRevoke = [
+      ...pendingCompanyInvitations,
+      ...incomingRelationshipInvitations,
+      ...outgoingRelationshipInvitations,
+      ...incomingProjectInvitations,
+      ...outgoingProjectInvitations,
+    ]
+    await Promise.all(invitationsToRevoke.map((invitation) =>
+      ctx.db.patch(invitation._id, { status: 'revoked', updatedAt: now }),
+    ))
     const members = await ctx.db.query('companyMembers').withIndex('by_company', (q) => q.eq('companyId', company._id)).collect()
     await Promise.all(members.filter((member) => member.status === 'active').map((member) =>
       ctx.db.patch(member._id, { status: 'suspended', updatedAt: now }),

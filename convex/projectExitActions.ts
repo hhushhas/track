@@ -16,11 +16,13 @@ function shellQuote(value: string) {
 }
 
 export const snapshot = internalAction({
-  args: { projectCompanyId: v.id('projectCompanies') },
+  args: { projectCompanyId: v.id('projectCompanies'), operationId: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const input = await ctx.runQuery((internal as any).projectExit.getSnapshotInput, args) as any
     if (!input) return
-    const snapshotPath = `archives/company-exits/${input.participation._id}/${input.participation.exitCutoff}`
+    if (!args.operationId || input.participation.exitOperationId !== args.operationId) return
+    const snapshotPath = input.participation.memorySnapshotPath
+    if (!snapshotPath) return
     try {
       const sources: Array<{
         scope: 'project' | 'channel'
@@ -33,23 +35,39 @@ export const snapshot = internalAction({
         snapshotIdentifier: string
       }> = []
       const adapter = createLiveMemoryBoxAdapter()
+      if (input.memoryBox?.boxId !== input.participation.exitMemoryBoxId) {
+        if (input.participation.exitMemoryBoxId || input.memoryBox) {
+          throw new Error('snapshot_memory_version_changed')
+        }
+      }
       if (input.memoryBox && input.memoryBox.status !== 'ready') throw new Error('snapshot_memory_provider_unavailable')
       if (input.imports.length > 0 && input.memoryBox?.status !== 'ready') throw new Error('snapshot_memory_provider_unavailable')
       if (input.memoryBox?.status === 'ready') {
-        let context = ''
-        try {
-          context = await adapter.readFile(input.memoryBox.boxId, 'context.md')
-        } catch {
-          context = ''
+        if (
+          input.memoryBox.contextWritePendingRevision ||
+          input.memoryBox.lastContextUpdatedAt !== input.participation.exitContextRevision
+        ) {
+          throw new Error('snapshot_context_revision_changed')
         }
+        const context = await adapter.readFile(input.memoryBox.boxId, 'context.md')
         await adapter.writeFile(input.memoryBox.boxId, `${snapshotPath}/context.md`, context)
+        const recheck = await ctx.runQuery((internal as any).projectExit.getSnapshotInput, {
+          projectCompanyId: args.projectCompanyId,
+        }) as any
+        if (
+          !recheck ||
+          recheck.memoryBox?.contextWritePendingRevision ||
+          recheck.memoryBox?.lastContextUpdatedAt !== input.participation.exitContextRevision
+        ) {
+          throw new Error('snapshot_context_revision_changed')
+        }
         sources.push({
           scope: 'project',
           sourceKind: 'context',
           sourceIdentifier: 'context.md',
           sourceRevision: input.memoryBox.lastContextUpdatedAt,
           contentHash: await contentHash(context),
-          contentLength: context.length,
+          contentLength: new TextEncoder().encode(context).byteLength,
           snapshotIdentifier: `${snapshotPath}/context.md`,
         })
       }
@@ -68,7 +86,7 @@ export const snapshot = internalAction({
         const sourcePath = memoryImport.boxScratchPath
         const snapshotIdentifier = `${snapshotPath}/imports/${memoryImport._id}`
         const signature = await adapter.exec(input.memoryBox.boxId, {
-          command: `find ${shellQuote(sourcePath)} -type f -exec sha256sum {} \\; | sort`,
+          command: `cd ${shellQuote(sourcePath)} && find . -type f -exec sha256sum {} \\; | sort`,
         })
         if (signature.exitCode !== 0 || !signature.stdout.trim()) throw new Error('snapshot_source_hash_failed')
         const size = await adapter.exec(input.memoryBox.boxId, {
@@ -79,6 +97,18 @@ export const snapshot = internalAction({
           command: `mkdir -p ${shellQuote(snapshotIdentifier)} && cp -R ${shellQuote(`${sourcePath}/.`)} ${shellQuote(`${snapshotIdentifier}/`)}`,
         })
         if (copied.exitCode !== 0) throw new Error('snapshot_source_copy_failed')
+        const copiedSignature = await adapter.exec(input.memoryBox.boxId, {
+          command: `cd ${shellQuote(snapshotIdentifier)} && find . -type f -exec sha256sum {} \\; | sort`,
+        })
+        const copiedSize = await adapter.exec(input.memoryBox.boxId, {
+          command: `find ${shellQuote(snapshotIdentifier)} -type f -printf '%s\\n' | awk '{total += $1} END {print total+0}'`,
+        })
+        if (
+          copiedSignature.exitCode !== 0 ||
+          copiedSize.exitCode !== 0 ||
+          copiedSignature.stdout !== signature.stdout ||
+          copiedSize.stdout.trim() !== size.stdout.trim()
+        ) throw new Error('snapshot_copy_verification_failed')
         await adapter.writeFile(input.memoryBox.boxId, `${snapshotIdentifier}/track-manifest.json`, metadata)
         sources.push({
           scope,
@@ -86,7 +116,7 @@ export const snapshot = internalAction({
           sourceKind: 'import',
           sourceIdentifier: String(memoryImport._id),
           sourceRevision: memoryImport.completedAt ?? memoryImport.updatedAt,
-          contentHash: await contentHash(signature.stdout),
+          contentHash: await contentHash(copiedSignature.stdout),
           contentLength: Number.parseInt(size.stdout.trim(), 10) || 0,
           snapshotIdentifier,
         })
@@ -109,10 +139,15 @@ export const snapshot = internalAction({
         manifest,
         manifestHash: await contentHash(serialized),
         snapshotPath,
+        snapshotBoxId: input.participation.exitMemoryBoxId,
+        operationId: args.operationId,
       })
     } catch (error) {
       await ctx.runMutation((internal as any).projectExit.markSnapshotFailed, {
         projectCompanyId: input.participation._id,
+        operationId: args.operationId,
+        snapshotPath,
+        snapshotBoxId: input.participation.exitMemoryBoxId,
         error: error instanceof Error ? error.message : 'snapshot_failed',
       })
     }
@@ -120,24 +155,27 @@ export const snapshot = internalAction({
 })
 
 export const cleanupSnapshot = internalAction({
-  args: { projectCompanyId: v.id('projectCompanies') },
+  args: {
+    projectCompanyId: v.id('projectCompanies'),
+    snapshotPath: v.string(),
+    boxId: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
-    const input = await ctx.runQuery((internal as any).projectExit.getMemoryBoxForCleanup, args)
-    if (!input) return
     try {
-      if (input.memoryBox?.boxId) {
-        const result = await createLiveMemoryBoxAdapter().exec(input.memoryBox.boxId, {
-          command: `rm -rf ${shellQuote(input.participation.memorySnapshotPath)}`,
+      if (args.boxId) {
+        const result = await createLiveMemoryBoxAdapter().exec(args.boxId, {
+          command: `rm -rf ${shellQuote(args.snapshotPath)}`,
         })
         if (result.exitCode !== 0) throw new Error('snapshot_cleanup_command_failed')
       }
       await ctx.runMutation((internal as any).projectExit.markSnapshotCleaned, {
         projectCompanyId: args.projectCompanyId,
-        snapshotPath: input.participation.memorySnapshotPath,
+        snapshotPath: args.snapshotPath,
       })
     } catch (error) {
       await ctx.runMutation((internal as any).projectExit.markSnapshotCleanupFailed, {
         projectCompanyId: args.projectCompanyId,
+        snapshotPath: args.snapshotPath,
         error: error instanceof Error ? error.message : 'snapshot_cleanup_failed',
       })
     }

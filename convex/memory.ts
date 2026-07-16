@@ -311,25 +311,76 @@ export const markMemoryBoxUsed = internalMutation({
   },
 })
 
-export const updateMemoryBoxContextStats = internalMutation({
+export const beginMemoryBoxContextWrite = internalMutation({
   args: {
     projectId: v.id('projects'),
     boxId: v.string(),
-    contextLength: v.number(),
-    lastContextUpdatedAt: v.number(),
   },
   handler: async (ctx, args) => {
     const row = await ctx.db
       .query('projectMemoryBoxes')
       .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
       .unique()
-    if (!row) throw new Error('memory_box_not_found')
+    if (!row || row.boxId !== args.boxId) throw new Error('memory_box_not_found')
+    if (row.contextWritePendingRevision) throw new Error('memory_context_write_in_progress')
+    const revision = Math.max(Date.now(), (row.lastContextUpdatedAt ?? 0) + 1)
     await ctx.db.patch(row._id, {
-      contextLength: args.contextLength,
-      lastContextUpdatedAt: args.lastContextUpdatedAt,
+      contextWritePendingRevision: revision,
+      lastContextUpdatedAt: revision,
       lastUsedAt: Date.now(),
       updatedAt: Date.now(),
     })
+    return revision
+  },
+})
+
+export const completeMemoryBoxContextWrite = internalMutation({
+  args: {
+    projectId: v.id('projects'),
+    boxId: v.string(),
+    contextLength: v.number(),
+    revision: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query('projectMemoryBoxes')
+      .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
+      .unique()
+    if (
+      !row ||
+      row.boxId !== args.boxId ||
+      row.contextWritePendingRevision !== args.revision
+    ) throw new Error('memory_context_write_superseded')
+    await ctx.db.patch(row._id, {
+      contextLength: args.contextLength,
+      contextWritePendingRevision: undefined,
+      lastContextUpdatedAt: args.revision,
+      lastUsedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+  },
+})
+
+export const abortMemoryBoxContextWrite = internalMutation({
+  args: {
+    projectId: v.id('projects'),
+    boxId: v.string(),
+    revision: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query('projectMemoryBoxes')
+      .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
+      .unique()
+    if (
+      row?.boxId === args.boxId &&
+      row.contextWritePendingRevision === args.revision
+    ) {
+      await ctx.db.patch(row._id, {
+        contextWritePendingRevision: undefined,
+        updatedAt: Date.now(),
+      })
+    }
   },
 })
 

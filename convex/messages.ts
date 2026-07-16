@@ -27,6 +27,8 @@ async function buildMessageDetail(
   message: Doc<'messages'>,
   viewerId: Id<'users'>,
   viewerProjectMemberId?: Id<'projectMembers'>,
+  cutoff?: number,
+  archivedChannelIds?: Array<Id<'groups'>>,
 ) {
   const author = await ctx.db.get(message.authorId)
   const authorProjectMember = message.authorProjectMemberId
@@ -37,20 +39,25 @@ async function buildMessageDetail(
   const attachments = await Promise.all(
     message.attachmentIds.map(async (attachmentId) => {
       const attachment = await ctx.db.get(attachmentId)
-      if (!attachment) return null
+      if (!attachment || (cutoff && attachment.createdAt > cutoff)) return null
       const url = await ctx.storage.getUrl(attachment.storageId)
       return { attachment, url }
     }),
   )
   const replyToMessage = message.replyToMessageId ? await ctx.db.get(message.replyToMessageId) : null
   const replyToAuthor = replyToMessage ? await ctx.db.get(replyToMessage.authorId) : null
-  const sourceGroupAccess = message.forwardedFrom
+  const sourceMembership = message.forwardedFrom && !archivedChannelIds
     ? viewerProjectMemberId
       ? await ctx.db.query('groupMembers').withIndex('by_group_project_member', (q) =>
           q.eq('groupId', message.forwardedFrom!.sourceGroupId).eq('projectMemberId', viewerProjectMemberId),
         ).unique()
       : await getGroupMembership(ctx, message.forwardedFrom.sourceGroupId, viewerId)
     : null
+  const sourceGroupAccess = message.forwardedFrom
+    ? archivedChannelIds
+      ? archivedChannelIds.includes(message.forwardedFrom.sourceGroupId)
+      : Boolean(sourceMembership && (!sourceMembership.status || sourceMembership.status === 'active'))
+    : false
   const sourceGroup = message.forwardedFrom && sourceGroupAccess
     ? await ctx.db.get(message.forwardedFrom.sourceGroupId)
     : null
@@ -66,7 +73,7 @@ async function buildMessageDetail(
       : null,
     attachments: attachments.filter((attachment) => attachment !== null),
     replyTo:
-      replyToMessage && replyToMessage.groupId === message.groupId
+      replyToMessage && replyToMessage.groupId === message.groupId && (!cutoff || replyToMessage.createdAt <= cutoff)
         ? {
             messageId: replyToMessage._id,
             authorName: replyToAuthor?.displayName ?? 'Unknown Member',
@@ -81,7 +88,7 @@ async function buildMessageDetail(
           originalCreatedAt: message.forwardedFrom.originalCreatedAt,
           attachmentSnapshots: message.forwardedFrom.attachmentSnapshots,
           forwardedAt: message.forwardedFrom.forwardedAt,
-          canOpenSource: sourceGroupAccess !== null,
+          canOpenSource: sourceGroupAccess,
           sourceGroupId: sourceGroupAccess ? message.forwardedFrom.sourceGroupId : null,
           sourceMessageId: sourceGroupAccess ? message.forwardedFrom.sourceMessageId : null,
           sourceGroupName: sourceGroup?.name ?? null,
@@ -111,10 +118,11 @@ export const list = query({
     const cutoff = access.companyAccess?.entitlement?.exitAt
     return await ctx.db
       .query('messages')
-      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .withIndex('by_group_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId))
       .order('desc')
       .take(args.limit ?? 50)
-      .then((messages) => cutoff ? messages.filter((message) => message.createdAt <= cutoff) : messages)
   },
 })
 
@@ -136,17 +144,24 @@ export const listDetailed = query({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
     const messages = await ctx.db
       .query('messages')
-      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .withIndex('by_group_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId))
       .order('desc')
       .take(args.limit ?? 50)
-      .then((items) => access.companyAccess?.entitlement?.exitAt
-        ? items.filter((message) => message.createdAt <= access.companyAccess!.entitlement!.exitAt)
-        : items)
 
     return await Promise.all(messages.map(async (message) =>
-      await buildMessageDetail(ctx, message, args.userId, args.projectMemberId),
+      await buildMessageDetail(
+        ctx,
+        message,
+        args.userId,
+        args.projectMemberId,
+        cutoff,
+        access.companyAccess?.entitlement?.channelIds,
+      ),
     ))
   },
 })

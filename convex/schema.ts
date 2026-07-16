@@ -197,7 +197,7 @@ export default defineSchema({
     userId: v.id('users'),
     projectMemberId: v.optional(v.id('projectMembers')),
     status: v.optional(
-      v.union(v.literal('active'), v.literal('removed'), v.literal('archived')),
+      v.union(v.literal('active'), v.literal('suspended'), v.literal('removed'), v.literal('archived')),
     ),
     isSteward: v.optional(v.boolean()),
     endedAt: v.optional(v.number()),
@@ -379,6 +379,7 @@ export default defineSchema({
     updatedAt: v.number(),
     lastUsedAt: v.optional(v.number()),
     lastContextUpdatedAt: v.optional(v.number()),
+    contextWritePendingRevision: v.optional(v.number()),
     contextLength: v.optional(v.number()),
     error: v.optional(v.string()),
   })

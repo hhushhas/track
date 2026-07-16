@@ -5,9 +5,11 @@ import { appendAuditEvent } from './lib/audit'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import {
   requireActiveRelationshipParticipant,
+  requireActiveCompanyMembership,
   requireCompanyAdmin,
   requireCompanyModelEnabled,
   requireCompanyProjectManager,
+  resolveCompanyProjectAccess,
 } from './lib/companyPolicy'
 import {
   createInvitationToken,
@@ -30,11 +32,7 @@ export const listForActingCompany = query({
   handler: async (ctx, args) => {
     requireCompanyModelEnabled()
     const actor = await requireAuthenticatedActor(ctx)
-    const companyMembership = await ctx.db
-      .query('companyMembers')
-      .withIndex('by_company_user', (q) => q.eq('companyId', args.actingCompanyId).eq('userId', actor.userId))
-      .unique()
-    if (!companyMembership || companyMembership.status !== 'active') throw new Error('company_unavailable')
+    await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
     const projectMemberships = await ctx.db
       .query('projectMembers')
       .withIndex('by_user', (q) => q.eq('userId', actor.userId))
@@ -44,9 +42,20 @@ export const listForActingCompany = query({
       (member.status === 'active' || member.status === 'archived'),
     )
     return await Promise.all(represented.map(async (membership) => {
-      const project = await ctx.db.get(membership.projectId)
-      if (!project || project.accessProfile !== 'company') return null
-      return { project, membership, representedCompanyId: args.actingCompanyId }
+      try {
+        const access = await resolveCompanyProjectAccess(ctx, actor, {
+          actingCompanyId: args.actingCompanyId,
+          projectId: membership.projectId,
+          projectMemberId: membership._id,
+        })
+        return {
+          project: access.project,
+          membership: access.projectMember,
+          representedCompanyId: args.actingCompanyId,
+        }
+      } catch {
+        return null
+      }
     })).then((items) => items.filter((item) => item !== null))
   },
 })
@@ -95,6 +104,8 @@ export const propose = mutation({
     if (targetCompanyIds.length === 0) throw new Error('shared_project_target_required')
     for (const targetCompanyId of targetCompanyIds) {
       await requireActiveRelationshipParticipant(ctx, relationship._id, targetCompanyId)
+      const targetCompany = await ctx.db.get(targetCompanyId)
+      if (!targetCompany || targetCompany.status !== 'active') throw new Error('mapped_company_unavailable')
     }
     if (!args.initialMembers.some((member) => member.role === 'manager')) {
       throw new Error('initial_manager_required')
@@ -206,8 +217,18 @@ export const decideInvitation = mutation({
       return invitation._id
     }
     if (!args.initialMembers.some((member) => member.role === 'manager')) throw new Error('initial_manager_required')
-    const project = await ctx.db.get(invitation.projectId)
-    if (!project || !project.relationshipId || project.accessProfile !== 'company') throw new Error('project_unavailable')
+    const [project, invitingCompany] = await Promise.all([
+      ctx.db.get(invitation.projectId),
+      ctx.db.get(invitation.invitingCompanyId),
+    ])
+    if (
+      !project ||
+      !project.relationshipId ||
+      project.accessProfile !== 'company' ||
+      (project.status !== 'proposed' && project.status !== 'active') ||
+      !invitingCompany ||
+      invitingCompany.status !== 'active'
+    ) throw new Error('project_unavailable')
     await requireActiveRelationshipParticipant(ctx, project.relationshipId, company._id)
     for (const member of args.initialMembers) await requireEligibleCompanyUser(ctx, company._id, member.userId)
     const terms = await ctx.db
@@ -325,6 +346,34 @@ export const updateMember = mutation({
         )
         .collect()
       if (managers.filter((manager) => manager.role === 'manager').length <= 1) throw new Error('last_project_manager')
+      const stewardMemberships = await ctx.db
+        .query('groupMembers')
+        .withIndex('by_project_member_status', (q) =>
+          q.eq('projectMemberId', target._id).eq('status', 'active'),
+        )
+        .collect()
+      for (const stewardMembership of stewardMemberships.filter((item) => item.isSteward)) {
+        const channelMemberships = await ctx.db
+          .query('groupMembers')
+          .withIndex('by_group', (q) => q.eq('groupId', stewardMembership.groupId))
+          .collect()
+        const otherCompanyMembers = await Promise.all(channelMemberships
+          .filter((item) => item.status === 'active' && item.projectMemberId !== target._id)
+          .map(async (item) => item.projectMemberId ? await ctx.db.get(item.projectMemberId) : null))
+        const representedAfterChange =
+          (args.status !== 'suspended' && args.status !== 'removed') ||
+          otherCompanyMembers.some((member) => member?.companyId === args.actingCompanyId && member.status === 'active')
+        const replacementExists = await Promise.all(channelMemberships
+          .filter((item) => item.status === 'active' && item.isSteward && item.projectMemberId !== target._id)
+          .map(async (item) => item.projectMemberId ? await ctx.db.get(item.projectMemberId) : null))
+          .then((members) => members.some((member) =>
+            member?.companyId === args.actingCompanyId && member.status === 'active' && member.role === 'manager',
+          ))
+        if (representedAfterChange && !replacementExists) throw new Error('last_channel_steward')
+      }
+    }
+    if (target.status === 'removed' && args.status === 'active') {
+      throw new Error('project_member_reinvite_required')
     }
     const now = Date.now()
     await ctx.db.patch(target._id, {
@@ -333,13 +382,36 @@ export const updateMember = mutation({
       endedAt: args.status === 'removed' ? now : args.status === 'active' ? undefined : target.endedAt,
       updatedAt: now,
     })
+    if (target.role === 'manager' && args.role === 'member') {
+      const stewardMemberships = await ctx.db
+        .query('groupMembers')
+        .withIndex('by_project_member_status', (q) =>
+          q.eq('projectMemberId', target._id).eq('status', 'active'),
+        )
+        .collect()
+      await Promise.all(stewardMemberships.filter((membership) => membership.isSteward).map((membership) =>
+        ctx.db.patch(membership._id, { isSteward: false, updatedAt: now }),
+      ))
+    }
     if (args.status === 'removed' || args.status === 'suspended') {
       const channels = await ctx.db
         .query('groupMembers')
         .withIndex('by_project_member_status', (q) => q.eq('projectMemberId', target._id).eq('status', 'active'))
         .collect()
       await Promise.all(channels.map((membership) =>
-        ctx.db.patch(membership._id, { status: 'removed', endedAt: now, updatedAt: now }),
+        ctx.db.patch(membership._id, {
+          status: args.status === 'suspended' ? 'suspended' : 'removed',
+          endedAt: now,
+          updatedAt: now,
+        }),
+      ))
+    } else if (args.status === 'active' && target.status === 'suspended') {
+      const channels = await ctx.db
+        .query('groupMembers')
+        .withIndex('by_project_member_status', (q) => q.eq('projectMemberId', target._id).eq('status', 'suspended'))
+        .collect()
+      await Promise.all(channels.map((membership) =>
+        ctx.db.patch(membership._id, { status: 'active', endedAt: undefined, updatedAt: now }),
       ))
     }
     return target._id

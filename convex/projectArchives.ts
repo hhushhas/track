@@ -8,6 +8,7 @@ import {
   requireCompanyAdmin,
   resolveCompanyProjectAccess,
 } from './lib/companyPolicy'
+import { revokePendingProjectInvitations } from './lib/companyProjectLifecycle'
 
 async function requireManagerTerm(
   ctx: Parameters<typeof requireCompanyAdmin>[0],
@@ -154,6 +155,9 @@ export const approve = mutation({
       revision: (project.revision ?? 0) + 1,
       updatedAt: now,
     })
+    if (request.operation === 'archive') {
+      await revokePendingProjectInvitations(ctx, project._id, now)
+    }
     await ctx.db.patch(request._id, { status: 'approved', decidedAt: now, updatedAt: now })
     return request._id
   },

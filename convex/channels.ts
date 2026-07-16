@@ -347,14 +347,16 @@ export const requestArchive = mutation({
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
     const isSteward = access.projectMember.role === 'manager' && access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
-    if (access.group?.kind === 'general' && access.project.status === 'active' && args.operation === 'archive') {
-      throw new Error('general_channel_cannot_archive')
-    }
     const existing = await ctx.db
       .query('channelArchiveRequests')
       .withIndex('by_group_idempotency', (q) => q.eq('groupId', args.groupId).eq('idempotencyKey', args.idempotencyKey))
       .unique()
     if (existing) return existing._id
+    const expectedStatus = args.operation === 'archive' ? 'active' : 'archived'
+    if (access.group?.status !== expectedStatus) throw new Error('channel_lifecycle_conflict')
+    if (access.group?.kind === 'general' && access.project.status === 'active' && args.operation === 'archive') {
+      throw new Error('general_channel_cannot_archive')
+    }
     const now = Date.now()
     await ctx.db.patch(args.groupId, { status: 'archive_pending', updatedAt: now })
     return await ctx.db.insert('channelArchiveRequests', {
@@ -405,6 +407,9 @@ export const approveArchive = mutation({
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
     const request = await ctx.db.get(args.requestId)
     if (!request || request.status !== 'pending') return request?._id ?? null
+    if (request.projectId !== args.projectId || request.groupId !== args.groupId) {
+      throw new Error('channel_archive_request_scope_mismatch')
+    }
     if (!access.group || access.group.revision !== request.channelRevision) {
       await ctx.db.patch(request._id, { status: 'stale', updatedAt: Date.now() })
       return request._id
@@ -439,6 +444,35 @@ export const approveArchive = mutation({
       updatedAt: now,
     })
     await ctx.db.patch(request._id, { status: 'approved', decidedAt: now, updatedAt: now })
+    return request._id
+  },
+})
+
+export const cancelArchive = mutation({
+  args: {
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    actingCompanyId: v.id('companies'),
+    projectMemberId: v.id('projectMembers'),
+    requestId: v.id('channelArchiveRequests'),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await resolveCompanyProjectAccess(ctx, actor, args)
+    const isSteward = access.projectMember.role === 'manager' &&
+      access.groupMember?.status === 'active' && access.groupMember.isSteward
+    if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
+    const request = await ctx.db.get(args.requestId)
+    if (!request || request.status !== 'pending') return request?._id ?? null
+    if (request.projectId !== args.projectId || request.groupId !== args.groupId) {
+      throw new Error('channel_archive_request_scope_mismatch')
+    }
+    const now = Date.now()
+    await ctx.db.patch(request._id, { status: 'cancelled', decidedAt: now, updatedAt: now })
+    await ctx.db.patch(args.groupId, {
+      status: request.operation === 'archive' ? 'active' : 'archived',
+      updatedAt: now,
+    })
     return request._id
   },
 })

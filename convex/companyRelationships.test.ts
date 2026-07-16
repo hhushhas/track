@@ -77,10 +77,98 @@ describe('Company model authorization and lifecycle', () => {
 
     await actor.mutation(api.companies.setSuspended, { companyId, suspended: true })
     await expect(actor.query(api.mobile.listProjects, { actingCompanyId: companyId, userId: owner })).rejects.toThrow('company_unavailable')
+    await expect(actor.query(api.sharedProjects.listForActingCompany, { actingCompanyId: companyId })).rejects.toThrow('company_unavailable')
 
     await actor.mutation(api.companies.setSuspended, { companyId, suspended: false })
     const restored = await actor.query(api.mobile.listProjects, { actingCompanyId: companyId, userId: owner })
     expect(restored.map((item) => item.project._id)).toEqual([projectId])
+  })
+
+  it('does not let an invitation demote an existing active Company owner', async () => {
+    const t = convexTest(schema, modules)
+    const owner = await seedUser(t, 'invited-owner')
+    const companyId = await createCompany(t, owner, 'Invitation Safety', 'invitation-safety')
+    const invitation = await asUser(t, owner).mutation(api.companies.inviteMember, {
+      companyId,
+      email: 'invited-owner@example.test',
+      role: 'member',
+    })
+
+    await expect(asUser(t, owner).mutation(api.companies.decideInvitation, {
+      decision: 'accept',
+      invitationId: invitation.invitationId,
+    })).rejects.toThrow('company_member_already_active')
+
+    const membership = await t.run(async (ctx) => await ctx.db
+      .query('companyMembers')
+      .withIndex('by_company_user', (q) => q.eq('companyId', companyId).eq('userId', owner))
+      .unique())
+    expect(membership).toMatchObject({ role: 'owner', status: 'active' })
+  })
+
+  it('revokes outgoing Relationship and Project invitations when a Company closes', async () => {
+    const t = convexTest(schema, modules)
+    const owner = await seedUser(t, 'closing-owner')
+    const targetOwner = await seedUser(t, 'closing-target-owner')
+    const companyId = await createCompany(t, owner, 'Closing Company', 'closing-company')
+    const targetCompanyId = await createCompany(t, targetOwner, 'Closing Target', 'closing-target')
+    const now = Date.now()
+    const invitationIds = await t.run(async (ctx) => {
+      const relationshipId = await ctx.db.insert('relationships', {
+        name: 'Unaccepted Relationship',
+        status: 'forming',
+        createdBy: owner,
+        createdByCompanyId: companyId,
+        participantRevision: 0,
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      const relationshipInvitationId = await ctx.db.insert('relationshipInvitations', {
+        relationshipId,
+        targetCompanyId,
+        invitingCompanyId: companyId,
+        invitedBy: owner,
+        tokenHash: 'closing-relationship-invitation',
+        status: 'pending',
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      })
+      const projectId = await ctx.db.insert('projects', {
+        accessProfile: 'company',
+        createdAt: now,
+        createdBy: owner,
+        name: 'Unaccepted Project',
+        origin: 'shared',
+        participantRevision: 0,
+        revision: 1,
+        status: 'proposed',
+        updatedAt: now,
+      })
+      const projectInvitationId = await ctx.db.insert('projectCompanyInvitations', {
+        projectId,
+        targetCompanyId,
+        invitingCompanyId: companyId,
+        invitedBy: owner,
+        tokenHash: 'closing-project-invitation',
+        status: 'pending',
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return { projectInvitationId, relationshipInvitationId }
+    })
+
+    await asUser(t, owner).mutation(api.companies.close, { companyId, retentionConfirmed: true })
+    const closed = await t.run(async (ctx) => ({
+      company: await ctx.db.get(companyId),
+      projectInvitation: await ctx.db.get(invitationIds.projectInvitationId),
+      relationshipInvitation: await ctx.db.get(invitationIds.relationshipInvitationId),
+    }))
+    expect(closed.company?.status).toBe('closed')
+    expect(closed.projectInvitation?.status).toBe('revoked')
+    expect(closed.relationshipInvitation?.status).toBe('revoked')
   })
 
   it('requires current unanimous participant approval and rejects stale archive votes', async () => {
@@ -117,6 +205,106 @@ describe('Company model authorization and lifecycle', () => {
     expect((await t.run(async (ctx) => await ctx.db.get(requestId)))?.status).toBe('stale')
   })
 
+  it('preserves a Company Channel steward when a Project manager is demoted', async () => {
+    const { a, aCompany, projectId, t } = await seedSharedProject()
+    const replacement = await seedUser(t, 'company-a-project-manager')
+    await addCompanyMember(t, aCompany, replacement)
+    const memberships = await t.run(async (ctx) => await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .collect())
+    const original = memberships.find((membership) => membership.companyId === aCompany)!
+    const replacementMembershipId = await asUser(t, a).mutation(api.sharedProjects.addMember, {
+      actingCompanyId: aCompany,
+      projectId,
+      projectMemberId: original._id,
+      role: 'manager',
+      userId: replacement,
+    })
+
+    await asUser(t, a).mutation(api.sharedProjects.updateMember, {
+      actingCompanyId: aCompany,
+      projectId,
+      projectMemberId: original._id,
+      role: 'member',
+      targetProjectMemberId: original._id,
+    })
+
+    const channelMemberships = await t.run(async (ctx) => await ctx.db
+      .query('groupMembers')
+      .withIndex('by_project_member_status', (q) => q.eq('projectMemberId', original._id).eq('status', 'active'))
+      .collect())
+    const replacementChannels = await t.run(async (ctx) => await ctx.db
+      .query('groupMembers')
+      .withIndex('by_project_member_status', (q) => q.eq('projectMemberId', replacementMembershipId).eq('status', 'active'))
+      .collect())
+    expect(channelMemberships.every((membership) => !membership.isSteward)).toBe(true)
+    expect(replacementChannels.some((membership) => membership.isSteward)).toBe(true)
+  })
+
+  it('binds Channel archive approval to its request and permits cancellation', async () => {
+    const { a, aCompany, projectId, t } = await seedSharedProject()
+    const membership = (await t.run(async (ctx) => await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project_company_status', (q) =>
+        q.eq('projectId', projectId).eq('companyId', aCompany).eq('status', 'active'),
+      )
+      .collect()))[0]
+    const actor = asUser(t, a)
+    const firstChannelId = await actor.mutation(api.channels.create, {
+      actingCompanyId: aCompany,
+      name: 'First private Channel',
+      ownCompanyMemberIds: [membership._id],
+      projectId,
+      projectMemberId: membership._id,
+    })
+    const secondChannelId = await actor.mutation(api.channels.create, {
+      actingCompanyId: aCompany,
+      name: 'Second private Channel',
+      ownCompanyMemberIds: [membership._id],
+      projectId,
+      projectMemberId: membership._id,
+    })
+    const requestId = await actor.mutation(api.channels.requestArchive, {
+      actingCompanyId: aCompany,
+      groupId: firstChannelId,
+      idempotencyKey: 'channel-archive-1',
+      operation: 'archive',
+      projectId,
+      projectMemberId: membership._id,
+    })
+    expect(await actor.mutation(api.channels.requestArchive, {
+      actingCompanyId: aCompany,
+      groupId: firstChannelId,
+      idempotencyKey: 'channel-archive-1',
+      operation: 'archive',
+      projectId,
+      projectMemberId: membership._id,
+    })).toBe(requestId)
+
+    await expect(actor.mutation(api.channels.approveArchive, {
+      actingCompanyId: aCompany,
+      groupId: secondChannelId,
+      projectId,
+      projectMemberId: membership._id,
+      requestId,
+    })).rejects.toThrow('channel_archive_request_scope_mismatch')
+
+    await actor.mutation(api.channels.cancelArchive, {
+      actingCompanyId: aCompany,
+      groupId: firstChannelId,
+      projectId,
+      projectMemberId: membership._id,
+      requestId,
+    })
+    const cancelled = await t.run(async (ctx) => ({
+      channel: await ctx.db.get(firstChannelId),
+      request: await ctx.db.get(requestId),
+    }))
+    expect(cancelled.channel?.status).toBe('active')
+    expect(cancelled.request?.status).toBe('cancelled')
+  })
+
   it('upgrades a legacy Project only from explicit mappings and preserves exact Group membership', async () => {
     const t = convexTest(schema, modules)
     const owner = await seedUser(t, 'upgrade-owner')
@@ -149,10 +337,123 @@ describe('Company model authorization and lifecycle', () => {
     expect(after.groupMembers.every((row) => row.projectMemberId && row.status === 'active')).toBe(true)
   })
 
+  it('rejects guided migration when Channel membership changes after review', async () => {
+    const t = convexTest(schema, modules)
+    const owner = await seedUser(t, 'drift-owner')
+    const member = await seedUser(t, 'drift-member')
+    const companyId = await createCompany(t, owner, 'Drift Company', 'drift-company')
+    await addCompanyMember(t, companyId, member)
+    const { groupId, projectId } = await seedLegacyProject(t, owner, member)
+    const memberships = await t.run(async (ctx) => await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .collect())
+    const actor = asUser(t, owner)
+    const upgradeId = await actor.mutation(api.companyMigration.initiate, {
+      idempotencyKey: 'upgrade-drift',
+      initiatingCompanyId: companyId,
+      mappings: memberships.map((membership) => ({
+        companyId,
+        neutralRole: membership.userId === owner ? 'manager' as const : 'member' as const,
+        projectMemberId: membership._id,
+      })),
+      projectId,
+    })
+    await t.run(async (ctx) => {
+      const channelMember = (await ctx.db
+        .query('groupMembers')
+        .withIndex('by_group', (q) => q.eq('groupId', groupId))
+        .collect())[0]
+      await ctx.db.patch(channelMember._id, { isSteward: true, updatedAt: Date.now() + 1 })
+    })
+
+    await expect(actor.mutation(api.companyMigration.activate, { upgradeId }))
+      .rejects.toThrow('upgrade_source_changed')
+  })
+
+  it('rejects guided migration when a mapped Company membership changes after review', async () => {
+    const t = convexTest(schema, modules)
+    const owner = await seedUser(t, 'company-drift-owner')
+    const member = await seedUser(t, 'company-drift-member')
+    const companyId = await createCompany(t, owner, 'Company Drift', 'company-drift')
+    await addCompanyMember(t, companyId, member)
+    const { projectId } = await seedLegacyProject(t, owner, member)
+    const memberships = await t.run(async (ctx) => await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .collect())
+    const actor = asUser(t, owner)
+    const upgradeId = await actor.mutation(api.companyMigration.initiate, {
+      idempotencyKey: 'upgrade-company-drift',
+      initiatingCompanyId: companyId,
+      mappings: memberships.map((membership) => ({
+        companyId,
+        neutralRole: membership.userId === owner ? 'manager' as const : 'member' as const,
+        projectMemberId: membership._id,
+      })),
+      projectId,
+    })
+    await t.run(async (ctx) => {
+      const companyMembership = await ctx.db
+        .query('companyMembers')
+        .withIndex('by_company_user', (q) => q.eq('companyId', companyId).eq('userId', member))
+        .unique()
+      const now = Date.now()
+      await ctx.db.patch(companyMembership!._id, { status: 'removed', endedAt: now, updatedAt: now })
+    })
+
+    await expect(actor.mutation(api.companyMigration.activate, { upgradeId }))
+      .rejects.toThrow('mapped_company_member_unavailable')
+  })
+
+  it('rejects a pending Project invitation after the Project is archived', async () => {
+    const { a, aCompany, b, bCompany, projectId, t } = await seedSharedProject()
+    const now = Date.now()
+    const invitationId = await t.run(async (ctx) => {
+      await ctx.db.patch(projectId, { status: 'archived', updatedAt: now })
+      return await ctx.db.insert('projectCompanyInvitations', {
+        projectId,
+        targetCompanyId: bCompany,
+        invitingCompanyId: aCompany,
+        invitedBy: a,
+        tokenHash: 'archived-project-invitation',
+        status: 'pending',
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+
+    await expect(asUser(t, b).mutation(api.sharedProjects.decideInvitation, {
+      actingCompanyId: bCompany,
+      decision: 'accept',
+      initialMembers: [{ role: 'manager', userId: b }],
+      invitationId,
+    })).rejects.toThrow('project_unavailable')
+  })
+
   it('requires a verified exit snapshot, creates exact archives, and terminally archives after the last exit', async () => {
     const { a, aCompany, b, bCompany, projectId, t } = await seedSharedProject()
+    const initialMemberships = await t.run(async (ctx) => await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .collect())
+    const aInitialMembership = initialMemberships.find((membership) => membership.companyId === aCompany)!
+    const archiveRequestId = await asUser(t, a).mutation(api.projectArchives.request, {
+      actingCompanyId: aCompany,
+      idempotencyKey: 'archive-before-exit',
+      operation: 'archive',
+      projectId,
+      projectMemberId: aInitialMembership._id,
+    })
     const prepared = await asUser(t, a).mutation(api.projectExit.prepare, { actingCompanyId: aCompany, projectId })
     expect(await asUser(t, a).mutation(api.projectExit.prepare, { actingCompanyId: aCompany, projectId })).toBe(prepared)
+    expect(await asUser(t, a).query(api.projectExit.getStatus, {
+      actingCompanyId: aCompany,
+      projectId,
+      projectMemberId: aInitialMembership._id,
+    })).toMatchObject({ status: 'exit_pending' })
+    expect((await t.run(async (ctx) => await ctx.db.get(archiveRequestId)))?.status).toBe('stale')
     await expect(asUser(t, a).mutation(api.projectExit.finalize, { actingCompanyId: aCompany, projectId })).rejects.toThrow('exit_snapshot_not_verified')
     await verifyPendingSnapshot(t, projectId, aCompany)
     await asUser(t, a).mutation(api.projectExit.finalize, { actingCompanyId: aCompany, projectId })
@@ -166,6 +467,20 @@ describe('Company model authorization and lifecycle', () => {
     expect(firstExit.project?.status).toBe('active')
     expect(firstExit.aMember?.status).toBe('archived')
     expect(firstExit.entitlement?.channelIds).toHaveLength(1)
+    expect(firstExit.entitlement?.memberSnapshots).toHaveLength(2)
+
+    const replacementOwner = await seedUser(t, 'company-a-replacement-owner')
+    await addCompanyMember(t, aCompany, replacementOwner, 'owner')
+    const formerOwnerMembership = await t.run(async (ctx) => await ctx.db
+      .query('companyMembers')
+      .withIndex('by_company_user', (q) => q.eq('companyId', aCompany).eq('userId', a))
+      .unique())
+    await asUser(t, replacementOwner).mutation(api.companies.updateMember, {
+      companyId: aCompany,
+      companyMemberId: formerOwnerMembership!._id,
+      status: 'removed',
+    })
+    expect((await t.run(async (ctx) => await ctx.db.get(firstExit.entitlement!._id)))?.retentionStatus).toBe('revoked')
 
     await asUser(t, b).mutation(api.projectExit.prepare, { actingCompanyId: bCompany, projectId })
     await verifyPendingSnapshot(t, projectId, bCompany)
@@ -202,7 +517,12 @@ async function createCompany(t: TestBackend, userId: Id<'users'>, displayName: s
   return await asUser(t, userId).mutation(api.companies.create, { displayName, handle })
 }
 
-async function addCompanyMember(t: TestBackend, companyId: Id<'companies'>, userId: Id<'users'>) {
+async function addCompanyMember(
+  t: TestBackend,
+  companyId: Id<'companies'>,
+  userId: Id<'users'>,
+  role: 'owner' | 'admin' | 'member' = 'member',
+) {
   const now = Date.now()
   await t.run(async (ctx) => {
     const [company, user] = await Promise.all([ctx.db.get(companyId), ctx.db.get(userId)])
@@ -210,7 +530,7 @@ async function addCompanyMember(t: TestBackend, companyId: Id<'companies'>, user
       companyId,
       companyDisplayNameSnapshot: company!.displayName,
       createdAt: now,
-      role: 'member',
+      role,
       status: 'active',
       updatedAt: now,
       userDisplayNameSnapshot: user!.displayName,

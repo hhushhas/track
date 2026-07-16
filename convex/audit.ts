@@ -32,11 +32,13 @@ export const listProjectEvents = query({
     const cutoff = access.companyAccess?.entitlement?.exitAt
     const events = await ctx.db
       .query('auditEvents')
-      .withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId))
+      .withIndex('by_project_created_at', (q) => cutoff
+        ? q.eq('projectId', args.projectId).lte('createdAt', cutoff)
+        : q.eq('projectId', args.projectId))
       .order('desc')
       .take((args.limit ?? 100) * 2)
     return events
-      .filter((event) => (!event.groupId || visibleGroupIds.has(String(event.groupId))) && (!cutoff || event.createdAt <= cutoff))
+      .filter((event) => !event.groupId || visibleGroupIds.has(String(event.groupId)))
       .slice(0, args.limit ?? 100)
   },
 })

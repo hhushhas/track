@@ -38,6 +38,37 @@ const sourceFileValidator = v.object({
   size: v.number(),
 })
 
+async function writeReservedContext(
+  ctx: ActionCtx,
+  input: {
+    projectId: Id<'projects'>
+    boxId: string
+    content: string
+    contextLength: number
+  },
+) {
+  const revision = await ctx.runMutation(internal.memory.beginMemoryBoxContextWrite, {
+    boxId: input.boxId,
+    projectId: input.projectId,
+  })
+  try {
+    await createLiveMemoryBoxAdapter().writeFile(input.boxId, contextPath, input.content)
+    await ctx.runMutation(internal.memory.completeMemoryBoxContextWrite, {
+      boxId: input.boxId,
+      contextLength: input.contextLength,
+      projectId: input.projectId,
+      revision,
+    })
+  } catch (error) {
+    await ctx.runMutation(internal.memory.abortMemoryBoxContextWrite, {
+      boxId: input.boxId,
+      projectId: input.projectId,
+      revision,
+    })
+    throw error
+  }
+}
+
 export const startImport = action({
   args: {
     projectId: v.id('projects'),
@@ -71,12 +102,13 @@ export const startImport = action({
       : args.sourceUrls?.length
         ? 'link'
         : 'paste'
+    const scope = args.scope ?? (args.projectMemberId ? 'channel' : 'project')
     const now = Date.now()
     const importId: Id<'memoryImports'> = await ctx.runMutation(internal.memory.createImportJob, {
       actorId: args.actorId,
       actorProjectMemberId: args.projectMemberId,
       actingCompanyId: args.actingCompanyId,
-      scope: args.scope ?? 'channel',
+      scope,
       createdAt: now,
       groupId: args.groupId,
       projectId: args.projectId,
@@ -109,6 +141,7 @@ export const startImport = action({
         `actorId: ${args.actorId}`,
         `importId: ${importId}`,
         `sourceKind: ${sourceKind}`,
+        `scope: ${scope}`,
         `createdAt: ${new Date(now).toISOString()}`,
       ].join('\n')
       await adapter.writeFile(boxId, `${scratchPath}/metadata.md`, metadata)
@@ -134,19 +167,21 @@ export const startImport = action({
       }
 
       const normalizedEvidence = await readImportEvidence(adapter, boxId, scratchPath)
-      const summary = await promoteImportToContext(ctx, {
-        actorId: args.actorId,
-        boxId,
-        groupId: args.groupId,
-        importId,
-        projectId: args.projectId,
-        sourceText: [
-          args.pastedText?.trim() ? `Pasted text:\n${args.pastedText.trim()}` : '',
-          args.sourceUrls?.length ? `Links:\n${args.sourceUrls.join('\n')}` : '',
-          sourceFiles.length ? `Files:\n${sourceFiles.map((file) => `${file.filename}: ${file.storageId}`).join('\n')}` : '',
-          normalizedEvidence ? `Normalized scratch evidence:\n${normalizedEvidence}` : '',
-        ].filter(Boolean).join('\n\n'),
-      })
+      const summary = scope === 'project'
+        ? await promoteImportToContext(ctx, {
+            actorId: args.actorId,
+            boxId,
+            groupId: args.groupId,
+            importId,
+            projectId: args.projectId,
+            sourceText: [
+              args.pastedText?.trim() ? `Pasted text:\n${args.pastedText.trim()}` : '',
+              args.sourceUrls?.length ? `Links:\n${args.sourceUrls.join('\n')}` : '',
+              sourceFiles.length ? `Files:\n${sourceFiles.map((file) => `${file.filename}: ${file.storageId}`).join('\n')}` : '',
+              normalizedEvidence ? `Normalized scratch evidence:\n${normalizedEvidence}` : '',
+            ].filter(Boolean).join('\n\n'),
+          })
+        : 'Channel-scoped source preserved for authorized Channel context.'
 
       await ctx.runMutation(internal.memory.updateImportJob, {
         boxScratchPath: scratchPath,
@@ -305,11 +340,10 @@ export const editTool = action({
         await auditTool(ctx, args, 'memory_context.update_rejected', contextPath, validation)
         throw new Error(validation.reason)
       }
-      await adapter.writeFile(boxId, contextPath, validation.newContent)
-      await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
+      await writeReservedContext(ctx, {
         boxId,
         contextLength: validation.newLength,
-        lastContextUpdatedAt: Date.now(),
+        content: validation.newContent,
         projectId: args.projectId,
       })
       await auditTool(ctx, args, 'memory_tool.edit.allowed', contextPath, validation)
@@ -699,11 +733,10 @@ async function promoteImportToContext(
   }
   const lockId = await acquirePathLock(ctx, input.projectId, contextPath)
   try {
-    await adapter.writeFile(input.boxId, contextPath, validation.newContent)
-    await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
+    await writeReservedContext(ctx, {
       boxId: input.boxId,
       contextLength: validation.newLength,
-      lastContextUpdatedAt: Date.now(),
+      content: validation.newContent,
       projectId: input.projectId,
     })
     await ctx.runMutation(internal.memory.auditMemoryEvent, {
@@ -747,11 +780,10 @@ async function writeContextThroughGateway(
       await auditTool(ctx, input, 'memory_tool.write.denied', input.path, validation)
       throw new Error(validation.reason)
     }
-    await adapter.writeFile(input.boxId, input.path, validation.newContent)
-    await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
+    await writeReservedContext(ctx, {
       boxId: input.boxId,
       contextLength: validation.newLength,
-      lastContextUpdatedAt: Date.now(),
+      content: validation.newContent,
       projectId: input.projectId,
     })
     await auditTool(ctx, input, 'memory_tool.write.allowed', input.path, validation)

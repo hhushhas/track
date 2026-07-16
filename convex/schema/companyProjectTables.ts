@@ -26,6 +26,7 @@ export const companyProjectTables = {
   })
     .index('by_project_status', ['projectId', 'status'])
     .index('by_target_status', ['targetCompanyId', 'status'])
+    .index('by_inviting_status', ['invitingCompanyId', 'status'])
     .index('by_token_hash', ['tokenHash']),
 
   projectCompanies: defineTable({
@@ -38,6 +39,9 @@ export const companyProjectTables = {
     exitPreparedBy: v.optional(v.id('users')),
     exitPreparedAt: v.optional(v.number()),
     exitCutoff: v.optional(v.number()),
+    exitOperationId: v.optional(v.string()),
+    exitContextRevision: v.optional(v.number()),
+    exitMemoryBoxId: v.optional(v.string()),
     memorySnapshotStatus: v.optional(
       v.union(v.literal('pending'), v.literal('verified'), v.literal('failed')),
     ),
@@ -89,6 +93,7 @@ export const companyProjectTables = {
     channelIds: v.array(v.id('groups')),
     projectSnapshot: v.any(),
     channelSnapshots: v.array(v.any()),
+    memberSnapshots: v.optional(v.array(v.any())),
     retentionStatus: archiveRetentionStatus,
     manifestHash: v.string(),
     createdAt: v.number(),
@@ -169,6 +174,13 @@ export const companyProjectTables = {
       v.literal('cancelled'),
     ),
     sourceRevision: v.number(),
+    sourceUpdatedAt: v.number(),
+    sourceMemberIds: v.array(v.id('projectMembers')),
+    sourceGroupIds: v.array(v.id('groups')),
+    sourceGroupMembershipIds: v.array(v.id('groupMembers')),
+    sourceMemberFingerprint: v.string(),
+    sourceGroupFingerprint: v.string(),
+    sourceGroupMembershipFingerprint: v.string(),
     idempotencyKey: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),

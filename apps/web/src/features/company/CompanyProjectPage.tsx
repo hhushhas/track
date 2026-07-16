@@ -27,40 +27,47 @@ export function CompanyProjectPage({
       candidate.project._id === projectId &&
       candidate.membership._id === projectMemberId,
   );
-  const channels = useQuery(api.channels.list, {
-    actingCompanyId,
-    projectId,
-    projectMemberId,
-  });
-  const projectMembers = useQuery(
-    api.sharedProjects.listMembers,
-    item?.membership.role === "manager" && item.membership.status === "active"
-      ? { actingCompanyId, projectId, projectMemberId }
-      : "skip",
-  );
-  const companyMembers = useQuery(
-    api.companies.getAdministration,
-    item?.membership.role === "manager" && item.membership.status === "active"
-      ? { companyId: actingCompanyId }
-      : "skip",
-  );
-  const pendingProjectArchives = useQuery(
-    api.projectArchives.listPending,
-    item?.membership.role === "manager" && item.membership.status === "active"
-      ? { actingCompanyId, projectId, projectMemberId }
-      : "skip",
-  );
-  const channelParticipationInvitations = useQuery(
-    api.channels.listParticipationInvitations,
-    item?.membership.role === "manager" && item.membership.status === "active"
-      ? { actingCompanyId, projectId, projectMemberId }
-      : "skip",
-  );
   const exitStatus = useQuery(api.projectExit.getStatus, {
     actingCompanyId,
     projectId,
     projectMemberId,
   });
+  const canReadChannels =
+    exitStatus != null && exitStatus.status !== "exit_pending";
+  const canManageActiveProject =
+    exitStatus?.status === "active" &&
+    item?.membership.role === "manager" &&
+    item.membership.status === "active";
+  const channels = useQuery(
+    api.channels.list,
+    canReadChannels
+      ? { actingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
+  const projectMembers = useQuery(
+    api.sharedProjects.listMembers,
+    canManageActiveProject
+      ? { actingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
+  const companyMembers = useQuery(
+    api.companies.getAdministration,
+    canManageActiveProject
+      ? { companyId: actingCompanyId }
+      : "skip",
+  );
+  const pendingProjectArchives = useQuery(
+    api.projectArchives.listPending,
+    canManageActiveProject
+      ? { actingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
+  const channelParticipationInvitations = useQuery(
+    api.channels.listParticipationInvitations,
+    canManageActiveProject
+      ? { actingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
   const [activeChannelId, setActiveChannelId] = useState<Id<"groups"> | null>(
     null,
   );
@@ -91,6 +98,7 @@ export function CompanyProjectPage({
   );
   const requestChannelArchive = useMutation(api.channels.requestArchive);
   const approveChannelArchive = useMutation(api.channels.approveArchive);
+  const cancelChannelArchive = useMutation(api.channels.cancelArchive);
   const sendMessage = useMutation(api.messages.send);
   const requestProjectArchive = useMutation(api.projectArchives.request);
   const approveProjectArchive = useMutation(api.projectArchives.approve);
@@ -141,7 +149,10 @@ export function CompanyProjectPage({
   );
   const participationOptions = useQuery(
     api.channels.getParticipationOptions,
-    activeChannelId && isChannelSteward
+    activeChannelId &&
+      isChannelSteward &&
+      exitStatus?.status === "active" &&
+      activeChannel?.status === "active"
       ? {
           actingCompanyId,
           groupId: activeChannelId,
@@ -499,11 +510,30 @@ export function CompanyProjectPage({
             >
               Approve for Company
             </Button>
+            <Button
+              onClick={() =>
+                void run(() =>
+                  cancelChannelArchive({
+                    actingCompanyId,
+                    groupId: request.groupId,
+                    projectId,
+                    projectMemberId,
+                    requestId: request._id,
+                  }),
+                )
+              }
+              variant="outline"
+            >
+              Cancel request
+            </Button>
           </div>
         ))}
         {activeChannelId &&
         isChannelSteward &&
-        activeChannel?.kind !== "general" ? (
+        activeChannel?.kind !== "general" &&
+        (activeChannel.status === "active" ||
+          activeChannel.status === "archived") &&
+        !pendingChannelArchives?.length ? (
           <Button
             onClick={() =>
               void run(async () => {

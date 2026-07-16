@@ -199,7 +199,7 @@ export default function ProjectsScreen() {
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.list}
           data={projectItems}
-          keyExtractor={(item) => item.project._id}
+          keyExtractor={(item) => item.membership._id}
           renderItem={({ item }) => (
             <ProjectRow item={item} onPress={() => void navigateToProject(item)} />
           )}
