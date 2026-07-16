@@ -1,6 +1,6 @@
 # Channel Threads Specification
 
-Status: approved product direction; implementation pending.
+Status: approved product direction; implementation pending; not deployed.
 
 This specification defines Discord-style threads inside Track Channels. Threads
 are an independent release: task management can ship without them, and threads
@@ -9,6 +9,29 @@ integration contract below.
 
 The target philosophy and product model are in [PRODUCT.md](./PRODUCT.md). The
 running product is summarized in [README.md](../README.md).
+
+## Combined-release controls
+
+The combined implementation exposes the Company model, tasks, and threads
+through independent server-authoritative flags named `companyModel`, `tasks`,
+and `threads`. Their environment settings are
+`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
+`TRACK_THREADS_ENABLED=false`; missing or invalid values fail closed. Web and
+mobile consume an authorized server projection and never use client
+environment values as authority.
+
+Every Project persists `accessProfile: "legacy" | "company"`; that profile,
+not the current Company flag, selects legacy or Company policy. Disabling
+threads hides thread routes and controls and stops thread creation and ordinary
+thread delivery, while preserving thread rows and keeping archive, redaction,
+account-deletion, Company-exit, and retention cleanup active. Disabling the
+Company flag never reinterprets a Company-profile Project as legacy.
+
+This specification remains implementation-pending until the combined local
+gate passes. After that proof, maintained documentation may describe threads
+as implemented and locally verified, default off, and not production deployed.
+Local implementation acceptance does not authorize a production deployment or
+flag activation.
 
 ## Product intent
 
@@ -90,6 +113,11 @@ Legacy Projects use their current roles and exact Group membership through the
 central Project/Channel policy adapter. The physical `groups` and
 `groupMembers` tables may continue backing the logical Channel during migration;
 threads create no parallel Channel or membership system.
+
+Guided Company migration never infers Company identity or neutral roles.
+Owner/admin → manager and staff/client → member may be proposed for review,
+but every represented Company confirms its own people and roles; ambiguity or a
+missing confirmation blocks activation.
 
 ## Thread creation and conversation
 
@@ -179,12 +207,12 @@ active or archived threads, plus other Project evidence the selected membership
 is authorized to use. It never crosses into another Channel merely because the
 person can access both.
 
-Thread messages participate in the same server-authoritative Channel message
-sequence used by assistant retrieval and, when task management is enabled,
-automatic task detection. Provider calls, persisted answers, citations, logs,
-and model diagnostics follow the existing permission and privacy contract.
-Assistant output appears in the stream where it was requested and retains the
-parent Channel scope.
+Thread messages participate in the same server-authoritative monotonic Channel
+message sequence used by assistant retrieval and, when task management is
+enabled, automatic task detection. Provider calls, persisted answers,
+citations, logs, and model diagnostics follow the existing permission and
+privacy contract. Assistant output appears in the stream where it was requested
+and retains the parent Channel scope.
 
 ## Task-management compatibility
 
@@ -273,8 +301,9 @@ and changes are:
 - `channelThreads`: Project, Channel, required name, optional source message,
   creator user, Project membership, Acting Company, active/archive state,
   revision, idempotency key, and timestamps;
-- existing messages and assistant answers: optional thread identifier and one
-  server-authoritative Channel sequence spanning timeline and thread messages;
+- existing `messages` and assistant answers: optional `channelThreadId` and one
+  server-issued monotonic `channelSequence` spanning timeline and thread
+  messages; no parallel thread-message table is introduced;
 - `channelThreadFollowers`: thread, user, Project membership, follow reason,
   explicit preference, and timestamps;
 - `channelThreadReadState`: thread, user, Project membership, read cursor, and
@@ -290,6 +319,10 @@ Indexes support active/archived threads by Channel, source message, creator,
 thread message pagination, the combined Channel sequence, followers, unread
 cursors, notification targeting, and permission-filtered search without
 whole-table filtering.
+
+Combined ordered client collections use `channelSequenceItems`. Existing flat
+reply collections must be renamed before real thread binding so `threadItems`
+never ambiguously refers to both reply rows and first-class threads.
 
 Every server mutation enforces these invariants:
 
@@ -329,8 +362,9 @@ may still replace source or message content with a generic tombstone.
 
 ## Acceptance criteria
 
-The thread feature is ready to ship when all statements are observed in a local
-production build:
+The thread feature is implemented and locally release-ready when all statements
+are observed in a local production build. Passing them does not mean the
+default-off capability was deployed or activated in production:
 
 1. A Channel member can create a named thread from a message or directly on web
    and mobile, and retries create only one thread.
@@ -378,6 +412,11 @@ Automated coverage includes:
   lifecycle, push routing, offline state, and access loss; and
 - conditional task integration tests when both feature flags are enabled.
 
+Web end-to-end acceptance uses Playwright against a local production build.
+Mobile component and interaction coverage uses React Native Testing Library;
+Expo Router and deep-link behavior is exercised through pure presenters before
+device proof.
+
 The implementation handoff runs and observes the repository gate:
 
 ```sh
@@ -390,9 +429,10 @@ pnpm build
 
 After the automated gate, load a local production web build and exercise the
 thread workflow with a Channel member, creator, steward, restricted nonmember,
-and multi-Company user while checking the browser console. Exercise the same
-essentials and foreground/background deep links on iOS or Android. Production
-deployment requires separate explicit approval.
+and multi-Company user while checking the browser console. Install uniquely
+named release builds on both iOS and Android and exercise the same essentials
+plus foreground/background deep links. Root `pnpm build` output is not native
+acceptance. Production deployment requires separate explicit approval.
 
 ## Implementation phases
 

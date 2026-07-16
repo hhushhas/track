@@ -1,6 +1,6 @@
 # Task Management Specification
 
-Status: approved product direction; implementation pending.
+Status: approved product direction; implementation pending; not deployed.
 
 This specification defines the first-class task-management release in Track's
 target [PRODUCT.md](./PRODUCT.md) contract. The running product is summarized in
@@ -11,6 +11,30 @@ boards, and human-controlled AI task suggestions in one workspace.
 Discord-style Channel threads are governed independently by
 [THREADS_SPEC.md](./THREADS_SPEC.md). Neither release depends on the other; the
 thread compatibility rules below apply when both features are enabled.
+
+## Combined-release controls
+
+The combined implementation exposes the Company model, tasks, and threads
+through independent server-authoritative flags named `companyModel`, `tasks`,
+and `threads`. Their environment settings are
+`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
+`TRACK_THREADS_ENABLED=false`; missing or invalid values fail closed. Web and
+mobile consume an authorized server projection and never treat client
+environment values as authority.
+
+Every Project persists `accessProfile: "legacy" | "company"`; that profile,
+not the current Company flag, selects the Project policy. Disabling tasks hides
+task routes and controls and stops task creation, detection, reminders, and
+notification generation, while preserving task rows and keeping archive,
+redaction, account-deletion, Company-exit, and retention cleanup active.
+Disabling the Company flag never reinterprets a Company-profile Project as
+legacy.
+
+This specification remains implementation-pending until the combined local
+gate passes. After that proof, maintained documentation may describe task
+management as implemented and locally verified, default off, and not
+production deployed. Local implementation acceptance does not authorize a
+production deployment or flag activation.
 
 ## Product intent
 
@@ -116,7 +140,7 @@ mutation, search, notification, AI job, report, audit read, and deep link uses
 that adapter. Feature code contains no scattered legacy-role or
 `companyId ?? legacy` branches.
 
-The policy profiles are:
+The persisted policy profiles are:
 
 - **Legacy Project**: current `owner`, `admin`, `staff`, and `client` roles plus
   exact Group membership drive the legacy permission matrix below. The UI uses
@@ -357,6 +381,12 @@ defined by [THREADS_SPEC.md](./THREADS_SPEC.md).
 These combined behaviors are release-gating only when both feature flags are
 enabled. A task-only release works with Channels that have no thread records,
 and a thread-only release introduces no task dependency.
+
+When threads are enabled, timeline and thread messages remain in the existing
+`messages` table. An optional `channelThreadId` distinguishes thread messages,
+and one server-issued monotonic `channelSequence` orders the whole Channel for
+assistant context, detection, and history scans. No task code introduces a
+parallel thread-message or Channel-membership model.
 
 ### Human-created tasks
 
@@ -626,7 +656,9 @@ Guided Company upgrade shows the resulting task capabilities before activation.
 Legacy staff mapped to neutral members lose broad edit/transfer authority unless
 appointed Project managers. Legacy clients retain scoped collaboration. Each
 participating Company confirms its own member and manager mappings under the
-Company specification.
+Company specification. Owner/admin → manager and staff/client → member may
+be proposed for review, but Track never infers or activates those role mappings;
+an ambiguous or unconfirmed mapping blocks activation.
 
 Authorization is enforced by Convex for reads and writes. UI control visibility
 communicates capability and never serves as the permission boundary. List
@@ -847,6 +879,11 @@ Projects and remain optional only inside the documented legacy adapter. The
 logical Channel reference can continue using the existing physical `groupId`
 during migration; task storage creates no second scope identifier.
 
+When threads are enabled, the existing `messages` table owns both timeline and
+thread messages through optional `channelThreadId` plus server-issued monotonic
+`channelSequence`. Combined ordered client collections use the unambiguous name
+`channelSequenceItems`, not the legacy-flat name `threadItems`.
+
 The existing `contentReports` validator and references expand to support task,
 task comment, and task suggestion targets without copying restricted content
 into report rows.
@@ -1011,9 +1048,11 @@ integrity, and audit history according to the maintained privacy contract.
 
 ## Acceptance criteria
 
-The core task feature is ready to ship on its enabled policy profile when
-statements 1–15 are observed in a local production build. A release that also
-enables the Company model must additionally satisfy statements 16–18.
+The core task feature is implemented and locally release-ready on its enabled
+policy profile when statements 1–15 are observed in a local production build.
+A release that also enables the Company model must additionally satisfy
+statements 16–18. Passing them does not mean the default-off capability was
+deployed or activated in production.
 
 1. A task administrator can create multiple project and Channel boards,
    configure independent workflows, choose defaults, and archive/restore a
@@ -1101,6 +1140,12 @@ Automated coverage must include:
   inline cards, error surfaces, and push routing;
 - conditional thread integration tests when both feature flags are enabled.
 
+Web end-to-end acceptance uses Playwright against a local production build.
+Mobile component and interaction coverage uses React Native Testing Library;
+Expo Router and deep-link behavior is exercised through pure presenters before
+device proof. Model tests inject the deterministic fake adapter and make no
+network calls.
+
 The implementation handoff runs and observes the repository gate:
 
 ```sh
@@ -1117,9 +1162,10 @@ member, client, and restricted nonmember while checking the browser console.
 When the Company model is enabled, also exercise a Project manager, scoped
 member, user acting for two Companies, restricted Channel nonmember, and exited
 Company archive.
-Load the affected mobile build or development client on iOS or Android and
-exercise the mobile essentials, foreground/background push link, and denied
-deep link. Production deployment requires separate explicit approval.
+Install uniquely named release builds on both iOS and Android and exercise the
+mobile essentials, foreground/background/terminated routing required by this
+specification, and denied deep links. Root `pnpm build` output is not native
+acceptance. Production deployment requires separate explicit approval.
 
 ## Implementation phases
 

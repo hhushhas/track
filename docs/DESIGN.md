@@ -18,13 +18,14 @@ The web tokens live in `apps/web/src/styles.css`; cross-platform primitives live
 - Display type: SF Pro Rounded with `ui-rounded` / Inter fallback (`--font-display`). Do not bundle SF Pro Rounded.
 - Metadata: Geist (`--font-meta`).
 - Identifiers: Geist Mono (`--font-mono`) for task keys, keycaps, and extension badges.
-- Standard radii: 6px, 8px, and 12px.
+- Standard non-circular radii: 6px, 8px, and 12px. Pills and circles may use a
+  fully rounded radius.
 
 Use semantic CSS variables and shared theme values instead of copying raw colors into components. Preserve the maintained light and dark palettes.
 
 ## Layout and hierarchy
 
-- Keep project and group context visible in the workspace.
+- Keep Project and Channel context visible in the workspace.
 - Optimize conversation for reading and composing; keep metadata subordinate.
 - Use dense lists or tables for members and settings.
 - Keep AI answers close to their source messages and visibly distinct from human messages.
@@ -48,4 +49,11 @@ Unread, mention, report, blocked, and permission states need text or icon semant
 
 ## Product language
 
-Use the canonical nouns in [PRODUCT.md](./PRODUCT.md). Describe `@track` as an assistant grounded in accessible references. Do not describe AI answers as durable work items; tasks and boards arrive through the future direction in [ROADMAP.md](./ROADMAP.md).
+Use the canonical nouns in [PRODUCT.md](./PRODUCT.md). Describe `@track` as an
+assistant grounded in accessible references. Do not describe AI answers as
+durable work items. Task, board, and thread presentation follows the approved
+[task](./TASK_MANAGEMENT_SPEC.md), [thread](./THREADS_SPEC.md), and
+[UI refresh](./UI_REFRESH_SPEC.md) contracts when their server-authoritative
+flags expose those surfaces. Until the combined local gate passes, those
+capabilities remain implementation-pending and must not be described as
+deployed.

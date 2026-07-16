@@ -1,12 +1,14 @@
 # UI Refresh Specification
 
-Status: approved design direction; implementation pending.
+Status: approved design direction; implementation pending; not deployed.
 
 This specification turns the approved 2026-07-16 design direction into
 executable work for `apps/web`. The high-fidelity reference is
-`scratchpad/track-ui-direction-2026-07-16.html` (open it in a browser; demo
-states are deep-linkable via URL hashes `#board`, `#list`, `#mytasks`,
-`#detail`, `#thread`, `#person`, `#dark`, combinable like `#board-dark`).
+`/Users/macmini/code/track/scratchpad/track-ui-direction-2026-07-16.html`.
+Read it in place; do not copy it into or alter it from this isolated worktree.
+Open it in a browser; demo states are deep-linkable via URL hashes `#board`,
+`#list`, `#mytasks`, `#detail`, `#thread`, `#person`, `#dark`, combinable like
+`#board-dark`.
 
 It has two tracks:
 
@@ -21,6 +23,20 @@ It has two tracks:
 Where the mockup and the product specifications disagree, the product
 specifications win. Known divergences are listed in
 [Mockup divergences](#mockup-divergences).
+
+The Company model, tasks, and threads use independent server-authoritative
+flags named `companyModel`, `tasks`, and `threads`, configured by
+`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
+`TRACK_THREADS_ENABLED=false`. Missing or invalid values fail closed. Track A
+is unflagged. Track B remains unreachable presentational work until the owning
+task or thread flag exposes a fully implemented route; clients consume an
+authorized server projection and never use their environment as authority.
+
+This specification remains implementation-pending until the combined local
+gate passes. After that proof, maintained documentation may describe the UI as
+implemented and locally verified, with the three product capabilities default
+off and no production deployment. Local acceptance does not authorize a
+production deployment or flag activation.
 
 ## Ground rules for every workstream
 
@@ -183,7 +199,7 @@ Unify `QuotedMessageBlock` and `ReplyToMessagePreview` into a single quote
 presentation used for reply quotes (and later: task origin quotes, thread
 roots):
 
-- neutral block: `--paper-2` background, radius 7, 2.5px rounded left bar in
+- neutral block: `--paper-2` background, radius 8, 2.5px rounded left bar in
   `--hairline-strong`; **no yellow** (yellow is reserved for evidence);
 - 16px author mini-avatar, author name in `--font-meta` 10.5px/600 with muted
   `· time`, quoted excerpt 12.5px `--ink-3`, single-line clamp;
@@ -196,7 +212,7 @@ roots):
 ### W6 — person popover (`features/workspace/avatar-tooltip.tsx`)
 
 Restyle the existing `TeamMemberCard` hover card to the mockup popover:
-232px, radius 10, `--shadow-pop`, 36px avatar, name 13.5px/650, role line in
+232px, radius 12, `--shadow-pop`, 36px avatar, name 13.5px/650, role line in
 `--font-meta` `--ink-3`, presence line (status dot + text), and the existing
 actions as two buttons (primary = ink fill). Hover intent ~350ms in, ~250ms
 grace out; also opens on keyboard focus. Keep whatever data it shows today —
@@ -205,7 +221,7 @@ do not add new fields.
 ### W7 — file-type brand marks (`features/workspace/attachment-ui.tsx`)
 
 Extend `AttachmentTypeIcon` so common types render brand-colored marks on a
-28px, radius-7 tile (fixed brand colors in both themes):
+28px, radius-8 tile (fixed brand colors in both themes):
 
 - spreadsheet (`xlsx`, `xls`, `csv`): `#107c41` tile, white X glyph;
 - PDF: `#d93025` tile, white `PDF` in `--font-mono`;
@@ -301,7 +317,7 @@ to the category.
 ### B3 — chips
 
 - **Metadata chip**: `--font-meta` 10px/500, 1px `--hairline` border, radius
-  5, 2.5px × 7px padding, `--ink-3`; optional leading 14px avatar or icon.
+  6, 2.5px × 7px padding, `--ink-3`; optional leading 14px avatar or icon.
 - **Due chip**: metadata chip + calendar icon; due-soon/overdue variant uses
   `--accent-strong` text, 45% accent border, `--accent-tint` background.
   Overdue must also differ by text ("overdue"), not color alone.
@@ -430,6 +446,9 @@ specifications above are correct:
 6. Demo content (workspace "Nordlys", names, times) is fixture data only.
 7. The mockup's instant client-side state changes stand in for reactive
    Convex updates and optimistic mutations defined by the product specs.
+8. The mockup contains 5px, 7px, and 10px non-circular radii. Implementation
+   normalizes those values to the 6px, 8px, and 12px token set in this
+   specification; pills and circles remain fully rounded.
 
 ## Verification
 
@@ -439,8 +458,15 @@ corresponding mockup deep-link state. Track B components get component tests
 covering each variant (all five StateRing categories, all priority values,
 due states, empty/loading/error states).
 
+Web end-to-end acceptance uses Playwright against a local production build on
+`localhost`; source inspection or a component render alone is insufficient.
+Each affected route is loaded, exercised, compared with the external reference
+in both themes, and checked for browser-console and font-loading errors.
+
 Final acceptance for Track A: the running app shows no uppercase labels, the
 new type roles everywhere, the compact header, the redesigned rail, unified
 quotes, brand file marks, neutral Slack+Jira copy with Channel vocabulary,
 `--accent-strong` defined, and no new raw hex — with zero behavioral or
-accessibility regressions and a clean repository gate.
+accessibility regressions and a clean repository gate. Passing this local gate
+establishes implemented and locally verified UI; it does not mean production
+deployment occurred.

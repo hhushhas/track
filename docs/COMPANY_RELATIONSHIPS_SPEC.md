@@ -1,6 +1,6 @@
 # Company Relationships and Shared Projects Specification
 
-Status: approved product direction; implementation pending.
+Status: approved product direction; implementation pending; not deployed.
 
 This specification defines the Company, Relationship, shared-Project, and
 Channel model in Track's target [PRODUCT.md](./PRODUCT.md) contract. The running
@@ -9,6 +9,30 @@ release gate. Where this specification conflicts with the planned thread or task
 model, it is authoritative for Company identity, neutral roles, Project
 participation, Channel naming, and access control. The affected specifications
 must be reconciled before a combined release ships.
+
+## Combined-release controls
+
+The combined implementation exposes the Company model, tasks, and threads
+through independent server-authoritative flags named `companyModel`, `tasks`,
+and `threads`. Their environment settings are
+`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
+`TRACK_THREADS_ENABLED=false`; missing or invalid values fail closed. Web and
+mobile consume an authorized server projection of those values and never use a
+client environment value as an authorization decision.
+
+Every Project persists `accessProfile: "legacy" | "company"`. The Company flag
+controls exposure, creation, activation, routes, and background work; it never
+selects or rewrites an existing Project's access profile. Turning any feature
+off preserves its rows and keeps archive, redaction, account-deletion, Company
+exit, and retention cleanup active. The all-off configuration preserves legacy
+Project conversation through the authenticated actor and central legacy policy
+adapter.
+
+These specifications remain implementation-pending until the combined local
+gate passes. After that proof, maintained documentation may describe the
+capabilities as implemented and locally verified, default off, and not
+production deployed. Local implementation acceptance does not authorize a
+production deployment, rollout, migration, or flag activation.
 
 ## Product intent
 
@@ -520,8 +544,11 @@ exposes a retry or safe cancel, and never reports the Company as exited.
 ## Conversation, evidence, AI, and memory
 
 Messages remain Project- and Channel-scoped. A message stores the human author,
-their Project membership, and immutable Acting Company attribution. Mentions
-are limited to active members of that Channel.
+their Project membership, and immutable Acting Company attribution. The
+existing `messages` record gains an optional `channelThreadId` discriminator
+and one server-issued monotonic `channelSequence` shared by Channel-timeline
+and thread messages; there is no parallel thread-message table or Channel
+membership system. Mentions are limited to active members of that Channel.
 
 Forwarding copies information into a new audience. Cross-Channel forwarding
 requires source and destination membership, names the destination Companies,
@@ -770,9 +797,12 @@ Proposed schema additions and changes are:
   user alone;
 - `channelParticipationRequests`: Channel, target Project Company, inviter,
   status, selected members, decision actor, and timestamps;
-- messages, assistant streams, future thread messages, future task activity, and
-  audit events: immutable author Project membership and Acting Company
-  attribution;
+- existing `messages`: immutable author Project membership and Acting Company
+  attribution, optional `channelThreadId`, and one server-issued monotonic
+  `channelSequence` spanning Channel-timeline and thread messages; no parallel
+  thread-message table is introduced;
+- assistant streams, future task activity, and audit events: immutable author
+  Project membership and Acting Company attribution;
 - future thread records and follow/read state: one parent Channel, no separate
   membership boundary, and selected Project-membership state under
   [THREADS_SPEC.md](./THREADS_SPEC.md);
@@ -934,9 +964,9 @@ without hover.
 
 ## Migration from the current Project model
 
-Migration is additive and owner-led. Track never infers Companies from
-`owner`, `admin`, `staff`, `client`, `clientLabel`, email domain, or existing
-Channel membership.
+Migration is additive and owner-led. Track never infers Company identity or
+assigns neutral roles from `owner`, `admin`, `staff`, `client`, `clientLabel`,
+email domain, or existing Channel membership.
 
 ### Compatibility period
 
@@ -962,7 +992,8 @@ An existing Project owner performs these steps:
    Relationship participation, and Project participation.
 5. Review proposed neutral Project roles. Legacy owners/admins may be proposed
    as managers and staff/clients as members, but the upgrader and each
-   counterpart Company confirm their own people.
+   counterpart Company confirm their own people. These proposals are review
+   aids, not inferred assignments; ambiguity blocks activation.
 6. Preserve every current Group membership exactly. General, Internal,
    Commercials, and custom Groups become Channels with the same names and
    members; no one gains access during upgrade.
@@ -986,9 +1017,11 @@ production access or deployment approval.
 
 ## Acceptance criteria
 
-The Company model is ready to ship when statements 1–18 are observed in local
-production builds. A release that also enables threads or tasks must
-additionally satisfy the applicable combined criteria 19–20.
+The Company model is implemented and locally release-ready when statements
+1–18 are observed in local production builds. A release that also enables
+threads or tasks must additionally satisfy the applicable combined criteria
+19–20. Passing them does not mean the default-off capability was deployed or
+activated in production.
 
 1. A user can create a Company, invite members, switch between multiple active
    Companies, and produce correctly attributed audited actions.
@@ -1073,6 +1106,12 @@ Automated coverage must include:
   immutable Project- and Channel-memory versions/hashes/scopes, cutoff filtering,
   and orphan snapshot cleanup.
 
+Web end-to-end acceptance uses Playwright against a local production build.
+Mobile component and interaction coverage uses React Native Testing Library;
+Expo Router and deep-link behavior is exercised through pure presenters before
+device proof. Automated tests use deterministic fixtures and never require a
+production service.
+
 The implementation handoff runs and observes the repository gate:
 
 ```sh
@@ -1089,10 +1128,11 @@ Companies, one user representing two Companies, a Company admin outside a
 restricted Channel, an active Project member, and an exited Company archive.
 Check the browser console for errors.
 
-Load the affected mobile build or development client on iOS or Android. Verify
-Company switching, invitation acceptance, Project and Channel access, a denied
-deep link, reconnect after access loss, and read-only archive behavior.
-Production deployment requires separate explicit approval.
+Install uniquely named release builds on both iOS and Android. Verify Company
+switching, invitation acceptance, Project and Channel access, a denied deep
+link, reconnect after access loss, and read-only archive behavior. Root
+`pnpm build` output is not native acceptance. Production deployment requires
+separate explicit approval.
 
 ## Implementation phases
 
