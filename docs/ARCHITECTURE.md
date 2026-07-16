@@ -1,8 +1,9 @@
 # Architecture
 
-Status: current running architecture. Company collaboration is implemented
-behind its default-off server release flag. Other approved target changes remain
-in the roadmap and companion specifications until their release gates pass.
+Status: current architecture. Company collaboration and Channel threads are
+implemented behind independent default-off server release flags. Other approved
+target changes remain in the roadmap and companion specifications until their
+release gates pass.
 
 Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile application, shared TypeScript domain code, and a Convex backend.
 
@@ -19,7 +20,7 @@ Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile a
 
 ## Package boundaries
 
-`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral Company, Project, Channel, role, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
+`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral Company, Project, Channel, thread, role, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
 
 Clients may hide unavailable controls for usability, but Convex functions enforce every permission boundary. Public functions validate identity and access before reading or mutating data. Internal functions are used for trusted jobs and multi-step workflows.
 
@@ -59,6 +60,27 @@ member, requires each mapped Company to confirm its own people, preserves every
 Group membership exactly, and activates the new policy atomically. No Company
 identity or neutral role is inferred from legacy roles, labels, email domains,
 or Group access.
+
+## Channel threads
+
+Threads use `channelThreads` for lifecycle and indexed summary state, while
+their replies remain ordinary `messages` with a `channelThreadId`. One
+server-issued Channel sequence spans timeline and thread messages. Followers
+and read cursors are keyed by exact Project membership, so one user acting for
+two Companies never shares thread state across represented contexts.
+
+Thread authorization always resolves through the parent Project and Channel.
+There is no thread membership table or private-thread policy. Source links,
+search, notifications, reports, assistant context, attachments, deep links,
+unread aggregation, and Company-exit snapshots apply that same boundary.
+Focused message history is cursor-paginated, while denormalized counters keep
+thread lists and source chips bounded.
+
+`TRACK_THREADS_ENABLED` is independent from Company collaboration and task
+management. When it is off, public reads fail closed or return empty generic
+states, mutation surfaces reject thread work, and clients hide thread routes and
+controls. Persisted data remains available to cleanup, redaction, account
+deletion, and archive enforcement.
 
 ## AI and memory
 

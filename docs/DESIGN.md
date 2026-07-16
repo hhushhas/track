@@ -50,6 +50,19 @@ cutoff. Audience-expanding invitations name the Companies and people that will
 gain access before confirmation. Suspension, stale approval, access loss,
 snapshot failure, and cleanup failure each retain a safe retry or recovery path.
 
+Thread lists sit inside their parent Channel and separate active from archived
+conversation. Each row states follow and unread status in text. The focused
+route keeps the Channel return path and optional source message visible, loads
+older replies without replacing the current stream, and gives authorized
+creators or stewards explicit rename, archive, and reopen controls. Archived
+threads and archived parent Channels remove composers and creation controls.
+
+Web thread controls use the maintained UI primitives and keyboard focus rules.
+Mobile uses full-screen Expo Router destinations, native message action sheets,
+swipe reply, document and audio pickers, and touch targets of at least 44px.
+Both surfaces retain unsent text after failure and distinguish loading, empty,
+offline, denied, conflict, and read-only states without relying on color.
+
 ## Accessibility
 
 - Support keyboard navigation and visible focus on web.
@@ -66,6 +79,6 @@ assistant grounded in accessible references. Do not describe AI answers as
 durable work items. Task, board, and thread presentation follows the approved
 [task](./TASK_MANAGEMENT_SPEC.md), [thread](./THREADS_SPEC.md), and
 [UI refresh](./UI_REFRESH_SPEC.md) contracts when their server-authoritative
-flags expose those surfaces. Until the combined local gate passes, those
-capabilities remain implementation-pending and must not be described as
-deployed.
+flags expose those surfaces. Channel threads are implemented but default off
+and not deployed; task and board presentation remains target behavior until its
+own implementation and release gate pass.

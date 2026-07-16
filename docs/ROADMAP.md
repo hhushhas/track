@@ -5,16 +5,17 @@ that are not yet running behavior.
 
 ## Channel threads
 
-Track will add named Discord-style threads as focused sub-conversations inside a
-Channel. A thread can start from a message or directly, inherits Channel access,
-uses participation-based follow and unread state, and supports creator- or
-steward-controlled manual archive and reopen.
+Named Discord-style Channel threads are implemented behind the independent,
+default-off `TRACK_THREADS_ENABLED` server flag. Shared contracts, Convex, web,
+and mobile include direct and source-message creation, focused replies, follow
+and unread state, lifecycle controls, search, assistant context, reports,
+attachments, notifications, deep links, and exact Company attribution.
 
 The approved independent product and implementation contract is in
-[THREADS_SPEC.md](./THREADS_SPEC.md). Threads can ship before or after task
-management. When both features are enabled, thread messages support task
-creation, inline task cards, whole-Channel detection context, and durable task
-evidence without making either standalone release depend on the other.
+[THREADS_SPEC.md](./THREADS_SPEC.md). Remaining roadmap work is the required
+authenticated browser and native production-build walkthrough, controlled flag
+rollout, and conditional task integration after task management exists. Threads
+operate without task tables, routes, cards, or suggestions.
 
 ## Task management and Kanban
 

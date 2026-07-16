@@ -4,6 +4,13 @@
 
 ### Added
 
+- Default-off Channel threads across web and mobile, including direct and
+  source-message creation, focused paginated conversation, follow and unread
+  state, source links, manual archive and reopen, scoped search, reporting,
+  attachments, voice notes, assistant invocation, and exact deep links.
+- Server-issued Channel ordering, bounded thread summaries, follower-only
+  delivery, exact represented-membership mentions, and Company-exit thread
+  snapshots without introducing a task-management dependency.
 - Default-off Company collaboration across web and mobile, including private
   Company discovery, memberships, peer Relationships, shared Project proposals,
   explicit Channels, represented identity, and Company-aware conversation.
