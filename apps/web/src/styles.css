@@ -276,6 +276,8 @@
   --success: #15803d;
   --danger: #b91c1c;
   --info: #1d4ed8;
+  --shadow-pop: 0 12px 32px rgba(27, 25, 23, 0.14);
+  --shadow-sheet: 0 22px 70px rgba(27, 25, 23, 0.18);
   --background: var(--paper);
   --foreground: var(--ink);
   --card: var(--paper);
@@ -333,6 +335,8 @@
   --success: #5bbf74;
   --danger: #f87171;
   --info: #7ea7ff;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 22px 70px rgba(0, 0, 0, 0.6);
   --background: var(--paper);
   --foreground: var(--ink);
   --card: var(--paper);
@@ -3104,12 +3108,56 @@ button {
 }
 
 .track-avatar-tooltip {
-  border: 1px solid color-mix(in srgb, var(--hairline-strong) 84%, var(--ink-4));
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
   background: var(--paper);
-  box-shadow: 0 12px 30px rgba(27, 25, 23, 0.15);
+  box-shadow: var(--shadow-pop);
   color: var(--ink);
   overflow: hidden;
   padding: 0;
+}
+
+/* Compact person popover (mockup) — scoped to the hover card so the settings
+   profile-card preview keeps the full banner surface. */
+.track-avatar-tooltip .track-avatar-card {
+  width: 232px;
+}
+
+.track-avatar-tooltip .track-avatar-card-banner {
+  height: 40px;
+}
+
+.track-avatar-tooltip .track-avatar-card-body {
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.track-avatar-tooltip .track-avatar-card-avatar {
+  width: 36px;
+  height: 36px;
+  margin-top: -18px;
+  border-width: 3px;
+  font-size: 13px;
+}
+
+.track-avatar-tooltip .track-avatar-card-copy strong {
+  font-size: 13.5px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.track-avatar-tooltip .track-avatar-card-copy small {
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+
+.track-avatar-tooltip .track-avatar-card-copy p {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .track-avatar-tooltip .bg-foreground {
@@ -3408,11 +3456,11 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   border-bottom: 1px solid var(--hairline) !important;
   background: var(--paper);
-  min-height: 58px;
-  padding: 12px 24px;
+  min-height: 48px;
+  padding: 0 16px;
 }
 
 .track-header-title {
@@ -3425,9 +3473,10 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 1px 0 0;
+  margin: 0;
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .track-header-status {
@@ -3451,7 +3500,20 @@ button {
 .track-header-actions {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+}
+
+.track-header-actions .icon-button {
+  min-height: 28px;
+  min-width: 28px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-3);
+}
+
+.track-header-actions .icon-button:hover {
+  background: var(--paper-3);
+  color: var(--ink);
 }
 
 .track-header-members {
@@ -3462,11 +3524,11 @@ button {
 
 .track-header-members .track-avatar-tooltip-trigger,
 .track-member-more {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
   box-shadow: 0 0 0 2px var(--paper);
-  margin-left: -4px;
+  margin-left: -5px;
 }
 
 .track-header-members .track-avatar-tooltip-trigger:first-child {
@@ -3474,9 +3536,10 @@ button {
 }
 
 .track-header-members .track-avatar {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  font-size: 8.5px;
 }
 
 .track-member-more {
@@ -3485,12 +3548,12 @@ button {
   justify-content: center;
   border: 1px solid var(--hairline);
   border-radius: 999px;
-  background: var(--paper-2);
+  background: var(--paper-3);
   color: var(--ink-3);
   font-family: var(--font-meta);
   letter-spacing: 0.01em;
-  font-size: 10px;
-  font-weight: 500;
+  font-size: 8.5px;
+  font-weight: 600;
 }
 
 .track-chat-search {
@@ -4748,6 +4811,45 @@ button {
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Brand-colored file-type marks (fixed brand hexes across both themes). */
+.track-attachment-type-icon.track-ft {
+  gap: 0;
+  border: 0;
+  background: var(--paper-3);
+  color: #fff;
+}
+
+.track-attachment-type-icon.track-ft .track-ft-text {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.track-attachment-type-icon.track-ft.ft-xlsx {
+  background: #107c41;
+}
+
+.track-attachment-type-icon.track-ft.ft-pdf {
+  background: #d93025;
+}
+
+.track-attachment-type-icon.track-ft.ft-md {
+  background: #24292f;
+}
+
+.track-attachment-type-icon.track-ft.ft-fig {
+  background: #ffffff;
+  border: 1px solid var(--hairline);
+  color: var(--ink-3);
+}
+
+.dark .track-attachment-type-icon.track-ft.ft-fig {
+  background: var(--paper-3);
+  border-color: var(--hairline-strong);
 }
 
 .track-attachment-type-icon.pdf {

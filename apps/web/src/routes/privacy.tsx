@@ -19,8 +19,8 @@ const sections = [
   {
     title: 'How We Use Information',
     body: [
-      'To authenticate users with Google or email/password, protect sensitive actions with two-factor step-up, and control access to projects and groups.',
-      'To provide group conversation, evidence-aware AI assistance, project memory, search, audit history, and notifications.',
+      'To authenticate users with Google or email/password, protect sensitive actions with two-factor step-up, and control access to projects and channels.',
+      'To provide channel conversation, evidence-aware AI assistance, project memory, search, audit history, and notifications.',
       'To improve reliability, investigate abuse or errors, and maintain security.',
       'To comply with legal, contractual, and audit obligations connected to the projects managed in Track.',
     ],
@@ -29,7 +29,7 @@ const sections = [
     title: 'Sharing',
     body: [
       'We do not sell personal information.',
-      'Project content is visible to users who have access to the relevant project or group.',
+      'Project content is visible to users who have access to the relevant project or channel.',
       'We use service providers for hosting, authentication, AI processing, storage, notifications, observability, and app distribution. They process information only as needed to provide those services.',
       'We may disclose information if required by law, to protect rights and security, or to enforce project agreements.',
     ],
@@ -46,7 +46,7 @@ const sections = [
     body: [
       'You can request access, correction, or deletion of personal profile data by contacting us.',
       'Deletion of shared project content or audit events may be limited when they must be preserved for contract, legal, or security reasons.',
-      'You can control push notification preferences globally and per group inside Track.',
+      'You can control push notification preferences globally and per channel inside Track.',
     ],
   },
 ]
@@ -64,7 +64,7 @@ function Privacy() {
         <div className="track-surface mt-6 rounded-md p-4">
           <p className="m-0 text-sm leading-6 text-[var(--ink-2)]">
             Track is a project communication and audit tool operated by Q9 Labs. It
-            helps client and vendor teams keep conversation, evidence, shared memory,
+            helps project teams keep conversation, evidence, shared memory,
             and permission-aware AI assistance together.
           </p>
         </div>
