@@ -7,7 +7,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
 
-export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups'
+export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups' | 'threads'
 
 export type ProjectSearchResult = {
   attachmentId?: Id<'attachments'>
@@ -16,8 +16,10 @@ export type ProjectSearchResult = {
   groupId: Id<'groups'>
   groupName: string
   id: string
-  kind: 'message' | 'file' | 'group'
+  kind: 'message' | 'file' | 'group' | 'thread'
   messageId?: Id<'messages'>
+  threadId?: Id<'channelThreads'>
+  threadName?: string
   preview: string
   subtitle: string
   title: string
@@ -109,6 +111,7 @@ export function ProjectSearchDialog({
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
     { Icon: Paperclip, label: 'Files', value: 'files' },
     { Icon: FolderKanban, label: 'Groups', value: 'groups' },
+    { Icon: MessagesSquare, label: 'Threads', value: 'threads' },
   ]
   const hasQuery = query.trim().length >= 2
   let resultIndex = -1
@@ -137,7 +140,7 @@ export function ProjectSearchDialog({
             autoFocus
             className="track-project-search-input"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
-            placeholder="Search messages, files, and groups..."
+            placeholder="Search messages, files, threads, and groups..."
             value={query}
           />
           <span>{total} results</span>

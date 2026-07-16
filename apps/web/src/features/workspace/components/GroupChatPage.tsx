@@ -23,6 +23,7 @@ import {
 } from '#/features/workspace/voice-notes'
 import type { ChatSearchMatch } from '#/features/workspace/search/chat-search'
 import type { WorkspaceThreadItem } from '#/features/workspace/search/chat-thread-data'
+import { ChannelThreadBrowser } from '#/features/threads/ChannelThreadBrowser'
 
 type PendingAttachment = ReturnType<typeof createPendingAttachment>
 type ActiveTypingIndicator = ComponentProps<typeof TypingIndicatorLine>['indicators'][number]
@@ -44,6 +45,7 @@ type MentionSection = {
 type GroupChatPageProps = {
   activeGroup: Doc<'groups'> | undefined
   activeGroupId: Id<'groups'> | null
+  activeProjectId: Id<'projects'> | null
   activeTypingIndicators: Array<ActiveTypingIndicator>
   busyAction: string | null
   chatSearchMatchKeys: Set<string>
@@ -67,6 +69,7 @@ type GroupChatPageProps = {
   messageAuthorAvatarUrlById: Map<string, string>
   messageCitations: Map<string, MessageCitationPreview>
   messagesLoaded: boolean
+  currentUserId: Id<'users'>
   onComposerBlur: () => void
   onComposerChange: (value: string, cursor: number) => void
   onComposerFocus: () => void
@@ -111,6 +114,7 @@ type GroupChatPageProps = {
 export function GroupChatPage({
   activeGroup,
   activeGroupId,
+  activeProjectId,
   activeTypingIndicators,
   busyAction,
   chatSearchMatchKeys,
@@ -131,6 +135,7 @@ export function GroupChatPage({
   messageAuthorAvatarUrlById,
   messageCitations,
   messagesLoaded,
+  currentUserId,
   onComposerBlur,
   onComposerChange,
   onComposerFocus,
@@ -174,6 +179,15 @@ export function GroupChatPage({
         onScroll={onThreadScroll}
         ref={threadScrollRef}
       >
+        {activeGroupId && activeProjectId ? (
+          <ChannelThreadBrowser
+            groupId={activeGroupId}
+            projectId={activeProjectId}
+            readOnly={false}
+            timelineMessages={visibleMessages}
+            userId={currentUserId}
+          />
+        ) : null}
         <div className="track-thread">
           {activeGroup && messagesLoaded && visibleMessages.length === 0 ? (
             <div className="track-empty-conversation">

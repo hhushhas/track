@@ -6,6 +6,8 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import { ChannelThreadBrowser } from "#/features/threads/ChannelThreadBrowser";
+import { threadHref } from "#/features/threads/thread-navigation";
 
 type Props = {
   actingCompanyId: Id<"companies">;
@@ -297,6 +299,16 @@ export function CompanyProjectPage({
             {notice}
           </p>
         ) : null}
+        {activeChannelId && currentUser ? (
+          <ChannelThreadBrowser
+            context={{ actingCompanyId, projectMemberId }}
+            groupId={activeChannelId}
+            projectId={projectId}
+            readOnly={readOnly}
+            timelineMessages={messages ?? []}
+            userId={currentUser._id}
+          />
+        ) : null}
         <div className="company-message-list" role="log">
           {messages === undefined && activeChannelId ? (
             <p>Loading messages…</p>
@@ -307,7 +319,7 @@ export function CompanyProjectPage({
               ?.slice()
               .reverse()
               .map((detail) => (
-                <article key={detail.message._id}>
+                <article id={`message-${detail.message._id}`} key={detail.message._id}>
                   <div>
                     <strong>
                       {detail.author?.displayName ?? "Unknown member"}
@@ -322,6 +334,14 @@ export function CompanyProjectPage({
                     </time>
                   </div>
                   <p>{detail.message.body || "Attachment message"}</p>
+                  {detail.channelThread ? (
+                    <a href={threadHref(projectId, activeChannelId!, detail.channelThread.threadId, {
+                      actingCompanyId,
+                      projectMemberId,
+                    })}>
+                      {detail.channelThread.name} · {detail.channelThread.replyCount} replies
+                    </a>
+                  ) : null}
                 </article>
               ))
           )}

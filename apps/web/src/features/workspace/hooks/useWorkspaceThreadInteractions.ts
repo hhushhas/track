@@ -5,6 +5,7 @@ import type { Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '../thread-items'
 import type { ChatSearchMatch } from '../search/chat-search'
 import type { ProjectSearchResult } from '../search/ProjectSearchDialog'
+import { threadHref } from '#/features/threads/thread-navigation'
 
 type ActiveMention = { start: number; end: number } | null
 
@@ -272,6 +273,16 @@ export function useWorkspaceThreadInteractions({
     setProjectSearchOpen(false)
     setProjectSearchQuery('')
     setMobileNavOpen(false)
+    if (result.threadId && activeProjectId) {
+      window.location.assign(threadHref(
+        activeProjectId,
+        result.groupId,
+        result.threadId,
+        undefined,
+        result.messageId,
+      ))
+      return
+    }
     navigateToGroup(result.groupId)
     if (!result.messageId) return
     setPendingFocusMessageId(result.messageId)

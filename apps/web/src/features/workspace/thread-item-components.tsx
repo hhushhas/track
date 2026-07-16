@@ -9,6 +9,7 @@ import { getGroupAvatar } from './group-avatar'
 import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
 import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
+import { threadHref } from '#/features/threads/thread-navigation'
 
 export type ReplyToMessagePreview = {
   messageId: Id<'messages'>
@@ -42,6 +43,13 @@ export type GroupMessageItem = {
   attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
   replyTo: ReplyToMessagePreview | null
   forwardedFrom: ForwardedMessagePreview | null
+  channelThread: {
+    threadId: Id<'channelThreads'>
+    name: string
+    status: 'active' | 'archived'
+    replyCount: number
+    latestReplyAt: number | null
+  } | null
 }
 
 export type MessageCitationPreview = {
@@ -157,6 +165,19 @@ export function MessageRow({
           )}
           text={item.message.body}
         />
+        {item.channelThread ? (
+          <a
+            className="track-source-thread-link"
+            href={threadHref(
+              item.message.projectId,
+              item.message.groupId,
+              item.channelThread.threadId,
+            )}
+          >
+            <strong>{item.channelThread.name}</strong>
+            <span>{item.channelThread.replyCount} {item.channelThread.replyCount === 1 ? 'reply' : 'replies'}</span>
+          </a>
+        ) : null}
         {item.attachments.length > 0 ? (
           <div className="track-attachment-list">
             {item.attachments.map(({ attachment, url }) => {

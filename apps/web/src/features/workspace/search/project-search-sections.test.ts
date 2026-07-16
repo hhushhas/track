@@ -7,6 +7,7 @@ describe('workspace project search sections', () => {
     expect(buildProjectSearchSections(null).map(({ key, label }) => [key, label])).toEqual([
       ['messages', 'Messages'],
       ['files', 'Files'],
+      ['threads', 'Threads'],
       ['groups', 'Groups'],
     ])
   })
@@ -20,6 +21,7 @@ describe('workspace project search sections', () => {
     expect(sections.map((section) => section.results.map((result) => result.id))).toEqual([
       ['message'],
       ['file-1', 'file-2'],
+      [],
       [],
     ])
     expect(getProjectSearchTotal(sections)).toBe(3)

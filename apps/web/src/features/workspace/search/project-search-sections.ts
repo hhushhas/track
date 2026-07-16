@@ -1,7 +1,7 @@
 import type { ProjectSearchResult } from '#/features/workspace/search/ProjectSearchDialog'
 
 export type ProjectSearchSection = {
-  key: 'messages' | 'files' | 'groups'
+  key: 'messages' | 'files' | 'threads' | 'groups'
   label: string
   results: ProjectSearchResult[]
 }
@@ -10,6 +10,7 @@ type ProjectSearchResultsPayload = {
   messages?: ProjectSearchResult[]
   files?: ProjectSearchResult[]
   groups?: ProjectSearchResult[]
+  threads?: ProjectSearchResult[]
 } | null | undefined
 
 export function buildProjectSearchSections(
@@ -25,6 +26,11 @@ export function buildProjectSearchSections(
       key: 'files',
       label: 'Files',
       results: results?.files ?? [],
+    },
+    {
+      key: 'threads',
+      label: 'Threads',
+      results: results?.threads ?? [],
     },
     {
       key: 'groups',

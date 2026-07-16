@@ -14,6 +14,233 @@
   --font-heading: var(--font-display);
 }
 
+.track-channel-threads {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding: 14px 18px;
+}
+
+.track-channel-threads > header,
+.track-thread-route-header,
+.track-thread-route-actions,
+.track-thread-rename,
+.track-thread-create {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.track-channel-threads > header {
+  justify-content: space-between;
+}
+
+.track-channel-threads p,
+.track-thread-route p {
+  margin: 0;
+}
+
+.track-thread-tabs {
+  background: var(--muted);
+  border-radius: 8px;
+  display: flex;
+  padding: 2px;
+}
+
+.track-thread-tabs button {
+  border: 0;
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.track-thread-tabs button.active {
+  background: var(--background);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 10%);
+}
+
+.track-thread-list {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.track-thread-list a,
+.track-source-thread-link {
+  align-items: center;
+  background: var(--muted);
+  border-radius: 8px;
+  color: inherit;
+  display: flex;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
+.track-thread-list a > span,
+.track-source-thread-link {
+  gap: 3px;
+}
+
+.track-thread-list a > span {
+  display: grid;
+}
+
+.track-thread-list small,
+.track-source-thread-link span,
+.track-thread-route-header p,
+.track-thread-message time {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.track-thread-list b {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 3px 7px;
+}
+
+.track-thread-create {
+  align-items: stretch;
+}
+
+.track-thread-create > input {
+  flex: 1;
+}
+
+.track-thread-create label,
+.track-thread-create select {
+  min-width: 220px;
+}
+
+.track-thread-create select {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  height: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.track-thread-route {
+  background: var(--background);
+  color: var(--foreground);
+  display: grid;
+  gap: 16px;
+  margin: 0 auto;
+  max-width: 920px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.track-thread-route-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.track-thread-route-header > div:nth-child(2) {
+  flex: 1;
+}
+
+.track-thread-route-header h1 {
+  font-size: 22px;
+  margin: 2px 0 4px;
+}
+
+.track-thread-rename input {
+  max-width: 420px;
+}
+
+.track-thread-source,
+.track-thread-archived {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.track-thread-message-list {
+  align-content: start;
+  display: grid;
+  gap: 10px;
+  min-height: 280px;
+}
+
+.track-thread-message {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+}
+
+.track-thread-message.assistant {
+  background: var(--muted);
+}
+
+.track-thread-message > header,
+.track-thread-message > footer {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.track-thread-message > footer {
+  justify-content: flex-end;
+}
+
+.track-thread-message > footer button,
+.track-thread-composer button[type='button'] {
+  background: transparent;
+  border: 0;
+  color: var(--muted-foreground);
+  min-height: 36px;
+  padding: 0 8px;
+  text-decoration: underline;
+}
+
+.track-thread-composer {
+  background: var(--background);
+  border-top: 1px solid var(--border);
+  bottom: 0;
+  display: grid;
+  gap: 10px;
+  padding: 14px 0 4px;
+  position: sticky;
+}
+
+.track-thread-composer textarea {
+  min-height: 86px;
+}
+
+@media (max-width: 720px) {
+  .track-thread-create,
+  .track-thread-route-header,
+  .track-thread-rename {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .track-thread-create label,
+  .track-thread-create select {
+    width: 100%;
+  }
+
+  .track-thread-route {
+    padding: 16px;
+  }
+}
+
 .company-hub {
   margin: 0 auto;
   max-width: 1120px;
