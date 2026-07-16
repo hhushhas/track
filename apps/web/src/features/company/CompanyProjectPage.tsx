@@ -6,6 +6,8 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import { useReleaseConfig } from "#/lib/release-config";
+import { ChannelTaskPanel, CreateTaskFromMessage, MessageInlineTasks } from "#/features/tasks/ConversationTaskActions";
 
 type Props = {
   actingCompanyId: Id<"companies">;
@@ -18,6 +20,7 @@ export function CompanyProjectPage({
   projectId,
   projectMemberId,
 }: Props) {
+  const releaseConfig = useReleaseConfig();
   const currentUser = useQuery(api.auth.getCurrentUser);
   const projects = useQuery(api.sharedProjects.listForActingCompany, {
     actingCompanyId,
@@ -236,6 +239,19 @@ export function CompanyProjectPage({
         {item.membership.status === "archived" ? (
           <p className="company-read-only">Read-only exit archive</p>
         ) : null}
+        {releaseConfig.tasks ? (
+          <Link
+            params={{ projectId }}
+            search={{
+              actingCompanyId,
+              projectMemberId,
+              view: "board",
+            }}
+            to="/workspace/projects/$projectId/tasks"
+          >
+            Tasks
+          </Link>
+        ) : null}
         <nav aria-label="Channels">
           <h2>Channels</h2>
           {channelItems.map((channel) => (
@@ -297,6 +313,7 @@ export function CompanyProjectPage({
             {notice}
           </p>
         ) : null}
+        {activeChannel && releaseConfig.tasks ? <ChannelTaskPanel group={activeChannel} identity={{ actingCompanyId, projectMemberId }} /> : null}
         <div className="company-message-list" role="log">
           {messages === undefined && activeChannelId ? (
             <p>Loading messages…</p>
@@ -322,6 +339,16 @@ export function CompanyProjectPage({
                     </time>
                   </div>
                   <p>{detail.message.body || "Attachment message"}</p>
+                  {!readOnly ? (
+                    <CreateTaskFromMessage
+                      identity={{ actingCompanyId, projectMemberId }}
+                      message={detail.message}
+                    />
+                  ) : null}
+                  <MessageInlineTasks
+                    identity={{ actingCompanyId, projectMemberId }}
+                    message={detail.message}
+                  />
                 </article>
               ))
           )}

@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitl
 import { Textarea } from '#/components/ui/textarea'
 import type { GroupMessageItem, ReplyToMessagePreview } from '../thread-item-components'
 import { getGroupAvatar } from '../group-avatar'
+import { CreateTaskFromMessage } from '#/features/tasks/ConversationTaskActions'
 
 export function MessageActions({
   activeGroupId,
@@ -50,6 +51,7 @@ export function MessageActions({
         item={item}
         onForwardMessage={onForwardMessage}
       />
+      <CreateTaskFromMessage message={item.message} />
       <DropdownMenu>
         <DropdownMenuTrigger
           render={

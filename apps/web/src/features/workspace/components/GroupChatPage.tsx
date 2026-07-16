@@ -23,6 +23,7 @@ import {
 } from '#/features/workspace/voice-notes'
 import type { ChatSearchMatch } from '#/features/workspace/search/chat-search'
 import type { WorkspaceThreadItem } from '#/features/workspace/search/chat-thread-data'
+import { ChannelTaskPanel } from '#/features/tasks/ConversationTaskActions'
 
 type PendingAttachment = ReturnType<typeof createPendingAttachment>
 type ActiveTypingIndicator = ComponentProps<typeof TypingIndicatorLine>['indicators'][number]
@@ -169,6 +170,7 @@ export function GroupChatPage({
 }: GroupChatPageProps) {
   return (
     <>
+      {activeGroup ? <ChannelTaskPanel group={activeGroup} /> : null}
       <div
         className="track-thread-scroll"
         onScroll={onThreadScroll}

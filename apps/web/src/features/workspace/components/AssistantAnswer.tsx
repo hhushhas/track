@@ -7,6 +7,7 @@ import { AvatarNameTooltip } from '../avatar-tooltip'
 import { MarkdownText } from '../markdown'
 import { MentionInline } from '../thread-item-components'
 import type { MessageCitationPreview } from '../thread-item-components'
+import { AssistantInlineTasks, CreateTaskFromAssistant } from '#/features/tasks/ConversationTaskActions'
 
 export function AssistantAnswer({
   messageCitations,
@@ -22,12 +23,7 @@ export function AssistantAnswer({
   onOpenGroup: (groupId: Id<'groups'>) => void
   onOpenMessageCitation: (messageId: Id<'messages'> | string) => void
   searchQuery?: string
-  stream: {
-    answer: string
-    createdAt: number
-    evidence: Array<{ attachmentId?: string; messageId?: string; quote: string; reason?: string }>
-    status: string
-  }
+  stream: Doc<'assistantStreams'>
   threadItemKey: string
 }) {
   const isThinking = stream.status === 'running' && !stream.answer
@@ -52,6 +48,7 @@ export function AssistantAnswer({
         <div className="track-message-meta">
           <strong>Track Assistant</strong>
           <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
+          <CreateTaskFromAssistant stream={stream} />
         </div>
         {isThinking ? (
           <TextShimmer>Thinking</TextShimmer>
@@ -86,6 +83,7 @@ export function AssistantAnswer({
             sources={sources}
           />
         ) : null}
+        <AssistantInlineTasks stream={stream} />
       </div>
     </article>
   )

@@ -1,23 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
-import { FolderKanban, LoaderCircle, MessagesSquare, Paperclip, Search, X } from 'lucide-react'
+import { FolderKanban, ListTodo, LoaderCircle, MessagesSquare, Paperclip, Search, X } from 'lucide-react'
 
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
 
-export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups'
+export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups' | 'tasks'
 
 export type ProjectSearchResult = {
   attachmentId?: Id<'attachments'>
   contentType?: string
   createdAt: number
-  groupId: Id<'groups'>
+  groupId?: Id<'groups'>
   groupName: string
   id: string
-  kind: 'message' | 'file' | 'group'
+  kind: 'message' | 'file' | 'group' | 'task'
   messageId?: Id<'messages'>
+  taskKey?: string
   preview: string
   subtitle: string
   title: string
@@ -109,6 +110,7 @@ export function ProjectSearchDialog({
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
     { Icon: Paperclip, label: 'Files', value: 'files' },
     { Icon: FolderKanban, label: 'Groups', value: 'groups' },
+    { Icon: ListTodo, label: 'Tasks', value: 'tasks' },
   ]
   const hasQuery = query.trim().length >= 2
   let resultIndex = -1
@@ -137,7 +139,7 @@ export function ProjectSearchDialog({
             autoFocus
             className="track-project-search-input"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
-            placeholder="Search messages, files, and groups..."
+            placeholder="Search messages, files, groups, and tasks..."
             value={query}
           />
           <span>{total} results</span>
@@ -203,6 +205,8 @@ export function ProjectSearchDialog({
                             />
                           ) : result.kind === 'group' ? (
                             <FolderKanban size={16} />
+                          ) : result.kind === 'task' ? (
+                            <ListTodo size={16} />
                           ) : (
                             <MessagesSquare size={16} />
                           )}

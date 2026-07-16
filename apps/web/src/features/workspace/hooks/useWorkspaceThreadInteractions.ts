@@ -272,6 +272,11 @@ export function useWorkspaceThreadInteractions({
     setProjectSearchOpen(false)
     setProjectSearchQuery('')
     setMobileNavOpen(false)
+    if (result.kind === 'task' && result.taskKey && activeProjectId) {
+      window.location.assign(`/workspace/projects/${activeProjectId}/tasks?view=all&task=${encodeURIComponent(result.taskKey)}`)
+      return
+    }
+    if (!result.groupId) return
     navigateToGroup(result.groupId)
     if (!result.messageId) return
     setPendingFocusMessageId(result.messageId)

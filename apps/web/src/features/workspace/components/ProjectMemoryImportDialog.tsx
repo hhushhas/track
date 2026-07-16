@@ -25,6 +25,7 @@ import {
 } from '#/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/components/ui/tabs'
 import { Textarea } from '#/components/ui/textarea'
+import { useReleaseConfig } from '#/lib/release-config'
 import { cn } from '#/lib/utils'
 
 import { IMPORT_SOURCES } from './import-source-logos'
@@ -61,8 +62,10 @@ export function ProjectMemoryImportDialog({
   open,
   projectId,
 }: ProjectMemoryImportDialogProps) {
+  const release = useReleaseConfig()
   const generateGroupUploadUrl = useMutation(api.messages.generateUploadUrl)
   const startMemoryImport = useAction((api as any).memoryActions.startImport)
+  const extractTasks = useAction(api.taskMemoryExtractionNode.request)
   const fileInputId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
@@ -71,6 +74,7 @@ export function ProjectMemoryImportDialog({
   const [dragging, setDragging] = useState(false)
   const [status, setStatus] = useState<Status | null>(null)
   const [busy, setBusy] = useState(false)
+  const [findTasks, setFindTasks] = useState(false)
 
   const linkCount = links.split('\n').map((link) => link.trim()).filter(Boolean).length
   const hasInput = Boolean(text.trim()) || linkCount > 0 || files.length > 0
@@ -131,10 +135,21 @@ export function ProjectMemoryImportDialog({
         sourceFiles,
         sourceStorageIds: sourceFiles.map((file) => file.storageId),
         sourceUrls,
-      }) as { summary?: string }
+      }) as { importId: Id<'memoryImports'>; summary?: string }
+      let taskMessage = ''
+      if (findTasks && release.tasks) {
+        setStatus({ kind: 'working', message: 'Finding grounded task suggestions in this import…' })
+        try {
+          const extraction = await extractTasks({ importId: result.importId })
+          taskMessage = ` ${extraction.created} task suggestion${extraction.created === 1 ? '' : 's'} added to Inbox.`
+        } catch (error) {
+          taskMessage = ' Memory imported, but task extraction failed; retry from task administration.'
+          onError?.(error)
+        }
+      }
       setStatus({
         kind: 'done',
-        message: result.summary ?? 'Imported. Project memory is up to date.',
+        message: `${result.summary ?? 'Imported. Project memory is up to date.'}${taskMessage}`,
       })
       setText('')
       setLinks('')
@@ -277,6 +292,8 @@ export function ProjectMemoryImportDialog({
             ) : null}
           </TabsContent>
         </Tabs>
+
+        {release.tasks ? <label className="flex items-center gap-2 text-xs/relaxed"><input checked={findTasks} onChange={(event) => setFindTasks(event.currentTarget.checked)} type="checkbox" /> Find grounded task suggestions after this import</label> : null}
 
         {status ? (
           <p
