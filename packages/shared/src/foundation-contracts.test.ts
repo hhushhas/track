@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { companyProjectRoles, companyRoles, projectStatuses } from './company'
+import {
+  canAdministerCompany,
+  canTransitionCompany,
+  canTransitionProjectCompany,
+  companyProjectRoles,
+  companyRoles,
+  hasUnanimousApproval,
+  isCompanyHandleAllowed,
+  normalizeCompanyHandle,
+  projectStatuses,
+  resolveRelationshipStatus,
+} from './company'
 import { resolveProjectChannelCapabilities } from './project-policy'
 import {
   isTaskDueDate,
@@ -35,6 +46,33 @@ describe('foundation domain contracts', () => {
     expect(isTaskDueDate('2027-02-29')).toBe(false)
     expect(isTaskDueDate('2027-2-09')).toBe(false)
   })
+
+  it('normalizes private Company handles and rejects reserved or malformed handles', () => {
+    expect(normalizeCompanyHandle('  Q9  Labs ')).toBe('q9-labs')
+    expect(isCompanyHandleAllowed('q9-labs')).toBe(true)
+    expect(isCompanyHandleAllowed('support')).toBe(false)
+    expect(isCompanyHandleAllowed('-broken')).toBe(false)
+  })
+
+  it('keeps lifecycle and unanimous approval rules deterministic', () => {
+    expect(canAdministerCompany('admin')).toBe(true)
+    expect(canAdministerCompany('member')).toBe(false)
+    expect(canTransitionCompany('closed', 'active')).toBe(false)
+    expect(canTransitionCompany('suspended', 'active')).toBe(true)
+    expect(canTransitionProjectCompany('active', 'exited')).toBe(false)
+    expect(canTransitionProjectCompany('exit_pending', 'exited')).toBe(true)
+    expect(resolveRelationshipStatus(0)).toBe('closed')
+    expect(resolveRelationshipStatus(1)).toBe('inactive')
+    expect(resolveRelationshipStatus(3)).toBe('active')
+    expect(hasUnanimousApproval(
+      ['alpha', 'beta'],
+      new Map([['alpha', 'approved'], ['beta', 'approved']]),
+    )).toBe(true)
+    expect(hasUnanimousApproval(
+      ['alpha', 'beta'],
+      new Map([['alpha', 'approved']]),
+    )).toBe(false)
+  })
 })
 
 describe('central Project and Channel policy contract', () => {
@@ -55,7 +93,7 @@ describe('central Project and Channel policy contract', () => {
     })
   })
 
-  it('requires explicit Channel stewardship for a company-model manager', () => {
+  it('requires exact Channel membership and stewardship for a company-model manager', () => {
     const withoutChannel = resolveProjectChannelCapabilities({
       accessProfile: 'company',
       accessMode: 'active',
@@ -80,7 +118,6 @@ describe('central Project and Channel policy contract', () => {
       channelActive: true,
       channelSteward: true,
     })
-
     expect(withoutChannel.canManageProject).toBe(true)
     expect(withoutChannel.canReadChannel).toBe(false)
     expect(withoutChannel.canStewardChannel).toBe(false)

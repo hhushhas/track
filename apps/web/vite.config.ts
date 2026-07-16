@@ -24,7 +24,9 @@ const config = defineConfig(({ mode }) => {
     plugins: [
       devtools(),
       nitro({
+        compatibilityDate: '2026-07-01',
         preset: 'cloudflare-module',
+        cloudflare: { wrangler: { name: 'track-web' } },
         rollupConfig: { external: [/^@sentry\//] },
       }),
       tailwindcss(),

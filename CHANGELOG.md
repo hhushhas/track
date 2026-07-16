@@ -5,6 +5,29 @@
 - Added default-off Company, task-management, and Channel-thread release controls with fail-closed web, mobile, and Convex configuration.
 - Added framework-independent domain contracts, additive Convex schema and generated declarations, authenticated actor resolution, and a central legacy/company Project and Channel policy seam without enabling the pending feature domains.
 
+## Unreleased
+
+### Added
+
+- Default-off Company collaboration across web and mobile, including private
+  Company discovery, memberships, peer Relationships, shared Project proposals,
+  explicit Channels, represented identity, and Company-aware conversation.
+- Unanimous Relationship removal and Project or Channel archive lifecycles with
+  participant-revision protection against stale approvals.
+- Two-phase shared-Project exit with immediate live revocation, exact read-only
+  entitlements, immutable scoped-memory snapshots, verified hashes, safe cancel,
+  and retryable orphan cleanup.
+- Owner-led guided migration that maps every legacy member explicitly, requires
+  counterpart confirmation, preserves exact Group membership, and activates
+  neutral Project roles atomically.
+
+### Security
+
+- Central authenticated-actor and Project/Channel authorization adapters now
+  protect conversation, attachment, search, audit, report, notification,
+  assistant, memory, typing, read-state, and mobile paths without trusting
+  caller-supplied user identifiers.
+
 ## 2026-07-16
 
 - Reframed Track's target philosophy around conversation-led communication and first-class task management: peer Companies collaborate through Projects, Channels, Discord-style threads, scoped memory, and human-confirmed AI work.

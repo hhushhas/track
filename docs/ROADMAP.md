@@ -3,24 +3,6 @@
 This file tracks approved parts of the target contract in [PRODUCT.md](./PRODUCT.md)
 that are not yet running behavior.
 
-## Companies, relationships, and shared projects
-
-Track will add first-class Companies that can form peer Relationships with two
-or more Companies. Relationships authorize Companies to propose shared
-Projects; they grant no Project or Channel access by themselves. Shared
-Projects use neutral roles, explicit Company participation, explicit Channel
-membership, non-destructive exit and archive rules, and a guided upgrade from
-the current client/vendor Project model.
-
-The approved product, access, lifecycle, migration, and implementation contract
-is in
-[COMPANY_RELATIONSHIPS_SPEC.md](./COMPANY_RELATIONSHIPS_SPEC.md).
-
-The Company, thread, and task models share the same Project and Channel
-boundaries. Their specifications must be reconciled before a combined release
-so legacy roles and the current Group product noun do not survive into
-company-model Projects.
-
 ## Channel threads
 
 Track will add named Discord-style threads as focused sub-conversations inside a

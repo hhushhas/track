@@ -71,6 +71,10 @@ export async function requireGroupMember(
   if (!membership || (membership.status && membership.status !== 'active')) {
     throw new Error('not_group_member')
   }
+  const project = await ctx.db.get(membership.projectId)
+  if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy') {
+    throw new Error('company_policy_required')
+  }
   return membership
 }
 

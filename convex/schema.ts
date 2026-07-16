@@ -1,14 +1,15 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
-import { companyTables } from './schema/companyTables'
+import { companyCoreTables } from './schema/companyCoreTables'
+import { companyProjectTables } from './schema/companyProjectTables'
 import {
   channelStatus,
   companyProjectRole,
   projectMemberStatus,
   projectOrigin,
   projectStatus,
-} from './schema/foundationValidators'
+} from './schema/companyValidators'
 import { taskTables } from './schema/taskTables'
 import { threadTables } from './schema/threadTables'
 
@@ -114,7 +115,8 @@ const forwardedMessageSnapshot = v.object({
 })
 
 export default defineSchema({
-  ...companyTables,
+  ...companyCoreTables,
+  ...companyProjectTables,
   ...taskTables,
   ...threadTables,
 
@@ -141,6 +143,7 @@ export default defineSchema({
   projects: defineTable({
     name: v.string(),
     clientLabel: v.optional(v.string()),
+    description: v.optional(v.string()),
     accessProfile: v.optional(projectAccessProfile),
     relationshipId: v.optional(v.id('relationships')),
     proposingCompanyId: v.optional(v.id('companies')),
@@ -148,6 +151,7 @@ export default defineSchema({
     status: v.optional(projectStatus),
     participantRevision: v.optional(v.number()),
     revision: v.optional(v.number()),
+    archiveReason: v.optional(v.string()),
     createdBy: v.id('users'),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -200,7 +204,7 @@ export default defineSchema({
     userId: v.id('users'),
     projectMemberId: v.optional(v.id('projectMembers')),
     status: v.optional(
-      v.union(v.literal('active'), v.literal('removed'), v.literal('archived')),
+      v.union(v.literal('active'), v.literal('suspended'), v.literal('removed'), v.literal('archived')),
     ),
     isSteward: v.optional(v.boolean()),
     endedAt: v.optional(v.number()),
@@ -386,6 +390,7 @@ export default defineSchema({
     updatedAt: v.number(),
     lastUsedAt: v.optional(v.number()),
     lastContextUpdatedAt: v.optional(v.number()),
+    contextWritePendingRevision: v.optional(v.number()),
     contextLength: v.optional(v.number()),
     error: v.optional(v.string()),
   })
@@ -399,6 +404,7 @@ export default defineSchema({
     actorId: v.id('users'),
     actorProjectMemberId: v.optional(v.id('projectMembers')),
     actingCompanyId: v.optional(v.id('companies')),
+    scope: v.optional(v.union(v.literal('project'), v.literal('channel'))),
     status: jobStatus,
     sourceKind: memoryImportSourceKind,
     sourceStorageIds: v.array(v.id('_storage')),

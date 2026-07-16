@@ -12,7 +12,7 @@ import {
 } from './lib/assistantAttachments'
 import { emitOperationalEvent } from './lib/observability'
 import { rateLimiter } from './lib/rateLimit'
-import { requireGroupMember } from './lib/permissions'
+import { authorizeScopedRequest } from './lib/requestAuthorization'
 
 const lowSignalQuestionPattern =
   /^(hi|hello|hey|yo|sup|ok|okay|thanks|thank you|cool|nice|great|good|good good|test|testing)[.!?\s]*$/i
@@ -84,13 +84,26 @@ export const listForGroup = query({
   args: {
     groupId: v.id('groups'),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
     return await ctx.db
       .query('assistantStreams')
-      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .withIndex('by_group_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId))
       .order('desc')
       .take(args.limit ?? 20)
   },
@@ -101,6 +114,8 @@ export const ask = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     requesterId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     promptMessageId: v.optional(v.id('messages')),
     question: v.string(),
   },
@@ -108,6 +123,8 @@ export const ask = action({
     await ctx.runMutation(internal.assistant.authorizeAsk, {
       groupId: args.groupId,
       requesterId: args.requesterId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
     })
     const context: CollectedAssistantContext = await ctx.runQuery(api.assistant.collectContext, args)
     const now = Date.now()
@@ -115,6 +132,8 @@ export const ask = action({
       projectId: args.projectId,
       groupId: args.groupId,
       requesterId: args.requesterId,
+      actingCompanyId: args.actingCompanyId,
+      requesterProjectMemberId: args.projectMemberId,
       promptMessageId: args.promptMessageId,
       status: 'completed',
       answer: '',
@@ -131,6 +150,8 @@ export const ask = action({
       projectId: args.projectId,
       question: args.question,
       requesterId: args.requesterId,
+      requesterProjectMemberId: args.projectMemberId,
+      actingCompanyId: args.actingCompanyId,
       streamId,
     })
   },
@@ -141,18 +162,28 @@ export const collectContext = query({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     requesterId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     promptMessageId: v.optional(v.id('messages')),
     question: v.string(),
   },
   handler: async (ctx, args): Promise<CollectedAssistantContext> => {
-    await requireGroupMember(ctx, args.groupId, args.requesterId)
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      claimedUserId: args.requesterId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
 
     const messages = await ctx.db
       .query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
       .order('desc')
       .take(80)
-    const orderedMessages = messages.reverse()
+    const orderedMessages = messages
+      .filter((message) => !access.companyAccess?.entitlement?.exitAt || message.createdAt <= access.companyAccess.entitlement.exitAt)
+      .reverse()
 
     const users = await Promise.all(
       Array.from(new Set(orderedMessages.map((message) => message.authorId))).map(
@@ -269,9 +300,19 @@ export const authorizeAsk = internalMutation({
   args: {
     groupId: v.id('groups'),
     requesterId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.requesterId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.requesterId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
     await rateLimiter.limit(ctx, 'askTrack', {
       key: args.requesterId,
       throws: true,
@@ -284,6 +325,8 @@ export const createStream = internalMutation({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     requesterId: v.id('users'),
+    requesterProjectMemberId: v.optional(v.id('projectMembers')),
+    actingCompanyId: v.optional(v.id('companies')),
     promptMessageId: v.optional(v.id('messages')),
     status: v.union(v.literal('queued'), v.literal('running'), v.literal('completed'), v.literal('failed')),
     answer: v.string(),
@@ -352,6 +395,8 @@ export const completeStream = internalMutation({
       projectId: stream.projectId,
       groupId: stream.groupId,
       actorId: stream.requesterId,
+      actorProjectMemberId: stream.requesterProjectMemberId,
+      actingCompanyId: stream.actingCompanyId,
       entityType: 'assistantStream',
       entityId: args.streamId,
       action: 'track_assistant.answered',
@@ -409,12 +454,16 @@ export const draftModelAnswer = action({
   args: {
     groupId: v.id('groups'),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     question: v.string(),
   },
   handler: async (ctx, args): Promise<string> => {
     const messages: Array<{ authorId: string; body: string }> = await ctx.runQuery(api.messages.list, {
       groupId: args.groupId,
       userId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
       limit: 40,
     })
     return await ctx.runAction((internal as any).assistantNode.draftModelAnswer, {

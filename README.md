@@ -1,16 +1,15 @@
 # Track
 
-Track currently ships as a project collaboration workspace where client and
-vendor teams work in group conversations, retain references, and use
-permission-aware AI assistance. The web and mobile apps support realtime chat,
-attachments, voice notes, notifications, `@track` answers, project memory
-imports, search, and audit history.
+Track is a project collaboration workspace with realtime conversation,
+references, and permission-aware AI assistance. Its default-off Company release
+adds peer Relationships, shared Projects, explicit Channels, immutable Company
+exit archives, and guided migration from the legacy Project model across web,
+mobile, shared contracts, and Convex.
 
-The [target product contract](./docs/PRODUCT.md) unifies Company-based Project
-and Channel conversation with Discord-style threads, first-class task
-management, Kanban boards, and dependable mobile push. These approved changes
-remain independent implementation work tracked in
-[docs/ROADMAP.md](./docs/ROADMAP.md).
+The [target product contract](./docs/PRODUCT.md) also defines Discord-style
+threads, first-class task management, Kanban boards, and dependable mobile push.
+Those companion capabilities remain independently controlled implementation
+work tracked in [docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Repository
 
@@ -37,7 +36,7 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
 - [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): approved
   independent task, board, AI, access, and delivery contract.
 - [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
-  approved future Company, Relationship, shared-Project, Channel, access, and
+  implemented Company, Relationship, shared-Project, Channel, access, exit, and
   migration contract.
 - [Mobile push notification intent](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
   approved reliability direction that still needs a complete implementation
@@ -70,6 +69,12 @@ pnpm --filter @track/web dev
 ```
 
 Open `http://localhost:3000`. Convex creates the development deployment values in `.env.local`. Add the remaining auth, AI, and optional integration values documented in `.env.example`; do not copy the placeholder Convex deployment values over the generated values.
+
+Set `TRACK_COMPANY_MODEL_ENABLED=true` on the local Convex deployment to expose
+Company collaboration. The flag is server-authoritative and independent from
+`TRACK_THREADS_ENABLED` and `TRACK_TASKS_ENABLED`. Archive, Company-exit,
+redaction, account-deletion, and cleanup enforcement remains server-side even
+when Company creation surfaces are disabled.
 
 ## Local mobile setup
 

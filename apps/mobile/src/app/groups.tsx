@@ -15,6 +15,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
+import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 
 type MobileGroup = {
   group: Doc<'groups'>;
@@ -27,21 +28,32 @@ export default function GroupsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { trackUserId } = useTrackUser();
-  const { projectId } = useLocalSearchParams<{ projectId: string }>();
+  const { projectId, companyId, membershipId, archive } = useLocalSearchParams<{ projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
   const [refreshing, setRefreshing] = useState(false);
 
   const projects = useQuery(
     api.mobile.listProjects,
-    trackUserId ? { userId: trackUserId } : 'skip',
+    trackUserId ? { userId: trackUserId, actingCompanyId: companyId as Id<'companies'> | undefined } : 'skip',
   );
+  const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && projectId ? {
+    userId: trackUserId,
+    projectId: projectId as Id<'projects'>,
+    actingCompanyId: companyId as Id<'companies'> | undefined,
+    projectMemberId: membershipId as Id<'projectMembers'> | undefined,
+  } : 'skip');
   const groups = useQuery(
     api.mobile.listGroups,
-    trackUserId && projectId ? { userId: trackUserId, projectId: projectId as Id<'projects'> } : 'skip',
+    trackUserId && projectId && navigation?.available ? {
+      userId: trackUserId,
+      projectId: projectId as Id<'projects'>,
+      actingCompanyId: companyId as Id<'companies'> | undefined,
+      projectMemberId: membershipId as Id<'projectMembers'> | undefined,
+    } : 'skip',
   );
 
   const groupItems = (groups ?? []) as MobileGroup[];
   const projectName = (projects as { project: Doc<'projects'> }[] | undefined)
-    ?.find((p) => p.project._id === projectId)?.project.name ?? 'Groups';
+    ?.find((p) => p.project._id === projectId)?.project.name ?? 'Channels';
 
   function onRefresh() {
     setRefreshing(true);
@@ -50,7 +62,11 @@ export default function GroupsScreen() {
 
   function navigate(item: MobileGroup) {
     hapticLight();
-    router.push(`/conversation?groupId=${item.group._id}&projectId=${projectId}`);
+    router.push(channelHref(projectId as Id<'projects'>, item.group._id, companyId && membershipId ? {
+      archived: archive === '1',
+      companyId: companyId as Id<'companies'>,
+      membershipId: membershipId as Id<'projectMembers'>,
+    } : null));
   }
 
   return (
@@ -64,14 +80,16 @@ export default function GroupsScreen() {
         }}
       />
 
-      {groups === undefined ? (
+      {navigation && !navigation.available ? <View style={styles.list}><EmptyState icon="shield-lock-outline" title="Project unavailable" body={navigationUnavailableCopy(Boolean(companyId))} /></View> : null}
+
+      {!navigation || navigation.available && groups === undefined ? (
         <View style={styles.list}>
           <SkeletonRow />
           <SkeletonRow />
           <SkeletonRow />
           <SkeletonRow />
         </View>
-      ) : (
+      ) : navigation.available ? (
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.list}
@@ -79,13 +97,13 @@ export default function GroupsScreen() {
           keyExtractor={(item) => item.group._id}
           renderItem={({ item }) => <GroupRow item={item} onPress={() => navigate(item)} />}
           ListEmptyComponent={
-            <EmptyState icon="forum-outline" title="No groups visible" body="Groups you're a member of will appear here." />
+            <EmptyState icon="forum-outline" title="No Channels visible" body="Only Channels explicitly granted to this represented membership appear here." />
           }
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} colors={[theme.accent]} />
           }
         />
-      )}
+      ) : null}
     </ThemedView>
   );
 }
@@ -103,6 +121,7 @@ function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void })
         <ThemedText type="smallBold">{item.group.name}</ThemedText>
         <ThemedText numberOfLines={1} style={{ color: theme.textSecondary }} type="code">
           {item.lastMessage?.body || 'No messages yet'}
+          {item.group.status === 'archived' ? ' · read-only archive' : ''}
         </ThemedText>
       </View>
       {item.unreadCount > 0 ? (

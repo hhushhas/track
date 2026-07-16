@@ -153,14 +153,15 @@ describe('central Project and Channel policy adapter', () => {
     )).rejects.toThrow('project_unavailable')
   })
 
-  it('keeps company-model Projects out of caller-identified legacy APIs', async () => {
+  it('rejects caller-identified memory access when the authenticated actor differs', async () => {
     const t = convexTest(schema, modules)
     const seeded = await seedCompanyProject(t)
+    await seedUser(t, 'other-memory-user')
 
-    await expect(t.query(api.memory.getStatus, {
+    await expect(t.withIdentity({ subject: 'other-memory-user' }).query(api.memory.getStatus, {
       projectId: seeded.projectId,
       userId: seeded.userId,
-    })).rejects.toThrow('company_policy_required')
+    })).rejects.toThrow('actor_mismatch')
   })
 
   it('returns only the exited membership archive entitlement as read-only', async () => {
@@ -183,8 +184,15 @@ describe('central Project and Channel policy adapter', () => {
         projectMemberId: seeded.projectMemberId,
         exitAt: 2,
         channelIds: [seeded.groupId],
-        projectNameSnapshot: 'Company Project',
-        companyNameSnapshot: 'Company',
+        projectSnapshot: {
+          name: 'Company Project',
+          status: 'active',
+        },
+        channelSnapshots: [{
+          _id: seeded.groupId,
+          name: 'Restricted',
+          status: 'active',
+        }],
         retentionStatus: 'active',
         manifestHash: 'archive-manifest',
         createdAt: 2,

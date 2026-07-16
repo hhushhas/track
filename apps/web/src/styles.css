@@ -14,6 +14,247 @@
   --font-heading: var(--font-display);
 }
 
+.company-hub {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 40px 24px 80px;
+}
+
+.company-hub-header,
+.company-panel-heading,
+.company-list li,
+.company-conversation > header {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.company-hub h1,
+.company-hub h2,
+.company-project-shell h1,
+.company-project-shell h2 {
+  letter-spacing: -0.025em;
+}
+
+.company-eyebrow,
+.company-badge,
+.company-read-only {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.company-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-top: 20px;
+  padding: 24px;
+}
+
+.company-inline-form {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 18px;
+}
+
+.company-inline-form > div,
+.company-channel-sidebar form {
+  display: grid;
+  gap: 6px;
+}
+
+.company-inline-form select,
+.company-panel > select {
+  background: var(--background);
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.company-field-hint,
+.company-list span,
+.company-panel p,
+.company-admin-card p {
+  color: var(--muted-foreground);
+  display: block;
+  font-size: 13px;
+}
+
+.company-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+}
+
+.company-list li,
+.company-admin-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.company-migration-form {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.company-migration-form label,
+.company-migration-form fieldset {
+  display: grid;
+  gap: 6px;
+}
+
+.company-migration-form fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  padding: 12px;
+}
+
+.company-migration-form select {
+  background: var(--background);
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.company-list li > div:last-child {
+  display: flex;
+  gap: 8px;
+}
+
+.company-notice {
+  background: var(--muted);
+  border-radius: 8px;
+  margin: 16px 0;
+  padding: 10px 12px;
+}
+
+.company-project-shell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr) 280px;
+  min-height: 100vh;
+}
+
+.company-channel-sidebar,
+.company-project-admin {
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 18px;
+}
+
+.company-project-admin {
+  border-left: 1px solid var(--border);
+  border-right: 0;
+}
+
+.company-channel-sidebar nav {
+  display: grid;
+  gap: 4px;
+}
+
+.company-channel-sidebar nav button {
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  color: inherit;
+  min-height: 40px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.company-channel-sidebar nav button.active {
+  background: var(--accent);
+}
+
+.company-conversation {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 100vh;
+}
+
+.company-conversation > header,
+.company-composer {
+  border-bottom: 1px solid var(--border);
+  padding: 16px 22px;
+}
+
+.company-message-list {
+  align-content: end;
+  display: grid;
+  gap: 14px;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.company-message-list article > div {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.company-message-list article p {
+  margin: 4px 0 0;
+}
+
+.company-message-list time {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.company-composer {
+  border-bottom: 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+}
+
+.company-project-admin ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.company-project-admin li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.company-admin-card {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 980px) {
+  .company-project-shell { grid-template-columns: 210px minmax(0, 1fr); }
+  .company-project-admin { grid-column: 1 / -1; }
+}
+
+@media (max-width: 700px) {
+  .company-project-shell { display: block; }
+  .company-channel-sidebar,
+  .company-project-admin { border: 0; border-bottom: 1px solid var(--border); }
+  .company-conversation { min-height: 70vh; }
+  .company-hub-header,
+  .company-panel-heading,
+  .company-list li { align-items: flex-start; flex-direction: column; }
+}
+
 :root {
   --ink: #1b1917;
   --ink-2: #3a3631;

@@ -6,7 +6,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import { appendAuditEvent } from './lib/audit'
 import { rateLimiter } from './lib/rateLimit'
-import { requireGroupMember } from './lib/permissions'
+import { authorizeScopedRequest } from './lib/requestAuthorization'
 
 const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
 type MessageDetailCtx = QueryCtx | MutationCtx
@@ -26,27 +26,38 @@ async function buildMessageDetail(
   ctx: MessageDetailCtx,
   message: Doc<'messages'>,
   viewerId: Id<'users'>,
+  viewerProjectMemberId?: Id<'projectMembers'>,
+  cutoff?: number,
+  archivedChannelIds?: Array<Id<'groups'>>,
 ) {
   const author = await ctx.db.get(message.authorId)
-  const authorProjectMember = await ctx.db
-    .query('projectMembers')
-    .withIndex('by_project_user', (q) =>
-      q.eq('projectId', message.projectId).eq('userId', message.authorId),
-    )
-    .unique()
+  const authorProjectMember = message.authorProjectMemberId
+    ? await ctx.db.get(message.authorProjectMemberId)
+    : await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
+        q.eq('projectId', message.projectId).eq('userId', message.authorId),
+      ).first()
   const attachments = await Promise.all(
     message.attachmentIds.map(async (attachmentId) => {
       const attachment = await ctx.db.get(attachmentId)
-      if (!attachment) return null
+      if (!attachment || (cutoff && attachment.createdAt > cutoff)) return null
       const url = await ctx.storage.getUrl(attachment.storageId)
       return { attachment, url }
     }),
   )
   const replyToMessage = message.replyToMessageId ? await ctx.db.get(message.replyToMessageId) : null
   const replyToAuthor = replyToMessage ? await ctx.db.get(replyToMessage.authorId) : null
-  const sourceGroupAccess = message.forwardedFrom
-    ? await getGroupMembership(ctx, message.forwardedFrom.sourceGroupId, viewerId)
+  const sourceMembership = message.forwardedFrom && !archivedChannelIds
+    ? viewerProjectMemberId
+      ? await ctx.db.query('groupMembers').withIndex('by_group_project_member', (q) =>
+          q.eq('groupId', message.forwardedFrom!.sourceGroupId).eq('projectMemberId', viewerProjectMemberId),
+        ).unique()
+      : await getGroupMembership(ctx, message.forwardedFrom.sourceGroupId, viewerId)
     : null
+  const sourceGroupAccess = message.forwardedFrom
+    ? archivedChannelIds
+      ? archivedChannelIds.includes(message.forwardedFrom.sourceGroupId)
+      : Boolean(sourceMembership && (!sourceMembership.status || sourceMembership.status === 'active'))
+    : false
   const sourceGroup = message.forwardedFrom && sourceGroupAccess
     ? await ctx.db.get(message.forwardedFrom.sourceGroupId)
     : null
@@ -54,9 +65,15 @@ async function buildMessageDetail(
     message: message.forwardedFrom ? { ...message, forwardedFrom: undefined } : message,
     author,
     authorRole: authorProjectMember?.role ?? null,
+    authorCompany: authorProjectMember?.companyId
+      ? {
+          companyId: authorProjectMember.companyId,
+          displayName: authorProjectMember.companyDisplayNameSnapshot ?? 'Company',
+        }
+      : null,
     attachments: attachments.filter((attachment) => attachment !== null),
     replyTo:
-      replyToMessage && replyToMessage.groupId === message.groupId
+      replyToMessage && replyToMessage.groupId === message.groupId && (!cutoff || replyToMessage.createdAt <= cutoff)
         ? {
             messageId: replyToMessage._id,
             authorName: replyToAuthor?.displayName ?? 'Unknown Member',
@@ -71,7 +88,7 @@ async function buildMessageDetail(
           originalCreatedAt: message.forwardedFrom.originalCreatedAt,
           attachmentSnapshots: message.forwardedFrom.attachmentSnapshots,
           forwardedAt: message.forwardedFrom.forwardedAt,
-          canOpenSource: sourceGroupAccess !== null,
+          canOpenSource: sourceGroupAccess,
           sourceGroupId: sourceGroupAccess ? message.forwardedFrom.sourceGroupId : null,
           sourceMessageId: sourceGroupAccess ? message.forwardedFrom.sourceMessageId : null,
           sourceGroupName: sourceGroup?.name ?? null,
@@ -84,13 +101,26 @@ export const list = query({
   args: {
     groupId: v.id('groups'),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
     return await ctx.db
       .query('messages')
-      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .withIndex('by_group_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId))
       .order('desc')
       .take(args.limit ?? 50)
   },
@@ -100,17 +130,39 @@ export const listDetailed = query({
   args: {
     groupId: v.id('groups'),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
     const messages = await ctx.db
       .query('messages')
-      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
+      .withIndex('by_group_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId))
       .order('desc')
       .take(args.limit ?? 50)
 
-    return await Promise.all(messages.map(async (message) => await buildMessageDetail(ctx, message, args.userId)))
+    return await Promise.all(messages.map(async (message) =>
+      await buildMessageDetail(
+        ctx,
+        message,
+        args.userId,
+        args.projectMemberId,
+        cutoff,
+        access.companyAccess?.entitlement?.channelIds,
+      ),
+    ))
   },
 })
 
@@ -119,13 +171,21 @@ export const send = mutation({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     authorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     body: v.string(),
     mentions: v.optional(v.array(v.id('users'))),
     replyToMessageId: v.optional(v.id('messages')),
     notificationPreview: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.authorId)
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      claimedUserId: args.authorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
     const group = await ctx.db.get(args.groupId)
     if (!group || group.projectId !== args.projectId) {
       throw new Error('group_project_mismatch')
@@ -148,6 +208,8 @@ export const send = mutation({
       projectId: args.projectId,
       groupId: args.groupId,
       authorId: args.authorId,
+      authorProjectMemberId: access.companyAccess?.projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
       body: args.body,
       mentions: args.mentions ?? [],
       attachmentIds: [],
@@ -160,6 +222,8 @@ export const send = mutation({
       projectId: args.projectId,
       groupId: args.groupId,
       actorId: args.authorId,
+      actorProjectMemberId: access.companyAccess?.projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
       entityType: 'message',
       entityId: messageId,
       action: 'message.sent',
@@ -184,6 +248,9 @@ export const forwardMessage = mutation({
     sourceMessageId: v.id('messages'),
     targetGroupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    audienceExpansionConfirmed: v.optional(v.boolean()),
     body: v.optional(v.string()),
     mentions: v.optional(v.array(v.id('users'))),
   },
@@ -192,14 +259,39 @@ export const forwardMessage = mutation({
     if (!sourceMessage || sourceMessage.projectId !== args.projectId) {
       throw new Error('source_message_not_found')
     }
-    await requireGroupMember(ctx, sourceMessage.groupId, args.actorId)
-    await requireGroupMember(ctx, args.targetGroupId, args.actorId)
+    await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      groupId: sourceMessage.groupId,
+      claimedUserId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      groupId: args.targetGroupId,
+      claimedUserId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
     const targetGroup = await ctx.db.get(args.targetGroupId)
     if (!targetGroup || targetGroup.projectId !== args.projectId) {
       throw new Error('target_group_mismatch')
     }
     if (sourceMessage.groupId === args.targetGroupId) {
       throw new Error('forward_target_same_group')
+    }
+    if (access.companyAccess) {
+      const [sourceMemberships, targetMemberships] = await Promise.all([
+        ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', sourceMessage.groupId)).collect(),
+        ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', args.targetGroupId)).collect(),
+      ])
+      const [sourceMembers, targetMembers] = await Promise.all([
+        Promise.all(sourceMemberships.filter((item) => item.status === 'active' && item.projectMemberId).map(async (item) => await ctx.db.get(item.projectMemberId!))),
+        Promise.all(targetMemberships.filter((item) => item.status === 'active' && item.projectMemberId).map(async (item) => await ctx.db.get(item.projectMemberId!))),
+      ])
+      const sourceCompanyIds = new Set(sourceMembers.flatMap((member) => member?.companyId ? [String(member.companyId)] : []))
+      const expandsAudience = targetMembers.some((member) => member?.companyId && !sourceCompanyIds.has(String(member.companyId)))
+      if (expandsAudience && !args.audienceExpansionConfirmed) throw new Error('audience_expansion_confirmation_required')
     }
     await rateLimiter.limit(ctx, 'sendMessage', {
       key: args.actorId,
@@ -221,6 +313,8 @@ export const forwardMessage = mutation({
       projectId: args.projectId,
       groupId: args.targetGroupId,
       authorId: args.actorId,
+      authorProjectMemberId: access.companyAccess?.projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
       body,
       mentions: args.mentions ?? [],
       attachmentIds: [],
@@ -258,6 +352,8 @@ export const forwardMessage = mutation({
           kind: attachment.kind,
           durationMs: attachment.durationMs,
           uploadedBy: args.actorId,
+          uploadedByProjectMemberId: access.companyAccess?.projectMember._id,
+          actingCompanyId: access.companyAccess?.company._id,
           extractionStatus: attachment.extractionStatus,
           createdAt: Date.now(),
         }),
@@ -273,6 +369,8 @@ export const forwardMessage = mutation({
       projectId: args.projectId,
       groupId: args.targetGroupId,
       actorId: args.actorId,
+      actorProjectMemberId: access.companyAccess?.projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
       entityType: 'message',
       entityId: messageId,
       action: 'message.forwarded',
@@ -296,9 +394,19 @@ export const generateUploadUrl = mutation({
   args: {
     groupId: v.id('groups'),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
     return await ctx.storage.generateUploadUrl()
   },
 })
@@ -309,6 +417,8 @@ export const attachFile = mutation({
     groupId: v.id('groups'),
     messageId: v.id('messages'),
     userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     storageId: v.id('_storage'),
     filename: v.string(),
     contentType: v.string(),
@@ -317,7 +427,13 @@ export const attachFile = mutation({
     durationMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireGroupMember(ctx, args.groupId, args.userId)
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
     const group = await ctx.db.get(args.groupId)
     if (!group || group.projectId !== args.projectId) {
       throw new Error('group_project_mismatch')
@@ -341,6 +457,8 @@ export const attachFile = mutation({
       kind: args.kind,
       durationMs: args.durationMs,
       uploadedBy: args.userId,
+      uploadedByProjectMemberId: access.companyAccess?.projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
       extractionStatus: 'preserved',
       createdAt: Date.now(),
     })
@@ -351,6 +469,8 @@ export const attachFile = mutation({
       projectId: args.projectId,
       groupId: args.groupId,
       actorId: args.userId,
+      actorProjectMemberId: access.companyAccess?.projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
       entityType: 'attachment',
       entityId: attachmentId,
       action: 'attachment.preserved',

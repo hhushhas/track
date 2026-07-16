@@ -38,11 +38,45 @@ const sourceFileValidator = v.object({
   size: v.number(),
 })
 
+async function writeReservedContext(
+  ctx: ActionCtx,
+  input: {
+    projectId: Id<'projects'>
+    boxId: string
+    content: string
+    contextLength: number
+  },
+) {
+  const revision = await ctx.runMutation(internal.memory.beginMemoryBoxContextWrite, {
+    boxId: input.boxId,
+    projectId: input.projectId,
+  })
+  try {
+    await createLiveMemoryBoxAdapter().writeFile(input.boxId, contextPath, input.content)
+    await ctx.runMutation(internal.memory.completeMemoryBoxContextWrite, {
+      boxId: input.boxId,
+      contextLength: input.contextLength,
+      projectId: input.projectId,
+      revision,
+    })
+  } catch (error) {
+    await ctx.runMutation(internal.memory.abortMemoryBoxContextWrite, {
+      boxId: input.boxId,
+      projectId: input.projectId,
+      revision,
+    })
+    throw error
+  }
+}
+
 export const startImport = action({
   args: {
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    scope: v.optional(v.union(v.literal('project'), v.literal('channel'))),
     pastedText: v.optional(v.string()),
     sourceStorageIds: v.optional(v.array(v.id('_storage'))),
     sourceFiles: v.optional(v.array(sourceFileValidator)),
@@ -51,6 +85,8 @@ export const startImport = action({
   handler: async (ctx, args): Promise<{ importId: Id<'memoryImports'>; summary: string }> => {
     await ctx.runMutation(internal.memory.authorizeGroupMemoryWrite, {
       actorId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
       groupId: args.groupId,
       projectId: args.projectId,
     })
@@ -66,9 +102,13 @@ export const startImport = action({
       : args.sourceUrls?.length
         ? 'link'
         : 'paste'
+    const scope = args.scope ?? (args.projectMemberId ? 'channel' : 'project')
     const now = Date.now()
     const importId: Id<'memoryImports'> = await ctx.runMutation(internal.memory.createImportJob, {
       actorId: args.actorId,
+      actorProjectMemberId: args.projectMemberId,
+      actingCompanyId: args.actingCompanyId,
+      scope,
       createdAt: now,
       groupId: args.groupId,
       projectId: args.projectId,
@@ -85,6 +125,8 @@ export const startImport = action({
       })
       const { boxId } = await ensureProjectBox(ctx, {
         actorId: args.actorId,
+        actingCompanyId: args.actingCompanyId,
+        projectMemberId: args.projectMemberId,
         projectId: args.projectId,
       })
       const adapter = createLiveMemoryBoxAdapter()
@@ -99,6 +141,7 @@ export const startImport = action({
         `actorId: ${args.actorId}`,
         `importId: ${importId}`,
         `sourceKind: ${sourceKind}`,
+        `scope: ${scope}`,
         `createdAt: ${new Date(now).toISOString()}`,
       ].join('\n')
       await adapter.writeFile(boxId, `${scratchPath}/metadata.md`, metadata)
@@ -124,19 +167,21 @@ export const startImport = action({
       }
 
       const normalizedEvidence = await readImportEvidence(adapter, boxId, scratchPath)
-      const summary = await promoteImportToContext(ctx, {
-        actorId: args.actorId,
-        boxId,
-        groupId: args.groupId,
-        importId,
-        projectId: args.projectId,
-        sourceText: [
-          args.pastedText?.trim() ? `Pasted text:\n${args.pastedText.trim()}` : '',
-          args.sourceUrls?.length ? `Links:\n${args.sourceUrls.join('\n')}` : '',
-          sourceFiles.length ? `Files:\n${sourceFiles.map((file) => `${file.filename}: ${file.storageId}`).join('\n')}` : '',
-          normalizedEvidence ? `Normalized scratch evidence:\n${normalizedEvidence}` : '',
-        ].filter(Boolean).join('\n\n'),
-      })
+      const summary = scope === 'project'
+        ? await promoteImportToContext(ctx, {
+            actorId: args.actorId,
+            boxId,
+            groupId: args.groupId,
+            importId,
+            projectId: args.projectId,
+            sourceText: [
+              args.pastedText?.trim() ? `Pasted text:\n${args.pastedText.trim()}` : '',
+              args.sourceUrls?.length ? `Links:\n${args.sourceUrls.join('\n')}` : '',
+              sourceFiles.length ? `Files:\n${sourceFiles.map((file) => `${file.filename}: ${file.storageId}`).join('\n')}` : '',
+              normalizedEvidence ? `Normalized scratch evidence:\n${normalizedEvidence}` : '',
+            ].filter(Boolean).join('\n\n'),
+          })
+        : 'Channel-scoped source preserved for authorized Channel context.'
 
       await ctx.runMutation(internal.memory.updateImportJob, {
         boxScratchPath: scratchPath,
@@ -183,6 +228,8 @@ export const readTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     path: v.string(),
     offset: v.optional(v.number()),
     limit: v.optional(v.number()),
@@ -220,6 +267,8 @@ export const writeTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     path: v.string(),
     content: v.string(),
     mode: v.optional(v.union(v.literal('init'), v.literal('write'), v.literal('compaction'))),
@@ -254,6 +303,8 @@ export const editTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     path: v.string(),
     edits: v.array(contextEditValidator),
     mode: v.optional(v.union(v.literal('edit'), v.literal('compaction'))),
@@ -289,11 +340,10 @@ export const editTool = action({
         await auditTool(ctx, args, 'memory_context.update_rejected', contextPath, validation)
         throw new Error(validation.reason)
       }
-      await adapter.writeFile(boxId, contextPath, validation.newContent)
-      await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
+      await writeReservedContext(ctx, {
         boxId,
         contextLength: validation.newLength,
-        lastContextUpdatedAt: Date.now(),
+        content: validation.newContent,
         projectId: args.projectId,
       })
       await auditTool(ctx, args, 'memory_tool.edit.allowed', contextPath, validation)
@@ -310,6 +360,8 @@ export const bashTool = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
     command: v.string(),
     timeoutMs: v.optional(v.number()),
     runId: v.string(),
@@ -353,6 +405,8 @@ export const loadContextForAssistant = action({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
   },
   handler: async (ctx, args): Promise<{
     boxId: string | null
@@ -362,20 +416,31 @@ export const loadContextForAssistant = action({
     reason?: string
   }> => {
     await ctx.runMutation(internal.memory.authorizeGroupMemoryWrite, args)
-    let boxRow: Pick<Doc<'projectMemoryBoxes'>, 'boxId' | 'error' | 'lastContextUpdatedAt' | 'status'> | null = await ctx.runQuery(api.memory.getStatus, {
+    const initialBoxResult = await ctx.runQuery(api.memory.getStatus, {
       projectId: args.projectId,
       userId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
     })
+    let boxRow: Pick<Doc<'projectMemoryBoxes'>, 'boxId' | 'error' | 'lastContextUpdatedAt' | 'status'> | null =
+      initialBoxResult && 'boxId' in initialBoxResult ? initialBoxResult : null
     if (!boxRow || boxRow.status === 'deleted') {
       try {
         const ensured = await ensureProjectBox(ctx, {
           actorId: args.actorId,
+          actingCompanyId: args.actingCompanyId,
+          projectMemberId: args.projectMemberId,
           projectId: args.projectId,
         })
-        boxRow = await ctx.runQuery(api.memory.getStatus, {
+        const ensuredBoxResult = await ctx.runQuery(api.memory.getStatus, {
           projectId: args.projectId,
           userId: args.actorId,
-        }) ?? { boxId: ensured.boxId, lastContextUpdatedAt: undefined, status: 'ready' }
+          actingCompanyId: args.actingCompanyId,
+          projectMemberId: args.projectMemberId,
+        })
+        boxRow = ensuredBoxResult && 'boxId' in ensuredBoxResult
+          ? ensuredBoxResult
+          : { boxId: ensured.boxId, lastContextUpdatedAt: undefined, status: 'ready' }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'memory_box_create_failed'
         await ctx.runMutation(internal.memory.auditMemoryEvent, {
@@ -515,7 +580,12 @@ export const deleteMemoryBoxById = internalAction({
 
 async function ensureProjectBox(
   ctx: ActionCtx,
-  input: { projectId: Id<'projects'>; actorId: Id<'users'> },
+  input: {
+    projectId: Id<'projects'>
+    actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
+  },
 ): Promise<{ boxId: string }> {
   const existing = await getProjectMemoryBox(ctx, input)
   if (existing && existing.status !== 'deleted') {
@@ -564,17 +634,29 @@ async function ensureProjectBox(
 
 async function getProjectMemoryBox(
   ctx: ActionCtx,
-  input: { projectId: Id<'projects'>; actorId: Id<'users'> },
+  input: {
+    projectId: Id<'projects'>
+    actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
+  },
 ): Promise<Doc<'projectMemoryBoxes'> | null> {
   return await ctx.runQuery(api.memory.getMemoryBoxForProject, {
     actorId: input.actorId,
+    actingCompanyId: input.actingCompanyId,
+    projectMemberId: input.projectMemberId,
     projectId: input.projectId,
   })
 }
 
 async function waitForProjectMemoryBox(
   ctx: ActionCtx,
-  input: { projectId: Id<'projects'>; actorId: Id<'users'> },
+  input: {
+    projectId: Id<'projects'>
+    actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
+  },
 ) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await sleep(250)
@@ -590,12 +672,16 @@ async function getAccessScope(
     projectId: Id<'projects'>
     groupId: Id<'groups'>
     actorId: Id<'users'>
+    actingCompanyId?: Id<'companies'>
+    projectMemberId?: Id<'projectMembers'>
     boxId: string
     runId?: string
   },
 ) {
   return await ctx.runQuery(api.memory.getAccessScope, {
     actorId: input.actorId,
+    actingCompanyId: input.actingCompanyId,
+    projectMemberId: input.projectMemberId,
     boxId: input.boxId,
     groupId: input.groupId,
     projectId: input.projectId,
@@ -647,11 +733,10 @@ async function promoteImportToContext(
   }
   const lockId = await acquirePathLock(ctx, input.projectId, contextPath)
   try {
-    await adapter.writeFile(input.boxId, contextPath, validation.newContent)
-    await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
+    await writeReservedContext(ctx, {
       boxId: input.boxId,
       contextLength: validation.newLength,
-      lastContextUpdatedAt: Date.now(),
+      content: validation.newContent,
       projectId: input.projectId,
     })
     await ctx.runMutation(internal.memory.auditMemoryEvent, {
@@ -695,11 +780,10 @@ async function writeContextThroughGateway(
       await auditTool(ctx, input, 'memory_tool.write.denied', input.path, validation)
       throw new Error(validation.reason)
     }
-    await adapter.writeFile(input.boxId, input.path, validation.newContent)
-    await ctx.runMutation(internal.memory.updateMemoryBoxContextStats, {
+    await writeReservedContext(ctx, {
       boxId: input.boxId,
       contextLength: validation.newLength,
-      lastContextUpdatedAt: Date.now(),
+      content: validation.newContent,
       projectId: input.projectId,
     })
     await auditTool(ctx, input, 'memory_tool.write.allowed', input.path, validation)

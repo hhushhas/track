@@ -6,6 +6,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
+import { useCompany } from '@/contexts/company-context';
 import { useThemeOverride } from '@/contexts/theme-override-context';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { PlatformIcon } from '@/components/platform-icon';
@@ -17,6 +18,7 @@ import { OptionsSheet, SheetInput, SheetSection, SheetRow } from '@/components/o
 import { Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
+import { projectChannelsHref } from '@/lib/company-navigation';
 
 type MobileProject = {
   project: Doc<'projects'>;
@@ -29,6 +31,7 @@ export default function ProjectsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { trackUserId, signOut, openProfileSheet } = useTrackUser();
+  const { actingCompanyId, actingCompany, companyModelEnabled } = useCompany();
   const { themeOverride, setThemeOverride } = useThemeOverride();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -42,7 +45,7 @@ export default function ProjectsScreen() {
   const ensureStarter = useMutation(api.projects.ensureStarter);
   const requestAccountDeletion = useMutation(api.auth.requestAccountDeletion);
 
-  const projects = useQuery(api.mobile.listProjects, trackUserId ? { userId: trackUserId } : 'skip');
+  const projects = useQuery(api.mobile.listProjects, trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip');
   const projectItems = (projects ?? []) as MobileProject[];
 
   function onRefresh() {
@@ -101,7 +104,11 @@ export default function ProjectsScreen() {
       const projectId = await ensureStarter({ userId: trackUserId });
       router.push(`/groups?projectId=${projectId}`);
     } else {
-      router.push(`/groups?projectId=${item.project._id}`);
+      router.push(projectChannelsHref(item.project._id, actingCompanyId ? {
+        archived: item.membership.status === 'archived',
+        companyId: actingCompanyId,
+        membershipId: item.membership._id,
+      } : null));
     }
   }
 
@@ -147,6 +154,15 @@ export default function ProjectsScreen() {
           headerBlurEffect: 'systemMaterial',
           headerRight: () => (
             <View style={styles.headerActions}>
+              {companyModelEnabled ? <Pressable
+                accessibilityLabel="Switch Acting Company and manage invitations"
+                android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+                hitSlop={8}
+                onPress={() => router.push('/company')}
+                style={styles.headerButton}>
+                <PlatformIcon color={theme.text} name="briefcase-outline" size={22} />
+              </Pressable> : null}
+              {!actingCompanyId ? (
               <Pressable
                 accessibilityLabel="Create project"
                 android_ripple={{ color: theme.backgroundSelected, borderless: true }}
@@ -155,6 +171,7 @@ export default function ProjectsScreen() {
                 style={styles.headerButton}>
                 <PlatformIcon color={theme.text} name="plus" size={22} />
               </Pressable>
+              ) : null}
               <Pressable
                 accessibilityLabel="Account and settings"
                 android_ripple={{ color: theme.backgroundSelected, borderless: true }}
@@ -168,6 +185,8 @@ export default function ProjectsScreen() {
         }}
       />
 
+      {actingCompanyId ? <View style={[styles.contextBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Representing {actingCompany?.company?.displayName}</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Project actions use this Company identity.</ThemedText></View> : null}
+
       {projects === undefined ? (
         <View style={styles.list}>
           <SkeletonRow />
@@ -180,14 +199,14 @@ export default function ProjectsScreen() {
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.list}
           data={projectItems}
-          keyExtractor={(item) => item.project._id}
+          keyExtractor={(item) => item.membership._id}
           renderItem={({ item }) => (
             <ProjectRow item={item} onPress={() => void navigateToProject(item)} />
           )}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <EmptyState icon="briefcase-outline" title="No projects yet" body="Create a project to get started." />
-              <Pressable
+              <EmptyState icon="briefcase-outline" title="No projects yet" body={actingCompanyId ? 'Accepted shared Projects and retained exit archives will appear here.' : 'Create a project to get started.'} />
+              {!actingCompanyId ? <Pressable
                 accessibilityRole="button"
                 android_ripple={{ color: theme.backgroundSelected }}
                 onPress={openCreateProject}
@@ -195,7 +214,7 @@ export default function ProjectsScreen() {
                 <ThemedText style={{ color: theme.background }} type="smallBold">
                   Create Project
                 </ThemedText>
-              </Pressable>
+              </Pressable> : null}
             </View>
           }
           refreshControl={
@@ -256,7 +275,7 @@ function ProjectRow({ item, onPress }: { item: MobileProject; onPress: () => voi
       <View style={styles.rowBody}>
         <ThemedText type="smallBold">{item.project.name}</ThemedText>
         <ThemedText style={{ color: theme.textSecondary }} type="code">
-          {item.membership.role} · {item.groupCount} {item.groupCount === 1 ? 'group' : 'groups'}
+          {item.membership.companyDisplayNameSnapshot ? `${item.membership.companyDisplayNameSnapshot} · ` : ''}{item.membership.role} · {item.groupCount} {item.groupCount === 1 ? 'Channel' : 'Channels'}{item.membership.status === 'archived' ? ' · archive' : ''}
         </ThemedText>
       </View>
       {item.unreadCount > 0 ? (
@@ -286,6 +305,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     lineHeight: 16,
+  },
+  contextBanner: {
+    gap: Spacing.one,
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.two,
+    padding: Spacing.three,
+    borderRadius: 10,
   },
   createInputs: {
     gap: Spacing.three,
