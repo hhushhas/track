@@ -62,6 +62,10 @@ function lowSignalAnswer(question: string) {
   return "got it."
 }
 
+function isExplicitTaskRequest(question: string) {
+  return /@track[\s\S]*\b(create|make|add)\s+(a\s+)?task\b/i.test(question)
+}
+
 function scoreAttachment(input: {
   attachment: Doc<'attachments'>
   message: Doc<'messages'>
@@ -126,6 +130,24 @@ export const ask = action({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     })
+    if (process.env.TRACK_TASKS_ENABLED === 'true' && args.promptMessageId && isExplicitTaskRequest(args.question)) {
+      const explicit = await ctx.runMutation((internal as any).taskSuggestions.createExplicit, {
+        projectId: args.projectId, groupId: args.groupId, requesterId: args.requesterId,
+        actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId,
+        promptMessageId: args.promptMessageId, question: args.question,
+      }) as { status: 'clarify' } | { status: 'ready'; suggestionId: Id<'taskSuggestions'> }
+      const now = Date.now()
+      const answer = explicit.status === 'ready'
+        ? 'I added a grounded task suggestion to the Inbox for human review.'
+        : 'I need a concrete action or nearby message before I can suggest a task.'
+      const streamId = await ctx.runMutation(internal.assistant.createStream, {
+        projectId: args.projectId, groupId: args.groupId, requesterId: args.requesterId,
+        actingCompanyId: args.actingCompanyId, requesterProjectMemberId: args.projectMemberId,
+        promptMessageId: args.promptMessageId, status: 'completed', answer,
+        evidence: [], createdAt: now, updatedAt: now,
+      })
+      return { answer, streamId }
+    }
     const context: CollectedAssistantContext = await ctx.runQuery(api.assistant.collectContext, args)
     const now = Date.now()
     const streamId: Id<'assistantStreams'> = await ctx.runMutation(internal.assistant.createStream, {

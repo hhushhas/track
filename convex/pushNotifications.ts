@@ -4,10 +4,11 @@ import { v } from 'convex/values'
 import webPush from 'web-push'
 
 import { internal } from './_generated/api'
+import type { Id } from './_generated/dataModel'
 import { action, internalAction } from './_generated/server'
 
 type NotificationTarget = {
-  id: string
+  id: Id<'notificationSubscriptions'>
   platform: 'web' | 'ios' | 'android'
   tokenOrEndpoint: string
 }
@@ -127,6 +128,42 @@ export const deliverMessageNotifications = internalAction({
         }
       }),
     )
+  },
+})
+
+export const deliverTaskNotification = internalAction({
+  args: { notificationId: v.id('taskNotifications') },
+  handler: async (ctx, args) => {
+    const notification = await ctx.runQuery((internal as any).taskNotifications.collectPushTargets, args)
+    if (!notification?.targets.length) return
+    const publicKey = process.env.VAPID_PUBLIC_KEY
+    const privateKey = process.env.VAPID_PRIVATE_KEY
+    if (publicKey && privateKey) webPush.setVapidDetails(
+      process.env.VAPID_SUBJECT ?? 'mailto:support@q9labs.ai', publicKey, privateKey,
+    )
+    await Promise.all(notification.targets.map(async (target: NotificationTarget) => {
+      try {
+        if (target.platform === 'web') {
+          if (!publicKey || !privateKey) return
+          await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
+            body: notification.body, icon: '/logo192.png', tag: `track-task-${args.notificationId}`,
+            title: notification.title, url: notification.url,
+          }))
+        } else await sendExpoPush({
+          target, title: notification.title, body: notification.body,
+          data: {
+            projectId: String(notification.projectId), taskKey: notification.publicKey,
+            url: notification.mobileUrl,
+          },
+        })
+      } catch (error) {
+        const statusCode = typeof error === 'object' && error && 'statusCode' in error ? error.statusCode : null
+        if (statusCode === 404 || statusCode === 410 ||
+          error instanceof Error && (error.message === 'DeviceNotRegistered' || error.message === 'expo_push_failed_400')) {
+          await ctx.runMutation(internal.notifications.disableSubscription, { subscriptionId: target.id })
+        }
+      }
+    }))
   },
 })
 

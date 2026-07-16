@@ -74,6 +74,26 @@ export async function taskView(
     ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', task._id)).collect(),
   ])
   const labels = await Promise.all(labelLinks.map((link) => ctx.db.get(link.labelId)))
+  const visibleReferences = []
+  for (const reference of references.filter((candidate) =>
+    !candidate.groupId || candidate.groupId === task.groupId ||
+    accessibleOriginalGroups.has(String(candidate.groupId)),
+  )) {
+    const source = reference.messageId ? await ctx.db.get(reference.messageId)
+      : reference.attachmentId ? await ctx.db.get(reference.attachmentId)
+        : reference.assistantStreamId ? await ctx.db.get(reference.assistantStreamId)
+          : reference.memoryImportId ? await ctx.db.get(reference.memoryImportId) : null
+    const sourceScopeMatches = source && reference.memoryImportId && 'scope' in source
+      ? source.scope === 'project' ? reference.groupId === undefined : source.groupId === reference.groupId
+      : Boolean(source && (!('groupId' in source) || source.groupId === reference.groupId))
+    const sourceAvailable = Boolean(source && source.projectId === task.projectId && sourceScopeMatches &&
+      (!('status' in source) || reference.assistantStreamId === undefined || source.status === 'completed'))
+    visibleReferences.push({
+      ...reference,
+      availability: sourceAvailable ? reference.availability : 'unavailable' as const,
+      quote: sourceAvailable && reference.availability === 'available' ? reference.quote : undefined,
+    })
+  }
   return {
     task,
     board,
@@ -81,13 +101,7 @@ export async function taskView(
     assignee,
     creator,
     labels: labels.filter(Boolean),
-    references: references.filter((reference) =>
-      !reference.groupId || reference.groupId === task.groupId ||
-      accessibleOriginalGroups.has(String(reference.groupId)),
-    ).map((reference) => ({
-      ...reference,
-      quote: reference.availability === 'available' ? reference.quote : undefined,
-    })),
+    references: visibleReferences,
     terminal: state ? isTerminalTaskState(state.category) : false,
   }
 }

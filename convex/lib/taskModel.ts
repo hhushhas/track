@@ -3,6 +3,7 @@ import { isTaskDueDate, isTaskTitle } from '@track/shared/tasks'
 export type TaskDetectionMessage = Readonly<{
   id: string
   author: string
+  authorProjectMemberId?: string
   body: string
   sequence: number
 }>
@@ -11,6 +12,7 @@ export type TaskModelCandidate = Readonly<{
   title: string
   description?: string
   priority?: 'none' | 'urgent' | 'high' | 'medium' | 'low'
+  assigneeProjectMemberId?: string
   dueDate?: string
   sourceMessageIds: ReadonlyArray<string>
   confidence: number
@@ -49,10 +51,13 @@ export function parseTaskModelCandidates(
       ? value.dueDate : undefined
     const priority = typeof value.priority === 'string' && priorities.has(value.priority)
       ? value.priority as TaskModelCandidate['priority'] : undefined
+    const assigneeProjectMemberId = typeof value.assigneeProjectMemberId === 'string'
+      ? value.assigneeProjectMemberId : undefined
     candidates.push({
       title: value.title.trim(),
       description: typeof value.description === 'string' ? value.description.slice(0, 20_000) : undefined,
       priority,
+      assigneeProjectMemberId,
       dueDate,
       sourceMessageIds,
       confidence: value.confidence,
@@ -65,9 +70,9 @@ export function parseTaskModelCandidates(
 export function taskDetectionPrompt(messages: ReadonlyArray<TaskDetectionMessage>) {
   return [
     'Identify only explicit, grounded action items in this one Channel conversation.',
-    'Return JSON only: {"candidates":[{"title":"...","description":"...","priority":"none|urgent|high|medium|low","dueDate":"YYYY-MM-DD","sourceMessageIds":["..."],"confidence":0.0,"groundingReason":"..."}]}.',
+    'Return JSON only: {"candidates":[{"title":"...","description":"...","assigneeProjectMemberId":"only when a supplied member id is explicitly assigned","priority":"none|urgent|high|medium|low","dueDate":"YYYY-MM-DD","sourceMessageIds":["..."],"confidence":0.0,"groundingReason":"..."}]}.',
     'Do not invent owners, dates, or work. An empty candidates array is valid.',
-    ...messages.map((message) => `[${message.id}] ${message.author}: ${message.body}`),
+    ...messages.map((message) => `[${message.id}${message.authorProjectMemberId ? `; member=${message.authorProjectMemberId}` : ''}] ${message.author}: ${message.body}`),
   ].join('\n')
 }
 

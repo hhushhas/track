@@ -218,6 +218,7 @@ export const registerSubscription = mutation({
 export const registerNativeToken = mutation({
   args: {
     userId: v.id('users'),
+    projectMemberId: v.optional(v.id('projectMembers')),
     platform: v.union(v.literal('ios'), v.literal('android')),
     token: v.string(),
   },
@@ -226,6 +227,13 @@ export const registerNativeToken = mutation({
     assertActorMatches(actor, args.userId)
     const token = args.token.trim()
     if (!token) throw new Error('push_token_required')
+    if (args.projectMemberId) {
+      const projectMember = await ctx.db.get(args.projectMemberId)
+      if (!projectMember || projectMember.userId !== actor.userId ||
+        (projectMember.status !== undefined && projectMember.status !== 'active')) {
+        throw new Error('notification_membership_invalid')
+      }
+    }
     const now = Date.now()
     const subscriptions = await ctx.db
       .query('notificationSubscriptions')
@@ -233,7 +241,8 @@ export const registerNativeToken = mutation({
       .collect()
     const existing = subscriptions.find(
       (subscription) =>
-        subscription.platform === args.platform && subscription.tokenOrEndpoint === token,
+        subscription.platform === args.platform && subscription.tokenOrEndpoint === token &&
+        subscription.projectMemberId === args.projectMemberId,
     )
 
     if (existing) {
@@ -246,6 +255,7 @@ export const registerNativeToken = mutation({
 
     const subscriptionId = await ctx.db.insert('notificationSubscriptions', {
       userId: args.userId,
+      projectMemberId: args.projectMemberId,
       platform: args.platform,
       tokenOrEndpoint: token,
       enabled: true,

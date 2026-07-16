@@ -2,7 +2,7 @@ import { isTerminalTaskState } from '@track/shared/tasks'
 import { v } from 'convex/values'
 
 import { internal } from './_generated/api'
-import type { Doc, Id } from './_generated/dataModel'
+import type { Doc } from './_generated/dataModel'
 import type { MutationCtx } from './_generated/server'
 import { internalMutation } from './_generated/server'
 import { createTaskNotification } from './lib/taskNotifications'

@@ -53,6 +53,8 @@ import type * as taskComments from "../taskComments.js";
 import type * as taskDetection from "../taskDetection.js";
 import type * as taskDetectionNode from "../taskDetectionNode.js";
 import type * as taskLabels from "../taskLabels.js";
+import type * as taskMemoryExtraction from "../taskMemoryExtraction.js";
+import type * as taskMemoryExtractionNode from "../taskMemoryExtractionNode.js";
 import type * as taskNotifications from "../taskNotifications.js";
 import type * as taskReminders from "../taskReminders.js";
 import type * as taskSearch from "../taskSearch.js";
@@ -112,6 +114,8 @@ declare const fullApi: ApiFromModules<{
   taskDetection: typeof taskDetection;
   taskDetectionNode: typeof taskDetectionNode;
   taskLabels: typeof taskLabels;
+  taskMemoryExtraction: typeof taskMemoryExtraction;
+  taskMemoryExtractionNode: typeof taskMemoryExtractionNode;
   taskNotifications: typeof taskNotifications;
   taskReminders: typeof taskReminders;
   taskSearch: typeof taskSearch;

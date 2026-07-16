@@ -59,7 +59,8 @@ export const taskAutomationTables = {
     updatedAt: v.number(),
   })
     .index('by_suggestion_rank', ['suggestionId', 'rank'])
-    .index('by_message', ['messageId']),
+    .index('by_message', ['messageId'])
+    .index('by_attachment', ['attachmentId']),
 
   taskSuggestionHides: defineTable({
     projectId: v.id('projects'),
@@ -88,6 +89,8 @@ export const taskAutomationTables = {
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     generation: v.number(),
+    mode: v.optional(v.union(v.literal('automatic'), v.literal('history'))),
+    requestedByProjectMemberId: v.optional(v.id('projectMembers')),
     startSequence: v.number(),
     endSequence: v.number(),
     status: taskJobStatus,
@@ -102,7 +105,11 @@ export const taskAutomationTables = {
     updatedAt: v.number(),
   })
     .index('by_group_status', ['groupId', 'status'])
-    .index('by_group_generation_start', ['groupId', 'generation', 'startSequence']),
+    .index('by_group_generation_start', [
+      'groupId',
+      'generation',
+      'startSequence',
+    ]),
 
   taskArchiveSnapshots: defineTable({
     entitlementId: v.id('projectArchiveEntitlements'),
@@ -110,12 +117,22 @@ export const taskAutomationTables = {
     sourceTable: v.string(),
     sourceId: v.string(),
     groupId: v.optional(v.id('groups')),
+    messageId: v.optional(v.id('messages')),
+    attachmentId: v.optional(v.id('attachments')),
+    assistantStreamId: v.optional(v.id('assistantStreams')),
     payload: v.any(),
     redactedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_entitlement_table', ['entitlementId', 'sourceTable'])
-    .index('by_entitlement_source', ['entitlementId', 'sourceTable', 'sourceId']),
+    .index('by_entitlement_source', [
+      'entitlementId',
+      'sourceTable',
+      'sourceId',
+    ])
+    .index('by_message', ['messageId'])
+    .index('by_attachment', ['attachmentId'])
+    .index('by_assistant_stream', ['assistantStreamId']),
 
   taskExitSnapshotStaging: defineTable({
     projectCompanyId: v.id('projectCompanies'),

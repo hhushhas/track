@@ -13,6 +13,7 @@ type TestBackend = ReturnType<typeof convexTest>
 
 beforeEach(() => {
   process.env.TRACK_COMPANY_MODEL_ENABLED = 'true'
+  process.env.TRACK_TASKS_ENABLED = 'true'
 })
 
 describe('Company model authorization and lifecycle', () => {
@@ -66,6 +67,30 @@ describe('Company model authorization and lifecycle', () => {
 
     expect(first.map((item) => item.project._id)).toEqual([firstProject])
     expect(second.map((item) => item.project._id)).toEqual([secondProject])
+  })
+
+  it('binds Company task reads and writes to the exact Acting Company membership', async () => {
+    const t = convexTest(schema, modules)
+    const user = await seedUser(t, 'company-task-user')
+    const companyId = await createCompany(t, user, 'Task Company', 'task-company')
+    const otherCompanyId = await createCompany(t, user, 'Other Company', 'other-task-company')
+    const projectId = await seedCompanyProject(t, user, companyId, 'Company Tasks')
+    const { groupId, projectMemberId } = await t.run(async (ctx) => {
+      const projectMember = (await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect())[0]!
+      const group = (await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect())[0]!
+      return { groupId: group._id, projectMemberId: projectMember._id }
+    })
+    const actor = asUser(t, user)
+    const created = await actor.mutation(api.tasks.create, {
+      projectId, groupId, actingCompanyId: companyId, projectMemberId,
+      title: 'Company-scoped task', priority: 'high', idempotencyKey: 'company-task',
+    })
+    expect((await actor.query(api.tasks.list, {
+      projectId, actingCompanyId: companyId, projectMemberId,
+    })).map((item) => item.task._id)).toContain(created.taskId)
+    await expect(actor.query(api.tasks.list, {
+      projectId, actingCompanyId: otherCompanyId, projectMemberId,
+    })).rejects.toThrow('project_unavailable')
   })
 
   it('suspends all Company access and restores only still-valid represented memberships', async () => {

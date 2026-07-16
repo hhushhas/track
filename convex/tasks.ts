@@ -3,6 +3,7 @@ import {
   isTaskDueDate,
   isTaskTitle,
   isTerminalTaskState,
+  getTaskDueState,
   normalizeTaskText,
   resolveTaskCapabilities,
 } from '@track/shared/tasks'
@@ -14,6 +15,7 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { createTaskNotification, notifyTaskFollowers } from './lib/taskNotifications'
+import { invalidateTaskEvidence } from './lib/taskEvidence'
 import {
   appendTaskActivity,
   archivedTaskViews,
@@ -29,7 +31,7 @@ import {
   requireTaskBoardAccess,
   resolveTaskRequestContext,
 } from './lib/taskPolicy'
-import { taskPriority } from './schema/taskValidators'
+import { taskPriority, taskStateCategory } from './schema/taskValidators'
 import { getOrCreateDefaultBoard } from './taskBoards'
 import { rescheduleTaskReminders } from './taskReminders'
 
@@ -161,6 +163,14 @@ export const list = query({
     boardId: v.optional(v.id('taskBoards')),
     groupId: v.optional(v.id('groups')),
     assigneeProjectMemberId: v.optional(v.id('projectMembers')),
+    creatorProjectMemberId: v.optional(v.id('projectMembers')),
+    workflowStateId: v.optional(v.id('taskWorkflowStates')),
+    stateCategory: v.optional(taskStateCategory),
+    priority: v.optional(taskPriority),
+    dueState: v.optional(v.union(v.literal('none'), v.literal('upcoming'), v.literal('due_today'), v.literal('overdue'))),
+    localDate: v.optional(v.string()),
+    labelId: v.optional(v.id('taskLabels')),
+    openOnly: v.optional(v.boolean()),
     includeArchived: v.optional(v.boolean()),
     ...identityArgs,
   },
@@ -173,7 +183,14 @@ export const list = query({
         (args.includeArchived || !view.task.archivedAt) &&
         (!args.boardId || view.task.boardId === args.boardId) &&
         (!args.groupId || view.task.groupId === args.groupId) &&
-        (!args.assigneeProjectMemberId || view.task.assigneeProjectMemberId === args.assigneeProjectMemberId),
+        (!args.assigneeProjectMemberId || view.task.assigneeProjectMemberId === args.assigneeProjectMemberId) &&
+        (!args.creatorProjectMemberId || view.task.createdByProjectMemberId === args.creatorProjectMemberId) &&
+        (!args.workflowStateId || view.task.workflowStateId === args.workflowStateId) &&
+        (!args.stateCategory || view.state?.category === args.stateCategory) &&
+        (!args.priority || view.task.priority === args.priority) &&
+        (!args.openOnly || !view.state || !isTerminalTaskState(view.state.category)) &&
+        (!args.dueState || getTaskDueState(view.task.dueDate, args.localDate ?? new Date().toISOString().slice(0, 10), Boolean(view.state && isTerminalTaskState(view.state.category))) === args.dueState) &&
+        (!args.labelId || view.labels.some((label) => label._id === args.labelId)),
       )
     }
     const rows = args.assigneeProjectMemberId
@@ -189,6 +206,19 @@ export const list = query({
       if (!args.includeArchived && task.archivedAt) continue
       if (args.boardId && task.boardId !== args.boardId) continue
       if (args.groupId && task.groupId !== args.groupId) continue
+      if (args.creatorProjectMemberId && task.createdByProjectMemberId !== args.creatorProjectMemberId) continue
+      if (args.workflowStateId && task.workflowStateId !== args.workflowStateId) continue
+      if (args.priority && task.priority !== args.priority) continue
+      const state = await ctx.db.get(task.workflowStateId)
+      if (!state) continue
+      if (args.stateCategory && state.category !== args.stateCategory) continue
+      if (args.openOnly && isTerminalTaskState(state.category)) continue
+      if (args.dueState && getTaskDueState(task.dueDate, args.localDate ?? new Date().toISOString().slice(0, 10), isTerminalTaskState(state.category)) !== args.dueState) continue
+      if (args.labelId) {
+        const link = await ctx.db.query('taskLabelLinks')
+          .withIndex('by_task_label', (q) => q.eq('taskId', task._id).eq('labelId', args.labelId!)).unique()
+        if (!link) continue
+      }
       if (task.groupId) {
         try {
           const scoped = await resolveTaskRequestContext(ctx, actor, task.projectId, args, task.groupId)
@@ -302,6 +332,31 @@ export const listForMessage = query({
       if (reference.availability !== 'available') continue
       const task = await ctx.db.get(reference.taskId)
       if (!task || task.archivedAt || task.groupId !== message.groupId) continue
+      const [state, assignee] = await Promise.all([
+        ctx.db.get(task.workflowStateId),
+        task.assigneeProjectMemberId ? ctx.db.get(task.assigneeProjectMemberId) : null,
+      ])
+      cards.push({ task, state, assignee })
+    }
+    return cards
+  },
+})
+
+export const listForAssistant = query({
+  args: { assistantStreamId: v.id('assistantStreams'), ...identityArgs },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const stream = await ctx.db.get(args.assistantStreamId)
+    if (!stream || stream.status !== 'completed') return []
+    const access = await resolveTaskRequestContext(ctx, actor, stream.projectId, args, stream.groupId)
+    if (!access.capabilities.canReadChannel) return []
+    const references = await ctx.db.query('taskReferences')
+      .withIndex('by_assistant_stream', (q) => q.eq('assistantStreamId', stream._id)).collect()
+    const cards = []
+    for (const reference of references) {
+      if (reference.availability !== 'available') continue
+      const task = await ctx.db.get(reference.taskId)
+      if (!task || task.archivedAt || task.groupId !== stream.groupId) continue
       const [state, assignee] = await Promise.all([
         ctx.db.get(task.workflowStateId),
         task.assigneeProjectMemberId ? ctx.db.get(task.assigneeProjectMemberId) : null,
@@ -749,19 +804,6 @@ export const invalidateReferences = internalMutation({
     redacted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const references = args.messageId
-      ? await ctx.db.query('taskReferences').withIndex('by_message', (q) => q.eq('messageId', args.messageId)).collect()
-      : args.attachmentId
-        ? await ctx.db.query('taskReferences').withIndex('by_attachment', (q) => q.eq('attachmentId', args.attachmentId)).collect()
-        : args.assistantStreamId
-          ? await ctx.db.query('taskReferences').withIndex('by_assistant_stream', (q) => q.eq('assistantStreamId', args.assistantStreamId)).collect()
-          : []
-    const now = Date.now()
-    for (const reference of references) {
-      await ctx.db.patch(reference._id, {
-        availability: args.redacted ? 'redacted' : 'unavailable', quote: undefined, updatedAt: now,
-      })
-    }
-    return references.length
+    return await invalidateTaskEvidence(ctx, args)
   },
 })

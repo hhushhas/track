@@ -5,7 +5,7 @@ import type { MutationCtx } from './_generated/server'
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
-import { resolveTaskRequestContext, type TaskRequestIdentity } from './lib/taskPolicy'
+import { resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskStateCategory } from './schema/taskValidators'
 
 const identityArgs = {
@@ -80,6 +80,7 @@ export async function getOrCreateDefaultBoard(
     projectId: input.projectId,
     groupId: input.groupId,
     name: input.groupId ? `${input.channelName ?? 'Channel'} tasks` : 'Project tasks',
+    rank: String(active.length + 1).padStart(8, '0'),
     isDefault: true,
     createdByProjectMemberId: input.projectMemberId,
     actingCompanyId: input.actingCompanyId,
@@ -133,7 +134,11 @@ export const list = query({
         continue
       }
     }
-    return visible
+    return visible.sort((left, right) =>
+      (left.board.rank ?? left.board.createdAt.toString()).localeCompare(
+        right.board.rank ?? right.board.createdAt.toString(),
+      ),
+    )
   },
 })
 
@@ -158,6 +163,7 @@ export const create = mutation({
       groupId: args.groupId,
       name: validBoardName(args.name),
       description: args.description?.trim() || undefined,
+      rank: String(active.length + 1).padStart(8, '0'),
       isDefault: active.length === 0,
       createdByProjectMemberId: access.projectMember._id,
       actingCompanyId: access.actingCompanyId,
@@ -176,6 +182,128 @@ export const create = mutation({
       action: 'created',
     })
     return boardId
+  },
+})
+
+export const update = mutation({
+  args: {
+    boardId: v.id('taskBoards'),
+    name: v.string(),
+    description: v.optional(v.union(v.string(), v.null())),
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const board = await ctx.db.get(args.boardId)
+    if (!board) throw new Error('task_destination_invalid')
+    const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    await ctx.db.patch(board._id, {
+      name: validBoardName(args.name),
+      description: args.description?.trim() || undefined,
+      updatedAt: Date.now(),
+    })
+    return board._id
+  },
+})
+
+export const reorder = mutation({
+  args: { boardId: v.id('taskBoards'), targetIndex: v.number(), ...identityArgs },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const board = await ctx.db.get(args.boardId)
+    if (!board) throw new Error('task_destination_invalid')
+    const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    const boards = await activeBoardsForScope(ctx, board.projectId, board.groupId)
+    boards.sort((left, right) => (left.rank ?? String(left.createdAt)).localeCompare(right.rank ?? String(right.createdAt)))
+    const without = boards.filter((candidate) => candidate._id !== board._id)
+    without.splice(Math.max(0, Math.min(Math.trunc(args.targetIndex), without.length)), 0, board)
+    const now = Date.now()
+    for (const [index, candidate] of without.entries()) {
+      await ctx.db.patch(candidate._id, { rank: String(index + 1).padStart(8, '0'), updatedAt: now })
+    }
+    return board._id
+  },
+})
+
+export const configureWorkflow = mutation({
+  args: {
+    boardId: v.id('taskBoards'),
+    defaultIndex: v.number(),
+    replacementStateId: v.optional(v.id('taskWorkflowStates')),
+    states: v.array(v.object({
+      stateId: v.optional(v.id('taskWorkflowStates')),
+      name: v.string(),
+      category: taskStateCategory,
+      visualToken: v.string(),
+    })),
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const board = await ctx.db.get(args.boardId)
+    if (!board || board.archivedAt) throw new Error('task_destination_invalid')
+    const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    if (!access.capabilities.canManageProject) throw new Error('task_board_manage_forbidden')
+    if (args.states.length < 2 || args.defaultIndex < 0 || args.defaultIndex >= args.states.length) {
+      throw new Error('task_workflow_invalid')
+    }
+    if (!args.states.some((state) => state.category === 'completed') ||
+      args.states[args.defaultIndex]!.category === 'completed' || args.states[args.defaultIndex]!.category === 'canceled') {
+      throw new Error('task_workflow_invalid')
+    }
+    const names = args.states.map((state) => validBoardName(state.name).toLowerCase())
+    if (new Set(names).size !== names.length) throw new Error('task_workflow_invalid')
+    const existing = await ctx.db.query('taskWorkflowStates')
+      .withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).collect()
+    const existingIds = new Set(existing.map((state) => String(state._id)))
+    for (const state of args.states) {
+      if (state.stateId && !existingIds.has(String(state.stateId))) throw new Error('task_workflow_invalid')
+    }
+    const now = Date.now()
+    const retainedIds = new Set(args.states.flatMap((state) => state.stateId ? [String(state.stateId)] : []))
+    const resolved = []
+    for (const [index, state] of args.states.entries()) {
+      const values = {
+        name: validBoardName(state.name), category: state.category, visualToken: state.visualToken.trim() || 'neutral',
+        rank: String(index + 1).padStart(4, '0'), isDefault: index === args.defaultIndex,
+        archivedAt: undefined, updatedAt: now,
+      }
+      if (state.stateId) {
+        await ctx.db.patch(state.stateId, values)
+        resolved.push(state.stateId)
+      } else {
+        resolved.push(await ctx.db.insert('taskWorkflowStates', {
+          projectId: board.projectId, boardId: board._id, ...values, createdAt: now,
+        }))
+      }
+    }
+    const destinationId = args.replacementStateId && retainedIds.has(String(args.replacementStateId))
+      ? args.replacementStateId
+      : resolved[args.defaultIndex]!
+    for (const removed of existing.filter((state) => !retainedIds.has(String(state._id)))) {
+      const affected = await ctx.db.query('tasks')
+        .withIndex('by_board_state_rank', (q) => q.eq('boardId', board._id).eq('workflowStateId', removed._id))
+        .collect()
+      if (affected.length && !args.replacementStateId) throw new Error('task_workflow_replacement_required')
+      for (const task of affected) {
+        await ctx.db.patch(task._id, { workflowStateId: destinationId, revision: task.revision + 1, updatedAt: now })
+        await ctx.db.insert('taskActivities', {
+          projectId: task.projectId, taskId: task._id, originalGroupId: task.groupId,
+          actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,
+          action: 'state_changed', before: removed._id, after: destinationId,
+          correlationId: `workflow:${board._id}:${now}`, createdAt: now,
+        })
+      }
+      await ctx.db.patch(removed._id, { archivedAt: now, isDefault: false, updatedAt: now })
+    }
+    await appendAuditEvent(ctx, {
+      projectId: board.projectId, groupId: board.groupId, actorId: actor.userId,
+      actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,
+      entityType: 'task_board', entityId: String(board._id), action: 'workflow_configured',
+    })
+    return board._id
   },
 })
 

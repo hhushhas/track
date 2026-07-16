@@ -1,4 +1,5 @@
 import type { Doc, Id } from '../_generated/dataModel'
+import { internal } from '../_generated/api'
 import type { MutationCtx } from '../_generated/server'
 
 export async function createTaskNotification(
@@ -32,7 +33,7 @@ export async function createTaskNotification(
       q.eq('recipientProjectMemberId', input.recipient._id).eq('idempotencyKey', input.idempotencyKey),
     ).unique()
   if (existing) return
-  await ctx.db.insert('taskNotifications', {
+  const notificationId = await ctx.db.insert('taskNotifications', {
     projectId: input.task.projectId,
     taskId: input.task._id,
     recipientProjectMemberId: input.recipient._id,
@@ -43,6 +44,7 @@ export async function createTaskNotification(
     idempotencyKey: input.idempotencyKey,
     createdAt: Date.now(),
   })
+  await ctx.scheduler.runAfter(0, (internal as any).pushNotifications.deliverTaskNotification, { notificationId })
 }
 
 export async function notifyTaskFollowers(

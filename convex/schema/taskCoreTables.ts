@@ -17,6 +17,7 @@ export const taskCoreTables = {
     groupId: v.optional(v.id('groups')),
     name: v.string(),
     description: v.optional(v.string()),
+    rank: v.optional(v.string()),
     isDefault: v.boolean(),
     createdByProjectMemberId: v.id('projectMembers'),
     actingCompanyId: v.optional(v.id('companies')),

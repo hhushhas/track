@@ -7,7 +7,7 @@ import type { QueryCtx } from './_generated/server'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
-import { requireTasksEnabled, resolveTaskRequestContext } from './lib/taskPolicy'
+import { requireEligibleTaskMember, requireTasksEnabled, resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskPriority } from './schema/taskValidators'
 
 const identityArgs = {
@@ -18,6 +18,7 @@ const identityArgs = {
 const candidateValidator = v.object({
   title: v.string(),
   description: v.optional(v.string()),
+  assigneeProjectMemberId: v.optional(v.string()),
   priority: v.optional(taskPriority),
   dueDate: v.optional(v.string()),
   sourceMessageIds: v.array(v.string()),
@@ -43,12 +44,13 @@ export const getSetting = query({
     if (!access.capabilities.canReadChannel) throw new Error('task_access_changed')
     const setting = await ctx.db.query('taskDetectionSettings')
       .withIndex('by_group', (q) => q.eq('groupId', args.groupId)).unique()
-    return setting ?? {
+    return setting ? { ...setting, canManage: access.capabilities.canManageProject } : {
       enabled: true,
       generation: 0,
       highWaterSequence: await latestSequence(ctx, args.groupId),
       lastRunStatus: undefined,
       lastErrorCategory: undefined,
+      canManage: access.capabilities.canManageProject,
     }
   },
 })
@@ -87,6 +89,51 @@ export const setEnabled = mutation({
       action: args.enabled ? 'enabled' : 'disabled',
     })
     return generation
+  },
+})
+
+export const requestHistoryScan = mutation({
+  args: {
+    projectId: v.id('projects'), groupId: v.id('groups'),
+    from: v.number(), to: v.number(), ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args, args.groupId)
+    if (!access.capabilities.canManageProject || !access.capabilities.canReadChannel) {
+      throw new Error('task_history_scan_forbidden')
+    }
+    if (!Number.isFinite(args.from) || !Number.isFinite(args.to) || args.from >= args.to ||
+      args.to - args.from > 31 * 24 * 60 * 60 * 1_000) throw new Error('task_history_range_invalid')
+    const messages = (await ctx.db.query('messages')
+      .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect())
+      .filter((message) => message.createdAt >= args.from && message.createdAt <= args.to && message.channelSequence)
+      .sort((left, right) => left.channelSequence! - right.channelSequence!).slice(0, 120)
+    if (!messages.length) return null
+    let setting = await ctx.db.query('taskDetectionSettings')
+      .withIndex('by_group', (q) => q.eq('groupId', args.groupId)).unique()
+    const now = Date.now()
+    if (!setting) {
+      const settingId = await ctx.db.insert('taskDetectionSettings', {
+        projectId: args.projectId, groupId: args.groupId, enabled: true, generation: 1,
+        highWaterSequence: await latestSequence(ctx, args.groupId),
+        updatedByProjectMemberId: access.projectMember._id, createdAt: now, updatedAt: now,
+      })
+      setting = await ctx.db.get(settingId)
+    }
+    if (!setting) throw new Error('task_history_scan_failed')
+    const leaseToken = crypto.randomUUID()
+    const runId = await ctx.db.insert('taskDetectionRuns', {
+      projectId: args.projectId, groupId: args.groupId, generation: setting.generation,
+      mode: 'history', requestedByProjectMemberId: access.projectMember._id,
+      startSequence: messages[0]!.channelSequence! - 1,
+      endSequence: messages.at(-1)!.channelSequence!, status: 'running', leaseToken,
+      leaseExpiresAt: now + 60_000, attempts: 1, correlationId: crypto.randomUUID(),
+      createdAt: now, updatedAt: now,
+    })
+    await ctx.db.patch(setting._id, { lastRunStatus: 'running', lastErrorCategory: undefined, updatedAt: now })
+    await ctx.scheduler.runAfter(0, (internal as any).taskDetectionNode.run, { runId, leaseToken })
+    return runId
   },
 })
 
@@ -140,6 +187,7 @@ export const startRun = internalMutation({
     const now = Date.now()
     const runId = await ctx.db.insert('taskDetectionRuns', {
       projectId: setting.projectId, groupId: setting.groupId, generation: setting.generation,
+      mode: 'automatic',
       startSequence: setting.highWaterSequence, endSequence, status: 'running', leaseToken,
       leaseExpiresAt: now + 60_000, attempts: 1, correlationId: crypto.randomUUID(),
       createdAt: now, updatedAt: now,
@@ -160,8 +208,14 @@ export const getRunInput = internalQuery({
       ctx.db.query('taskDetectionSettings').withIndex('by_group', (q) => q.eq('groupId', run.groupId)).unique(),
       ctx.db.get(run.groupId), ctx.db.get(run.projectId),
     ])
-    if (!setting?.enabled || setting.generation !== run.generation ||
-      setting.highWaterSequence !== run.startSequence || !group || !project ||
+    const historyAuthorized = run.mode === 'history' && run.requestedByProjectMemberId
+      ? await requireEligibleTaskMember(ctx, {
+          projectId: run.projectId, groupId: run.groupId,
+          projectMemberId: run.requestedByProjectMemberId,
+        }).then(() => true, () => false)
+      : false
+    if ((run.mode === 'history' ? !historyAuthorized : !setting?.enabled || setting.generation !== run.generation ||
+      setting.highWaterSequence !== run.startSequence) || !group || !project ||
       group.status === 'archived' || project.status === 'archived') return null
     const rows = await ctx.db.query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', run.groupId)).collect()
@@ -175,6 +229,7 @@ export const getRunInput = internalQuery({
       messages.push({
         id: String(message._id), author: author?.displayName ?? 'Project member',
         body: message.body.slice(0, 2_000), sequence: message.channelSequence!,
+        authorProjectMemberId: message.authorProjectMemberId ? String(message.authorProjectMemberId) : undefined,
       })
     }
     return { messages }
@@ -192,7 +247,8 @@ export const commitRun = internalMutation({
     if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken) return false
     const setting = await ctx.db.query('taskDetectionSettings')
       .withIndex('by_group', (q) => q.eq('groupId', run.groupId)).unique()
-    if (!setting?.enabled || setting.generation !== run.generation || setting.highWaterSequence !== run.startSequence) {
+    if (!setting) return null
+    if (run.mode !== 'history' && (!setting?.enabled || setting.generation !== run.generation || setting.highWaterSequence !== run.startSequence)) {
       await ctx.db.patch(run._id, { status: 'canceled', updatedAt: Date.now() })
       return false
     }
@@ -211,6 +267,13 @@ export const commitRun = internalMutation({
       }
       const sources = candidate.sourceMessageIds.map((id) => allowed.get(id))
       if (sources.some((source) => !source)) continue
+      const proposedAssigneeId = candidate.assigneeProjectMemberId
+        ? ctx.db.normalizeId('projectMembers', candidate.assigneeProjectMemberId) : null
+      const proposedAssignee = proposedAssigneeId && sources.some((source) => source?.authorProjectMemberId === proposedAssigneeId)
+        ? await requireEligibleTaskMember(ctx, {
+            projectId: run.projectId, groupId: run.groupId, projectMemberId: proposedAssigneeId,
+          }).catch(() => null)
+        : null
       const fingerprint = taskSuggestionFingerprint({
         projectId: String(run.projectId), groupId: String(run.groupId),
         sourceIds: candidate.sourceMessageIds, title: candidate.title, description: candidate.description,
@@ -231,6 +294,7 @@ export const commitRun = internalMutation({
         projectId: run.projectId, groupId: run.groupId,
         proposedTitle: candidate.title, proposedDescription: candidate.description,
         proposedPriority: candidate.priority ?? 'none', proposedDueDate: candidate.dueDate,
+        proposedAssigneeProjectMemberId: proposedAssignee?._id,
         status: 'pending', confidence: candidate.confidence,
         groundingReason: candidate.groundingReason, fingerprint,
         possibleDuplicateTaskId: duplicate?._id,
@@ -249,7 +313,9 @@ export const commitRun = internalMutation({
     }
     const now = Date.now()
     await ctx.db.patch(run._id, { status: 'completed', candidateCount, lowConfidenceCount, updatedAt: now })
-    await ctx.db.patch(setting._id, {
+    await ctx.db.patch(setting._id, run.mode === 'history' ? {
+      lastRunStatus: 'completed', lastErrorCategory: undefined, updatedAt: now,
+    } : {
       highWaterSequence: run.endSequence, lastRunStatus: 'completed',
       lastErrorCategory: undefined, updatedAt: now,
     })
@@ -264,9 +330,11 @@ export const failRun = internalMutation({
     if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken) return false
     const setting = await ctx.db.query('taskDetectionSettings')
       .withIndex('by_group', (q) => q.eq('groupId', run.groupId)).unique()
+    if (!setting) return false
     const now = Date.now()
-    if (run.attempts < 3 && setting?.enabled && setting.generation === run.generation &&
-      setting.highWaterSequence === run.startSequence) {
+    const retryable = run.mode === 'history' || Boolean(setting?.enabled && setting.generation === run.generation &&
+      setting.highWaterSequence === run.startSequence)
+    if (run.attempts < 3 && retryable) {
       await ctx.db.patch(run._id, { attempts: run.attempts + 1, leaseExpiresAt: now + 60_000, updatedAt: now })
       await ctx.scheduler.runAfter(2 ** run.attempts * 1_000, (internal as any).taskDetectionNode.run, {
         runId: run._id, leaseToken: run.leaseToken,

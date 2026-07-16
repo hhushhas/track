@@ -13,6 +13,7 @@ describe('task model adapter', () => {
         title: 'Ship the release',
         description: 'Run the complete gate first.',
         priority: 'high',
+        assigneeProjectMemberId: 'member-1',
         dueDate: '2026-07-18',
         sourceMessageIds: ['m1'],
         confidence: 0.92,
@@ -26,7 +27,7 @@ describe('task model adapter', () => {
       },
     ] }), new Set(['m1']))
     expect(candidates).toHaveLength(1)
-    expect(candidates[0]).toMatchObject({ title: 'Ship the release', priority: 'high' })
+    expect(candidates[0]).toMatchObject({ title: 'Ship the release', priority: 'high', assigneeProjectMemberId: 'member-1' })
   })
 
   it('provides deterministic success and provider-failure coverage without network calls', async () => {
