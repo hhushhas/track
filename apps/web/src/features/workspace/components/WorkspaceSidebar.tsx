@@ -1,4 +1,5 @@
-import { ChevronDown, FolderKanban, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Building2, ChevronDown, FolderKanban, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import ThemeToggle from '#/components/ThemeToggle'
@@ -16,6 +17,7 @@ import {
 import { AvatarNameTooltip } from '#/features/workspace/avatar-tooltip'
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getAvatarTone, getInitials } from '#/features/workspace/identity'
+import { useReleaseConfig } from '#/lib/release-config'
 
 type ProjectItem = {
   project: Doc<'projects'>
@@ -83,6 +85,7 @@ export function WorkspaceSidebar({
   view,
   visibleGroups,
 }: WorkspaceSidebarProps) {
+  const releaseConfig = useReleaseConfig()
   return (
     <>
       {mobileNavOpen ? (
@@ -163,6 +166,8 @@ export function WorkspaceSidebar({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
+        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Companies</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
 
         {activeProjectId ? (
           <div className="track-nav-secondary">
