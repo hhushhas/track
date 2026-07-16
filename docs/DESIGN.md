@@ -38,6 +38,18 @@ Every async surface needs a deliberate loading, empty, success, and error state.
 
 Unread, mention, report, blocked, and permission states need text or icon semantics in addition to color. Motion should communicate state change, remain brief, and respect reduced-motion preferences.
 
+Company identity appears only where it changes interpretation. Acting Company
+is explicit in navigation and Project controls; compact Company badges accompany
+message authors, represented Project memberships, invitations, and approvals.
+The badge remains subordinate to the person's name and never uses color as its
+only signal. Restricted administrative surfaces describe the authority boundary
+without exposing Channel names, counts, snippets, or member activity.
+
+Exit archives use an unambiguous read-only treatment and explain the frozen
+cutoff. Audience-expanding invitations name the Companies and people that will
+gain access before confirmation. Suspension, stale approval, access loss,
+snapshot failure, and cleanup failure each retain a safe retry or recovery path.
+
 ## Accessibility
 
 - Support keyboard navigation and visible focus on web.

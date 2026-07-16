@@ -4,6 +4,11 @@ Status: target product contract. Some capabilities described here remain approve
 implementation work; [README.md](../README.md) describes the running product,
 and [ROADMAP.md](./ROADMAP.md) tracks delivery.
 
+The Company, Relationship, shared Project, Channel, exit archive, and guided
+migration model is implemented behind the independent, default-off
+`companyModel` server release flag. Thread and task availability is controlled
+separately; neither companion feature is required for Company collaboration.
+
 ## Product philosophy
 
 Track unifies project communication and task management so a team does not need

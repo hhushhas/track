@@ -1,7 +1,8 @@
 # Architecture
 
-Status: current running architecture. Approved target changes remain in the
-roadmap and companion specifications until their release gates pass.
+Status: current running architecture. Company collaboration is implemented
+behind its default-off server release flag. Other approved target changes remain
+in the roadmap and companion specifications until their release gates pass.
 
 Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile application, shared TypeScript domain code, and a Convex backend.
 
@@ -18,7 +19,7 @@ Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile a
 
 ## Package boundaries
 
-`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral role, group, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
+`apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral Company, Project, Channel, role, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
 
 Clients may hide unavailable controls for usability, but Convex functions enforce every permission boundary. Public functions validate identity and access before reading or mutating data. Internal functions are used for trusted jobs and multi-step workflows.
 
@@ -31,6 +32,33 @@ Clients may hide unavailable controls for usability, but Convex functions enforc
 5. AI workflows assemble permission-filtered context, stream or persist results, and retain references.
 
 The schema in `convex/schema.ts` is the authoritative inventory of persisted data. Shared domain constants in `packages/shared/src/domain.ts` must match schema validators.
+
+## Company collaboration and authorization
+
+Company-model Projects use an explicit chain: authenticated user → active
+Company membership → active or archived Project membership → exact Channel
+membership or frozen archive entitlement. The central request-authorization
+adapter owns this chain and the compatibility read for legacy Projects. Company
+or Relationship administration never substitutes for content membership.
+
+Companies have owner, admin, and member roles. Company-model Projects use only
+manager and member roles. Relationship terms, Project-Company terms, Project
+memberships, and Channel memberships retain lifecycle history instead of being
+overwritten or hard-deleted. Participant revisions make unanimous removal and
+archive approvals stale when eligibility changes.
+
+Shared-Project exit is a two-phase saga. Preparation revokes live access and
+captures a cutoff. A Node action copies only the leaving Company's authorized
+Project and Channel memory sources to immutable paths, records content hashes,
+and verifies the manifest before finalization can create read-only entitlements.
+Provider failure blocks finalization; cancellation retains a retryable cleanup
+pointer until orphan cleanup succeeds.
+
+Guided legacy migration records an explicit Company and neutral role for every
+member, requires each mapped Company to confirm its own people, preserves every
+Group membership exactly, and activates the new policy atomically. No Company
+identity or neutral role is inferred from legacy roles, labels, email domains,
+or Group access.
 
 ## AI and memory
 
