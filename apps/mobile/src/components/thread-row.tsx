@@ -17,6 +17,7 @@ export type DetailedMessage = {
   message: Doc<'messages'>;
   author: Doc<'users'> | null;
   authorRole?: Doc<'projectMembers'>['role'] | null;
+  authorCompany?: { companyId: Id<'companies'>; displayName: string } | null;
   attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>;
   replyTo?: { messageId: Id<'messages'>; authorName: string; body: string; createdAt: number } | null;
 };
@@ -180,6 +181,13 @@ export function ThreadRow({ item, isFirstInGroup, isOwnMessage, onLongPress, onS
                     <View style={[styles.roleChip, { backgroundColor: theme.backgroundElement }]}>
                   <ThemedText numberOfLines={1} style={{ color: theme.textSecondary }} type="code">
                         {item.item.authorRole}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                  {item.item.authorCompany ? (
+                    <View style={[styles.roleChip, { backgroundColor: theme.accentSoft }]}>
+                      <ThemedText numberOfLines={1} style={{ color: theme.accent }} type="code">
+                        {item.item.authorCompany.displayName}
                       </ThemedText>
                     </View>
                   ) : null}

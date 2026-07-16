@@ -12,6 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { authClient } from '@/lib/auth-client';
 import { convexClient } from '@/lib/convex-client';
 import { TrackUserProvider } from '@/contexts/track-user-context';
+import { CompanyProvider } from '@/contexts/company-context';
 import { ThemeOverrideProvider } from '@/contexts/theme-override-context';
 import { Colors } from '@/constants/theme';
 
@@ -57,8 +58,9 @@ export default function RootLayout() {
         <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
           <ThemeProvider value={navTheme}>
             <TrackUserProvider>
-              <StatusBar style="auto" />
-              <Stack
+              <CompanyProvider>
+                <StatusBar style="auto" />
+                <Stack
                 screenOptions={{
                   headerShown: true,
                   headerBackTitle: 'Back',
@@ -74,9 +76,11 @@ export default function RootLayout() {
                 <Stack.Screen name="index" options={{ headerShown: false }} />
                 <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                 <Stack.Screen name="projects" options={{ title: 'Projects' }} />
-                <Stack.Screen name="groups" options={{ title: 'Groups' }} />
+                <Stack.Screen name="company" options={{ title: 'Companies' }} />
+                <Stack.Screen name="groups" options={{ title: 'Channels' }} />
                 <Stack.Screen name="conversation" options={{ title: 'Conversation' }} />
-              </Stack>
+                </Stack>
+              </CompanyProvider>
             </TrackUserProvider>
           </ThemeProvider>
         </ConvexBetterAuthProvider>

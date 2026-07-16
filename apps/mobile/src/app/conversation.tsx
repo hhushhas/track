@@ -17,6 +17,7 @@ import { OptionsSheet, SheetSection, SheetRow } from '@/components/options-sheet
 import { Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
+import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
 
@@ -36,7 +37,7 @@ export default function ConversationScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { trackUserId } = useTrackUser();
-  const { groupId, projectId } = useLocalSearchParams<{ groupId: string; projectId: string }>();
+  const { groupId, projectId, companyId, membershipId, archive } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
 
   const sendMessage = useMutation(api.messages.send);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
@@ -50,12 +51,16 @@ export default function ConversationScreen() {
 
   const gid = groupId as Id<'groups'> | undefined;
   const pid = projectId as Id<'projects'> | undefined;
+  const cid = companyId as Id<'companies'> | undefined;
+  const pmid = membershipId as Id<'projectMembers'> | undefined;
+  const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
+  const readOnly = archive === '1' || navigation?.archived === true;
 
-  const groups = useQuery(api.mobile.listGroups, trackUserId && pid ? { userId: trackUserId, projectId: pid } : 'skip');
-  const messages = useQuery(api.messages.listDetailed, trackUserId && gid ? { userId: trackUserId, groupId: gid, limit: 120 } : 'skip');
-  const assistantStreams = useQuery(api.assistant.listForGroup, trackUserId && gid ? { userId: trackUserId, groupId: gid, limit: 40 } : 'skip');
-  const notifSettings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId } : 'skip');
-  const projectMembers = useQuery(api.projects.listMembers, trackUserId && pid ? { userId: trackUserId, projectId: pid } : 'skip');
+  const groups = useQuery(api.mobile.listGroups, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
+  const messages = useQuery(api.messages.listDetailed, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 120 } : 'skip');
+  const assistantStreams = useQuery(api.assistant.listForGroup, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 40 } : 'skip');
+  const notifSettings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId, projectMemberId: pmid } : 'skip');
+  const projectMembers = useQuery(api.mobile.listProjectMembers, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
 
   const listRef = useRef<FlatList<GroupedThreadItem>>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -118,13 +123,13 @@ export default function ConversationScreen() {
   const messageActions = useMemo(() => {
     if (!actionTarget || actionTarget.kind === 'date-sep') return [];
     return [
-      {
+      ...(!readOnly ? [{
         label: 'Reply',
         icon: 'arrow-up' as const,
         onPress: () => {
           if (actionTarget.kind === 'message') setReplyTo(actionTarget.item);
         },
-      },
+      }] : []),
       {
         label: 'Report',
         icon: 'trash-can-outline' as const,
@@ -132,7 +137,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget]);
+  }, [actionTarget, readOnly]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {
@@ -147,21 +152,23 @@ export default function ConversationScreen() {
   }, [messages, pendingMessages.length]);
 
   useEffect(() => {
-    if (!trackUserId || !pid || !gid) return;
+    if (!trackUserId || !pid || !gid || !navigation?.available) return;
     void setLastActive({
       userId: trackUserId, projectId: pid, groupId: gid,
+      actingCompanyId: cid, projectMemberId: pmid,
       platform: Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web',
     }).catch(() => undefined);
-  }, [gid, pid, setLastActive, trackUserId]);
+  }, [cid, gid, navigation?.available, pid, pmid, setLastActive, trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || !gid || threadItems.length === 0) return;
+    if (!trackUserId || !gid || readOnly || threadItems.length === 0) return;
     const last = [...threadItems].reverse().find((i) => i.kind === 'message');
     void markRead({
       userId: trackUserId, groupId: gid,
+      actingCompanyId: cid, projectMemberId: pmid,
       lastReadMessageId: last?.kind === 'message' ? last.item.message._id : undefined,
     }).catch(() => undefined);
-  }, [gid, markRead, threadItems, trackUserId]);
+  }, [cid, gid, markRead, pmid, readOnly, threadItems, trackUserId]);
 
   async function withBusy(key: string, fn: () => Promise<unknown>) {
     setBusy(key);
@@ -182,11 +189,12 @@ export default function ConversationScreen() {
       const { parseMentions } = await import('@track/shared');
       const messageId = await sendMessage({
         projectId: pid, groupId: gid, authorId: trackUserId,
+        actingCompanyId: cid, projectMemberId: pmid,
         body, mentions: resolveMentionIds(body, memberItems),
         replyToMessageId, notificationPreview: body,
       });
       if (parseMentions(body).includes('track')) {
-        await askTrack({ projectId: pid, groupId: gid, requesterId: trackUserId, promptMessageId: messageId, question: body });
+        await askTrack({ projectId: pid, groupId: gid, requesterId: trackUserId, actingCompanyId: cid, projectMemberId: pmid, promptMessageId: messageId, question: body });
       }
     });
   }
@@ -194,18 +202,20 @@ export default function ConversationScreen() {
   async function uploadAttachment(input: { uri: string; filename: string; contentType: string; body: string; kind?: 'file' | 'voice_note'; durationMs?: number }) {
     if (!trackUserId || !pid || !gid) return;
     await withBusy(input.kind ?? 'attach', async () => {
-      const uploadUrl = await generateUploadUrl({ groupId: gid, userId: trackUserId });
+      const uploadUrl = await generateUploadUrl({ groupId: gid, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid });
       const blob = await (await fetch(input.uri)).blob();
       const res = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': input.contentType }, body: blob });
       if (!res.ok) throw new Error('upload_failed');
       const { storageId } = await res.json() as { storageId: Id<'_storage'> };
       const messageId = await sendMessage({
         projectId: pid, groupId: gid, authorId: trackUserId,
+        actingCompanyId: cid, projectMemberId: pmid,
         body: input.body, mentions: resolveMentionIds(input.body, memberItems),
         replyToMessageId: replyTo?.message._id, notificationPreview: input.body,
       });
       await attachFile({
         projectId: pid, groupId: gid, messageId, userId: trackUserId,
+        actingCompanyId: cid, projectMemberId: pmid,
         storageId, filename: input.filename, contentType: input.contentType,
         size: blob.size, kind: input.kind, durationMs: input.durationMs,
       });
@@ -242,6 +252,7 @@ export default function ConversationScreen() {
     await withBusy('report', async () => {
       await createReport({
         projectId: pid, reporterId: trackUserId, groupId: gid,
+        actingCompanyId: cid, projectMemberId: pmid,
         targetType: reportTarget.kind === 'assistant' ? 'assistant_answer' : 'message',
         targetMessageId: reportTarget.kind === 'message' ? reportTarget.item.message._id : undefined,
         targetAssistantStreamId: reportTarget.kind === 'assistant' ? reportTarget.stream._id : undefined,
@@ -264,13 +275,15 @@ export default function ConversationScreen() {
           setActionTarget(item);
           setActionSheetOpen(true);
         }}
-        onSwipeReply={() => {
+        onSwipeReply={readOnly ? undefined : () => {
           hapticLight();
           if (item.kind === 'message') setReplyTo(item.item);
         }}
       />
     );
-  }, [trackUserId]);
+  }, [readOnly, trackUserId]);
+
+  if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
 
   return (
     <ThemedView style={styles.screen}>
@@ -287,7 +300,7 @@ export default function ConversationScreen() {
               <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
             </Pressable>
           ),
-          headerRight: () => (
+          headerRight: () => !readOnly ? (
             <Pressable
               accessibilityLabel="Notifications"
               android_ripple={{ color: theme.backgroundSelected, borderless: true }}
@@ -296,7 +309,7 @@ export default function ConversationScreen() {
               style={styles.headerButton}>
               <PlatformIcon color={theme.text} name="dots-horizontal" size={22} />
             </Pressable>
-          ),
+          ) : null,
         }}
       />
 
@@ -340,7 +353,7 @@ export default function ConversationScreen() {
           }
         />
 
-        <Composer
+        {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only Company exit archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
           activeGroupName={activeGroup?.name ?? null}
           busy={busy === 'send'}
           isRecording={recordingState.isRecording}
@@ -352,7 +365,7 @@ export default function ConversationScreen() {
           onSend={() => void handleSend()}
           replyTo={replyTo}
           value={composer}
-        />
+        />}
       </KeyboardAvoidingView>
 
       <OptionsSheet onClose={() => setGroupSwitchOpen(false)} title="Switch Group" visible={groupSwitchOpen}>
@@ -365,7 +378,7 @@ export default function ConversationScreen() {
               onPress={() => {
                 setGroupSwitchOpen(false);
                 hapticLight();
-                router.replace(`/conversation?groupId=${item.group._id}&projectId=${projectId}`);
+                router.replace(channelHref(pid!, item.group._id, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null));
               }}
             />
           ))}
@@ -389,7 +402,7 @@ export default function ConversationScreen() {
               key={mode}
               label={mode === 'inherit' ? 'Follow global' : mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions only' : 'Off'}
               selected={groupMode === mode}
-              onPress={() => trackUserId && gid && void setGroupNotif({ userId: trackUserId, groupId: gid, mode })}
+              onPress={() => trackUserId && gid && void setGroupNotif({ userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, mode })}
             />
           ))}
         </SheetSection>
@@ -426,6 +439,7 @@ export default function ConversationScreen() {
 }
 
 const styles = StyleSheet.create({
+  archiveBanner: { gap: Spacing.one, padding: Spacing.three },
   empty: { alignItems: 'center', padding: Spacing.six },
   flex: { flex: 1 },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
