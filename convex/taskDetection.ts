@@ -1,3 +1,4 @@
+import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { taskSuggestionFingerprint } from '@track/shared/tasks'
 import { v } from 'convex/values'
 
@@ -145,7 +146,7 @@ export const requestHistoryScan = mutation({
 export const queueForMessage = internalMutation({
   args: { messageId: v.id('messages') },
   handler: async (ctx, args): Promise<Id<'_scheduled_functions'> | null> => {
-    if (process.env.TRACK_TASKS_ENABLED !== 'true') return null
+    if (!resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) return null
     const message = await ctx.db.get(args.messageId)
     if (!message?.channelSequence || !visibleToTaskAutomation(message)) return null
     const [project, group] = await Promise.all([ctx.db.get(message.projectId), ctx.db.get(message.groupId)])
@@ -206,7 +207,7 @@ export const startRun = internalMutation({
 export const getRunInput = internalQuery({
   args: { runId: v.id('taskDetectionRuns'), leaseToken: v.string() },
   handler: async (ctx, args) => {
-    if (process.env.TRACK_TASKS_ENABLED !== 'true') return null
+    if (!resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) return null
     const run = await ctx.db.get(args.runId)
     if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken || run.leaseExpiresAt < Date.now()) return null
     const [setting, group, project] = await Promise.all([

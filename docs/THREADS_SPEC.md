@@ -1,7 +1,7 @@
 # Channel Threads Specification
 
-Status: implemented behind a default-off server release flag; locally verified;
-not deployed.
+Status: implemented and production-enabled behind an independent,
+server-authoritative release flag.
 
 This specification defines Discord-style threads inside Track Channels. Threads
 are an independent release: task management can ship without them, and threads
@@ -16,10 +16,12 @@ repository implementation is summarized in [README.md](../README.md).
 The combined implementation exposes the Company model, tasks, and threads
 through independent server-authoritative flags named `companyModel`, `tasks`,
 and `threads`. Their environment settings are
-`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
-`TRACK_THREADS_ENABLED=false`; missing or invalid values fail closed. Web and
-mobile consume an authorized server projection and never use client
-environment values as authority.
+`TRACK_COMPANY_MODEL_ENABLED=true`, `TRACK_TASKS_ENABLED=true`, and
+`TRACK_THREADS_ENABLED=true`. Missing values use the enabled product default;
+an exact `true` enables and any other present value disables. Web and mobile
+consume an authorized server projection and never use client environment values
+as authority. Clients keep all three surfaces closed while that projection is
+unavailable.
 
 Every Project persists `accessProfile: "legacy" | "company"`; that profile,
 not the current Company flag, selects legacy or Company policy. Disabling
@@ -29,10 +31,8 @@ account-deletion, Company-exit, and retention cleanup active. Disabling the
 Company flag never reinterprets a Company-profile Project as legacy.
 
 The standalone thread implementation spans shared code, Convex, web, and
-mobile. The combined repository gate and lightweight local web verification
-pass; complete authenticated browser, native production-build, rollout, and
-production proofs remain release work. Neither implementation nor local
-acceptance authorizes a production deployment or flag activation.
+mobile. The combined release is deployed to the production backend and web
+runtime. Native store distribution remains a separate release path.
 
 ## Product intent
 
@@ -363,9 +363,8 @@ may still replace source or message content with a generic tombstone.
 
 ## Acceptance criteria
 
-The thread feature is implemented and locally release-ready when all statements
-are observed in a local production build. Passing them does not mean the
-default-off capability was deployed or activated in production:
+The thread feature is release-ready when all statements are observed in a
+production-shaped build:
 
 1. A Channel member can create a named thread from a message or directly on web
    and mobile, and retries create only one thread.

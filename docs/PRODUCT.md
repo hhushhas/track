@@ -2,13 +2,13 @@
 
 Status: target product contract. Some capabilities described here remain approved
 implementation work; [README.md](../README.md) describes the repository
-implementation, and [ROADMAP.md](./ROADMAP.md) tracks deployment and enablement.
+implementation, and [ROADMAP.md](./ROADMAP.md) tracks undelivered capabilities.
 
 The Company, Relationship, shared Project, Channel, exit archive, and guided
-migration model is implemented behind the independent, default-off
-`companyModel` server release flag. Thread and task availability is controlled
-separately; neither companion feature is required for Company collaboration.
-The combined implementation is locally verified and has not been deployed.
+migration model is implemented and production-enabled behind the independent,
+default-on `companyModel` server release flag. Thread and task availability is
+controlled separately; neither companion feature is required for Company
+collaboration.
 
 ## Product philosophy
 

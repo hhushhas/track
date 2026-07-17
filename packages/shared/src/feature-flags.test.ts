@@ -5,17 +5,36 @@ import {
   projectAccessProfiles,
   releaseFeatureNames,
   resolveProjectAccessProfile,
+  resolveReleaseFeatureFlag,
+  unavailableReleaseFeatureFlags,
 } from './feature-flags'
 
 describe('release feature contract', () => {
-  it('defines three independent default-off controls', () => {
+  it('defines three independent default-on controls', () => {
     expect(releaseFeatureNames).toEqual(['companyModel', 'tasks', 'threads'])
     expect(defaultReleaseFeatureFlags).toEqual({
+      companyModel: true,
+      tasks: true,
+      threads: true,
+    })
+    expect(Object.isFrozen(defaultReleaseFeatureFlags)).toBe(true)
+  })
+
+  it('keeps clients closed until the server projection is available', () => {
+    expect(unavailableReleaseFeatureFlags).toEqual({
       companyModel: false,
       tasks: false,
       threads: false,
     })
-    expect(Object.isFrozen(defaultReleaseFeatureFlags)).toBe(true)
+    expect(Object.isFrozen(unavailableReleaseFeatureFlags)).toBe(true)
+  })
+
+  it('preserves exact server disable overrides', () => {
+    expect(resolveReleaseFeatureFlag(undefined)).toBe(true)
+    expect(resolveReleaseFeatureFlag('true')).toBe(true)
+    expect(resolveReleaseFeatureFlag('false')).toBe(false)
+    expect(resolveReleaseFeatureFlag('TRUE')).toBe(false)
+    expect(resolveReleaseFeatureFlag('')).toBe(false)
   })
 })
 

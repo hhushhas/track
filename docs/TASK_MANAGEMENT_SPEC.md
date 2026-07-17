@@ -1,7 +1,7 @@
 # Task Management Specification
 
-Status: implemented behind a default-off server release flag; locally verified;
-not deployed.
+Status: implemented and production-enabled behind an independent,
+server-authoritative release flag.
 
 This specification defines the first-class task-management release in Track's
 target [PRODUCT.md](./PRODUCT.md) contract. The repository implementation is
@@ -18,10 +18,12 @@ thread compatibility rules below apply when both features are enabled.
 The combined implementation exposes the Company model, tasks, and threads
 through independent server-authoritative flags named `companyModel`, `tasks`,
 and `threads`. Their environment settings are
-`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
-`TRACK_THREADS_ENABLED=false`; missing or invalid values fail closed. Web and
-mobile consume an authorized server projection and never treat client
-environment values as authority.
+`TRACK_COMPANY_MODEL_ENABLED=true`, `TRACK_TASKS_ENABLED=true`, and
+`TRACK_THREADS_ENABLED=true`. Missing values use the enabled product default;
+an exact `true` enables and any other present value disables. Web and mobile
+consume an authorized server projection and never treat client environment
+values as authority. Clients keep all three surfaces closed while that
+projection is unavailable.
 
 Every Project persists `accessProfile: "legacy" | "company"`; that profile,
 not the current Company flag, selects the Project policy. Disabling tasks hides
@@ -31,10 +33,8 @@ redaction, account-deletion, Company-exit, and retention cleanup active.
 Disabling the Company flag never reinterprets a Company-profile Project as
 legacy.
 
-The combined repository gate and lightweight local web verification pass. Full
-authenticated browser, native production-build, rollout, and production proofs
-remain release work. The implementation stays default off, and local acceptance
-does not authorize a production deployment or flag activation.
+The combined release is deployed to the production backend and web runtime.
+Native store distribution remains a separate release path.
 
 ## Product intent
 
@@ -1051,11 +1051,9 @@ integrity, and audit history according to the maintained privacy contract.
 
 ## Acceptance criteria
 
-The core task feature is implemented and locally release-ready on its enabled
-policy profile when statements 1–15 are observed in a local production build.
-A release that also enables the Company model must additionally satisfy
-statements 16–18. Passing them does not mean the default-off capability was
-deployed or activated in production.
+The core task feature is release-ready on its enabled policy profile when
+statements 1–15 are observed in a production-shaped build. A release that also
+enables the Company model must additionally satisfy statements 16–18.
 
 1. A task administrator can create multiple project and Channel boards,
    configure independent workflows, choose defaults, and archive/restore a

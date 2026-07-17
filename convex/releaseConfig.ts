@@ -1,5 +1,8 @@
 import { query } from './_generated/server'
-import type { ReleaseFeatureFlags } from '@track/shared/feature-flags'
+import {
+  resolveReleaseFeatureFlag,
+  type ReleaseFeatureFlags,
+} from '@track/shared/feature-flags'
 
 export const releaseFeatureEnvironmentVariables = {
   companyModel: 'TRACK_COMPANY_MODEL_ENABLED',
@@ -12,7 +15,7 @@ type ReleaseConfigEnvironment = Partial<
 >
 
 export function parseReleaseFeatureFlag(value: string | undefined) {
-  return value === 'true'
+  return resolveReleaseFeatureFlag(value)
 }
 
 export function readReleaseFeatureFlags(

@@ -1,7 +1,7 @@
 # Company Relationships and Shared Projects Specification
 
-Status: implemented behind a default-off server release flag; locally verified;
-not deployed.
+Status: implemented and production-enabled behind an independent,
+server-authoritative release flag.
 
 This specification defines the Company, Relationship, shared-Project, and
 Channel model in Track's target [PRODUCT.md](./PRODUCT.md) contract. The
@@ -15,10 +15,12 @@ task specifications use the same combined-release boundaries.
 The combined implementation exposes the Company model, tasks, and threads
 through independent server-authoritative flags named `companyModel`, `tasks`,
 and `threads`. Their environment settings are
-`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
-`TRACK_THREADS_ENABLED=false`; missing or invalid values fail closed. Web and
-mobile consume an authorized server projection of those values and never use a
-client environment value as an authorization decision.
+`TRACK_COMPANY_MODEL_ENABLED=true`, `TRACK_TASKS_ENABLED=true`, and
+`TRACK_THREADS_ENABLED=true`. Missing values use the enabled product default;
+an exact `true` enables and any other present value disables. Web and mobile
+consume an authorized server projection of those values and never use a client
+environment value as an authorization decision. Clients keep all three surfaces
+closed while that projection is unavailable.
 
 Every Project persists `accessProfile: "legacy" | "company"`. The Company flag
 controls exposure, creation, activation, routes, and background work; it never
@@ -28,10 +30,8 @@ exit, and retention cleanup active. The all-off configuration preserves legacy
 Project conversation through the authenticated actor and central legacy policy
 adapter.
 
-The combined repository gate and lightweight local web verification pass. Full
-authenticated browser, native production-build, rollout, and production proofs
-remain release work. Local implementation acceptance does not authorize a
-production deployment, rollout, migration, or flag activation.
+The combined release is deployed to the production backend and web runtime.
+Native store distribution remains a separate release path.
 
 ## Product intent
 
@@ -1016,11 +1016,9 @@ production access or deployment approval.
 
 ## Acceptance criteria
 
-The Company model is implemented and locally release-ready when statements
-1–18 are observed in local production builds. A release that also enables
-threads or tasks must additionally satisfy the applicable combined criteria
-19–20. Passing them does not mean the default-off capability was deployed or
-activated in production.
+The Company model is release-ready when statements 1–18 are observed in
+production-shaped builds. A release that also enables threads or tasks must
+additionally satisfy the applicable combined criteria 19–20.
 
 1. A user can create a Company, invite members, switch between multiple active
    Companies, and produce correctly attributed audited actions.
@@ -1171,8 +1169,8 @@ and an observed local workflow pass.
 - Do not duplicate authorization logic across web, mobile, search, assistant,
   memory, threads, tasks, notifications, and reports.
 - Do not trust actor identifiers supplied by a client.
-- Do not describe this default-off implementation as deployed, enabled, or
-  shipped before Phase 8 passes.
+- Do not describe a future Company-model change as deployed, enabled, or shipped
+  before its production release gate passes.
 
 When Phase 8 ships, remove the delivered Company item from
 [ROADMAP.md](./ROADMAP.md), reconcile running behavior with

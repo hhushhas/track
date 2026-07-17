@@ -1,7 +1,6 @@
 # UI Refresh Specification
 
-Status: implemented and locally verified; default-off product surfaces are not
-deployed.
+Status: implemented and deployed with the production web release.
 
 This specification turns the approved 2026-07-16 design direction into
 executable work for `apps/web`. The high-fidelity reference is
@@ -27,17 +26,16 @@ specifications win. Known divergences are listed in
 
 The Company model, tasks, and threads use independent server-authoritative
 flags named `companyModel`, `tasks`, and `threads`, configured by
-`TRACK_COMPANY_MODEL_ENABLED=false`, `TRACK_TASKS_ENABLED=false`, and
-`TRACK_THREADS_ENABLED=false`. Missing or invalid values fail closed. Track A
-is unflagged. Track B remains unreachable presentational work until the owning
-task or thread flag exposes a fully implemented route; clients consume an
-authorized server projection and never use their environment as authority.
+`TRACK_COMPANY_MODEL_ENABLED=true`, `TRACK_TASKS_ENABLED=true`, and
+`TRACK_THREADS_ENABLED=true`. Missing values use the enabled product default;
+an exact `true` enables and any other present value disables. Track A is
+unflagged. Track B follows its owning task or thread flag; clients consume an
+authorized server projection, keep gated surfaces closed while it is unavailable,
+and never use their environment as authority.
 
-The combined repository gate and lightweight local web verification pass. The
-Company, task, and thread surfaces remain independently default off and have not
-been deployed. Full authenticated browser, native production-build, rollout,
-and production proofs remain release work. Local acceptance does not authorize
-a production deployment or flag activation.
+The Company, task, and thread surfaces are independently enabled by default and
+deployed with the production web release. Native store distribution remains a
+separate release path.
 
 ## Ground rules for every workstream
 

@@ -1,3 +1,4 @@
+import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { v } from 'convex/values'
 
 import type { Id } from './_generated/dataModel'
@@ -254,7 +255,7 @@ export const project = query({
           title: group.name,
         }))
 
-    const taskCandidates = process.env.TRACK_TASKS_ENABLED === 'true' && enabled(filter, 'tasks')
+    const taskCandidates = resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED) && enabled(filter, 'tasks')
       ? access.companyAccess?.projectMember.status === 'archived' && access.companyAccess.entitlement
         ? (await ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_table', (q) =>
             q.eq('entitlementId', access.companyAccess!.entitlement!._id).eq('sourceTable', 'tasks'),

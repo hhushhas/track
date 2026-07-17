@@ -1,3 +1,4 @@
+import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { v } from 'convex/values'
 
 import { internalQuery, mutation, query } from './_generated/server'
@@ -65,7 +66,7 @@ export const getPreference = query({
 export const collectPushTargets = internalQuery({
   args: { notificationId: v.id('taskNotifications') },
   handler: async (ctx, args) => {
-    if (process.env.TRACK_TASKS_ENABLED !== 'true') return null
+    if (!resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) return null
     const notification = await ctx.db.get(args.notificationId)
     if (!notification) return null
     const [task, recipient, project] = await Promise.all([

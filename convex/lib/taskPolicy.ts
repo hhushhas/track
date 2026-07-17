@@ -1,4 +1,7 @@
-import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
+import {
+  resolveProjectAccessProfile,
+  resolveReleaseFeatureFlag,
+} from '@track/shared/feature-flags'
 import { resolveProjectChannelCapabilities } from '@track/shared/project-policy'
 import { resolveTaskCapabilities } from '@track/shared/tasks'
 
@@ -15,7 +18,9 @@ export type TaskRequestIdentity = {
 }
 
 export function requireTasksEnabled() {
-  if (process.env.TRACK_TASKS_ENABLED !== 'true') throw new Error('tasks_disabled')
+  if (!resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) {
+    throw new Error('tasks_disabled')
+  }
 }
 
 function activeLegacyMembership(

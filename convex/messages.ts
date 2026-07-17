@@ -1,3 +1,4 @@
+import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
@@ -418,7 +419,7 @@ export const send = mutation({
     await ctx.scheduler.runAfter(0, internal.pushNotifications.deliverMessageNotifications, {
       messageId,
     })
-    if (process.env.TRACK_TASKS_ENABLED === 'true') {
+    if (resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) {
       await ctx.scheduler.runAfter(0, (internal as any).taskDetection.queueForMessage, { messageId })
     }
 

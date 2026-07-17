@@ -1,10 +1,11 @@
+import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 
 type ThreadCtx = QueryCtx | MutationCtx
 
 export function threadsEnabled() {
-  return process.env.TRACK_THREADS_ENABLED === 'true'
+  return resolveReleaseFeatureFlag(process.env.TRACK_THREADS_ENABLED)
 }
 
 export function requireThreadsEnabled() {

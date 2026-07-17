@@ -14,7 +14,11 @@ type DevAuthEnvironment = Readonly<{
 }>
 
 export function isDevAuthBypassEnabled(
-  environment: DevAuthEnvironment = process.env,
+  environment: DevAuthEnvironment = {
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
+    DEV_AUTH_BYPASS: process.env.DEV_AUTH_BYPASS,
+    SITE_URL: process.env.SITE_URL,
+  },
 ) {
   if (environment.DEV_AUTH_BYPASS !== '1') return false
 

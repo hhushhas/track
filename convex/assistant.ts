@@ -1,3 +1,4 @@
+import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { v } from 'convex/values'
 
 import { action, internalMutation, query } from './_generated/server'
@@ -174,7 +175,7 @@ export const ask = action({
       channelThreadId: args.channelThreadId,
       promptMessageId: args.promptMessageId,
     })
-    if (process.env.TRACK_TASKS_ENABLED === 'true' && args.promptMessageId && isExplicitTaskRequest(args.question)) {
+    if (resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED) && args.promptMessageId && isExplicitTaskRequest(args.question)) {
       const explicit = await ctx.runMutation((internal as any).taskSuggestions.createExplicit, {
         projectId: args.projectId, groupId: args.groupId, requesterId: args.requesterId,
         actingCompanyId: actorContext.actingCompanyId, projectMemberId: actorContext.projectMemberId,

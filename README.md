@@ -1,21 +1,22 @@
 # Track
 
 Track is a project collaboration workspace with realtime conversation,
-references, and permission-aware AI assistance. Its default-off Company release
-adds peer Relationships, shared Projects, explicit Channels, immutable Company
-exit archives, and guided migration from the legacy Project model across web,
-mobile, shared contracts, and Convex. Its independently default-off thread
-release adds named focused Channel conversations, follow and unread state,
-manual lifecycle controls, scoped search, and complete web and mobile flows.
+references, and permission-aware AI assistance. Company collaboration adds peer
+Relationships, shared Projects, explicit Channels, immutable Company exit
+archives, and guided migration from the legacy Project model across web, mobile,
+shared contracts, and Convex. Channel threads add named focused conversations,
+follow and unread state, manual lifecycle controls, scoped search, and complete
+web and mobile flows.
 
-The default-off task release adds scoped Project and Channel boards, configurable
-workflows, task details and lists, conversation evidence, human-reviewed AI
-suggestions, search, notifications, and essential native workflows. It operates
-with legacy Projects and does not require Channel threads or Company collaboration.
+Task management adds scoped Project and Channel boards, configurable workflows,
+task details and lists, conversation evidence, human-reviewed AI suggestions,
+search, notifications, and essential native workflows. It operates with legacy
+Projects and does not require Channel threads or Company collaboration.
 
-The combined implementation is locally verified and remains independently
-default off. It has not been deployed, and local verification does not authorize
-a production rollout, migration, or flag activation.
+Company collaboration, task management, and Channel threads are enabled by
+default through independent server-authoritative controls. An exact `false`
+environment override disables any one capability without changing the others.
+Clients keep gated surfaces hidden until that server projection is available.
 
 The [target product contract](./docs/PRODUCT.md) also defines dependable mobile
 push. That companion capability remains independently controlled work tracked in
@@ -42,11 +43,11 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
   accessibility.
 - [Roadmap](./docs/ROADMAP.md): approved target behavior that has not shipped.
 - [Channel threads specification](./docs/THREADS_SPEC.md): implemented
-  default-off thread, unread, lifecycle, AI-context, and integration contract.
+  thread, unread, lifecycle, AI-context, and integration contract.
 - [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): implemented
-  default-off task, board, AI, access, and delivery contract.
+  task, board, AI, access, and delivery contract.
 - [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
-  implemented default-off Company, Relationship, shared-Project, Channel,
+  implemented Company, Relationship, shared-Project, Channel,
   access, exit, and migration contract.
 - [Mobile push notification intent](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
   approved reliability direction that still needs a complete implementation
@@ -80,21 +81,23 @@ pnpm --filter @track/web dev
 
 Open `http://localhost:3000`. Convex creates the development deployment values in `.env.local`. Add the remaining auth, AI, and optional integration values documented in `.env.example`; do not copy the placeholder Convex deployment values over the generated values.
 
-Set `TRACK_COMPANY_MODEL_ENABLED=true` on the local Convex deployment to expose
-Company collaboration. The flag is server-authoritative and independent from
+Company collaboration is enabled when `TRACK_COMPANY_MODEL_ENABLED` is absent or
+set to `true`. Set it to `false` on the Convex deployment to disable Company
+surfaces. The flag is server-authoritative and independent from
 `TRACK_THREADS_ENABLED` and `TRACK_TASKS_ENABLED`. Archive, Company-exit,
-redaction, account-deletion, and cleanup enforcement remains server-side even
-when Company creation surfaces are disabled.
+redaction, account-deletion, and cleanup enforcement remains server-side while
+Company creation surfaces are disabled.
 
-Set `TRACK_TASKS_ENABLED=true` to expose task routes and controls and to start
-new-message detection. This flag is independent from Company and thread flags;
-existing conversation remains usable when tasks are disabled.
+Task routes, controls, and new-message detection are enabled when
+`TRACK_TASKS_ENABLED` is absent or set to `true`. Set it to `false` to disable
+them. The flag is independent from Company and thread flags; existing
+conversation remains usable when tasks are disabled.
 
-Set `TRACK_THREADS_ENABLED=true` on the local Convex deployment to expose
-Channel threads. Threads remain fully usable when Company collaboration or task
-management is disabled. The server flag hides thread discovery, routes,
-creation, search, and ordinary delivery when off while retaining lifecycle and
-cleanup enforcement for persisted data.
+Channel threads are enabled when `TRACK_THREADS_ENABLED` is absent or set to
+`true`. Set it to `false` to disable them. Threads remain fully usable when
+Company collaboration or task management is disabled. The server flag hides
+thread discovery, routes, creation, search, and ordinary delivery when off while
+retaining lifecycle and cleanup enforcement for persisted data.
 
 ## Local mobile setup
 

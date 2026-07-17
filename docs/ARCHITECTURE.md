@@ -1,9 +1,9 @@
 # Architecture
 
 Status: current repository architecture. Company collaboration, task management,
-and Channel threads are implemented and locally verified behind independent
-default-off server release flags. They have not been deployed. Other approved
-target changes remain in the roadmap and companion specifications.
+and Channel threads are production capabilities behind independent,
+server-authoritative controls that are enabled by default. Other approved target
+changes remain in the roadmap and companion specifications.
 
 Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile application, shared TypeScript domain code, and a Convex backend.
 
@@ -23,6 +23,11 @@ Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile a
 `apps/web` owns browser routes, PWA behavior, workspace presentation, search, and browser integrations. `apps/mobile` owns native navigation and native platform capabilities. `packages/shared` contains platform-neutral Company, Project, Channel, task-policy, thread, role, notification, mention, and theme primitives. `convex` owns all persistent data and server-side authorization.
 
 Clients may hide unavailable controls for usability, but Convex functions enforce every permission boundary. Public functions validate identity and access before reading or mutating data. Internal functions are used for trusted jobs and multi-step workflows.
+
+Missing server release variables select the enabled product defaults. Web and
+mobile keep Company, task, and thread surfaces closed until the authoritative
+server projection arrives, so explicit disable overrides never fail open during
+loading or offline startup.
 
 ## Core data flow
 

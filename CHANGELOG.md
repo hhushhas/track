@@ -1,20 +1,19 @@
 # Changelog
 
-## Unreleased
+## 2026-07-17
 
 The combined Company, task-management, Channel-thread, and supporting UI work
-is implemented behind independent default-off controls, verified locally, and
-not deployed.
+ships with independent server-authoritative controls enabled by default.
 
 ### Added
 
-- Default-off Company, task-management, and Channel-thread release controls
-  with fail-closed web, mobile, and Convex configuration.
+- Default-on Company, task-management, and Channel-thread release controls
+  across web, mobile, and Convex, with exact independent disable overrides.
 - Framework-independent domain contracts, additive Convex schema and generated
   declarations, authenticated actor resolution, and a central legacy/Company
   Project and Channel policy seam without enabling the feature domains.
 
-- Default-off task management across shared contracts, Convex, web, and mobile,
+- Task management across shared contracts, Convex, web, and mobile,
   including scoped boards and workflows, ranked tasks and subtasks, labels,
   comments, evidence, activity, task search, notification feeds, due reminders,
   Company-exit archives, and legacy/Company authorization.
@@ -25,7 +24,7 @@ not deployed.
   administration, conversation cards, and URL filters; plus native state-grouped
   task lists, editing, Inbox decisions, deep links, long-press creation, and
   inline cards.
-- Default-off Channel threads across web and mobile, including direct and
+- Channel threads across web and mobile, including direct and
   source-message creation, focused paginated conversation, follow and unread
   state, source links, manual archive and reopen, scoped search, reporting,
   attachments, voice notes, assistant invocation, and exact deep links.
@@ -35,7 +34,7 @@ not deployed.
 - Conditional thread-to-task creation, inline task cards, grounded suggestions,
   search, migration reconciliation, and Company-exit task snapshots when both
   independently controlled releases are enabled.
-- Default-off Company collaboration across web and mobile, including private
+- Company collaboration across web and mobile, including private
   Company discovery, memberships, peer Relationships, shared Project proposals,
   explicit Channels, represented identity, and Company-aware conversation.
 - Unanimous Relationship removal and Project or Channel archive lifecycles with

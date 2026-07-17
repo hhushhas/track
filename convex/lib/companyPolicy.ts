@@ -1,5 +1,8 @@
 import { canAdministerCompany } from '@track/shared/company'
-import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
+import {
+  resolveProjectAccessProfile,
+  resolveReleaseFeatureFlag,
+} from '@track/shared/feature-flags'
 import { resolveProjectChannelCapabilities } from '@track/shared/project-policy'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
@@ -9,7 +12,7 @@ import type { AuthenticatedActor } from './actorContext'
 type PolicyCtx = QueryCtx | MutationCtx
 
 export function requireCompanyModelEnabled() {
-  if (process.env.TRACK_COMPANY_MODEL_ENABLED !== 'true') {
+  if (!resolveReleaseFeatureFlag(process.env.TRACK_COMPANY_MODEL_ENABLED)) {
     throw new Error('company_model_disabled')
   }
 }
