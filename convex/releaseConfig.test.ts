@@ -34,4 +34,21 @@ describe('release config projection', () => {
   ] as const)('projects %s independently', (environmentName, expected) => {
     expect(readReleaseFeatureFlags({ [environmentName]: 'true' })).toEqual(expected)
   })
+
+  it.each([
+    [false, false, false],
+    [false, false, true],
+    [false, true, false],
+    [false, true, true],
+    [true, false, false],
+    [true, false, true],
+    [true, true, false],
+    [true, true, true],
+  ] as const)('preserves the independent C%s T%s H%s combination', (companyModel, tasks, threads) => {
+    expect(readReleaseFeatureFlags({
+      TRACK_COMPANY_MODEL_ENABLED: companyModel ? 'true' : 'false',
+      TRACK_TASKS_ENABLED: tasks ? 'true' : 'false',
+      TRACK_THREADS_ENABLED: threads ? 'true' : 'false',
+    })).toEqual({ companyModel, tasks, threads })
+  })
 })

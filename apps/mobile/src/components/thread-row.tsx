@@ -20,6 +20,13 @@ export type DetailedMessage = {
   authorCompany?: { companyId: Id<'companies'>; displayName: string } | null;
   attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>;
   replyTo?: { messageId: Id<'messages'>; authorName: string; body: string; createdAt: number } | null;
+  channelThread?: {
+    threadId: Id<'channelThreads'>;
+    name: string;
+    status: 'active' | 'archived';
+    replyCount: number;
+    latestReplyAt: number | null;
+  } | null;
 };
 
 export type ThreadItem =
@@ -209,6 +216,15 @@ export function ThreadRow({ item, isFirstInGroup, isOwnMessage, onLongPress, onS
 
             <HighlightedText body={item.item.message.body} />
 
+            {item.item.channelThread ? (
+              <View style={[styles.threadChip, { backgroundColor: theme.accentSoft }]}>
+                <PlatformIcon color={theme.accent} name="forum-outline" size={14} />
+                <ThemedText numberOfLines={1} style={{ color: theme.accent }} type="code">
+                  {item.item.channelThread.name} · {item.item.channelThread.replyCount} {item.item.channelThread.replyCount === 1 ? 'reply' : 'replies'}
+                </ThemedText>
+              </View>
+            ) : null}
+
             {item.item.attachments.map(({ attachment, url }) =>
               attachment.kind === 'voice_note' && url ? (
                 <VoiceRow attachment={attachment} key={attachment._id} url={url} />
@@ -283,20 +299,38 @@ export function fmtTime(ts: number) {
 }
 
 export function resolveMentionIds(body: string, members: ProjectMemberRow[]) {
+  return resolveMentionMembers(body, members).map((member) => member.userId);
+}
+
+export function resolveMentionProjectMemberIds(body: string, members: ProjectMemberRow[]) {
+  return resolveMentionMembers(body, members).map((member) => member.projectMemberId);
+}
+
+function resolveMentionMembers(body: string, members: ProjectMemberRow[]) {
   const tokens = parseMentions(body).filter((t) => t !== 'track');
   if (!tokens.length) return [];
   const tokenSet = new Set(tokens.map(norm));
-  const ids = new Set<Id<'users'>>();
-  for (const { user } of members) {
+  const matches = new Map<string, Array<{ projectMemberId: Id<'projectMembers'>; userId: Id<'users'> }>>();
+  for (const { membership, user } of members) {
     if (!user) continue;
     const keys = new Set(
       [user.displayName, user.email, user.email?.split('@')[0]]
         .filter(Boolean)
         .map((v) => norm(String(v))),
     );
-    if ([...keys].some((k) => tokenSet.has(k))) ids.add(user._id);
+    for (const key of keys) {
+      if (!tokenSet.has(key)) continue;
+      matches.set(key, [
+        ...(matches.get(key) ?? []),
+        { projectMemberId: membership._id, userId: user._id },
+      ]);
+    }
   }
-  return [...ids];
+  const resolved = new Map<string, { projectMemberId: Id<'projectMembers'>; userId: Id<'users'> }>();
+  for (const candidates of matches.values()) {
+    if (candidates.length === 1) resolved.set(String(candidates[0].projectMemberId), candidates[0]);
+  }
+  return [...resolved.values()];
 }
 
 function norm(v: string) {
@@ -311,6 +345,7 @@ const styles = StyleSheet.create({
   dotsRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   thinkingLabel: { marginTop: 2 },
   thinkingWrap: { gap: 4 },
+  threadChip: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: 8, flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.two, maxWidth: '100%', paddingHorizontal: Spacing.two, paddingVertical: 4 },
   body: { flex: 1, gap: 4, minWidth: 0 },
   dateSep: { alignItems: 'center', marginVertical: Spacing.four, paddingHorizontal: Spacing.four },
   dateSepLabel: { fontSize: 11, letterSpacing: 0.5 },

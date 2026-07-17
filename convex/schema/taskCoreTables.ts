@@ -107,6 +107,7 @@ export const taskCoreTables = {
     taskId: v.id('tasks'),
     type: taskReferenceType,
     groupId: v.optional(v.id('groups')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     messageId: v.optional(v.id('messages')),
     attachmentId: v.optional(v.id('attachments')),
     assistantStreamId: v.optional(v.id('assistantStreams')),

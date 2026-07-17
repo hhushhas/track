@@ -7,6 +7,7 @@ import type { QueryCtx } from './_generated/server'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
+import { threadsEnabled } from './lib/channelThreadPolicy'
 import { requireEligibleTaskMember, requireTasksEnabled, resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskPriority } from './schema/taskValidators'
 
@@ -26,13 +27,17 @@ const candidateValidator = v.object({
   groundingReason: v.string(),
 })
 
+function visibleToTaskAutomation(message: Doc<'messages'>) {
+  return !message.channelThreadId || threadsEnabled()
+}
+
 async function latestSequence(
   ctx: Pick<QueryCtx, 'db'>,
   groupId: Id<'groups'>,
 ) {
-  const latest = await ctx.db.query('messages')
+  const latest = (await ctx.db.query('messages')
     .withIndex('by_group_created_at', (q) => q.eq('groupId', groupId))
-    .order('desc').first() as Doc<'messages'> | null
+    .order('desc').collect()).find(visibleToTaskAutomation) ?? null
   return latest?.channelSequence ?? 0
 }
 
@@ -107,7 +112,7 @@ export const requestHistoryScan = mutation({
       args.to - args.from > 31 * 24 * 60 * 60 * 1_000) throw new Error('task_history_range_invalid')
     const messages = (await ctx.db.query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect())
-      .filter((message) => message.createdAt >= args.from && message.createdAt <= args.to && message.channelSequence)
+      .filter((message) => visibleToTaskAutomation(message) && message.createdAt >= args.from && message.createdAt <= args.to && message.channelSequence)
       .sort((left, right) => left.channelSequence! - right.channelSequence!).slice(0, 120)
     if (!messages.length) return null
     let setting = await ctx.db.query('taskDetectionSettings')
@@ -142,7 +147,7 @@ export const queueForMessage = internalMutation({
   handler: async (ctx, args): Promise<Id<'_scheduled_functions'> | null> => {
     if (process.env.TRACK_TASKS_ENABLED !== 'true') return null
     const message = await ctx.db.get(args.messageId)
-    if (!message?.channelSequence) return null
+    if (!message?.channelSequence || !visibleToTaskAutomation(message)) return null
     const [project, group] = await Promise.all([ctx.db.get(message.projectId), ctx.db.get(message.groupId)])
     if (!project || !group || project.status === 'archived' || group.status === 'archived') return null
     let setting = await ctx.db.query('taskDetectionSettings')
@@ -175,7 +180,7 @@ export const startRun = internalMutation({
     const messages = await ctx.db.query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect()
     const pending = messages
-      .filter((message) => (message.channelSequence ?? 0) > setting.highWaterSequence)
+      .filter((message) => visibleToTaskAutomation(message) && (message.channelSequence ?? 0) > setting.highWaterSequence)
       .sort((left, right) => (left.channelSequence ?? 0) - (right.channelSequence ?? 0))
       .slice(0, 24)
     if (!pending.length) {
@@ -221,7 +226,7 @@ export const getRunInput = internalQuery({
       .withIndex('by_group_created_at', (q) => q.eq('groupId', run.groupId)).collect()
     const selected = rows.filter((message) => {
       const sequence = message.channelSequence ?? 0
-      return sequence > run.startSequence && sequence <= run.endSequence
+      return visibleToTaskAutomation(message) && sequence > run.startSequence && sequence <= run.endSequence
     })
     const messages = []
     for (const message of selected) {
@@ -274,7 +279,7 @@ export const commitRun = internalMutation({
       .withIndex('by_group_created_at', (q) => q.eq('groupId', run.groupId)).collect()
     const allowed = new Map(windowMessages.filter((message) => {
       const sequence = message.channelSequence ?? 0
-      return sequence > run.startSequence && sequence <= run.endSequence
+      return visibleToTaskAutomation(message) && sequence > run.startSequence && sequence <= run.endSequence
     }).map((message) => [String(message._id), message]))
     let candidateCount = 0
     let lowConfidenceCount = 0
@@ -322,7 +327,8 @@ export const commitRun = internalMutation({
       for (const [index, source] of sources.entries()) {
         await ctx.db.insert('taskSuggestionReferences', {
           projectId: run.projectId, suggestionId, type: 'message', groupId: run.groupId,
-          messageId: source!._id, quote: source!.body.slice(0, 280), availability: 'available',
+          channelThreadId: source!.channelThreadId, messageId: source!._id,
+          quote: source!.body.slice(0, 280), availability: 'available',
           isPrimary: index === 0, rank: String(index + 1).padStart(8, '0'),
           createdAt: now, updatedAt: now,
         })
@@ -336,7 +342,7 @@ export const commitRun = internalMutation({
     })
     else {
       const morePending = windowMessages.some((message) =>
-        (message.channelSequence ?? 0) > run.endSequence,
+        visibleToTaskAutomation(message) && (message.channelSequence ?? 0) > run.endSequence,
       )
       const scheduledJobId = morePending
         ? await ctx.scheduler.runAfter(0, (internal as any).taskDetection.startRun, {

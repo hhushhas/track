@@ -5,6 +5,7 @@ import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import { requireTaskAccess, resolveTaskRequestContext } from './lib/taskPolicy'
+import { resolveActorProjectMember, threadsEnabled } from './lib/channelThreadPolicy'
 
 const targetType = v.union(
   v.literal('message'),
@@ -52,19 +53,28 @@ export const create = mutation({
       projectMemberId: args.projectMemberId,
     }, args.groupId ? 'readChannel' : 'readProject')
 
+    let scopedGroupId = args.groupId
+    let channelThreadId
     if (args.targetMessageId) {
       const message = await ctx.db.get(args.targetMessageId)
       if (!message || message.projectId !== args.projectId) throw new Error('message_not_found')
+      scopedGroupId = message.groupId
+      channelThreadId = message.channelThreadId
       await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: message.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
     if (args.targetAttachmentId) {
       const attachment = await ctx.db.get(args.targetAttachmentId)
       if (!attachment || attachment.projectId !== args.projectId) throw new Error('attachment_not_found')
+      const message = await ctx.db.get(attachment.messageId)
+      scopedGroupId = attachment.groupId
+      channelThreadId = message?.channelThreadId
       await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: attachment.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
     if (args.targetAssistantStreamId) {
       const stream = await ctx.db.get(args.targetAssistantStreamId)
       if (!stream || stream.projectId !== args.projectId) throw new Error('assistant_answer_not_found')
+      scopedGroupId = stream.groupId
+      channelThreadId = stream.channelThreadId
       await authorizeScopedRequest(ctx, { projectId: args.projectId, groupId: stream.groupId, claimedUserId: args.reporterId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'readChannel')
     }
     if (args.targetTaskId) {
@@ -91,14 +101,22 @@ export const create = mutation({
       )
       if (suggestion.groupId && !access.capabilities.canReadChannel) throw new Error('task_access_changed')
     }
+    if (channelThreadId && !threadsEnabled()) throw new Error('threads_disabled')
 
     const now = Date.now()
     const note = args.note?.trim()
+    const reporterProjectMember = await resolveActorProjectMember(
+      ctx,
+      args.projectId,
+      args.reporterId,
+      baseAccess.companyAccess?.projectMember,
+    )
     const reportId = await ctx.db.insert('contentReports', {
       projectId: args.projectId,
-      groupId: args.groupId,
+      groupId: scopedGroupId,
+      channelThreadId,
       reporterId: args.reporterId,
-      reporterProjectMemberId: baseAccess.companyAccess?.projectMember._id,
+      reporterProjectMemberId: reporterProjectMember._id,
       actingCompanyId: baseAccess.companyAccess?.company._id,
       targetType: args.targetType,
       targetMessageId: args.targetMessageId,
@@ -116,9 +134,10 @@ export const create = mutation({
 
     await appendAuditEvent(ctx, {
       projectId: args.projectId,
-      groupId: args.groupId,
+      groupId: scopedGroupId,
+      channelThreadId,
       actorId: args.reporterId,
-      actorProjectMemberId: baseAccess.companyAccess?.projectMember._id,
+      actorProjectMemberId: reporterProjectMember._id,
       actingCompanyId: baseAccess.companyAccess?.company._id,
       entityType: 'contentReport',
       entityId: reportId,
@@ -126,6 +145,7 @@ export const create = mutation({
       after: {
         reason: args.reason,
         targetType: args.targetType,
+        channelThreadId,
       },
     })
 

@@ -8,15 +8,19 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { useReleaseConfig } from "#/lib/release-config";
 import { ChannelTaskPanel, CreateTaskFromMessage, MessageInlineTasks } from "#/features/tasks/ConversationTaskActions";
+import { ChannelThreadBrowser } from "#/features/threads/ChannelThreadBrowser";
+import { threadHref } from "#/features/threads/thread-navigation";
 
 type Props = {
   actingCompanyId: Id<"companies">;
+  initialGroupId?: Id<"groups">;
   projectId: Id<"projects">;
   projectMemberId: Id<"projectMembers">;
 };
 
 export function CompanyProjectPage({
   actingCompanyId,
+  initialGroupId,
   projectId,
   projectMemberId,
 }: Props) {
@@ -72,7 +76,7 @@ export function CompanyProjectPage({
       : "skip",
   );
   const [activeChannelId, setActiveChannelId] = useState<Id<"groups"> | null>(
-    null,
+    initialGroupId ?? null,
   );
   const [composer, setComposer] = useState("");
   const [channelName, setChannelName] = useState("");
@@ -89,6 +93,21 @@ export function CompanyProjectPage({
           userId: currentUser._id,
         }
       : "skip",
+  );
+  const threadUnread = useQuery(
+    api.channelThreads.listGroupUnread,
+    releaseConfig.threads && currentUser && canReadChannels
+      ? {
+          actingCompanyId,
+          projectId,
+          projectMemberId,
+          userId: currentUser._id,
+        }
+      : "skip",
+  );
+  const threadUnreadByChannel = useMemo(
+    () => new Map((threadUnread ?? []).map((entry) => [entry.groupId, entry.unreadCount])),
+    [threadUnread],
   );
   const createChannel = useMutation(api.channels.create);
   const addProjectMember = useMutation(api.sharedProjects.addMember);
@@ -130,6 +149,14 @@ export function CompanyProjectPage({
         : null,
     );
   }, [activeChannelId, channels]);
+  useEffect(() => {
+    if (!messages || typeof window === "undefined" || !window.location.hash.startsWith("#message-")) return;
+    requestAnimationFrame(() => {
+      const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+      target?.scrollIntoView({ block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+  }, [messages]);
 
   const channelItems = useMemo(
     () =>
@@ -266,6 +293,9 @@ export function CompanyProjectPage({
             >
               # {channel.name}
               {channel.status === "archived" ? " · archived" : ""}
+              {threadUnreadByChannel.get(channel._id)
+                ? ` · ${threadUnreadByChannel.get(channel._id)} unread ${threadUnreadByChannel.get(channel._id) === 1 ? "thread" : "threads"}`
+                : ""}
             </button>
           ))}
         </nav>
@@ -314,6 +344,16 @@ export function CompanyProjectPage({
           </p>
         ) : null}
         {activeChannel && releaseConfig.tasks ? <ChannelTaskPanel group={activeChannel} identity={{ actingCompanyId, projectMemberId }} /> : null}
+        {releaseConfig.threads && activeChannelId && currentUser ? (
+          <ChannelThreadBrowser
+            context={{ actingCompanyId, projectMemberId }}
+            groupId={activeChannelId}
+            projectId={projectId}
+            readOnly={readOnly}
+            timelineMessages={messages ?? []}
+            userId={currentUser._id}
+          />
+        ) : null}
         <div className="company-message-list" role="log">
           {messages === undefined && activeChannelId ? (
             <p>Loading messages…</p>
@@ -324,7 +364,7 @@ export function CompanyProjectPage({
               ?.slice()
               .reverse()
               .map((detail) => (
-                <article key={detail.message._id}>
+                <article id={`message-${detail.message._id}`} key={detail.message._id} tabIndex={-1}>
                   <div>
                     <strong>
                       {detail.author?.displayName ?? "Unknown member"}
@@ -339,16 +379,26 @@ export function CompanyProjectPage({
                     </time>
                   </div>
                   <p>{detail.message.body || "Attachment message"}</p>
-                  {!readOnly ? (
+                  {releaseConfig.tasks && !readOnly ? (
                     <CreateTaskFromMessage
                       identity={{ actingCompanyId, projectMemberId }}
                       message={detail.message}
                     />
                   ) : null}
-                  <MessageInlineTasks
-                    identity={{ actingCompanyId, projectMemberId }}
-                    message={detail.message}
-                  />
+                  {releaseConfig.tasks ? (
+                    <MessageInlineTasks
+                      identity={{ actingCompanyId, projectMemberId }}
+                      message={detail.message}
+                    />
+                  ) : null}
+                  {releaseConfig.threads && detail.channelThread ? (
+                    <a href={threadHref(projectId, activeChannelId!, detail.channelThread.threadId, {
+                      actingCompanyId,
+                      projectMemberId,
+                    })}>
+                      {detail.channelThread.name} · {detail.channelThread.replyCount} replies
+                    </a>
+                  ) : null}
                 </article>
               ))
           )}

@@ -6,8 +6,9 @@ import { FolderKanban, ListTodo, LoaderCircle, MessagesSquare, Paperclip, Search
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
+import { useReleaseConfig } from '#/lib/release-config'
 
-export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups' | 'tasks'
+export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups' | 'tasks' | 'threads'
 
 export type ProjectSearchResult = {
   attachmentId?: Id<'attachments'>
@@ -16,9 +17,11 @@ export type ProjectSearchResult = {
   groupId?: Id<'groups'>
   groupName: string
   id: string
-  kind: 'message' | 'file' | 'group' | 'task'
+  kind: 'message' | 'file' | 'group' | 'task' | 'thread'
   messageId?: Id<'messages'>
   taskKey?: string
+  threadId?: Id<'channelThreads'>
+  threadName?: string
   preview: string
   subtitle: string
   title: string
@@ -49,6 +52,7 @@ export function ProjectSearchDialog({
   sections: Array<{ key: string; label: string; results: ProjectSearchResult[] }>
   total: number
 }) {
+  const releaseConfig = useReleaseConfig()
   const resultButtonsRef = useRef<Array<HTMLButtonElement | null>>([])
   const flatResults = useMemo(
     () => sections.flatMap((section) => section.results),
@@ -110,7 +114,8 @@ export function ProjectSearchDialog({
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
     { Icon: Paperclip, label: 'Files', value: 'files' },
     { Icon: FolderKanban, label: 'Groups', value: 'groups' },
-    { Icon: ListTodo, label: 'Tasks', value: 'tasks' },
+    ...(releaseConfig.tasks ? [{ Icon: ListTodo, label: 'Tasks', value: 'tasks' as const }] : []),
+    ...(releaseConfig.threads ? [{ Icon: MessagesSquare, label: 'Threads', value: 'threads' as const }] : []),
   ]
   const hasQuery = query.trim().length >= 2
   let resultIndex = -1
@@ -139,7 +144,13 @@ export function ProjectSearchDialog({
             autoFocus
             className="track-project-search-input"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
-            placeholder="Search messages, files, groups, and tasks..."
+            placeholder={releaseConfig.tasks && releaseConfig.threads
+              ? 'Search messages, files, threads, groups, and tasks...'
+              : releaseConfig.tasks
+                ? 'Search messages, files, groups, and tasks...'
+                : releaseConfig.threads
+                  ? 'Search messages, files, groups, and threads...'
+                  : 'Search messages, files, and groups...'}
             value={query}
           />
           <span>{total} results</span>

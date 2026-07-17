@@ -47,6 +47,7 @@ export const taskAutomationTables = {
     suggestionId: v.id('taskSuggestions'),
     type: taskReferenceType,
     groupId: v.optional(v.id('groups')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     messageId: v.optional(v.id('messages')),
     attachmentId: v.optional(v.id('attachments')),
     memoryImportId: v.optional(v.id('memoryImports')),

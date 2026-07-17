@@ -178,6 +178,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         currentUserDesignation={state.currentUserDesignation}
         currentUserEmail={state.currentUserEmail}
         currentUserName={state.currentUserName}
+        currentUserId={auth.trackUserId}
         logoutConfirmOpen={state.logoutConfirmOpen}
         mobileNavOpen={state.mobileNavOpen}
         navCollapsed={state.navCollapsed}
@@ -247,6 +248,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           <GroupChatPage
             activeGroup={activeGroup}
             activeGroupId={state.activeGroupId}
+            activeProjectId={state.activeProjectId}
             activeTypingIndicators={conversation.activeTypingIndicators}
             busyAction={state.busyAction}
             chatSearchMatchKeys={presentation.chatSearchMatchKeys}
@@ -267,6 +269,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             messageAuthorAvatarUrlById={presentation.messageAuthorAvatarUrlById}
             messageCitations={presentation.messageCitations}
             messagesLoaded={messages !== undefined}
+            currentUserId={auth.trackUserId}
             onComposerBlur={threadInteractions.handleComposerBlur}
             onComposerChange={update.onComposerChange}
             onComposerFocus={threadInteractions.handleComposerFocus}

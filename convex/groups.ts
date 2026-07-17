@@ -140,6 +140,7 @@ export const remove = mutation({
       assistantStreams,
       groupNotificationSettings,
       invitations,
+      channelThreads,
     ] = await Promise.all([
       ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('messages').withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect(),
@@ -152,6 +153,21 @@ export const remove = mutation({
           ctx.db.query('invitations').withIndex('by_project_status', (q) => q.eq('projectId', args.projectId).eq('status', status)).collect(),
         ),
       ).then((rows) => rows.flat()),
+      Promise.all(
+        (['active', 'archived'] as const).map((status) =>
+          ctx.db
+            .query('channelThreads')
+            .withIndex('by_group_status_updated_at', (q) =>
+              q.eq('groupId', args.groupId).eq('status', status),
+            )
+            .collect(),
+        ),
+      ).then((rows) => rows.flat()),
+    ])
+    const channelThreadIds = new Set(channelThreads.map((thread) => String(thread._id)))
+    const [threadFollowers, threadReadStates] = await Promise.all([
+      ctx.db.query('channelThreadFollowers').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('channelThreadReadStates').withIndex('by_group_project_member', (q) => q.eq('groupId', args.groupId)).collect(),
     ])
 
     await appendAuditEvent(ctx, {
@@ -176,6 +192,13 @@ export const remove = mutation({
       if (row.groupId === args.groupId) await ctx.db.delete(row._id)
     }
     for (const row of assistantStreams) await ctx.db.delete(row._id)
+    for (const row of threadReadStates) {
+      if (channelThreadIds.has(String(row.channelThreadId))) await ctx.db.delete(row._id)
+    }
+    for (const row of threadFollowers) {
+      if (channelThreadIds.has(String(row.channelThreadId))) await ctx.db.delete(row._id)
+    }
+    for (const row of channelThreads) await ctx.db.delete(row._id)
     for (const row of typingIndicators) await ctx.db.delete(row._id)
     for (const row of attachments) await ctx.db.delete(row._id)
     for (const row of messages) await ctx.db.delete(row._id)

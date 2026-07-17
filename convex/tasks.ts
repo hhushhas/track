@@ -14,6 +14,7 @@ import type { MutationCtx } from './_generated/server'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
+import { threadsEnabled } from './lib/channelThreadPolicy'
 import { createTaskNotification, notifyTaskFollowers } from './lib/taskNotifications'
 import { invalidateTaskEvidence } from './lib/taskEvidence'
 import {
@@ -91,7 +92,11 @@ async function validateReference(
   if (!source || source.projectId !== projectId || ('groupId' in source && source.groupId !== groupId)) {
     throw new Error('task_reference_invalid')
   }
-  return source
+  const channelThreadId = 'channelThreadId' in source
+    ? source.channelThreadId as Id<'channelThreads'> | undefined
+    : undefined
+  if (channelThreadId && !threadsEnabled()) throw new Error('task_reference_invalid')
+  return { source, channelThreadId }
 }
 
 async function addFollower(
@@ -128,7 +133,7 @@ async function insertReference(
   reference: ReferenceInput,
   index: number,
 ) {
-  const source = await validateReference(ctx, task.projectId, task.groupId, reference)
+  const { source, channelThreadId } = await validateReference(ctx, task.projectId, task.groupId, reference)
   const quote = 'body' in source
     ? source.body.slice(0, 280)
     : 'answer' in source && typeof source.answer === 'string'
@@ -141,6 +146,7 @@ async function insertReference(
     taskId: task._id,
     type: reference.type,
     groupId: task.groupId,
+    channelThreadId,
     messageId: reference.messageId,
     attachmentId: reference.attachmentId,
     assistantStreamId: reference.assistantStreamId,
@@ -324,6 +330,7 @@ export const listForMessage = query({
     const actor = await requireAuthenticatedActor(ctx)
     const message = await ctx.db.get(args.messageId)
     if (!message) return []
+    if (message.channelThreadId && !threadsEnabled()) return []
     const access = await resolveTaskRequestContext(ctx, actor, message.projectId, args, message.groupId)
     if (!access.capabilities.canReadChannel) return []
     if (access.capabilities.accessMode === 'archive' && access.entitlement) {
@@ -356,6 +363,7 @@ export const listForAssistant = query({
     const actor = await requireAuthenticatedActor(ctx)
     const stream = await ctx.db.get(args.assistantStreamId)
     if (!stream || stream.status !== 'completed') return []
+    if (stream.channelThreadId && !threadsEnabled()) return []
     const access = await resolveTaskRequestContext(ctx, actor, stream.projectId, args, stream.groupId)
     if (!access.capabilities.canReadChannel) return []
     if (access.capabilities.accessMode === 'archive' && access.entitlement) {

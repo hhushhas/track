@@ -5,6 +5,7 @@ import { internalMutation, internalQuery, mutation, query } from './_generated/s
 import { appendAuditEvent } from './lib/audit'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { threadsEnabled } from './lib/channelThreadPolicy'
 
 const notificationMode = v.union(
   v.literal('all'),
@@ -283,12 +284,14 @@ export const collectMessageNotificationTargets = internalQuery({
   handler: async (ctx, args) => {
     const message = await ctx.db.get(args.messageId)
     if (!message) return null
-    const [author, group, project] = await Promise.all([
+    if (message.channelThreadId && !threadsEnabled()) return null
+    const [author, group, project, channelThread] = await Promise.all([
       ctx.db.get(message.authorId),
       ctx.db.get(message.groupId),
       ctx.db.get(message.projectId),
+      message.channelThreadId ? ctx.db.get(message.channelThreadId) : null,
     ])
-    if (!group || !project) return null
+    if (!group || !project || (message.channelThreadId && !channelThread)) return null
 
     const groupMembers = await ctx.db
       .query('groupMembers')
@@ -301,10 +304,37 @@ export const collectMessageNotificationTargets = internalQuery({
         if (membership.userId === message.authorId) return []
 
         let actingCompanyId: Id<'companies'> | undefined
-        let projectMemberId: Id<'projectMembers'> | undefined
+        let projectMemberId = membership.projectMemberId
+        if (!projectMemberId) {
+          projectMemberId = (await ctx.db
+            .query('projectMembers')
+            .withIndex('by_project_user', (q) =>
+              q.eq('projectId', message.projectId).eq('userId', membership.userId),
+            )
+            .unique())?._id
+        }
+        const projectMember = projectMemberId ? await ctx.db.get(projectMemberId) : null
+        const mentioned = message.mentionedProjectMemberIds
+          ? Boolean(
+              membership.projectMemberId &&
+              message.mentionedProjectMemberIds.includes(membership.projectMemberId) &&
+              message.mentions.includes(membership.userId),
+            )
+          : project.accessProfile !== 'company' && message.mentions.some((userId) => userId === membership.userId)
+        if (message.channelThreadId) {
+          if (!projectMemberId) return []
+          const follower = await ctx.db
+            .query('channelThreadFollowers')
+            .withIndex('by_thread_project_member', (q) =>
+              q
+                .eq('channelThreadId', message.channelThreadId!)
+                .eq('projectMemberId', projectMemberId!),
+            )
+            .unique()
+          if (follower?.preference !== 'following' && !mentioned) return []
+        }
         if (project.accessProfile === 'company') {
           if (!membership.projectMemberId) return []
-          const projectMember = await ctx.db.get(membership.projectMemberId)
           if (!projectMember || projectMember.status !== 'active' || !projectMember.companyId || !projectMember.projectCompanyId) return []
           const [company, companyMember, projectCompany] = await Promise.all([
             ctx.db.get(projectMember.companyId),
@@ -339,7 +369,7 @@ export const collectMessageNotificationTargets = internalQuery({
         const shouldNotify = shouldNotifyForMessage({
           globalMode: globalSettings?.globalMode ?? 'mentions',
           groupMode: groupSettings?.mode ?? 'inherit',
-          mentioned: message.mentions.some((userId) => userId === membership.userId),
+          mentioned,
         })
         if (!shouldNotify) return []
 
@@ -357,13 +387,20 @@ export const collectMessageNotificationTargets = internalQuery({
 
     return {
       body: message.body || message.notificationPreview || 'Sent an attachment.',
+      channelThreadId: message.channelThreadId,
+      channelThreadName: channelThread?.name,
       groupId: message.groupId,
       groupName: group.name,
       projectId: message.projectId,
       projectName: project.name,
       senderName: author?.displayName ?? 'Track',
-      targets: Array.from(new Map(targets.flat().map((target) => [target.id, target])).values()),
-      url: `/workspace/projects/${message.projectId}/groups/${message.groupId}`,
+      targets: Array.from(new Map(targets.flat().map((target) => [
+        `${target.id}:${target.projectMemberId ?? 'legacy'}`,
+        target,
+      ])).values()),
+      url: message.channelThreadId
+        ? `/workspace/projects/${message.projectId}/groups/${message.groupId}/threads/${message.channelThreadId}#message-${message._id}`
+        : `/workspace/projects/${message.projectId}/groups/${message.groupId}`,
     }
   },
 })

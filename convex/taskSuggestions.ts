@@ -13,6 +13,7 @@ import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
+import { threadsEnabled } from './lib/channelThreadPolicy'
 import { appendTaskActivity, createUniqueTaskPublicKey, getDefaultWorkflowState, rankForIndex } from './lib/taskData'
 import { createTaskNotification } from './lib/taskNotifications'
 import {
@@ -51,6 +52,16 @@ function terminalResult(suggestion: Doc<'taskSuggestions'>) {
   }
 }
 
+async function suggestionReferenceVisible(
+  ctx: Parameters<typeof resolveTaskRequestContext>[0],
+  reference: Doc<'taskSuggestionReferences'>,
+) {
+  if (reference.channelThreadId) return threadsEnabled()
+  if (!reference.messageId) return true
+  const message = await ctx.db.get(reference.messageId)
+  return !message?.channelThreadId || threadsEnabled()
+}
+
 export const createExplicit = internalMutation({
   args: {
     projectId: v.id('projects'), groupId: v.id('groups'), requesterId: v.id('users'),
@@ -59,7 +70,8 @@ export const createExplicit = internalMutation({
   },
   handler: async (ctx, args) => {
     const promptMessage = await ctx.db.get(args.promptMessageId)
-    if (!promptMessage || promptMessage.projectId !== args.projectId || promptMessage.groupId !== args.groupId ||
+    if (!promptMessage || (promptMessage.channelThreadId && !threadsEnabled()) ||
+      promptMessage.projectId !== args.projectId || promptMessage.groupId !== args.groupId ||
       promptMessage.authorId !== args.requesterId) throw new Error('task_access_changed')
     const projectMember = args.projectMemberId
       ? await ctx.db.get(args.projectMemberId)
@@ -77,7 +89,8 @@ export const createExplicit = internalMutation({
     const requested = args.question.replace(/@track/gi, '').replace(/\b(create|make|add)\s+(a\s+)?task\b/gi, '').replace(/\b(for|from)\s+this\b/gi, '').trim()
     const messages = await ctx.db.query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).order('desc').take(20)
-    const prior = messages.find((message) => message._id !== promptMessage._id && message.body.trim() && !/@track/i.test(message.body))
+    const prior = messages.find((message) => (!message.channelThreadId || threadsEnabled()) &&
+      message._id !== promptMessage._id && message.body.trim() && !/@track/i.test(message.body))
     const source = requested.length >= 8 ? promptMessage : prior
     const title = normalizeTaskText(requested.length >= 8 ? requested : prior?.body ?? '').slice(0, 180)
     if (!isTaskTitle(title) || !source) return { status: 'clarify' as const }
@@ -101,7 +114,8 @@ export const createExplicit = internalMutation({
       if (!message) continue
       await ctx.db.insert('taskSuggestionReferences', {
         projectId: args.projectId, suggestionId, type: 'message', groupId: args.groupId,
-        messageId, quote: message.body.slice(0, 280), availability: 'available', isPrimary: index === 0,
+        channelThreadId: message.channelThreadId, messageId,
+        quote: message.body.slice(0, 280), availability: 'available', isPrimary: index === 0,
         rank: String(index + 1).padStart(8, '0'), createdAt: now, updatedAt: now,
       })
     }
@@ -130,6 +144,11 @@ export const list = query({
         if (hidden) continue
         const references = await ctx.db.query('taskSuggestionReferences')
           .withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestion._id)).collect()
+        const visibleReferences = []
+        for (const reference of references) {
+          if (await suggestionReferenceVisible(ctx, reference)) visibleReferences.push(reference)
+        }
+        if (visibleReferences.length !== references.length) continue
         const possibleDuplicateTask = suggestion.possibleDuplicateTaskId
           ? await ctx.db.get(suggestion.possibleDuplicateTaskId)
           : null
@@ -149,12 +168,12 @@ export const list = query({
             (possibleDuplicateTask.groupId === undefined || possibleDuplicateTask.groupId === suggestion.groupId)
             ? { _id: possibleDuplicateTask._id, publicKey: possibleDuplicateTask.publicKey, title: possibleDuplicateTask.title }
             : null,
-          references: references.map((reference) => ({
+          references: visibleReferences.map((reference) => ({
             ...reference,
             quote: reference.availability === 'available' ? reference.quote : undefined,
           })),
           canDismiss: access.capabilities.taskCollaboration !== 'scoped' || await Promise.all(
-            references.flatMap((reference) => reference.messageId ? [ctx.db.get(reference.messageId)] : []),
+            visibleReferences.flatMap((reference) => reference.messageId ? [ctx.db.get(reference.messageId)] : []),
           ).then((messages) => messages.some((message) =>
             message?.authorProjectMemberId === access.projectMember._id || message?.authorId === actor.userId,
           )),
@@ -289,9 +308,13 @@ export const accept = mutation({
     if (!task) throw new Error('task_create_failed')
     const suggestionReferences = await ctx.db.query('taskSuggestionReferences')
       .withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestion._id)).collect()
+    if ((await Promise.all(suggestionReferences.map((reference) =>
+      suggestionReferenceVisible(ctx, reference),
+    ))).some((visible) => !visible)) throw new Error('task_access_changed')
     for (const reference of suggestionReferences) await ctx.db.insert('taskReferences', {
       projectId: task.projectId, taskId: task._id, type: reference.type, groupId: reference.groupId,
-      messageId: reference.messageId, attachmentId: reference.attachmentId,
+      channelThreadId: reference.channelThreadId, messageId: reference.messageId,
+      attachmentId: reference.attachmentId,
       memoryImportId: reference.memoryImportId, sourceIdentifier: reference.sourceIdentifier,
       quote: reference.quote, availability: reference.availability, isPrimary: reference.isPrimary,
       actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,
@@ -363,6 +386,9 @@ export const linkToExisting = mutation({
       taskPolicy.task.groupId !== suggestion.groupId) throw new Error('task_access_changed')
     const references = await ctx.db.query('taskSuggestionReferences')
       .withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestion._id)).collect()
+    if ((await Promise.all(references.map((reference) =>
+      suggestionReferenceVisible(ctx, reference),
+    ))).some((visible) => !visible)) throw new Error('task_access_changed')
     const existing = await ctx.db.query('taskReferences')
       .withIndex('by_task_rank', (q) => q.eq('taskId', taskPolicy.task._id)).collect()
     const now = Date.now()
@@ -370,7 +396,8 @@ export const linkToExisting = mutation({
       if (existing.some((candidate) => candidate.messageId === reference.messageId && candidate.type === reference.type)) continue
       await ctx.db.insert('taskReferences', {
         projectId: taskPolicy.task.projectId, taskId: taskPolicy.task._id, type: reference.type,
-        groupId: reference.groupId, messageId: reference.messageId, attachmentId: reference.attachmentId,
+        groupId: reference.groupId, channelThreadId: reference.channelThreadId,
+        messageId: reference.messageId, attachmentId: reference.attachmentId,
         memoryImportId: reference.memoryImportId, sourceIdentifier: reference.sourceIdentifier,
         quote: reference.quote, availability: reference.availability, isPrimary: false,
         actorProjectMemberId: suggestionPolicy.projectMember._id,

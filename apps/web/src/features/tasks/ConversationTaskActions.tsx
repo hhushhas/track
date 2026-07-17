@@ -106,10 +106,10 @@ export function MessageInlineTasks({ message, identity = {} }: { message: Doc<'m
   return <InlineCards cards={cards} identity={identity} projectId={message.projectId} />
 }
 
-export function AssistantInlineTasks({ stream }: { stream: Doc<'assistantStreams'> }) {
+export function AssistantInlineTasks({ stream, identity = {} }: { stream: Doc<'assistantStreams'>; identity?: TaskIdentity }) {
   const release = useReleaseConfig()
-  const cards = useQuery(api.tasks.listForAssistant, release.tasks ? { assistantStreamId: stream._id } : 'skip') as Array<TaskCard> | undefined
-  return <InlineCards cards={cards} identity={{}} projectId={stream.projectId} />
+  const cards = useQuery(api.tasks.listForAssistant, release.tasks ? { assistantStreamId: stream._id, ...identity } : 'skip') as Array<TaskCard> | undefined
+  return <InlineCards cards={cards} identity={identity} projectId={stream.projectId} />
 }
 
 function InlineCards({ cards, identity, projectId }: { cards: Array<TaskCard> | undefined; identity: TaskIdentity; projectId: Id<'projects'> }) {

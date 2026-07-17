@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router'
+import { useQuery } from 'convex/react'
 import { Building2, ChevronDown, FolderKanban, ListTodo, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import { api } from '../../../../../../convex/_generated/api'
 import ThemeToggle from '#/components/ThemeToggle'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
@@ -34,6 +36,7 @@ type WorkspaceSidebarProps = {
   currentUserDesignation: string
   currentUserEmail: string
   currentUserName: string
+  currentUserId: Id<'users'>
   logoutConfirmOpen: boolean
   mobileNavOpen: boolean
   navCollapsed: boolean
@@ -65,6 +68,7 @@ export function WorkspaceSidebar({
   currentUserDesignation,
   currentUserEmail,
   currentUserName,
+  currentUserId,
   logoutConfirmOpen,
   mobileNavOpen,
   navCollapsed,
@@ -86,6 +90,15 @@ export function WorkspaceSidebar({
   visibleGroups,
 }: WorkspaceSidebarProps) {
   const releaseConfig = useReleaseConfig()
+  const threadUnread = useQuery(
+    api.channelThreads.listGroupUnread,
+    releaseConfig.threads && activeProjectId
+      ? { projectId: activeProjectId, userId: currentUserId }
+      : 'skip',
+  )
+  const threadUnreadByGroup = new Map(
+    (threadUnread ?? []).map((item) => [item.groupId, item.unreadCount]),
+  )
   return (
     <>
       {mobileNavOpen ? (
@@ -204,6 +217,9 @@ export function WorkspaceSidebar({
                       </span>
                       <span className="track-nav-copy">
                         <span className="track-nav-title">{group.name}</span>
+                        {threadUnreadByGroup.get(group._id) ? <span className="track-nav-meta">
+                          {threadUnreadByGroup.get(group._id)} unread {threadUnreadByGroup.get(group._id) === 1 ? 'thread' : 'threads'}
+                        </span> : null}
                       </span>
                     </Button>
                   )

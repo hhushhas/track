@@ -19,8 +19,10 @@ export function channelHref(
   projectId: Id<'projects'>,
   groupId: Id<'groups'>,
   context: RepresentedProjectContext | null,
+  messageId?: Id<'messages'>,
 ) {
-  return `/conversation?groupId=${encodeURIComponent(groupId)}&projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}`;
+  const message = messageId ? `&messageId=${encodeURIComponent(messageId)}` : '';
+  return `/conversation?groupId=${encodeURIComponent(groupId)}&projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}${message}`;
 }
 
 export function navigationUnavailableCopy(hasCompanyContext: boolean) {

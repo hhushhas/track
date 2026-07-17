@@ -1,4 +1,5 @@
 import { convexTest } from 'convex-test'
+import { register as registerRateLimiter } from '@convex-dev/rate-limiter/test'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
@@ -15,6 +16,7 @@ type TestBackend = ReturnType<typeof convexTest>
 beforeEach(() => {
   process.env.TRACK_COMPANY_MODEL_ENABLED = 'true'
   process.env.TRACK_TASKS_ENABLED = 'true'
+  process.env.TRACK_THREADS_ENABLED = 'true'
 })
 
 describe('Company model authorization and lifecycle', () => {
@@ -438,14 +440,39 @@ describe('Company model authorization and lifecycle', () => {
 
   it('upgrades a legacy Project only from explicit mappings and preserves exact Group membership', async () => {
     const t = convexTest(schema, modules)
+    registerRateLimiter(t)
     const owner = await seedUser(t, 'upgrade-owner')
     const member = await seedUser(t, 'upgrade-member')
     const companyId = await createCompany(t, owner, 'Upgrade Company', 'upgrade-company')
     await addCompanyMember(t, companyId, member)
     const { groupId, projectId } = await seedLegacyProject(t, owner, member)
     const memberships = await t.run(async (ctx) => await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect())
+    const ownerMembership = memberships.find((membership) => membership.userId === owner)!
     const before = await t.run(async (ctx) => (await ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', groupId)).collect()).map((row) => row.userId).sort())
     const actor = asUser(t, owner)
+    const threadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'upgrade-thread',
+      name: 'Migration continuity',
+      projectId,
+    })
+    const threadMessageId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Preserve this focused migration evidence.',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'upgrade-thread-message',
+      projectId,
+    })
+    const task = await actor.mutation(api.tasks.create, {
+      projectId,
+      groupId,
+      title: 'Preserve migrated thread work',
+      priority: 'none',
+      references: [{ type: 'message', messageId: threadMessageId, isPrimary: true }],
+      idempotencyKey: 'upgrade-thread-task',
+    })
     const upgradeId = await actor.mutation(api.companyMigration.initiate, {
       idempotencyKey: 'upgrade-1',
       initiatingCompanyId: companyId,
@@ -466,6 +493,21 @@ describe('Company model authorization and lifecycle', () => {
     expect(after.project).toMatchObject({ accessProfile: 'company', origin: 'single_company', status: 'active' })
     expect(after.groupMembers.map((row) => row.userId).sort()).toEqual(before)
     expect(after.groupMembers.every((row) => row.projectMemberId && row.status === 'active')).toBe(true)
+    expect(await actor.query(api.channelThreads.get, {
+      threadId,
+      userId: owner,
+      actingCompanyId: companyId,
+      projectMemberId: ownerMembership._id,
+    })).toMatchObject({ thread: { _id: threadId } })
+    expect(await actor.query(api.tasks.getByKey, {
+      projectId,
+      publicKey: task.publicKey,
+      actingCompanyId: companyId,
+      projectMemberId: ownerMembership._id,
+    })).toMatchObject({
+      task: { _id: task.taskId },
+      references: [{ messageId: threadMessageId, channelThreadId: threadId }],
+    })
   })
 
   it('rejects guided migration when Channel membership changes after review', async () => {
@@ -570,6 +612,39 @@ describe('Company model authorization and lifecycle', () => {
       .withIndex('by_project', (q) => q.eq('projectId', projectId))
       .collect())
     const aInitialMembership = initialMemberships.find((membership) => membership.companyId === aCompany)!
+    const groupId = await t.run(async (ctx) => (await ctx.db
+      .query('groups')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .first())!._id)
+    const exitThreadId = await asUser(t, a).mutation(api.channelThreads.create, {
+      creatorId: a,
+      groupId,
+      idempotencyKey: 'exit-thread',
+      name: 'Exit snapshot thread',
+      projectId,
+      actingCompanyId: aCompany,
+      projectMemberId: aInitialMembership._id,
+    })
+    const exitMessageId = await asUser(t, a).mutation(api.messages.send, {
+      authorId: a,
+      body: 'Snapshot this focused task source.',
+      channelThreadId: exitThreadId,
+      groupId,
+      idempotencyKey: 'exit-thread-message',
+      projectId,
+      actingCompanyId: aCompany,
+      projectMemberId: aInitialMembership._id,
+    })
+    await asUser(t, a).mutation(api.tasks.create, {
+      projectId,
+      groupId,
+      title: 'Archive focused work',
+      priority: 'none',
+      references: [{ type: 'message', messageId: exitMessageId, isPrimary: true }],
+      idempotencyKey: 'exit-thread-task',
+      actingCompanyId: aCompany,
+      projectMemberId: aInitialMembership._id,
+    })
     const archiveRequestId = await asUser(t, a).mutation(api.projectArchives.request, {
       actingCompanyId: aCompany,
       idempotencyKey: 'archive-before-exit',
@@ -593,12 +668,23 @@ describe('Company model authorization and lifecycle', () => {
       const project = await ctx.db.get(projectId)
       const aMember = (await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()).find((member) => member.companyId === aCompany)
       const entitlement = aMember ? await ctx.db.query('projectArchiveEntitlements').withIndex('by_member', (q) => q.eq('projectMemberId', aMember._id)).unique() : null
-      return { aMember, entitlement, project }
+      const taskSnapshots = entitlement
+        ? await ctx.db.query('taskArchiveSnapshots')
+            .withIndex('by_entitlement_table', (q) =>
+              q.eq('entitlementId', entitlement._id).eq('sourceTable', 'tasks'),
+            )
+            .collect()
+        : []
+      return { aMember, entitlement, project, taskSnapshots }
     })
     expect(firstExit.project?.status).toBe('active')
     expect(firstExit.aMember?.status).toBe('archived')
     expect(firstExit.entitlement?.channelIds).toHaveLength(1)
     expect(firstExit.entitlement?.memberSnapshots).toHaveLength(2)
+    expect(firstExit.entitlement?.threadSnapshots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ _id: exitThreadId, replyCount: 1 }),
+    ]))
+    expect(firstExit.taskSnapshots).toHaveLength(1)
 
     const replacementOwner = await seedUser(t, 'company-a-replacement-owner')
     await addCompanyMember(t, aCompany, replacementOwner, 'owner')
@@ -706,6 +792,7 @@ async function seedCompanyProject(t: TestBackend, userId: Id<'users'>, companyId
 
 async function seedSharedProject() {
   const t = convexTest(schema, modules)
+  registerRateLimiter(t)
   const a = await seedUser(t, 'company-a-owner')
   const b = await seedUser(t, 'company-b-owner')
   const aCompany = await createCompany(t, a, 'Company A', 'company-a')

@@ -5,6 +5,7 @@ import type { Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '../thread-items'
 import type { ChatSearchMatch } from '../search/chat-search'
 import type { ProjectSearchResult } from '../search/ProjectSearchDialog'
+import { threadHref } from '#/features/threads/thread-navigation'
 
 type ActiveMention = { start: number; end: number } | null
 
@@ -274,6 +275,16 @@ export function useWorkspaceThreadInteractions({
     setMobileNavOpen(false)
     if (result.kind === 'task' && result.taskKey && activeProjectId) {
       window.location.assign(`/workspace/projects/${activeProjectId}/tasks?view=all&task=${encodeURIComponent(result.taskKey)}`)
+      return
+    }
+    if (result.threadId && result.groupId && activeProjectId) {
+      window.location.assign(threadHref(
+        activeProjectId,
+        result.groupId,
+        result.threadId,
+        undefined,
+        result.messageId,
+      ))
       return
     }
     if (!result.groupId) return

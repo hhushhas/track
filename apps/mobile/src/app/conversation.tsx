@@ -21,6 +21,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
+import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
 
@@ -39,9 +40,9 @@ function dateSepLabel(ts: number) {
 export default function ConversationScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
-  const { groupId, projectId, companyId, membershipId, archive } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
+  const releaseConfig = useReleaseConfig();
+  const { groupId, projectId, companyId, membershipId, archive, messageId } = useLocalSearchParams<{ groupId: string; projectId: string; companyId?: string; membershipId?: string; archive?: string; messageId?: string }>();
 
   const sendMessage = useMutation(api.messages.send);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
@@ -58,6 +59,7 @@ export default function ConversationScreen() {
   const pid = projectId as Id<'projects'> | undefined;
   const cid = companyId as Id<'companies'> | undefined;
   const pmid = membershipId as Id<'projectMembers'> | undefined;
+  const targetMessageId = messageId as Id<'messages'> | undefined;
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const readOnly = archive === '1' || navigation?.archived === true;
   const taskIdentity: MobileTaskIdentity | null = cid && pmid ? {
@@ -129,10 +131,27 @@ export default function ConversationScreen() {
 
     return result;
   }, [assistantStreams, messages]);
+  useEffect(() => {
+    if (!targetMessageId) return;
+    const index = threadItems.findIndex((item) => item.kind === 'message' && item.item.message._id === targetMessageId);
+    if (index < 0) return;
+    requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.5 }));
+  }, [targetMessageId, threadItems]);
 
   const messageActions = useMemo(() => {
     if (!actionTarget || actionTarget.kind === 'date-sep') return [];
     return [
+      ...(releaseConfig.threads && actionTarget.kind === 'message' && pid && gid ? [{
+        label: actionTarget.item.channelThread ? 'Open thread' : 'Start thread',
+        icon: 'forum-outline' as const,
+        onPress: () => {
+          if (actionTarget.item.channelThread) {
+            router.push(threadConversationHref(pid, gid, actionTarget.item.channelThread.threadId, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
+            return;
+          }
+          router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null, actionTarget.item.message._id) as never);
+        },
+      }] : []),
       ...(!readOnly ? [{
         label: 'Reply',
         icon: 'arrow-up' as const,
@@ -140,7 +159,7 @@ export default function ConversationScreen() {
           if (actionTarget.kind === 'message') setReplyTo(actionTarget.item);
         },
       }] : []),
-      ...(!readOnly && release.tasks ? [{
+      ...(!readOnly && releaseConfig.tasks ? [{
         label: 'Create task',
         icon: 'plus' as const,
         onPress: () => {
@@ -168,7 +187,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget, cid, createTask, gid, pid, pmid, readOnly, release.tasks]);
+  }, [actionTarget, cid, createTask, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {
@@ -312,7 +331,7 @@ export default function ConversationScreen() {
             if (item.kind === 'message') setReplyTo(item.item);
           }}
         />
-        {release.tasks && pid ? <TaskInlineCards
+        {releaseConfig.tasks && pid ? <TaskInlineCards
           assistantStreamId={item.kind === 'assistant' ? item.stream._id : undefined}
           identity={taskIdentity}
           messageId={item.kind === 'message' ? item.item.message._id : undefined}
@@ -320,7 +339,7 @@ export default function ConversationScreen() {
         /> : null}
       </View>
     );
-  }, [pid, readOnly, release.tasks, taskIdentity, trackUserId]);
+  }, [pid, readOnly, releaseConfig.tasks, taskIdentity, trackUserId]);
 
   if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
 
@@ -361,6 +380,7 @@ export default function ConversationScreen() {
           contentContainerStyle={styles.thread}
           contentInsetAdjustmentBehavior="automatic"
           data={threadItems}
+          onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           initialNumToRender={24}
           keyExtractor={(item) => item.key}
           maxToRenderPerBatch={16}
@@ -425,6 +445,16 @@ export default function ConversationScreen() {
       </OptionsSheet>
 
       <OptionsSheet onClose={() => setToolsOpen(false)} title="Notifications" visible={toolsOpen}>
+        {releaseConfig.threads && pid && gid ? <SheetSection title="Conversation">
+          <SheetRow
+            icon="forum-outline"
+            label="Threads"
+            onPress={() => {
+              setToolsOpen(false);
+              router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
+            }}
+          />
+        </SheetSection> : null}
         <SheetSection title="Global">
           {(['all', 'mentions', 'none'] as const).map((mode) => (
             <SheetRow

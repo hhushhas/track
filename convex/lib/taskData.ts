@@ -2,6 +2,7 @@ import { isTerminalTaskState } from '@track/shared/tasks'
 
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
+import { threadsEnabled } from './channelThreadPolicy'
 
 type TaskDataCtx = QueryCtx | MutationCtx
 
@@ -86,7 +87,11 @@ export async function taskView(
     const sourceScopeMatches = source && reference.memoryImportId && 'scope' in source
       ? source.scope === 'project' ? reference.groupId === undefined : source.groupId === reference.groupId
       : Boolean(source && (!('groupId' in source) || source.groupId === reference.groupId))
-    const sourceAvailable = Boolean(source && source.projectId === task.projectId && sourceScopeMatches &&
+    const sourceThreadId = reference.channelThreadId ?? (source && 'channelThreadId' in source
+      ? source.channelThreadId
+      : undefined)
+    const sourceAvailable = Boolean(source && (!sourceThreadId || threadsEnabled()) &&
+      source.projectId === task.projectId && sourceScopeMatches &&
       (!('status' in source) || reference.assistantStreamId === undefined || source.status === 'completed'))
     visibleReferences.push({
       ...reference,
@@ -139,7 +144,11 @@ export async function archivedTaskViews(
         .filter((reference) => String(reference.taskId) === String(task._id))
         .map((reference) => ({
           ...reference,
-          quote: reference.availability === 'available' ? reference.quote : undefined,
+          availability: reference.channelThreadId && !threadsEnabled()
+            ? 'unavailable' as const
+            : reference.availability,
+          quote: reference.availability === 'available' &&
+            (!reference.channelThreadId || threadsEnabled()) ? reference.quote : undefined,
         })),
       comments: commentRows.map((comment) => comment.payload as Doc<'taskComments'>)
         .filter((comment) => String(comment.taskId) === String(task._id)),

@@ -4,16 +4,18 @@ Track is a project collaboration workspace with realtime conversation,
 references, and permission-aware AI assistance. Its default-off Company release
 adds peer Relationships, shared Projects, explicit Channels, immutable Company
 exit archives, and guided migration from the legacy Project model across web,
-mobile, shared contracts, and Convex.
+mobile, shared contracts, and Convex. Its independently default-off thread
+release adds named focused Channel conversations, follow and unread state,
+manual lifecycle controls, scoped search, and complete web and mobile flows.
 
 The default-off task release adds scoped Project and Channel boards, configurable
 workflows, task details and lists, conversation evidence, human-reviewed AI
 suggestions, search, notifications, and essential native workflows. It operates
 with legacy Projects and does not require Channel threads or Company collaboration.
 
-The [target product contract](./docs/PRODUCT.md) also defines Discord-style
-threads and dependable mobile push. Those companion capabilities remain
-independently controlled implementation work tracked in [docs/ROADMAP.md](./docs/ROADMAP.md).
+The [target product contract](./docs/PRODUCT.md) also defines dependable mobile
+push. That companion capability remains independently controlled work tracked in
+[docs/ROADMAP.md](./docs/ROADMAP.md).
 
 ## Repository
 
@@ -35,8 +37,8 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
 - [Design](./docs/DESIGN.md): interface, tokens, interaction states, and
   accessibility.
 - [Roadmap](./docs/ROADMAP.md): approved target behavior that has not shipped.
-- [Channel threads specification](./docs/THREADS_SPEC.md): approved independent
-  thread, unread, lifecycle, AI-context, and integration contract.
+- [Channel threads specification](./docs/THREADS_SPEC.md): implemented
+  default-off thread, unread, lifecycle, AI-context, and integration contract.
 - [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): implemented
   default-off task, board, AI, access, and delivery contract.
 - [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
@@ -83,6 +85,12 @@ when Company creation surfaces are disabled.
 Set `TRACK_TASKS_ENABLED=true` to expose task routes and controls and to start
 new-message detection. This flag is independent from Company and thread flags;
 existing conversation remains usable when tasks are disabled.
+
+Set `TRACK_THREADS_ENABLED=true` on the local Convex deployment to expose
+Channel threads. Threads remain fully usable when Company collaboration or task
+management is disabled. The server flag hides thread discovery, routes,
+creation, search, and ordinary delivery when off while retaining lifecycle and
+cleanup enforcement for persisted data.
 
 ## Local mobile setup
 

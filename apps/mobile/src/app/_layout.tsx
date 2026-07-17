@@ -83,6 +83,8 @@ export default function RootLayout() {
                 <Stack.Screen name="conversation" options={{ title: 'Conversation' }} />
                 <Stack.Screen name="tasks" options={{ title: 'Tasks' }} />
                 <Stack.Screen name="task" options={{ title: 'Task' }} />
+                <Stack.Screen name="threads" options={{ title: 'Threads' }} />
+                <Stack.Screen name="thread" options={{ title: 'Thread' }} />
                 </Stack>
               </CompanyProvider>
             </TrackUserProvider>

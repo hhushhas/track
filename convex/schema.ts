@@ -12,7 +12,6 @@ import {
   projectOrigin,
   projectStatus,
 } from './schema/companyValidators'
-import { threadTables } from './schema/threadTables'
 
 const projectRole = v.union(
   v.literal('owner'),
@@ -120,7 +119,6 @@ export default defineSchema({
   ...companyProjectTables,
   ...taskCoreTables,
   ...taskAutomationTables,
-  ...threadTables,
 
   users: defineTable({
     googleSubject: v.string(),
@@ -190,6 +188,7 @@ export default defineSchema({
     status: v.optional(channelStatus),
     revision: v.optional(v.number()),
     archivedAt: v.optional(v.number()),
+    nextChannelSequence: v.optional(v.number()),
     createdBy: v.id('users'),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -250,8 +249,10 @@ export default defineSchema({
     actingCompanyId: v.optional(v.id('companies')),
     channelThreadId: v.optional(v.id('channelThreads')),
     channelSequence: v.optional(v.number()),
+    idempotencyKey: v.optional(v.string()),
     body: v.string(),
     mentions: v.array(v.id('users')),
+    mentionedProjectMemberIds: v.optional(v.array(v.id('projectMembers'))),
     attachmentIds: v.array(v.id('attachments')),
     replyToMessageId: v.optional(v.id('messages')),
     forwardedFrom: v.optional(forwardedMessageSnapshot),
@@ -260,13 +261,82 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_group_created_at', ['groupId', 'createdAt'])
+    .index('by_group_thread_created_at', ['groupId', 'channelThreadId', 'createdAt'])
+    .index('by_thread_created_at', ['channelThreadId', 'createdAt'])
     .index('by_group_channel_sequence', ['groupId', 'channelSequence'])
-    .index('by_thread_channel_sequence', ['channelThreadId', 'channelSequence'])
+    .index('by_author_idempotency', ['authorProjectMemberId', 'idempotencyKey'])
     .index('by_project_created_at', ['projectId', 'createdAt'])
     .searchIndex('search_body_by_project', {
       searchField: 'body',
       filterFields: ['projectId'],
     }),
+
+  channelThreads: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    name: v.string(),
+    sourceMessageId: v.optional(v.id('messages')),
+    creatorUserId: v.id('users'),
+    creatorProjectMemberId: v.id('projectMembers'),
+    actingCompanyId: v.optional(v.id('companies')),
+    status: v.union(v.literal('active'), v.literal('archived')),
+    revision: v.number(),
+    replyCount: v.optional(v.number()),
+    latestReplyAt: v.optional(v.number()),
+    latestChannelSequence: v.optional(v.number()),
+    idempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index('by_project', ['projectId'])
+    .index('by_group_status_updated_at', ['groupId', 'status', 'updatedAt'])
+    .index('by_group_source', ['groupId', 'sourceMessageId'])
+    .index('by_creator_idempotency', ['creatorProjectMemberId', 'idempotencyKey'])
+    .index('by_creator', ['creatorProjectMemberId'])
+    .searchIndex('search_name_by_project', {
+      searchField: 'name',
+      filterFields: ['projectId'],
+    }),
+
+  channelThreadFollowers: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    channelThreadId: v.id('channelThreads'),
+    userId: v.id('users'),
+    projectMemberId: v.id('projectMembers'),
+    actingCompanyId: v.optional(v.id('companies')),
+    reason: v.union(
+      v.literal('created'),
+      v.literal('replied'),
+      v.literal('mentioned'),
+      v.literal('explicit'),
+    ),
+    preference: v.union(v.literal('following'), v.literal('unfollowed')),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_project', ['projectId'])
+    .index('by_group', ['groupId'])
+    .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
+    .index('by_project_member_preference', ['projectMemberId', 'preference'])
+    .index('by_thread_preference', ['channelThreadId', 'preference']),
+
+  channelThreadReadStates: defineTable({
+    projectId: v.id('projects'),
+    groupId: v.id('groups'),
+    channelThreadId: v.id('channelThreads'),
+    userId: v.id('users'),
+    projectMemberId: v.id('projectMembers'),
+    actingCompanyId: v.optional(v.id('companies')),
+    lastReadChannelSequence: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_project', ['projectId'])
+    .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
+    .index('by_project_member_thread', ['projectMemberId', 'channelThreadId'])
+    .index('by_group_project_member', ['groupId', 'projectMemberId']),
 
   groupReadStates: defineTable({
     projectId: v.id('projects'),
@@ -316,6 +386,7 @@ export default defineSchema({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
     messageId: v.id('messages'),
+    channelThreadId: v.optional(v.id('channelThreads')),
     storageId: v.id('_storage'),
     filename: v.string(),
     contentType: v.string(),
@@ -444,10 +515,10 @@ export default defineSchema({
   contentReports: defineTable({
     projectId: v.id('projects'),
     groupId: v.optional(v.id('groups')),
+    channelThreadId: v.optional(v.id('channelThreads')),
     reporterId: v.id('users'),
     reporterProjectMemberId: v.optional(v.id('projectMembers')),
     actingCompanyId: v.optional(v.id('companies')),
-    channelThreadId: v.optional(v.id('channelThreads')),
     targetType: contentReportTargetType,
     targetMessageId: v.optional(v.id('messages')),
     targetAttachmentId: v.optional(v.id('attachments')),
@@ -484,17 +555,20 @@ export default defineSchema({
   assistantStreams: defineTable({
     projectId: v.id('projects'),
     groupId: v.id('groups'),
+    channelThreadId: v.optional(v.id('channelThreads')),
     requesterId: v.id('users'),
     requesterProjectMemberId: v.optional(v.id('projectMembers')),
     actingCompanyId: v.optional(v.id('companies')),
-    channelThreadId: v.optional(v.id('channelThreads')),
     promptMessageId: v.optional(v.id('messages')),
     status: jobStatus,
     answer: v.string(),
     evidence: v.array(evidenceItem),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_group_created_at', ['groupId', 'createdAt']),
+  })
+    .index('by_group_created_at', ['groupId', 'createdAt'])
+    .index('by_group_thread_created_at', ['groupId', 'channelThreadId', 'createdAt'])
+    .index('by_thread_created_at', ['channelThreadId', 'createdAt']),
 
   securityStepUps: defineTable({
     userId: v.id('users'),
