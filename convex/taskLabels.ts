@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 
+import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendTaskActivity } from './lib/taskData'
@@ -14,7 +15,16 @@ export const list = query({
   args: { projectId: v.id('projects'), includeArchived: v.optional(v.boolean()), ...identityArgs },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
-    await resolveTaskRequestContext(ctx, actor, args.projectId, args)
+    const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args)
+    if (access.capabilities.accessMode === 'archive' && access.entitlement) {
+      const snapshots = await ctx.db.query('taskArchiveSnapshots')
+        .withIndex('by_entitlement_table', (q) =>
+          q.eq('entitlementId', access.entitlement!._id).eq('sourceTable', 'taskLabels'),
+        )
+        .collect()
+      const labels = snapshots.map((snapshot) => snapshot.payload as Doc<'taskLabels'>)
+      return args.includeArchived ? labels : labels.filter((label) => !label.archivedAt)
+    }
     const labels = await ctx.db.query('taskLabels')
       .withIndex('by_project_archived', (q) => q.eq('projectId', args.projectId)).collect()
     return args.includeArchived ? labels : labels.filter((label) => !label.archivedAt)

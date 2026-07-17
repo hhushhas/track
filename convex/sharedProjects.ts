@@ -50,7 +50,7 @@ export const listForActingCompany = query({
           projectMemberId: membership._id,
         })
         return {
-          project: access.project,
+          project: access.entitlement?.projectSnapshot ?? access.project,
           membership: access.projectMember,
           representedCompanyId: args.actingCompanyId,
         }

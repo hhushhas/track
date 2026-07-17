@@ -118,6 +118,7 @@ export const listProjects = query({
         const entitlement = membership.status === 'archived'
           ? await ctx.db.query('projectArchiveEntitlements').withIndex('by_member', (q) => q.eq('projectMemberId', membership._id)).unique()
           : null
+        if (membership.status === 'archived' && entitlement?.retentionStatus !== 'active') return null
         const projectGroupMemberships = entitlement
           ? entitlement.channelIds.map((groupId) => ({ groupId }))
           : groupMemberships.filter((item) => item.projectId === project._id)
@@ -136,7 +137,7 @@ export const listProjects = query({
         ).reduce((total, count) => total + count, 0)
 
         return {
-          project,
+          project: entitlement?.projectSnapshot ?? project,
           membership,
           groupCount: projectGroupMemberships.length,
           unreadCount,
@@ -175,7 +176,7 @@ export const resolveNavigation = query({
         archived:
           readStateImmutable ||
           access.project.status === 'archived' ||
-          group?.status === 'archived',
+          Boolean(group?.status && group.status !== 'active'),
         readStateImmutable,
       }
     } catch {

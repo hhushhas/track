@@ -19,6 +19,26 @@ import {
 
 const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
 type MessageDetailCtx = QueryCtx | MutationCtx
+type ArchivedMemberSnapshot = {
+  membership: {
+    _id: Id<'projectMembers'>
+    companyId?: Id<'companies'>
+    role: Doc<'projectMembers'>['role']
+    userId: Id<'users'>
+    companyDisplayNameSnapshot?: string
+  }
+  user: { _id: Id<'users'>; displayName: string }
+  company: { _id: Id<'companies'>; displayName: string } | null
+}
+
+function archivedMemberForMessage(
+  message: Pick<Doc<'messages'>, 'authorId' | 'authorProjectMemberId'>,
+  snapshots?: Array<ArchivedMemberSnapshot>,
+) {
+  return snapshots?.find((snapshot) => message.authorProjectMemberId
+    ? snapshot.membership._id === message.authorProjectMemberId
+    : snapshot.membership.userId === message.authorId)
+}
 
 async function getGroupMembership(
   ctx: MessageDetailCtx,
@@ -72,7 +92,7 @@ export async function buildMessageDetail(
   viewerId: Id<'users'>,
   viewerProjectMemberId?: Id<'projectMembers'>,
   cutoff?: number,
-  archivedChannelIds?: Array<Id<'groups'>>,
+  archivedChannelSnapshots?: Array<{ _id: Id<'groups'>; name: string }>,
   archivedThreadSnapshots?: Array<{
     _id: Id<'channelThreads'>
     name: string
@@ -80,13 +100,19 @@ export async function buildMessageDetail(
     replyCount?: number
     latestReplyAt?: number
   }>,
+  archivedMemberSnapshots?: Array<ArchivedMemberSnapshot>,
 ) {
-  const author = await ctx.db.get(message.authorId)
-  const authorProjectMember = message.authorProjectMemberId
-    ? await ctx.db.get(message.authorProjectMemberId)
-    : await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
-        q.eq('projectId', message.projectId).eq('userId', message.authorId),
-      ).first()
+  const archivedAuthor = cutoff
+    ? archivedMemberForMessage(message, archivedMemberSnapshots)
+    : undefined
+  const author = cutoff ? archivedAuthor?.user ?? null : await ctx.db.get(message.authorId)
+  const authorProjectMember = cutoff
+    ? archivedAuthor?.membership ?? null
+    : message.authorProjectMemberId
+      ? await ctx.db.get(message.authorProjectMemberId)
+      : await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
+          q.eq('projectId', message.projectId).eq('userId', message.authorId),
+        ).first()
   const attachments = await Promise.all(
     message.attachmentIds.map(async (attachmentId) => {
       const attachment = await ctx.db.get(attachmentId)
@@ -96,8 +122,13 @@ export async function buildMessageDetail(
     }),
   )
   const replyToMessage = message.replyToMessageId ? await ctx.db.get(message.replyToMessageId) : null
-  const replyToAuthor = replyToMessage ? await ctx.db.get(replyToMessage.authorId) : null
-  const sourceMembership = message.forwardedFrom && !archivedChannelIds
+  const archivedReplyAuthor = cutoff && replyToMessage
+    ? archivedMemberForMessage(replyToMessage, archivedMemberSnapshots)
+    : undefined
+  const replyToAuthor = cutoff
+    ? archivedReplyAuthor?.user ?? null
+    : replyToMessage ? await ctx.db.get(replyToMessage.authorId) : null
+  const sourceMembership = message.forwardedFrom && !archivedChannelSnapshots
     ? viewerProjectMemberId
       ? await ctx.db.query('groupMembers').withIndex('by_group_project_member', (q) =>
           q.eq('groupId', message.forwardedFrom!.sourceGroupId).eq('projectMemberId', viewerProjectMemberId),
@@ -105,11 +136,14 @@ export async function buildMessageDetail(
       : await getGroupMembership(ctx, message.forwardedFrom.sourceGroupId, viewerId)
     : null
   const sourceGroupAccess = message.forwardedFrom
-    ? archivedChannelIds
-      ? archivedChannelIds.includes(message.forwardedFrom.sourceGroupId)
+    ? archivedChannelSnapshots
+      ? archivedChannelSnapshots.some((channel) => channel._id === message.forwardedFrom!.sourceGroupId)
       : Boolean(sourceMembership && (!sourceMembership.status || sourceMembership.status === 'active'))
     : false
-  const sourceGroup = message.forwardedFrom && sourceGroupAccess
+  const sourceGroupSnapshot = message.forwardedFrom
+    ? archivedChannelSnapshots?.find((channel) => channel._id === message.forwardedFrom!.sourceGroupId)
+    : undefined
+  const sourceGroup = message.forwardedFrom && sourceGroupAccess && !archivedChannelSnapshots
     ? await ctx.db.get(message.forwardedFrom.sourceGroupId)
     : null
   const sourceThread = threadsEnabled() && !message.channelThreadId
@@ -156,7 +190,7 @@ export async function buildMessageDetail(
           canOpenSource: sourceGroupAccess,
           sourceGroupId: sourceGroupAccess ? message.forwardedFrom.sourceGroupId : null,
           sourceMessageId: sourceGroupAccess ? message.forwardedFrom.sourceMessageId : null,
-          sourceGroupName: sourceGroup?.name ?? null,
+          sourceGroupName: sourceGroupSnapshot?.name ?? sourceGroup?.name ?? null,
         }
       : null,
     channelThread: sourceThread && (!cutoff || sourceThreadSnapshot)
@@ -234,8 +268,9 @@ export const listDetailed = query({
         args.userId,
         args.projectMemberId,
         cutoff,
-        access.companyAccess?.entitlement?.channelIds,
+        access.companyAccess?.entitlement?.channelSnapshots,
         access.companyAccess?.entitlement?.threadSnapshots,
+        access.companyAccess?.entitlement?.memberSnapshots,
       ),
     ))
   },
@@ -477,8 +512,12 @@ export const forwardMessage = mutation({
         Promise.all(sourceMemberships.filter((item) => item.status === 'active' && item.projectMemberId).map(async (item) => await ctx.db.get(item.projectMemberId!))),
         Promise.all(targetMemberships.filter((item) => item.status === 'active' && item.projectMemberId).map(async (item) => await ctx.db.get(item.projectMemberId!))),
       ])
-      const sourceCompanyIds = new Set(sourceMembers.flatMap((member) => member?.companyId ? [String(member.companyId)] : []))
-      const expandsAudience = targetMembers.some((member) => member?.companyId && !sourceCompanyIds.has(String(member.companyId)))
+      const sourceMemberIds = new Set(sourceMembers.flatMap((member) =>
+        member?.status === 'active' ? [String(member._id)] : [],
+      ))
+      const expandsAudience = targetMembers.some((member) =>
+        member?.status === 'active' && !sourceMemberIds.has(String(member._id)),
+      )
       if (expandsAudience && !args.audienceExpansionConfirmed) throw new Error('audience_expansion_confirmation_required')
     }
     await rateLimiter.limit(ctx, 'sendMessage', {

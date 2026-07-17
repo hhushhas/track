@@ -249,8 +249,7 @@ export const commitRun = internalMutation({
   handler: async (ctx, args) => {
     requireTasksEnabled()
     const run = await ctx.db.get(args.runId)
-    if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken ||
-      run.leaseExpiresAt < Date.now()) return false
+    if (!run || run.status !== 'running' || run.leaseToken !== args.leaseToken) return false
     const [setting, group, project] = await Promise.all([
       ctx.db.query('taskDetectionSettings')
         .withIndex('by_group', (q) => q.eq('groupId', run.groupId)).unique(),

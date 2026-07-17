@@ -55,6 +55,47 @@ async function threadStateAtCutoff(
   return state;
 }
 
+async function captureMemberSnapshots(
+  ctx: MutationCtx,
+  projectId: Doc<"projects">["_id"],
+) {
+  const members = await ctx.db
+    .query("projectMembers")
+    .withIndex("by_project", (q) => q.eq("projectId", projectId))
+    .collect();
+  return await Promise.all(
+    members
+      .filter((member) => member.status === "active")
+      .map(async (member) => {
+        const memberCompany = member.companyId
+          ? await ctx.db.get(member.companyId)
+          : null;
+        return {
+          membership: {
+            _id: member._id,
+            companyId: member.companyId,
+            role: member.role,
+            status: member.status,
+            userId: member.userId,
+            userDisplayNameSnapshot: member.userDisplayNameSnapshot,
+            companyDisplayNameSnapshot: member.companyDisplayNameSnapshot,
+          },
+          user: {
+            _id: member.userId,
+            displayName: member.userDisplayNameSnapshot ?? "Former member",
+          },
+          company: memberCompany
+            ? {
+                _id: memberCompany._id,
+                displayName:
+                  member.companyDisplayNameSnapshot ?? memberCompany.displayName,
+              }
+            : null,
+        };
+      }),
+  );
+}
+
 export const prepare = mutation({
   args: { actingCompanyId: v.id("companies"), projectId: v.id("projects") },
   handler: async (ctx, args) => {
@@ -88,6 +129,13 @@ export const prepare = mutation({
     }
     const exitOperationId = crypto.randomUUID();
     const snapshotPath = `archives/company-exits/${participation._id}/${now}/${exitOperationId}`;
+    const [exitMemberSnapshots, exitChannels] = await Promise.all([
+      captureMemberSnapshots(ctx, project._id),
+      ctx.db
+        .query("groups")
+        .withIndex("by_project", (q) => q.eq("projectId", project._id))
+        .collect(),
+    ]);
     await ctx.db.patch(participation._id, {
       status: "exit_pending",
       exitPreparedBy: actor.userId,
@@ -96,6 +144,21 @@ export const prepare = mutation({
       exitOperationId,
       exitContextRevision: memoryBox?.lastContextUpdatedAt,
       exitMemoryBoxId: memoryBox?.boxId,
+      exitProjectSnapshot: {
+        _id: project._id,
+        name: project.name,
+        description: project.description,
+        origin: project.origin,
+        status: project.status,
+      },
+      exitChannelSnapshots: exitChannels.map((group) => ({
+        _id: group._id,
+        createdAt: group.createdAt,
+        kind: group.kind,
+        name: group.name,
+        status: group.status,
+      })),
+      exitMemberSnapshots,
       memorySnapshotStatus: "pending",
       memorySnapshotPath: snapshotPath,
       memorySnapshotError: undefined,
@@ -174,6 +237,9 @@ export const cancel = mutation({
       exitPreparedAt: undefined,
       exitCutoff: undefined,
       exitContextRevision: undefined,
+      exitProjectSnapshot: undefined,
+      exitChannelSnapshots: undefined,
+      exitMemberSnapshots: undefined,
       memorySnapshotStatus: undefined,
       memorySnapshotManifestHash: undefined,
       memorySnapshotManifest: undefined,
@@ -257,7 +323,10 @@ export const finalize = mutation({
       participation.memorySnapshotStatus !== "verified" ||
       !participation.memorySnapshotManifestHash ||
       !participation.memorySnapshotManifest ||
-      !participation.exitCutoff
+      !participation.exitCutoff ||
+      !participation.exitProjectSnapshot ||
+      !participation.exitChannelSnapshots ||
+      !participation.exitMemberSnapshots
     )
       throw new Error("exit_snapshot_not_verified");
 
@@ -269,10 +338,6 @@ export const finalize = mutation({
           .eq("companyId", company._id)
           .eq("status", "active"),
       )
-      .collect();
-    const groups = await ctx.db
-      .query("groups")
-      .withIndex("by_project", (q) => q.eq("projectId", project._id))
       .collect();
     const now = Date.now();
     for (const projectMember of projectMembers) {
@@ -342,6 +407,8 @@ export const finalize = mutation({
             );
             return {
               _id: thread._id,
+              createdAt: thread.createdAt,
+              groupId: thread.groupId,
               name: cutoffState.name,
               status: cutoffState.status,
               revision: cutoffState.revision,
@@ -365,59 +432,13 @@ export const finalize = mutation({
         projectMemberId: projectMember._id,
         exitAt: participation.exitCutoff,
         channelIds,
-        projectSnapshot: {
-          _id: project._id,
-          name: project.name,
-          description: project.description,
-          origin: project.origin,
-          status: project.status,
-        },
-        channelSnapshots: groups
-          .filter((group) => channelIds.includes(group._id))
-          .map((group) => ({
-            _id: group._id,
-            kind: group.kind,
-            name: group.name,
-            status: group.status,
-          })),
-        threadSnapshots,
-        memberSnapshots: await Promise.all(
-          (await ctx.db
-            .query("projectMembers")
-            .withIndex("by_project", (q) => q.eq("projectId", project._id))
-            .collect())
-            .filter((member) => member.status === "active")
-            .map(async (member) => {
-              const memberCompany = member.companyId
-                ? await ctx.db.get(member.companyId)
-                : null;
-              return {
-                membership: {
-                  _id: member._id,
-                  companyId: member.companyId,
-                  role: member.role,
-                  status: member.status,
-                  userId: member.userId,
-                  userDisplayNameSnapshot: member.userDisplayNameSnapshot,
-                  companyDisplayNameSnapshot:
-                    member.companyDisplayNameSnapshot,
-                },
-                user: {
-                  _id: member.userId,
-                  displayName:
-                    member.userDisplayNameSnapshot ?? "Former member",
-                },
-                company: memberCompany
-                  ? {
-                      _id: memberCompany._id,
-                      displayName:
-                        member.companyDisplayNameSnapshot ??
-                        memberCompany.displayName,
-                    }
-                  : null,
-              };
-            }),
+        projectSnapshot: participation.exitProjectSnapshot,
+        channelSnapshots: participation.exitChannelSnapshots.filter(
+          (group: { _id: Doc<"groups">["_id"] }) =>
+            channelIds.includes(group._id),
         ),
+        threadSnapshots,
+        memberSnapshots: participation.exitMemberSnapshots,
         retentionStatus: "active",
         manifestHash: participation.memorySnapshotManifestHash,
         createdAt: now,
@@ -540,13 +561,17 @@ export const getStatus = query({
 });
 
 export const getSnapshotInput = internalQuery({
-  args: { projectCompanyId: v.id("projectCompanies") },
+  args: {
+    projectCompanyId: v.id("projectCompanies"),
+    operationId: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const participation = await ctx.db.get(args.projectCompanyId);
     if (
       !participation ||
       participation.status !== "exit_pending" ||
-      !participation.exitCutoff
+      !participation.exitCutoff ||
+      (args.operationId && participation.exitOperationId !== args.operationId)
     )
       return null;
     const [project, company, memoryBox, members, imports] = await Promise.all([

@@ -158,6 +158,84 @@ describe('task management authorization and invariants', () => {
     ).rejects.toThrow('task_edit_forbidden')
   })
 
+  it('restores archived tasks and freezes archived-board writes and reminders', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const boardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Lifecycle board',
+    })
+    const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000)
+      .toISOString().slice(0, 10)
+    const created = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      title: 'Lifecycle task',
+      assigneeProjectMemberId: fixture.ownerMemberId,
+      dueDate,
+      priority: 'none',
+      idempotencyKey: 'lifecycle-task',
+    })
+    const commentId = await owner.mutation(api.taskComments.create, {
+      taskId: created.taskId,
+      body: 'Immutable while archived',
+      mentionedProjectMemberIds: [],
+      idempotencyKey: 'lifecycle-comment',
+    })
+
+    await owner.mutation(api.tasks.setArchived, {
+      taskId: created.taskId,
+      archived: true,
+    })
+    const archived = await owner.query(api.tasks.getByKey, {
+      projectId: fixture.projectId,
+      publicKey: created.publicKey,
+    })
+    expect(archived?.capabilities).toMatchObject({ canArchive: true, canComment: false, canEdit: false })
+    await expect(owner.mutation(api.taskComments.edit, {
+      commentId,
+      expectedRevision: 1,
+      body: 'Forbidden edit',
+    })).rejects.toThrow('task_comment_edit_forbidden')
+    await expect(owner.mutation(api.taskComments.archive, { commentId }))
+      .rejects.toThrow('task_comment_archive_forbidden')
+
+    await owner.mutation(api.tasks.setArchived, {
+      taskId: created.taskId,
+      archived: false,
+    })
+    expect((await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId)))?.archivedAt)
+      .toBeUndefined()
+
+    await owner.mutation(api.taskBoards.archive, { boardId })
+    const boardArchived = await owner.query(api.tasks.getByKey, {
+      projectId: fixture.projectId,
+      publicKey: created.publicKey,
+    })
+    expect(boardArchived?.capabilities).toMatchObject({ canArchive: false, canComment: false, canEdit: false })
+    await expect(owner.mutation(api.tasks.update, {
+      taskId: created.taskId,
+      expectedRevision: 3,
+      title: 'Forbidden board edit',
+    })).rejects.toThrow('task_edit_forbidden')
+    await expect(owner.mutation(api.taskComments.create, {
+      taskId: created.taskId,
+      body: 'Forbidden board comment',
+      mentionedProjectMemberIds: [],
+      idempotencyKey: 'archived-board-comment',
+    })).rejects.toThrow('task_comment_forbidden')
+    expect(await owner.query(api.tasks.list, { projectId: fixture.projectId }))
+      .toHaveLength(0)
+    expect((await fixture.t.run(async (ctx) => await ctx.db.query('taskReminderJobs')
+      .withIndex('by_task_status', (q) => q.eq('taskId', created.taskId).eq('status', 'scheduled'))
+      .collect()))).toHaveLength(0)
+
+    await owner.mutation(api.taskBoards.restore, { boardId })
+    expect((await fixture.t.run(async (ctx) => await ctx.db.query('taskReminderJobs')
+      .withIndex('by_task_status', (q) => q.eq('taskId', created.taskId).eq('status', 'scheduled'))
+      .collect()))).toHaveLength(2)
+  })
+
   it('revalidates destination scope and earlier comment scope after task promotion', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })
@@ -320,6 +398,8 @@ describe('task management authorization and invariants', () => {
       boardId: detail!.task.boardId,
       parentTaskId: created.taskId,
       title: 'Run the gate',
+      assigneeProjectMemberId: fixture.ownerMemberId,
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10),
       priority: 'high',
       idempotencyKey: 'subtask-1',
     })
@@ -333,6 +413,48 @@ describe('task management authorization and invariants', () => {
         idempotencyKey: 'subtask-2',
       }),
     ).rejects.toThrow('task_parent_invalid')
+
+    const destinationBoardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      name: 'Release follow-through',
+    })
+    await expect(owner.mutation(api.tasks.move, {
+      taskId: subtask.taskId,
+      destinationBoardId,
+      targetIndex: 0,
+      expectedRevision: 1,
+    })).rejects.toThrow('task_destination_invalid')
+
+    const sourceBoard = (await owner.query(api.taskBoards.list, {
+      projectId: fixture.projectId,
+    })).find((item) => item.board._id === detail!.task.boardId)!
+    const completedState = sourceBoard.states.find((state) => state.category === 'completed')!
+    await owner.mutation(api.tasks.update, {
+      taskId: subtask.taskId,
+      expectedRevision: 1,
+      workflowStateId: completedState._id,
+    })
+    expect(await fixture.t.run(async (ctx) => await ctx.db.query('taskReminderJobs')
+      .withIndex('by_task_status', (q) => q.eq('taskId', subtask.taskId).eq('status', 'scheduled'))
+      .collect())).toHaveLength(0)
+
+    await owner.mutation(api.tasks.move, {
+      taskId: created.taskId,
+      destinationBoardId,
+      targetIndex: 0,
+      expectedRevision: 1,
+    })
+    const moved = await fixture.t.run(async (ctx) => ({
+      parent: await ctx.db.get(created.taskId),
+      reminders: await ctx.db.query('taskReminderJobs')
+        .withIndex('by_task_status', (q) => q.eq('taskId', subtask.taskId).eq('status', 'scheduled'))
+        .collect(),
+      subtask: await ctx.db.get(subtask.taskId),
+    }))
+    expect(moved.parent?.boardId).toBe(destinationBoardId)
+    expect(moved.subtask?.boardId).toBe(destinationBoardId)
+    expect(moved.reminders.map((job) => job.kind).sort()).toEqual(['due_soon', 'overdue'])
   })
 
   it('commits detection candidates only for the current generation and cursor', async () => {
@@ -379,7 +501,7 @@ describe('task management authorization and invariants', () => {
         endSequence: 1,
         status: 'running',
         leaseToken: 'lease-current',
-        leaseExpiresAt: now + 60_000,
+        leaseExpiresAt: now - 1,
         attempts: 1,
         correlationId: 'run-1',
         createdAt: now,
@@ -467,10 +589,14 @@ describe('task management authorization and invariants', () => {
     const board = boards.find((item) => item.board._id === boardId)!
     const todo = board.states.find((state) => state.isDefault)!
     const done = board.states.find((state) => state.category === 'completed')!
+    const dueDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1_000)
+      .toISOString().slice(0, 10)
     const created = await owner.mutation(api.tasks.create, {
       projectId: fixture.projectId,
       boardId,
       title: 'Migrate me',
+      assigneeProjectMemberId: fixture.ownerMemberId,
+      dueDate,
       priority: 'none',
       idempotencyKey: 'workflow-task',
     })
@@ -493,10 +619,46 @@ describe('task management authorization and invariants', () => {
     )
     expect(task?.workflowStateId).toBe(done._id)
     expect(task?.terminalAt).toBeTypeOf('number')
+    expect(await fixture.t.run(async (ctx) => await ctx.db.query('taskReminderJobs')
+      .withIndex('by_task_status', (q) => q.eq('taskId', created.taskId).eq('status', 'scheduled'))
+      .collect())).toHaveLength(0)
     expect(
       (await fixture.t.run(async (ctx) => await ctx.db.get(todo._id)))
         ?.archivedAt,
     ).toBeTypeOf('number')
+
+    const reconfigured = (await owner.query(api.taskBoards.list, {
+      projectId: fixture.projectId,
+    })).find((item) => item.board._id === boardId)!
+    const ready = reconfigured.states.find((state) => state.isDefault)!
+    await owner.mutation(api.taskBoards.configureWorkflow, {
+      boardId,
+      defaultIndex: 0,
+      states: [
+        { stateId: ready._id, name: 'Ready', category: 'unstarted', visualToken: 'blue' },
+        { stateId: done._id, name: 'In progress', category: 'started', visualToken: 'amber' },
+        { name: 'Completed', category: 'completed', visualToken: 'green' },
+      ],
+    })
+    const reopened = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
+    expect(reopened?.terminalAt).toBeUndefined()
+    expect(await fixture.t.run(async (ctx) => await ctx.db.query('taskReminderJobs')
+      .withIndex('by_task_status', (q) => q.eq('taskId', created.taskId).eq('status', 'scheduled'))
+      .collect())).toHaveLength(2)
+
+    const completed = (await owner.query(api.taskBoards.list, {
+      projectId: fixture.projectId,
+    })).find((item) => item.board._id === boardId)!.states
+      .find((state) => state.category === 'completed')!
+    await owner.mutation(api.taskBoards.removeWorkflowState, {
+      stateId: done._id,
+      replacementStateId: completed._id,
+    })
+    expect((await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId)))?.terminalAt)
+      .toBeTypeOf('number')
+    expect(await fixture.t.run(async (ctx) => await ctx.db.query('taskReminderJobs')
+      .withIndex('by_task_status', (q) => q.eq('taskId', created.taskId).eq('status', 'scheduled'))
+      .collect())).toHaveLength(0)
   })
 
   it('creates an idempotent grounded suggestion for explicit assistant task intent', async () => {
@@ -716,6 +878,21 @@ describe('task management authorization and invariants', () => {
       `/task?projectId=${fixture.projectId}&taskKey=${created.publicKey}`,
     )
     expect(push?.targets).toHaveLength(1)
+    await owner.mutation(api.tasks.update, {
+      taskId: created.taskId,
+      expectedRevision: 1,
+      title: 'Notify exact assignee after edit',
+      assigneeProjectMemberId: fixture.staffMemberId,
+    })
+    const assignmentNotifications = await fixture.t.run(async (ctx) =>
+      (await ctx.db
+        .query('taskNotifications')
+        .withIndex('by_member_created_at', (q) =>
+          q.eq('recipientProjectMemberId', fixture.staffMemberId),
+        )
+        .collect()).filter((item) => item.eventType === 'assignment'),
+    )
+    expect(assignmentNotifications).toHaveLength(1)
     await staff.mutation(api.taskNotifications.setPreference, {
       projectId: fixture.projectId,
       mode: 'muted',

@@ -353,8 +353,9 @@ export const listMessages = query({
           args.userId,
           args.projectMemberId,
           cutoff,
-          access.companyAccess?.entitlement?.channelIds,
+          access.companyAccess?.entitlement?.channelSnapshots,
           snapshots,
+          access.companyAccess?.entitlement?.memberSnapshots,
         ),
       ))
     } catch {
@@ -407,8 +408,9 @@ export const listMessagePage = query({
             args.userId,
             args.projectMemberId,
             cutoff,
-            access.companyAccess?.entitlement?.channelIds,
+            access.companyAccess?.entitlement?.channelSnapshots,
             snapshots,
+            access.companyAccess?.entitlement?.memberSnapshots,
           ),
         )),
       }

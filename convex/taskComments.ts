@@ -103,7 +103,9 @@ export const edit = mutation({
     const comment = await ctx.db.get(args.commentId)
     if (!comment) throw new Error('task_access_changed')
     const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
-    if (comment.authorProjectMemberId !== access.projectMember._id) throw new Error('task_comment_edit_forbidden')
+    if (!access.taskCapabilities.canComment || comment.authorProjectMemberId !== access.projectMember._id) {
+      throw new Error('task_comment_edit_forbidden')
+    }
     if (comment.originalGroupId && comment.originalGroupId !== access.task.groupId) {
       const originalAccess = await resolveTaskRequestContext(
         ctx, actor, comment.projectId, args, comment.originalGroupId,
@@ -130,6 +132,7 @@ export const archive = mutation({
     const comment = await ctx.db.get(args.commentId)
     if (!comment) throw new Error('task_access_changed')
     const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
+    if (!access.taskCapabilities.canComment) throw new Error('task_comment_archive_forbidden')
     if (comment.originalGroupId && comment.originalGroupId !== access.task.groupId) {
       const originalAccess = await resolveTaskRequestContext(
         ctx, actor, comment.projectId, args, comment.originalGroupId,

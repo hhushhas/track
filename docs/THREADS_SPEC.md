@@ -1,7 +1,7 @@
 # Channel Threads Specification
 
-Status: implemented behind a default-off flag; local release verification
-pending; not deployed.
+Status: implemented behind a default-off server release flag; locally verified;
+not deployed.
 
 This specification defines Discord-style threads inside Track Channels. Threads
 are an independent release: task management can ship without them, and threads
@@ -9,7 +9,7 @@ can ship without task management. When both features are enabled, they use the
 integration contract below.
 
 The target philosophy and product model are in [PRODUCT.md](./PRODUCT.md). The
-running product is summarized in [README.md](../README.md).
+repository implementation is summarized in [README.md](../README.md).
 
 ## Combined-release controls
 
@@ -29,8 +29,9 @@ account-deletion, Company-exit, and retention cleanup active. Disabling the
 Company flag never reinterprets a Company-profile Project as legacy.
 
 The standalone thread implementation spans shared code, Convex, web, and
-mobile. Local release readiness still requires the complete production-build,
-browser, and native-device proof below. Neither implementation nor local
+mobile. The combined repository gate and lightweight local web verification
+pass; complete authenticated browser, native production-build, rollout, and
+production proofs remain release work. Neither implementation nor local
 acceptance authorizes a production deployment or flag activation.
 
 ## Product intent

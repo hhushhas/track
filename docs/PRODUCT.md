@@ -1,13 +1,14 @@
 # Product
 
 Status: target product contract. Some capabilities described here remain approved
-implementation work; [README.md](../README.md) describes the running product,
-and [ROADMAP.md](./ROADMAP.md) tracks delivery.
+implementation work; [README.md](../README.md) describes the repository
+implementation, and [ROADMAP.md](./ROADMAP.md) tracks deployment and enablement.
 
 The Company, Relationship, shared Project, Channel, exit archive, and guided
 migration model is implemented behind the independent, default-off
 `companyModel` server release flag. Thread and task availability is controlled
 separately; neither companion feature is required for Company collaboration.
+The combined implementation is locally verified and has not been deployed.
 
 ## Product philosophy
 

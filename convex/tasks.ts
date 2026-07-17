@@ -210,6 +210,8 @@ export const list = query({
     for (const task of rows) {
       if (task.projectId !== args.projectId) continue
       if (!args.includeArchived && task.archivedAt) continue
+      const board = await ctx.db.get(task.boardId)
+      if (!board || (!args.includeArchived && board.archivedAt)) continue
       if (args.boardId && task.boardId !== args.boardId) continue
       if (args.groupId && task.groupId !== args.groupId) continue
       if (args.creatorProjectMemberId && task.createdByProjectMemberId !== args.creatorProjectMemberId) continue
@@ -577,11 +579,11 @@ export const update = mutation({
           access.taskCapabilities.canAssignOthers,
         )
       }
-      const assignee = nextAssigneeId ? await requireEligibleTaskMember(ctx, {
-        projectId: access.task.projectId, groupId: access.task.groupId, projectMemberId: nextAssigneeId,
-      }) : null
-      assignedMember = assignee
       if (nextAssigneeId !== access.task.assigneeProjectMemberId) {
+        const assignee = nextAssigneeId ? await requireEligibleTaskMember(ctx, {
+          projectId: access.task.projectId, groupId: access.task.groupId, projectMemberId: nextAssigneeId,
+        }) : null
+        assignedMember = assignee
         patch.assigneeProjectMemberId = nextAssigneeId
         changes.push({ action: 'assignee_changed', before: access.task.assigneeProjectMemberId, after: nextAssigneeId })
         if (assignee) await addFollower(ctx, access.task, assignee, 'assignee')
@@ -649,6 +651,9 @@ export const move = mutation({
     if (!board || board.archivedAt || board.projectId !== access.task.projectId || board.groupId !== access.task.groupId) {
       throw new Error('task_destination_invalid')
     }
+    if (access.task.parentTaskId && board._id !== access.task.boardId) {
+      throw new Error('task_destination_invalid')
+    }
     const state = args.workflowStateId ? await ctx.db.get(args.workflowStateId) : await getDefaultWorkflowState(ctx, board._id)
     if (!state || state.boardId !== board._id || state.archivedAt) throw new Error('task_destination_invalid')
     const rows = (await ctx.db.query('tasks')
@@ -669,10 +674,19 @@ export const move = mutation({
       const subtasks = await ctx.db.query('tasks').withIndex('by_parent', (q) => q.eq('parentTaskId', access.task._id)).collect()
       const defaultState = await getDefaultWorkflowState(ctx, board._id)
       for (const subtask of subtasks) {
-        await ctx.db.patch(subtask._id, {
+        const updatedSubtask = {
+          ...subtask,
           boardId: board._id, workflowStateId: defaultState._id,
           terminalAt: undefined, revision: subtask.revision + 1, updatedAt: now,
+        }
+        await ctx.db.patch(subtask._id, {
+          boardId: updatedSubtask.boardId,
+          workflowStateId: updatedSubtask.workflowStateId,
+          terminalAt: updatedSubtask.terminalAt,
+          revision: updatedSubtask.revision,
+          updatedAt: updatedSubtask.updatedAt,
         })
+        await rescheduleTaskReminders(ctx, updatedSubtask)
       }
     }
     const updated = await ctx.db.get(access.task._id)
@@ -695,7 +709,7 @@ export const setFollowing = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
-    if (access.capabilities.accessMode !== 'active') throw new Error('task_access_changed')
+    if (!access.taskCapabilities.canComment) throw new Error('task_access_changed')
     const existing = await ctx.db.query('taskFollowers').withIndex('by_task_member', (q) =>
       q.eq('taskId', access.task._id).eq('projectMemberId', access.projectMember._id),
     ).unique()
@@ -723,6 +737,8 @@ export const setArchived = mutation({
       const subtasks = await ctx.db.query('tasks').withIndex('by_parent', (q) => q.eq('parentTaskId', access.task._id)).collect()
       for (const subtask of subtasks) {
         await ctx.db.patch(subtask._id, { archivedAt, revision: subtask.revision + 1, updatedAt: now })
+        const updatedSubtask = await ctx.db.get(subtask._id)
+        if (updatedSubtask) await rescheduleTaskReminders(ctx, updatedSubtask)
       }
     }
     const updated = await ctx.db.get(access.task._id)

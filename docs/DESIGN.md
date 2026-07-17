@@ -80,5 +80,6 @@ durable work items. Task, board, and thread presentation follows the approved
 [task](./TASK_MANAGEMENT_SPEC.md), [thread](./THREADS_SPEC.md), and
 [UI refresh](./UI_REFRESH_SPEC.md) contracts when their server-authoritative
 flags expose those surfaces. Task management and Channel threads are implemented
-but default off and not deployed; neither local availability nor a passing gate
-means either capability is deployed.
+and locally verified alongside Company collaboration, but all three capabilities
+are independently default off and not deployed. Local availability and a passing
+gate do not mean a capability is deployed.

@@ -13,6 +13,10 @@ workflows, task details and lists, conversation evidence, human-reviewed AI
 suggestions, search, notifications, and essential native workflows. It operates
 with legacy Projects and does not require Channel threads or Company collaboration.
 
+The combined implementation is locally verified and remains independently
+default off. It has not been deployed, and local verification does not authorize
+a production rollout, migration, or flag activation.
+
 The [target product contract](./docs/PRODUCT.md) also defines dependable mobile
 push. That companion capability remains independently controlled work tracked in
 [docs/ROADMAP.md](./docs/ROADMAP.md).
@@ -42,8 +46,8 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
 - [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): implemented
   default-off task, board, AI, access, and delivery contract.
 - [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
-  implemented Company, Relationship, shared-Project, Channel, access, exit, and
-  migration contract.
+  implemented default-off Company, Relationship, shared-Project, Channel,
+  access, exit, and migration contract.
 - [Mobile push notification intent](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
   approved reliability direction that still needs a complete implementation
   contract.

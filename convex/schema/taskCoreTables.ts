@@ -71,6 +71,7 @@ export const taskCoreTables = {
   })
     .index('by_project_key', ['projectId', 'publicKey'])
     .index('by_project_archived', ['projectId', 'archivedAt'])
+    .index('by_board', ['boardId'])
     .index('by_board_state_rank', ['boardId', 'workflowStateId', 'rank'])
     .index('by_assignee_archived', ['assigneeProjectMemberId', 'archivedAt'])
     .index('by_parent', ['parentTaskId'])

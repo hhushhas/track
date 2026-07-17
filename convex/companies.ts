@@ -336,6 +336,7 @@ export const updateMember = mutation({
 export const setSuspended = mutation({
   args: { companyId: v.id('companies'), suspended: v.boolean() },
   handler: async (ctx, args) => {
+    requireCompanyModelEnabled()
     const actor = await requireAuthenticatedActor(ctx)
     const { company } = await requireCompanyOwner(ctx, actor, args.companyId, true)
     const status = args.suspended ? 'suspended' : 'active'

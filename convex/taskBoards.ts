@@ -7,6 +7,7 @@ import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskStateCategory } from './schema/taskValidators'
+import { rescheduleTaskReminders } from './taskReminders'
 
 const identityArgs = {
   actingCompanyId: v.optional(v.id('companies')),
@@ -68,6 +69,11 @@ async function insertStandardWorkflow(
       updatedAt: now,
     })
   }
+}
+
+async function rescheduleBoardTaskReminders(ctx: MutationCtx, boardId: Id<'taskBoards'>) {
+  const tasks = await ctx.db.query('tasks').withIndex('by_board', (q) => q.eq('boardId', boardId)).collect()
+  for (const task of tasks) await rescheduleTaskReminders(ctx, task)
 }
 
 export async function getOrCreateDefaultBoard(
@@ -280,8 +286,33 @@ export const configureWorkflow = mutation({
         archivedAt: undefined, updatedAt: now,
       }
       if (state.stateId) {
+        const previous = existing.find((candidate) => candidate._id === state.stateId)!
         await ctx.db.patch(state.stateId, values)
         resolved.push(state.stateId)
+        if (previous.category !== state.category) {
+          const affected = await ctx.db.query('tasks')
+            .withIndex('by_board_state_rank', (q) =>
+              q.eq('boardId', board._id).eq('workflowStateId', state.stateId!),
+            )
+            .collect()
+          for (const task of affected) {
+            const terminalAt = state.category === 'completed' || state.category === 'canceled'
+              ? task.terminalAt ?? now
+              : undefined
+            const updatedTask = {
+              ...task,
+              terminalAt,
+              revision: task.revision + 1,
+              updatedAt: now,
+            }
+            await ctx.db.patch(task._id, {
+              terminalAt,
+              revision: updatedTask.revision,
+              updatedAt: now,
+            })
+            await rescheduleTaskReminders(ctx, updatedTask)
+          }
+        }
       } else {
         resolved.push(await ctx.db.insert('taskWorkflowStates', {
           projectId: board.projectId, boardId: board._id, ...values, createdAt: now,
@@ -301,14 +332,23 @@ export const configureWorkflow = mutation({
         .collect()
       if (affected.length && !args.replacementStateId) throw new Error('task_workflow_replacement_required')
       for (const task of affected) {
-        await ctx.db.patch(task._id, {
+        const terminalAt = destinationState.category === 'completed' || destinationState.category === 'canceled'
+          ? task.terminalAt ?? now
+          : undefined
+        const updatedTask = {
+          ...task,
           workflowStateId: destinationId,
-          terminalAt: destinationState.category === 'completed' || destinationState.category === 'canceled'
-            ? task.terminalAt ?? now
-            : undefined,
+          terminalAt,
           revision: task.revision + 1,
           updatedAt: now,
+        }
+        await ctx.db.patch(task._id, {
+          workflowStateId: destinationId,
+          terminalAt,
+          revision: updatedTask.revision,
+          updatedAt: now,
         })
+        await rescheduleTaskReminders(ctx, updatedTask)
         await ctx.db.insert('taskActivities', {
           projectId: task.projectId, taskId: task._id, originalGroupId: task.groupId,
           actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,
@@ -357,6 +397,7 @@ export const archive = mutation({
     const replacement = active.find((candidate) => candidate._id !== board._id)
     const now = Date.now()
     await ctx.db.patch(board._id, { archivedAt: now, isDefault: false, updatedAt: now })
+    await rescheduleBoardTaskReminders(ctx, board._id)
     if (board.isDefault && replacement) {
       await ctx.db.patch(replacement._id, { isDefault: true, updatedAt: now })
     }
@@ -383,6 +424,7 @@ export const restore = mutation({
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     const now = Date.now()
     await ctx.db.patch(board._id, { archivedAt: undefined, isDefault: active.length === 0, updatedAt: now })
+    await rescheduleBoardTaskReminders(ctx, board._id)
     return board._id
   },
 })
@@ -439,12 +481,20 @@ export const removeWorkflowState = mutation({
     }
     const now = Date.now()
     for (const task of tasks) {
-      await ctx.db.patch(task._id, {
+      const updatedTask = {
+        ...task,
         workflowStateId: replacement!._id,
         terminalAt: replacement && (replacement.category === 'completed' || replacement.category === 'canceled')
           ? task.terminalAt ?? now : undefined,
         revision: task.revision + 1, updatedAt: now,
+      }
+      await ctx.db.patch(task._id, {
+        workflowStateId: updatedTask.workflowStateId,
+        terminalAt: updatedTask.terminalAt,
+        revision: updatedTask.revision,
+        updatedAt: updatedTask.updatedAt,
       })
+      await rescheduleTaskReminders(ctx, updatedTask)
     }
     await ctx.db.patch(state._id, { archivedAt: now, updatedAt: now })
     return state._id

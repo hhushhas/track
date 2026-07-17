@@ -374,16 +374,27 @@ export const collectMessageNotificationTargets = internalQuery({
         if (!shouldNotify) return []
 
         return subscriptions
-          .filter((subscription) => subscription.enabled)
+          .filter((subscription) =>
+            subscription.enabled &&
+            (!subscription.projectMemberId || subscription.projectMemberId === projectMemberId),
+          )
           .map((subscription) => ({
             id: subscription._id,
             platform: subscription.platform,
             tokenOrEndpoint: subscription.tokenOrEndpoint,
             actingCompanyId,
             projectMemberId,
+            exactMembership: subscription.projectMemberId === projectMemberId,
           }))
       }),
     )
+
+    const uniqueTargets = new Map<string, (typeof targets)[number][number]>()
+    for (const target of targets.flat()) {
+      const key = `${target.platform}:${target.tokenOrEndpoint}`
+      const existing = uniqueTargets.get(key)
+      if (!existing || target.exactMembership) uniqueTargets.set(key, target)
+    }
 
     return {
       body: message.body || message.notificationPreview || 'Sent an attachment.',
@@ -394,10 +405,7 @@ export const collectMessageNotificationTargets = internalQuery({
       projectId: message.projectId,
       projectName: project.name,
       senderName: author?.displayName ?? 'Track',
-      targets: Array.from(new Map(targets.flat().map((target) => [
-        `${target.id}:${target.projectMemberId ?? 'legacy'}`,
-        target,
-      ])).values()),
+      targets: Array.from(uniqueTargets.values()).map(({ exactMembership: _, ...target }) => target),
       url: message.channelThreadId
         ? `/workspace/projects/${message.projectId}/groups/${message.groupId}/threads/${message.channelThreadId}#message-${message._id}`
         : `/workspace/projects/${message.projectId}/groups/${message.groupId}`,

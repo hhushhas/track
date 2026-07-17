@@ -1,9 +1,9 @@
 # Architecture
 
-Status: current running architecture. Company collaboration, task management,
-and Channel threads are implemented behind independent default-off server
-release flags. Other approved target changes remain in the roadmap and
-companion specifications until their release gates pass.
+Status: current repository architecture. Company collaboration, task management,
+and Channel threads are implemented and locally verified behind independent
+default-off server release flags. They have not been deployed. Other approved
+target changes remain in the roadmap and companion specifications.
 
 Track is a pnpm monorepo with a TanStack Start web application, an Expo mobile application, shared TypeScript domain code, and a Convex backend.
 
@@ -49,11 +49,12 @@ overwritten or hard-deleted. Participant revisions make unanimous removal and
 archive approvals stale when eligibility changes.
 
 Shared-Project exit is a two-phase saga. Preparation revokes live access and
-captures a cutoff. A Node action copies only the leaving Company's authorized
-Project and Channel memory sources to immutable paths, records content hashes,
-and verifies the manifest before finalization can create read-only entitlements.
-Provider failure blocks finalization; cancellation retains a retryable cleanup
-pointer until orphan cleanup succeeds.
+captures the Project, Channel, member, task, thread, and memory cutoff state.
+A Node action copies only the leaving Company's authorized Project and Channel
+memory sources to immutable paths, records content hashes, and verifies the
+manifest before finalization can create read-only entitlements. Provider failure
+blocks finalization; cancellation retains a retryable cleanup pointer until
+orphan cleanup succeeds.
 
 Guided legacy migration records an explicit Company and neutral role for every
 member, requires each mapped Company to confirm its own people, preserves every

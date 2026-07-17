@@ -117,18 +117,28 @@ export async function requireTaskAccess(
 ) {
   const task = await ctx.db.get(taskId)
   if (!task) throw new Error('task_access_changed')
+  const board = await ctx.db.get(task.boardId)
+  if (!board) throw new Error('task_access_changed')
   const access = await resolveTaskRequestContext(ctx, actor, task.projectId, identity, task.groupId)
-  const taskCapabilities = resolveTaskCapabilities({
+  const channelMember = task.groupId
+    ? access.capabilities.canReadChannel
+    : access.capabilities.canReadProject
+  const resolvedCapabilities = resolveTaskCapabilities({
     collaboration: access.capabilities.taskCollaboration,
-    activeScope: access.capabilities.accessMode === 'active' && !task.archivedAt,
-    channelMember: task.groupId
-      ? access.capabilities.canReadChannel
-      : access.capabilities.canReadProject,
+    activeScope: access.capabilities.accessMode === 'active' && !board.archivedAt && !task.archivedAt,
+    channelMember,
     createdByActor: task.createdByProjectMemberId === access.projectMember._id,
     assignedToActor: task.assigneeProjectMemberId === access.projectMember._id,
   })
+  const canRestore = Boolean(task.archivedAt) && !board.archivedAt && channelMember &&
+    access.capabilities.accessMode === 'active' &&
+    access.capabilities.taskCollaboration === 'admin'
+  const taskCapabilities = {
+    ...resolvedCapabilities,
+    canArchive: resolvedCapabilities.canArchive || canRestore,
+  }
   if (!taskCapabilities.canView) throw new Error('task_access_changed')
-  return { ...access, task, taskCapabilities }
+  return { ...access, board, task, taskCapabilities }
 }
 
 export async function requireEligibleTaskMember(
@@ -139,11 +149,30 @@ export async function requireEligibleTaskMember(
     projectMemberId: Id<'projectMembers'>
   },
 ) {
-  const member = await ctx.db.get(input.projectMemberId)
+  const [member, project] = await Promise.all([
+    ctx.db.get(input.projectMemberId),
+    ctx.db.get(input.projectId),
+  ])
   if (
-    !member || member.projectId !== input.projectId ||
+    !member || !project || member.projectId !== input.projectId ||
     (member.status !== undefined && member.status !== 'active')
   ) throw new Error('task_assignee_invalid')
+
+  if (resolveProjectAccessProfile(project.accessProfile) === 'company') {
+    if (!member.companyId || !member.projectCompanyId) throw new Error('task_assignee_invalid')
+    const [company, companyMember, projectCompany] = await Promise.all([
+      ctx.db.get(member.companyId),
+      ctx.db.query('companyMembers').withIndex('by_company_user', (q) =>
+        q.eq('companyId', member.companyId!).eq('userId', member.userId),
+      ).unique(),
+      ctx.db.get(member.projectCompanyId),
+    ])
+    if (
+      company?.status !== 'active' || companyMember?.status !== 'active' ||
+      !projectCompany || projectCompany.projectId !== input.projectId ||
+      projectCompany.companyId !== member.companyId || projectCompany.status !== 'active'
+    ) throw new Error('task_assignee_invalid')
+  }
 
   if (input.groupId) {
     const channelMember = await ctx.db

@@ -1,12 +1,13 @@
 # Task Management Specification
 
-Status: implemented behind a default-off server release flag; not deployed.
+Status: implemented behind a default-off server release flag; locally verified;
+not deployed.
 
 This specification defines the first-class task-management release in Track's
-target [PRODUCT.md](./PRODUCT.md) contract. The running product is summarized in
-[README.md](../README.md) until this work passes its release gate. The release
-combines Channel conversation, permission-aware references, multiple Kanban
-boards, and human-controlled AI task suggestions in one workspace.
+target [PRODUCT.md](./PRODUCT.md) contract. The repository implementation is
+summarized in [README.md](../README.md). The release combines Channel
+conversation, permission-aware references, multiple Kanban boards, and
+human-controlled AI task suggestions in one workspace.
 
 Discord-style Channel threads are governed independently by
 [THREADS_SPEC.md](./THREADS_SPEC.md). Neither release depends on the other; the
@@ -30,7 +31,9 @@ redaction, account-deletion, Company-exit, and retention cleanup active.
 Disabling the Company flag never reinterprets a Company-profile Project as
 legacy.
 
-The implementation is locally release-gated and default off. Local acceptance
+The combined repository gate and lightweight local web verification pass. Full
+authenticated browser, native production-build, rollout, and production proofs
+remain release work. The implementation stays default off, and local acceptance
 does not authorize a production deployment or flag activation.
 
 ## Product intent
@@ -248,9 +251,12 @@ board's default state is selected unless the user explicitly chooses another
 valid state.
 
 Archiving a board removes it from normal navigation and preserves its tasks,
-activity, comments, and evidence. An archived board cannot be a default or
-receive new tasks. Normal product flows use archive and restore rather than
-hard deletion.
+activity, comments, and evidence. It also freezes task and comment writes,
+following, and reminder delivery until the board is restored. An archived board
+cannot be a default or receive new tasks, and its tasks do not appear in normal
+lists. Restoring the board resumes eligible future reminders. Normal product
+flows use archive and restore rather than hard deletion; an archived task can
+likewise be restored by an active-scope task administrator.
 
 ## Task model and behavior
 

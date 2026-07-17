@@ -53,6 +53,7 @@ export const snapshot = internalAction({
         await adapter.writeFile(input.memoryBox.boxId, `${snapshotPath}/context.md`, context)
         const recheck = await ctx.runQuery((internal as any).projectExit.getSnapshotInput, {
           projectCompanyId: args.projectCompanyId,
+          operationId: args.operationId,
         }) as any
         if (
           !recheck ||

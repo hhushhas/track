@@ -26,19 +26,21 @@ export function CompanyProjectPage({
 }: Props) {
   const releaseConfig = useReleaseConfig();
   const currentUser = useQuery(api.auth.getCurrentUser);
-  const projects = useQuery(api.sharedProjects.listForActingCompany, {
-    actingCompanyId,
-  });
+  const projects = useQuery(
+    api.sharedProjects.listForActingCompany,
+    releaseConfig.companyModel ? { actingCompanyId } : "skip",
+  );
   const item = projects?.find(
     (candidate) =>
       candidate.project._id === projectId &&
       candidate.membership._id === projectMemberId,
   );
-  const exitStatus = useQuery(api.projectExit.getStatus, {
-    actingCompanyId,
-    projectId,
-    projectMemberId,
-  });
+  const exitStatus = useQuery(
+    api.projectExit.getStatus,
+    releaseConfig.companyModel
+      ? { actingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
   const canReadChannels =
     exitStatus != null && exitStatus.status !== "exit_pending";
   const canManageActiveProject =
@@ -205,7 +207,7 @@ export function CompanyProjectPage({
   const readOnly =
     item?.membership.status === "archived" ||
     item?.project.status === "archived" ||
-    activeChannel?.status === "archived";
+    Boolean(activeChannel && activeChannel.status !== "active");
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -213,12 +215,14 @@ export function CompanyProjectPage({
     try {
       await action();
       setNotice("Saved.");
+      return true;
     } catch (error) {
       setNotice(
         error instanceof Error
           ? error.message.replaceAll("_", " ")
           : "The action failed.",
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -227,7 +231,7 @@ export function CompanyProjectPage({
   async function submitMessage(event: FormEvent) {
     event.preventDefault();
     if (!activeChannelId || !currentUser || !composer.trim()) return;
-    await run(() =>
+    const saved = await run(() =>
       sendMessage({
         actingCompanyId,
         authorId: currentUser._id,
@@ -237,8 +241,17 @@ export function CompanyProjectPage({
         projectMemberId,
       }),
     );
-    setComposer("");
+    if (saved) setComposer("");
   }
+
+  if (!releaseConfig.companyModel)
+    return (
+      <main className="company-hub">
+        <h1>Company Project unavailable</h1>
+        <p>This capability is currently disabled by the server release configuration.</p>
+        <Link to="/workspace">Return to Projects</Link>
+      </main>
+    );
 
   if (projects === undefined)
     return (

@@ -25,6 +25,7 @@ import {
 } from './lib/memoryPolicy'
 
 const memoryLockTtlMs = 20_000
+const channelImportSummaryLimitChars = 8_000
 
 const contextEditValidator = v.object({
   oldText: v.string(),
@@ -167,6 +168,12 @@ export const startImport = action({
       }
 
       const normalizedEvidence = await readImportEvidence(adapter, boxId, scratchPath)
+      const sourceText = [
+        args.pastedText?.trim() ? `Pasted text:\n${args.pastedText.trim()}` : '',
+        args.sourceUrls?.length ? `Links:\n${args.sourceUrls.join('\n')}` : '',
+        sourceFiles.length ? `Files:\n${sourceFiles.map((file) => file.filename).join('\n')}` : '',
+        normalizedEvidence ? `Normalized scratch evidence:\n${normalizedEvidence}` : '',
+      ].filter(Boolean).join('\n\n')
       const summary = scope === 'project'
         ? await promoteImportToContext(ctx, {
             actorId: args.actorId,
@@ -174,14 +181,9 @@ export const startImport = action({
             groupId: args.groupId,
             importId,
             projectId: args.projectId,
-            sourceText: [
-              args.pastedText?.trim() ? `Pasted text:\n${args.pastedText.trim()}` : '',
-              args.sourceUrls?.length ? `Links:\n${args.sourceUrls.join('\n')}` : '',
-              sourceFiles.length ? `Files:\n${sourceFiles.map((file) => `${file.filename}: ${file.storageId}`).join('\n')}` : '',
-              normalizedEvidence ? `Normalized scratch evidence:\n${normalizedEvidence}` : '',
-            ].filter(Boolean).join('\n\n'),
+            sourceText,
           })
-        : 'Channel-scoped source preserved for authorized Channel context.'
+        : buildChannelImportSummary(sourceText)
 
       await ctx.runMutation(internal.memory.updateImportJob, {
         boxScratchPath: scratchPath,
@@ -630,6 +632,11 @@ async function ensureProjectBox(
     runtime,
   })
   return { boxId }
+}
+
+export function buildChannelImportSummary(sourceText: string) {
+  const summary = normalizeImportedText(sourceText, channelImportSummaryLimitChars)
+  return summary || 'Channel-scoped source preserved; no readable text was available.'
 }
 
 async function getProjectMemoryBox(

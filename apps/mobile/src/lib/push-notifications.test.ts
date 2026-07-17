@@ -18,10 +18,18 @@ describe('mobile push routing', () => {
     })).toBe('/conversation?projectId=p&groupId=g&companyId=c&membershipId=m');
   });
 
+  it('opens thread payloads with an exact represented context', () => {
+    expect(resolvePushHref({
+      url: '/thread?projectId=p&groupId=g&threadId=t&companyId=c&membershipId=m&messageId=x',
+    })).toBe('/thread?projectId=p&groupId=g&threadId=t&companyId=c&membershipId=m&messageId=x');
+  });
+
   it('rejects external, incomplete, and membership-ambiguous payloads', () => {
     expect(resolvePushHref({ url: 'https://evil.example/task?projectId=p&taskKey=T-23456789' })).toBeNull();
     expect(resolvePushHref({ url: '/task?projectId=p' })).toBeNull();
     expect(resolvePushHref({ url: '/task?projectId=p&taskKey=T-23456789&companyId=c' })).toBeNull();
+    expect(resolvePushHref({ url: '/thread?projectId=p&groupId=g' })).toBeNull();
+    expect(resolvePushHref({ url: '/thread?projectId=p&groupId=g&threadId=t&membershipId=m' })).toBeNull();
     expect(resolvePushHref({ url: '//evil.example/task?projectId=p&taskKey=T-23456789' })).toBeNull();
   });
 });

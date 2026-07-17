@@ -1,13 +1,18 @@
 # Changelog
 
-## 2026-07-17
-
-- Added default-off Company, task-management, and Channel-thread release controls with fail-closed web, mobile, and Convex configuration.
-- Added framework-independent domain contracts, additive Convex schema and generated declarations, authenticated actor resolution, and a central legacy/company Project and Channel policy seam without enabling the pending feature domains.
-
 ## Unreleased
 
+The combined Company, task-management, Channel-thread, and supporting UI work
+is implemented behind independent default-off controls, verified locally, and
+not deployed.
+
 ### Added
+
+- Default-off Company, task-management, and Channel-thread release controls
+  with fail-closed web, mobile, and Convex configuration.
+- Framework-independent domain contracts, additive Convex schema and generated
+  declarations, authenticated actor resolution, and a central legacy/Company
+  Project and Channel policy seam without enabling the feature domains.
 
 - Default-off task management across shared contracts, Convex, web, and mobile,
   including scoped boards and workflows, ranked tasks and subtasks, labels,
@@ -48,6 +53,28 @@
   protect conversation, attachment, search, audit, report, notification,
   assistant, memory, typing, read-state, and mobile paths without trusting
   caller-supplied user identifiers.
+
+### Fixed
+
+- Company-exit archives now retain only active entitlements and frozen member,
+  Channel, thread, and message metadata in archive views and search.
+- Company-aware message delivery now uses exact membership overlap for
+  forwarding disclosure and generates Company workspace push destinations.
+- Task assignment now validates the complete active Company membership chain;
+  late successful detection leases can commit safely, and workflow-category
+  changes reconcile terminal state and due reminders.
+- Archived tasks can be restored by an active-scope task administrator, while
+  archived boards freeze task writes and hide their tasks from normal lists.
+- Board and task archive transitions now cancel or restore eligible reminders,
+  and read-only Company-exit participants cannot mutate task comments or follow
+  state.
+- Subtasks now remain on their parent board, and parent-board moves plus workflow
+  state removal reconcile every affected due reminder.
+- Channel-scoped imports retain bounded evidence for authorized task extraction;
+  Channel participant changes invalidate stale archive votes, and
+  archive-pending Channels are read-only on web and mobile.
+- Company reactivation, direct Company routes, and message composer behavior
+  now fail closed when their release or send operation is unavailable.
 
 ## 2026-07-16
 

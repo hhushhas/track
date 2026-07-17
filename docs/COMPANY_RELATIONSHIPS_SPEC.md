@@ -1,14 +1,14 @@
 # Company Relationships and Shared Projects Specification
 
-Status: approved product direction; implementation pending; not deployed.
+Status: implemented behind a default-off server release flag; locally verified;
+not deployed.
 
 This specification defines the Company, Relationship, shared-Project, and
-Channel model in Track's target [PRODUCT.md](./PRODUCT.md) contract. The running
-product is summarized in [README.md](../README.md) until this work passes its
-release gate. Where this specification conflicts with the planned thread or task
-model, it is authoritative for Company identity, neutral roles, Project
-participation, Channel naming, and access control. The affected specifications
-must be reconciled before a combined release ships.
+Channel model in Track's target [PRODUCT.md](./PRODUCT.md) contract. The
+repository implementation is summarized in [README.md](../README.md). This
+specification is authoritative for Company identity, neutral roles, Project
+participation, Channel naming, and access control; the maintained thread and
+task specifications use the same combined-release boundaries.
 
 ## Combined-release controls
 
@@ -28,10 +28,9 @@ exit, and retention cleanup active. The all-off configuration preserves legacy
 Project conversation through the authenticated actor and central legacy policy
 adapter.
 
-These specifications remain implementation-pending until the combined local
-gate passes. After that proof, maintained documentation may describe the
-capabilities as implemented and locally verified, default off, and not
-production deployed. Local implementation acceptance does not authorize a
+The combined repository gate and lightweight local web verification pass. Full
+authenticated browser, native production-build, rollout, and production proofs
+remain release work. Local implementation acceptance does not authorize a
 production deployment, rollout, migration, or flag activation.
 
 ## Product intent
@@ -1172,7 +1171,8 @@ and an observed local workflow pass.
 - Do not duplicate authorization logic across web, mobile, search, assistant,
   memory, threads, tasks, notifications, and reports.
 - Do not trust actor identifiers supplied by a client.
-- Do not describe this planned behavior as shipped before Phase 8 passes.
+- Do not describe this default-off implementation as deployed, enabled, or
+  shipped before Phase 8 passes.
 
 When Phase 8 ships, remove the delivered Company item from
 [ROADMAP.md](./ROADMAP.md), reconcile running behavior with

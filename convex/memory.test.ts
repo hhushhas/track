@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
+import { buildChannelImportSummary } from './memoryActions'
 import schema from './schema'
 
 const modules = (import.meta as ImportMeta & {
@@ -10,6 +11,15 @@ const modules = (import.meta as ImportMeta & {
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
 describe('memory import metadata', () => {
+  it('preserves bounded Channel import evidence for task extraction', () => {
+    const source = `Pasted text:\nShip the default-off release.\n\n${'evidence '.repeat(1_200)}`
+    const summary = buildChannelImportSummary(source)
+
+    expect(summary).toContain('Ship the default-off release.')
+    expect(summary).toHaveLength(8_000)
+    expect(summary.endsWith('...')).toBe(true)
+  })
+
   it('records import lifecycle status and audit events', async () => {
     const t = convexTest(schema, modules)
     const now = Date.now()

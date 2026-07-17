@@ -42,10 +42,10 @@ export async function rescheduleTaskReminders(ctx: MutationCtx, task: Doc<'tasks
     await ctx.db.patch(job._id, { status: 'canceled', updatedAt: Date.now() })
   }
   if (!task.dueDate || !task.assigneeProjectMemberId || task.archivedAt) return
-  const [state, member] = await Promise.all([
-    ctx.db.get(task.workflowStateId), ctx.db.get(task.assigneeProjectMemberId),
+  const [board, state, member] = await Promise.all([
+    ctx.db.get(task.boardId), ctx.db.get(task.workflowStateId), ctx.db.get(task.assigneeProjectMemberId),
   ])
-  if (!state || isTerminalTaskState(state.category) || !member ||
+  if (!board || board.archivedAt || !state || isTerminalTaskState(state.category) || !member ||
     (member.status !== undefined && member.status !== 'active')) return
   const user = await ctx.db.get(member.userId)
   if (!user) return
@@ -77,7 +77,8 @@ export const deliver = internalMutation({
     const job = await ctx.db.get(args.jobId)
     if (!job || job.status !== 'scheduled') return false
     const [task, member] = await Promise.all([ctx.db.get(job.taskId), ctx.db.get(job.recipientProjectMemberId)])
-    if (!task || task.archivedAt || task.dueDate !== job.dueDate ||
+    const board = task ? await ctx.db.get(task.boardId) : null
+    if (!task || !board || board.archivedAt || task.archivedAt || task.dueDate !== job.dueDate ||
       task.assigneeProjectMemberId !== job.recipientProjectMemberId || !member ||
       (member.status !== undefined && member.status !== 'active')) {
       await ctx.db.patch(job._id, { status: 'canceled', updatedAt: Date.now() })

@@ -15,6 +15,36 @@ type NotificationTarget = {
   tokenOrEndpoint: string
 }
 
+export function resolveMessageNotificationUrls(input: {
+  actingCompanyId?: string
+  channelThreadId?: string
+  groupId: string
+  legacyWebUrl: string
+  messageId: string
+  projectId: string
+  projectMemberId?: string
+}) {
+  const represented = input.actingCompanyId && input.projectMemberId
+    ? { companyId: input.actingCompanyId, membershipId: input.projectMemberId }
+    : null
+  const representedSearch = represented ? `?${new URLSearchParams(represented)}` : ''
+  const webUrl = input.channelThreadId
+    ? `/workspace/projects/${encodeURIComponent(input.projectId)}/groups/${encodeURIComponent(input.groupId)}/threads/${encodeURIComponent(input.channelThreadId)}${representedSearch}#message-${encodeURIComponent(input.messageId)}`
+    : represented
+      ? `/workspace/company-projects/${encodeURIComponent(input.projectId)}?${new URLSearchParams({
+          ...represented,
+          groupId: input.groupId,
+        })}#message-${encodeURIComponent(input.messageId)}`
+      : input.legacyWebUrl
+  const mobileContext = represented
+    ? `&companyId=${encodeURIComponent(represented.companyId)}&membershipId=${encodeURIComponent(represented.membershipId)}`
+    : ''
+  const mobileUrl = input.channelThreadId
+    ? `/thread?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}&threadId=${encodeURIComponent(input.channelThreadId)}${mobileContext}&messageId=${encodeURIComponent(input.messageId)}`
+    : `/conversation?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}${mobileContext}`
+  return { mobileUrl, webUrl }
+}
+
 async function sendExpoPush(input: {
   body: string
   data?: Record<string, string>
@@ -78,12 +108,15 @@ export const deliverMessageNotifications = internalAction({
     await Promise.all(
       notification.targets.map(async (target) => {
         try {
-          const representedSearch = target.actingCompanyId && target.projectMemberId
-            ? `?companyId=${encodeURIComponent(target.actingCompanyId)}&membershipId=${encodeURIComponent(target.projectMemberId)}`
-            : ''
-          const webUrl = notification.channelThreadId
-            ? `/workspace/projects/${notification.projectId}/groups/${notification.groupId}/threads/${notification.channelThreadId}${representedSearch}#message-${args.messageId}`
-            : notification.url
+          const { mobileUrl, webUrl } = resolveMessageNotificationUrls({
+            actingCompanyId: target.actingCompanyId,
+            channelThreadId: notification.channelThreadId,
+            groupId: String(notification.groupId),
+            legacyWebUrl: notification.url,
+            messageId: String(args.messageId),
+            projectId: String(notification.projectId),
+            projectMemberId: target.projectMemberId,
+          })
           if (target.platform === 'web') {
             if (!publicKey || !privateKey) return
             await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
@@ -94,12 +127,6 @@ export const deliverMessageNotifications = internalAction({
               url: webUrl,
             }))
           } else {
-            const mobileContext = target.actingCompanyId && target.projectMemberId
-              ? `&companyId=${encodeURIComponent(target.actingCompanyId)}&membershipId=${encodeURIComponent(target.projectMemberId)}`
-              : ''
-            const mobileUrl = notification.channelThreadId
-              ? `/thread?projectId=${notification.projectId}&groupId=${notification.groupId}&threadId=${notification.channelThreadId}${mobileContext}&messageId=${args.messageId}`
-              : `/conversation?projectId=${notification.projectId}&groupId=${notification.groupId}${mobileContext}`
             await sendExpoPush({
               target,
               title: `${notification.senderName} in ${notification.groupName}`,

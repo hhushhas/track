@@ -1,6 +1,8 @@
 import { hasUnanimousApproval } from '@track/shared/company'
 import { v } from 'convex/values'
 
+import type { Id } from './_generated/dataModel'
+import type { MutationCtx } from './_generated/server'
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { requireAuthenticatedActor } from './lib/actorContext'
@@ -10,6 +12,51 @@ import {
   resolveCompanyProjectAccess,
 } from './lib/companyPolicy'
 import { removeTaskMemberFromScope } from './lib/taskLifecycle'
+
+async function activeChannelParticipantIds(ctx: MutationCtx, groupId: Id<'groups'>) {
+  const memberships = await ctx.db.query('groupMembers')
+    .withIndex('by_group', (q) => q.eq('groupId', groupId))
+    .collect()
+  const projectMembers = await Promise.all(memberships
+    .filter((membership) => membership.status === 'active' && membership.projectMemberId)
+    .map(async (membership) => await ctx.db.get(membership.projectMemberId!)))
+  return new Set(projectMembers.flatMap((member) =>
+    member?.projectCompanyId ? [String(member.projectCompanyId)] : [],
+  ))
+}
+
+function sameParticipantSet(left: ReadonlySet<string>, right: ReadonlySet<string>) {
+  return left.size === right.size && [...left].every((participantId) => right.has(participantId))
+}
+
+async function recordChannelParticipantChange(
+  ctx: MutationCtx,
+  groupId: Id<'groups'>,
+  previousParticipantIds: ReadonlySet<string>,
+  now: number,
+) {
+  const participantIds = await activeChannelParticipantIds(ctx, groupId)
+  if (sameParticipantSet(previousParticipantIds, participantIds)) return
+
+  const [group, pendingRequests] = await Promise.all([
+    ctx.db.get(groupId),
+    ctx.db.query('channelArchiveRequests')
+      .withIndex('by_group_status', (q) => q.eq('groupId', groupId).eq('status', 'pending'))
+      .collect(),
+  ])
+  if (!group) throw new Error('channel_unavailable')
+  await Promise.all(pendingRequests.map((request) =>
+    ctx.db.patch(request._id, { status: 'stale', updatedAt: now }),
+  ))
+  const lifecycleStatus = group.status === 'archive_pending' && pendingRequests.length
+    ? pendingRequests[0]!.operation === 'archive' ? 'active' : 'archived'
+    : group.status
+  await ctx.db.patch(group._id, {
+    status: lifecycleStatus,
+    revision: (group.revision ?? 0) + 1,
+    updatedAt: now,
+  })
+}
 
 export const list = query({
   args: {
@@ -223,6 +270,7 @@ export const decideParticipation = mutation({
       request.targetProjectCompanyId !== access.projectCompany._id
     ) return request?._id ?? null
     const now = Date.now()
+    const previousParticipantIds = await activeChannelParticipantIds(ctx, args.groupId)
     if (args.decision === 'decline') {
       await ctx.db.patch(request._id, {
         status: 'declined',
@@ -268,6 +316,7 @@ export const decideParticipation = mutation({
       decidedAt: now,
       updatedAt: now,
     })
+    await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
     return request._id
   },
 })
@@ -297,7 +346,7 @@ export const updateOwnCompanyMember = mutation({
         q.eq('groupId', args.groupId).eq('projectMemberId', target._id),
       )
       .unique()
-    if (!args.active && membership?.isSteward) {
+    if (membership?.isSteward && (!args.active || !args.steward)) {
       const channelMemberships = await ctx.db
         .query('groupMembers')
         .withIndex('by_group', (q) => q.eq('groupId', args.groupId))
@@ -311,6 +360,7 @@ export const updateOwnCompanyMember = mutation({
       }
     }
     const now = Date.now()
+    const previousParticipantIds = await activeChannelParticipantIds(ctx, args.groupId)
     if (membership) {
       await ctx.db.patch(membership._id, {
         status: args.active ? 'active' : 'removed',
@@ -321,10 +371,11 @@ export const updateOwnCompanyMember = mutation({
       if (!args.active) await removeTaskMemberFromScope(ctx, {
         projectId: args.projectId, groupId: args.groupId, projectMemberId: target._id,
       })
+      await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
       return membership._id
     }
     if (!args.active) return null
-    return await ctx.db.insert('groupMembers', {
+    const membershipId = await ctx.db.insert('groupMembers', {
       projectId: access.project._id,
       groupId: args.groupId,
       userId: target.userId,
@@ -334,6 +385,8 @@ export const updateOwnCompanyMember = mutation({
       createdAt: now,
       updatedAt: now,
     })
+    await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
+    return membershipId
   },
 })
 

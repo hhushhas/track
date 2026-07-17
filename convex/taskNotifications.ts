@@ -141,16 +141,17 @@ export const collectPushTargets = internalQuery({
       .query('notificationSubscriptions')
       .withIndex('by_user', (q) => q.eq('userId', recipient.userId))
       .collect()
-    const targets = subscriptions
-      .filter(
-        (subscription) =>
-          subscription.enabled &&
-          (project.accessProfile === 'company'
-            ? subscription.projectMemberId === recipient._id
-            : !subscription.projectMemberId ||
-              subscription.projectMemberId === recipient._id),
-      )
-      .map((subscription) => ({
+    const subscriptionsByDevice = new Map<string, (typeof subscriptions)[number]>()
+    for (const subscription of subscriptions) {
+      if (!subscription.enabled ||
+        (subscription.projectMemberId && subscription.projectMemberId !== recipient._id)) continue
+      const key = `${subscription.platform}:${subscription.tokenOrEndpoint}`
+      const existing = subscriptionsByDevice.get(key)
+      if (!existing?.projectMemberId || subscription.projectMemberId === recipient._id) {
+        subscriptionsByDevice.set(key, subscription)
+      }
+    }
+    const targets = Array.from(subscriptionsByDevice.values()).map((subscription) => ({
         id: subscription._id,
         platform: subscription.platform,
         tokenOrEndpoint: subscription.tokenOrEndpoint,

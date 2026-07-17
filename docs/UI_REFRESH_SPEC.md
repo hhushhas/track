@@ -1,6 +1,7 @@
 # UI Refresh Specification
 
-Status: approved design direction; implementation pending; not deployed.
+Status: implemented and locally verified; default-off product surfaces are not
+deployed.
 
 This specification turns the approved 2026-07-16 design direction into
 executable work for `apps/web`. The high-fidelity reference is
@@ -32,11 +33,11 @@ is unflagged. Track B remains unreachable presentational work until the owning
 task or thread flag exposes a fully implemented route; clients consume an
 authorized server projection and never use their environment as authority.
 
-This specification remains implementation-pending until the combined local
-gate passes. After that proof, maintained documentation may describe the UI as
-implemented and locally verified, with the three product capabilities default
-off and no production deployment. Local acceptance does not authorize a
-production deployment or flag activation.
+The combined repository gate and lightweight local web verification pass. The
+Company, task, and thread surfaces remain independently default off and have not
+been deployed. Full authenticated browser, native production-build, rollout,
+and production proofs remain release work. Local acceptance does not authorize
+a production deployment or flag activation.
 
 ## Ground rules for every workstream
 

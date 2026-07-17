@@ -26,6 +26,26 @@ function enabled(scope: string, candidate: string) {
   return scope === 'all' || scope === candidate
 }
 
+type ArchivedChannelSnapshot = {
+  _id: Id<'groups'>
+  createdAt?: number
+  kind?: string
+  name: string
+}
+
+type ArchivedThreadSnapshot = {
+  _id: Id<'channelThreads'>
+  createdAt?: number
+  groupId?: Id<'groups'>
+  name: string
+  status: 'active' | 'archived'
+}
+
+type ArchivedMemberSnapshot = {
+  membership: { _id: Id<'projectMembers'>; userId: Id<'users'> }
+  user: { displayName: string }
+}
+
 export const project = query({
   args: {
     filter: v.optional(searchScope),
@@ -69,16 +89,11 @@ export const project = query({
         .filter((membership) => membership.projectId === args.projectId)
         .map((membership) => membership.groupId)
     const cutoff = access.companyAccess?.entitlement?.exitAt
-    const channelSnapshots = new Map(
-      (access.companyAccess?.entitlement?.channelSnapshots ?? []).map((channel: { _id: string; name: string }) => [channel._id, channel]),
-    )
-    const threadSnapshots = new Map(
-      (access.companyAccess?.entitlement?.threadSnapshots ?? []).map((thread: {
-        _id: string
-        name: string
-        status: 'active' | 'archived'
-      }) => [thread._id, thread]),
-    )
+    const channelSnapshotValues = (access.companyAccess?.entitlement?.channelSnapshots ?? []) as Array<ArchivedChannelSnapshot>
+    const threadSnapshotValues = (access.companyAccess?.entitlement?.threadSnapshots ?? []) as Array<ArchivedThreadSnapshot>
+    const memberSnapshotValues = (access.companyAccess?.entitlement?.memberSnapshots ?? []) as Array<ArchivedMemberSnapshot>
+    const channelSnapshots = new Map(channelSnapshotValues.map((channel) => [String(channel._id), channel]))
+    const threadSnapshots = new Map(threadSnapshotValues.map((thread) => [String(thread._id), thread]))
 
     const messages = enabled(filter, 'messages')
       && visibleGroupIdValues.length > 0
@@ -106,11 +121,17 @@ export const project = query({
     const messageResults = (
       await Promise.all(
         messages.map(async (message) => {
-            const [author, group, channelThread] = await Promise.all([
-              ctx.db.get(message.authorId),
+            const archivedAuthor = cutoff
+              ? memberSnapshotValues.find((snapshot) => message.authorProjectMemberId
+                  ? snapshot.membership._id === message.authorProjectMemberId
+                  : snapshot.membership.userId === message.authorId)
+              : undefined
+            const [liveAuthor, group, channelThread] = await Promise.all([
+              cutoff ? null : ctx.db.get(message.authorId),
               ctx.db.get(message.groupId),
               message.channelThreadId ? ctx.db.get(message.channelThreadId) : null,
             ])
+            const authorName = archivedAuthor?.user.displayName ?? liveAuthor?.displayName ?? 'Unknown member'
             const groupName = channelSnapshots.get(String(message.groupId))?.name ?? group?.name ?? 'Unknown channel'
             return {
               createdAt: message.createdAt,
@@ -125,9 +146,9 @@ export const project = query({
                 : undefined,
               preview: compactPreview(message.body, 'Attachment message'),
               subtitle: channelThread
-                ? `${author?.displayName ?? 'Unknown member'} in ${threadSnapshots.get(String(channelThread._id))?.name ?? channelThread.name} · ${groupName}`
-                : `${author?.displayName ?? 'Unknown member'} in ${groupName}`,
-              title: author?.displayName ?? 'Message',
+                ? `${authorName} in ${threadSnapshots.get(String(channelThread._id))?.name ?? channelThread.name} · ${groupName}`
+                : `${authorName} in ${groupName}`,
+              title: authorName,
             }
           }),
       )
@@ -190,7 +211,7 @@ export const project = query({
       )
     ).filter((result) => result !== null)
 
-    const groups = enabled(filter, 'groups')
+    const groups = !cutoff && enabled(filter, 'groups')
       && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('groups')
@@ -202,17 +223,36 @@ export const project = query({
           ))
           .take(perSectionLimit)
       : []
-    const groupResults = groups
-      .map((group) => ({
-        createdAt: group.createdAt,
-        groupId: group._id,
-        groupName: channelSnapshots.get(String(group._id))?.name ?? group.name,
-        id: group._id,
-        kind: 'group' as const,
-        preview: `${group.kind.replaceAll('_', ' ')} group`,
-        subtitle: 'Channel',
-        title: channelSnapshots.get(String(group._id))?.name ?? group.name,
-      }))
+    const visibleGroupIds = new Set(visibleGroupIdValues.map(String))
+    const groupResults = cutoff
+      ? enabled(filter, 'groups')
+        ? channelSnapshotValues
+            .filter((group) =>
+              visibleGroupIds.has(String(group._id)) &&
+              group.name.toLowerCase().includes(term.toLowerCase()),
+            )
+            .slice(0, perSectionLimit)
+            .map((group) => ({
+              createdAt: group.createdAt ?? cutoff,
+              groupId: group._id,
+              groupName: group.name,
+              id: group._id,
+              kind: 'group' as const,
+              preview: `${(group.kind ?? 'channel').replaceAll('_', ' ')} group`,
+              subtitle: 'Channel',
+              title: group.name,
+            }))
+        : []
+      : groups.map((group) => ({
+          createdAt: group.createdAt,
+          groupId: group._id,
+          groupName: group.name,
+          id: group._id,
+          kind: 'group' as const,
+          preview: `${group.kind.replaceAll('_', ' ')} group`,
+          subtitle: 'Channel',
+          title: group.name,
+        }))
 
     const taskCandidates = process.env.TRACK_TASKS_ENABLED === 'true' && enabled(filter, 'tasks')
       ? access.companyAccess?.projectMember.status === 'archived' && access.companyAccess.entitlement
@@ -257,44 +297,60 @@ export const project = query({
       if (taskResults.length >= perSectionLimit) break
     }
 
-    const channelThreads = threadsEnabled() && enabled(filter, 'threads')
+    const channelThreads = !cutoff && threadsEnabled() && enabled(filter, 'threads')
       && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('channelThreads')
           .withSearchIndex('search_name_by_project', (q) =>
             q.search('name', term).eq('projectId', args.projectId),
           )
-          .filter((q) => q.and(
-            q.or(...visibleGroupIdValues.map((groupId) => q.eq(q.field('groupId'), groupId))),
-            ...(cutoff ? [q.or(
-              ...[...threadSnapshots.keys()].map((threadId) =>
-                q.eq(q.field('_id'), threadId as Id<'channelThreads'>),
-              ),
-            )] : []),
+          .filter((q) => q.or(
+            ...visibleGroupIdValues.map((groupId) => q.eq(q.field('groupId'), groupId)),
           ))
           .take(perSectionLimit)
       : []
-    const threadResults = (
-      await Promise.all(
-        channelThreads.map(async (thread) => {
+    const archivedThreadMatches = cutoff && threadsEnabled() && enabled(filter, 'threads')
+      ? threadSnapshotValues
+          .filter((thread) => thread.name.toLowerCase().includes(term.toLowerCase()))
+          .slice(0, perSectionLimit)
+      : []
+    const threadResults = (await Promise.all(
+      cutoff
+        ? archivedThreadMatches.map(async (snapshot) => {
+            const liveThread = snapshot.groupId ? null : await ctx.db.get(snapshot._id)
+            const groupId = snapshot.groupId ?? liveThread?.groupId
+            if (!groupId || !visibleGroupIds.has(String(groupId))) return null
+            const groupName = channelSnapshots.get(String(groupId))?.name ?? 'Unknown channel'
+            return {
+              createdAt: snapshot.createdAt ?? cutoff,
+              groupId,
+              groupName,
+              id: snapshot._id,
+              kind: 'thread' as const,
+              preview: snapshot.status === 'archived' ? 'Archived thread' : 'Active thread',
+              subtitle: groupName,
+              threadId: snapshot._id,
+              threadName: snapshot.name,
+              title: snapshot.name,
+            }
+          })
+        : channelThreads.map(async (thread) => {
             const group = await ctx.db.get(thread.groupId)
-            const snapshot = threadSnapshots.get(String(thread._id))
-            const groupName = channelSnapshots.get(String(thread.groupId))?.name ?? group?.name ?? 'Unknown channel'
+            const groupName = group?.name ?? 'Unknown channel'
             return {
               createdAt: thread.createdAt,
               groupId: thread.groupId,
               groupName,
               id: thread._id,
               kind: 'thread' as const,
-              preview: (snapshot?.status ?? thread.status) === 'archived' ? 'Archived thread' : 'Active thread',
+              preview: thread.status === 'archived' ? 'Archived thread' : 'Active thread',
               subtitle: groupName,
               threadId: thread._id,
-              threadName: snapshot?.name ?? thread.name,
-              title: snapshot?.name ?? thread.name,
+              threadName: thread.name,
+              title: thread.name,
             }
-          }),
-      )
-    )
+          }))
+    ).filter((result) => result !== null)
 
     return {
       files: fileResults,

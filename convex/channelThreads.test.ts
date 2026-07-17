@@ -877,6 +877,15 @@ describe('Channel threads', () => {
         createdAt: now,
         updatedAt: now,
       })
+      await ctx.db.insert('notificationSubscriptions', {
+        userId: member,
+        projectMemberId: memberMembershipId,
+        platform: 'ios',
+        tokenOrEndpoint: 'ExponentPushToken[test]',
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      })
     })
     const unfollowedMessageId = await actor.mutation(api.messages.send, {
       authorId: owner,

@@ -42,6 +42,9 @@ export const companyProjectTables = {
     exitOperationId: v.optional(v.string()),
     exitContextRevision: v.optional(v.number()),
     exitMemoryBoxId: v.optional(v.string()),
+    exitProjectSnapshot: v.optional(v.any()),
+    exitChannelSnapshots: v.optional(v.array(v.any())),
+    exitMemberSnapshots: v.optional(v.array(v.any())),
     memorySnapshotStatus: v.optional(
       v.union(v.literal('pending'), v.literal('verified'), v.literal('failed')),
     ),
