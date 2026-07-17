@@ -34,7 +34,14 @@ export async function allocateChannelSequence(
   ctx: MutationCtx,
   group: Doc<'groups'>,
 ) {
-  const nextSequence = (group.nextChannelSequence ?? 0) + 1
+  const latestMessage = group.nextChannelSequence === undefined
+    ? await ctx.db
+        .query('messages')
+        .withIndex('by_group_channel_sequence', (q) => q.eq('groupId', group._id))
+        .order('desc')
+        .first()
+    : null
+  const nextSequence = (group.nextChannelSequence ?? latestMessage?.channelSequence ?? 0) + 1
   await ctx.db.patch(group._id, { nextChannelSequence: nextSequence })
   return nextSequence
 }

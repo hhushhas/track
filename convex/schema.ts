@@ -292,11 +292,12 @@ export default defineSchema({
     .index('by_project', ['projectId'])
     .index('by_group_status_updated_at', ['groupId', 'status', 'updatedAt'])
     .index('by_group_source', ['groupId', 'sourceMessageId'])
+    .index('by_group_idempotency', ['groupId', 'idempotencyKey'])
     .index('by_creator_idempotency', ['creatorProjectMemberId', 'idempotencyKey'])
     .index('by_creator', ['creatorProjectMemberId'])
     .searchIndex('search_name_by_project', {
       searchField: 'name',
-      filterFields: ['projectId'],
+      filterFields: ['projectId', 'groupId', 'status'],
     }),
 
   channelThreadFollowers: defineTable({
@@ -318,6 +319,7 @@ export default defineSchema({
   })
     .index('by_project', ['projectId'])
     .index('by_group', ['groupId'])
+    .index('by_thread_member', ['channelThreadId', 'projectMemberId'])
     .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
     .index('by_project_member_preference', ['projectMemberId', 'preference'])
     .index('by_thread_preference', ['channelThreadId', 'preference']),

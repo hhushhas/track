@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import type { Id } from './_generated/dataModel'
-import type { MutationCtx, QueryCtx } from './_generated/server'
+import type { QueryCtx } from './_generated/server'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import { requireActiveCompanyMembership, requireCompanyModelEnabled } from './lib/companyPolicy'
@@ -124,7 +124,13 @@ export const listProjects = query({
         const unreadCount = (
           await Promise.all(
             projectGroupMemberships.map((item) =>
-              getGroupUnreadCount(ctx, item.groupId, args.userId, membership._id, entitlement?.exitAt),
+              getGroupUnreadCount(
+                ctx,
+                item.groupId,
+                args.userId,
+                membership.companyId ? membership._id : undefined,
+                entitlement?.exitAt,
+              ),
             ),
           )
         ).reduce((total, count) => total + count, 0)
@@ -159,9 +165,16 @@ export const resolveNavigation = query({
         actingCompanyId: args.actingCompanyId,
         projectMemberId: args.projectMemberId,
       }, args.groupId ? 'readChannel' : 'readProject')
+      const group = args.groupId ? await ctx.db.get(args.groupId) : null
+      if (args.groupId && (!group || group.projectId !== args.projectId)) {
+        return { available: false, archived: false }
+      }
       return {
         available: true,
-        archived: access.companyAccess?.projectMember.status === 'archived' || access.companyAccess?.project.status === 'archived',
+        archived:
+          access.companyAccess?.projectMember.status === 'archived' ||
+          access.project.status === 'archived' ||
+          group?.status === 'archived',
       }
     } catch {
       return { available: false, archived: false }
@@ -357,18 +370,6 @@ export const markGroupRead = mutation({
       }
     }
 
-    if (threadsEnabled()) {
-      const projectMember = access.companyAccess?.projectMember ?? await ctx.db
-        .query('projectMembers')
-        .withIndex('by_project_user', (q) =>
-          q.eq('projectId', group.projectId).eq('userId', args.userId),
-        )
-        .unique()
-      if (projectMember) {
-        await markFollowedThreadsRead(ctx, group._id, args.userId, projectMember._id, access.companyAccess?.company._id)
-      }
-    }
-
     const now = Date.now()
     const existing = args.projectMemberId
       ? await ctx.db.query('groupReadStates').withIndex('by_project_member_group', (q) =>
@@ -397,55 +398,3 @@ export const markGroupRead = mutation({
     })
   },
 })
-
-async function markFollowedThreadsRead(
-  ctx: MutationCtx,
-  groupId: Id<'groups'>,
-  userId: Id<'users'>,
-  projectMemberId: Id<'projectMembers'>,
-  actingCompanyId?: Id<'companies'>,
-) {
-  const followers = await ctx.db
-    .query('channelThreadFollowers')
-    .withIndex('by_project_member_preference', (q) =>
-      q.eq('projectMemberId', projectMemberId).eq('preference', 'following'),
-    )
-    .collect()
-  const now = Date.now()
-  for (const follower of followers.filter((item) => item.groupId === groupId)) {
-    const latest = await ctx.db
-      .query('messages')
-      .withIndex('by_thread_created_at', (q) =>
-        q.eq('channelThreadId', follower.channelThreadId),
-      )
-      .order('desc')
-      .first()
-    const lastReadChannelSequence = latest?.channelSequence ?? 0
-    const existing = await ctx.db
-      .query('channelThreadReadStates')
-      .withIndex('by_thread_project_member', (q) =>
-        q
-          .eq('channelThreadId', follower.channelThreadId)
-          .eq('projectMemberId', projectMemberId),
-      )
-      .unique()
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        lastReadChannelSequence: Math.max(existing.lastReadChannelSequence, lastReadChannelSequence),
-        updatedAt: now,
-      })
-      continue
-    }
-    await ctx.db.insert('channelThreadReadStates', {
-      projectId: follower.projectId,
-      groupId,
-      channelThreadId: follower.channelThreadId,
-      userId,
-      projectMemberId,
-      actingCompanyId,
-      lastReadChannelSequence,
-      createdAt: now,
-      updatedAt: now,
-    })
-  }
-}

@@ -14,8 +14,10 @@ attachments, notifications, deep links, and exact Company attribution.
 The approved independent product and implementation contract is in
 [THREADS_SPEC.md](./THREADS_SPEC.md). Remaining roadmap work is the required
 authenticated browser and native production-build walkthrough, controlled flag
-rollout, and conditional task integration after task management exists. Threads
-operate without task tables, routes, cards, or suggestions.
+rollout, and production validation. Threads operate without task tables, routes,
+cards, or suggestions when task management is disabled; when both releases are
+enabled, thread messages and assistant answers can ground tasks and suggestions
+without weakening the thread's Company and Channel access boundary.
 
 ## WhatsApp-style mobile push notifications
 

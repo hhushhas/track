@@ -177,7 +177,7 @@ export const ask = action({
     if (process.env.TRACK_TASKS_ENABLED === 'true' && args.promptMessageId && isExplicitTaskRequest(args.question)) {
       const explicit = await ctx.runMutation((internal as any).taskSuggestions.createExplicit, {
         projectId: args.projectId, groupId: args.groupId, requesterId: args.requesterId,
-        actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId,
+        actingCompanyId: actorContext.actingCompanyId, projectMemberId: actorContext.projectMemberId,
         promptMessageId: args.promptMessageId, question: args.question,
       }) as { status: 'clarify' } | { status: 'ready'; suggestionId: Id<'taskSuggestions'> }
       const now = Date.now()
@@ -186,7 +186,9 @@ export const ask = action({
         : 'I need a concrete action or nearby message before I can suggest a task.'
       const streamId = await ctx.runMutation(internal.assistant.createStream, {
         projectId: args.projectId, groupId: args.groupId, requesterId: args.requesterId,
-        actingCompanyId: args.actingCompanyId, requesterProjectMemberId: args.projectMemberId,
+        channelThreadId: args.channelThreadId,
+        actingCompanyId: actorContext.actingCompanyId,
+        requesterProjectMemberId: actorContext.projectMemberId,
         promptMessageId: args.promptMessageId, status: 'completed', answer,
         evidence: [], createdAt: now, updatedAt: now,
       })

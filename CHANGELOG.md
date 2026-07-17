@@ -27,6 +27,9 @@
 - Server-issued Channel ordering, bounded thread summaries, follower-only
   delivery, exact represented-membership mentions, and Company-exit thread
   snapshots without introducing a task-management dependency.
+- Conditional thread-to-task creation, inline task cards, grounded suggestions,
+  search, migration reconciliation, and Company-exit task snapshots when both
+  independently controlled releases are enabled.
 - Default-off Company collaboration across web and mobile, including private
   Company discovery, memberships, peer Relationships, shared Project proposals,
   explicit Channels, represented identity, and Company-aware conversation.

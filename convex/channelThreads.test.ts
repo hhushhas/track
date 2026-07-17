@@ -148,6 +148,35 @@ describe('Channel threads', () => {
     })).rejects.toThrow('threads_disabled')
   })
 
+  it('continues channel sequences above pre-upgrade messages', async () => {
+    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    await t.run(async (ctx) => {
+      await ctx.db.insert('messages', {
+        projectId,
+        groupId,
+        authorId: owner,
+        authorProjectMemberId: ownerMembershipId,
+        channelSequence: 41,
+        body: 'Persisted before the group counter existed',
+        mentions: [],
+        attachmentIds: [],
+        createdAt: Date.now() - 1_000,
+      })
+    })
+
+    const messageId = await asUser(t, owner).mutation(api.messages.send, {
+      authorId: owner,
+      body: 'First message after the sequence migration',
+      groupId,
+      idempotencyKey: 'post-sequence-migration',
+      projectId,
+    })
+    expect(await t.run(async (ctx) => await ctx.db.get(messageId)))
+      .toMatchObject({ channelSequence: 42 })
+    expect(await t.run(async (ctx) => await ctx.db.get(groupId)))
+      .toMatchObject({ nextChannelSequence: 42 })
+  })
+
   it('converges create and send retries while keeping thread messages out of the timeline', async () => {
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const ownerActor = asUser(t, owner)
@@ -247,6 +276,51 @@ describe('Channel threads', () => {
       .toMatchObject({ following: false, unread: false })
   })
 
+  it('keeps legacy timeline and followed-thread read cursors independent', async () => {
+    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
+    const ownerActor = asUser(t, owner)
+    const memberActor = asUser(t, member)
+    const threadId = await ownerActor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'independent-unread-thread',
+      name: 'Independent unread state',
+      projectId,
+    })
+    await memberActor.mutation(api.channelThreads.setFollowing, {
+      following: true,
+      threadId,
+      userId: member,
+    })
+    await ownerActor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Unread thread reply',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'independent-thread-reply',
+      projectId,
+    })
+    const timelineMessageId = await ownerActor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Unread parent timeline message',
+      groupId,
+      idempotencyKey: 'independent-timeline-message',
+      projectId,
+    })
+
+    expect((await memberActor.query(api.mobile.listProjects, { userId: member }))[0])
+      .toMatchObject({ unreadCount: 2 })
+    await memberActor.mutation(api.mobile.markGroupRead, {
+      groupId,
+      lastReadMessageId: timelineMessageId,
+      userId: member,
+    })
+    expect((await memberActor.query(api.mobile.listProjects, { userId: member }))[0])
+      .toMatchObject({ unreadCount: 1 })
+    expect(await memberActor.query(api.channelThreads.get, { threadId, userId: member }))
+      .toMatchObject({ unread: true })
+  })
+
   it('advances read state while an archived parent Channel remains readable', async () => {
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
@@ -271,9 +345,49 @@ describe('Channel threads', () => {
     })
     await t.run(async (ctx) => await ctx.db.patch(groupId, { status: 'archived' }))
 
+    expect(await asUser(t, member).query(api.mobile.resolveNavigation, {
+      groupId,
+      projectId,
+      userId: member,
+    })).toEqual({ available: true, archived: true })
+
     await asUser(t, member).mutation(api.channelThreads.markRead, { threadId, userId: member })
     expect(await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))
       .toMatchObject({ unread: false })
+  })
+
+  it('keeps explicit task assistant answers in the invoking thread', async () => {
+    process.env.TRACK_TASKS_ENABLED = 'true'
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const threadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'explicit-task-thread',
+      name: 'Explicit task request',
+      projectId,
+    })
+    const promptMessageId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: '@track create a task to publish the integration notes',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'explicit-task-prompt',
+      projectId,
+    })
+
+    const result = await actor.action(api.assistant.ask, {
+      channelThreadId: threadId,
+      groupId,
+      projectId,
+      promptMessageId,
+      question: '@track create a task to publish the integration notes',
+      requesterId: owner,
+    })
+    expect((await actor.query(api.assistant.listForThread, { threadId, userId: owner }))
+      .map((stream) => stream._id)).toContain(result.streamId)
+    expect((await actor.query(api.assistant.listForGroup, { groupId, userId: owner }))
+      .map((stream) => stream._id)).not.toContain(result.streamId)
   })
 
   it('paginates long history and includes an exact deep-link target', async () => {
