@@ -94,6 +94,31 @@ Assistant requests start from the current group and may broaden only to other ac
 
 Project-memory imports are asynchronous jobs. Convex tracks import ownership and status while Upstash Box stores the imported content. Typed public and internal Convex references preserve the trust boundary between user actions and background processing.
 
+## Mobile push delivery
+
+One `pushInstallations` record represents an installed native app and its current
+account attachment, permission state, environment, and Expo token. Registration
+atomically moves an installation between accounts, token refresh updates the same
+record, and sign-out detaches it before local credentials are removed. Web push
+subscriptions remain separate because their browser endpoint lifecycle differs.
+
+Message and task effects resolve current membership, preference, mute, and
+installation eligibility into idempotent `pushDeliveryIntents`. Provider work is
+batched in groups of at most 100. Every attempt records a sanitized outcome;
+transient ticket or receipt failures retry with bounded backoff, permanent token
+failures disable the installation, and accepted tickets reconcile through Expo
+receipts before becoming terminal. Provider acceptance never represents proof
+that an operating system displayed the alert.
+
+Native payloads contain versioned opaque route identifiers and the selected safe
+context only. They exclude message bodies, task titles and descriptions,
+comments, filenames, evidence, assistant output, and imported memory. The app
+freshly authorizes every destination, suppresses a foreground banner only for
+the exact visible context, and persists response consumption to prevent a cold
+start or remount from opening the route twice. The operational contract and
+environment separation are documented in
+[MOBILE_PUSH_NOTIFICATIONS_RUNBOOK.md](./MOBILE_PUSH_NOTIFICATIONS_RUNBOOK.md).
+
 ## Task management
 
 Convex is authoritative for boards, workflow states, ranked tasks, labels,

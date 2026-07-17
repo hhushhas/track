@@ -8,6 +8,7 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 import { authClient, setTwoFactorRedirectHandler } from '@/lib/auth-client';
 import { clearStoredAuthSession } from '@/lib/auth-storage';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
+import { getStoredPushInstallationId } from '@/lib/push-installation';
 import { OptionsSheet, SheetInput, SheetSection } from '@/components/options-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -39,12 +40,14 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const syncDevUser = useMutation(api.auth.syncDevUser);
   const acceptInvites = useMutation(api.invitations.acceptPendingForCurrentUser);
   const updateProfile = useMutation(api.auth.updateProfile);
+  const detachPushInstallation = useMutation(api.notifications.detachNativeInstallation);
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [sheet, setSheet] = useState<'profile' | 'two-factor' | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<'account' | 'invites' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [syncAttempt, setSyncAttempt] = useState(0);
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
@@ -153,6 +156,17 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 
   async function signOut() {
     setBusyAction('sign-out');
+    setSignOutError(null);
+    if (trackUserId) {
+      try {
+        const installationId = await getStoredPushInstallationId();
+        if (installationId) await detachPushInstallation({ installationId });
+      } catch {
+        setSignOutError('Could not safely disconnect this device from notifications. Check your connection and try signing out again.');
+        setBusyAction(null);
+        return;
+      }
+    }
     try {
       await authClient.signOut();
     } catch {
@@ -239,6 +253,20 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
             onPress={() => void retryBootstrap()}
             style={[styles.retryButton, { borderColor: theme.hairline }]}>
             <ThemedText type="smallBold">{busyAction === 'invites' ? 'Trying…' : 'Try Again'}</ThemedText>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {signOutError ? (
+        <View accessibilityRole="alert" style={[styles.errorBanner, { backgroundColor: theme.backgroundElement }]}>
+          <ThemedText type="smallBold">Sign out was stopped to keep notifications private.</ThemedText>
+          <ThemedText type="small">{signOutError}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busyAction === 'sign-out'}
+            onPress={() => void signOut()}
+            style={[styles.retryButton, { borderColor: theme.hairline }]}>
+            <ThemedText type="smallBold">{busyAction === 'sign-out' ? 'Trying…' : 'Try Again'}</ThemedText>
           </Pressable>
         </View>
       ) : null}

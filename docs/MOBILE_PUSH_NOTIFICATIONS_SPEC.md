@@ -1,6 +1,7 @@
 # Mobile Push Notifications Specification
 
-Status: ready for implementation approval; implementation has not started.
+Status: implemented in code; non-production native and physical-device release
+proof remains open.
 
 Companion: [visual planning deck](./MOBILE_PUSH_NOTIFICATIONS_SPEC.html)
 
@@ -343,42 +344,42 @@ physical-device release matrix remains the end-to-end proof.
   boundary.
 - [ ] Audit the Apple, Firebase, Expo access-token, config-plugin, Project id,
   and non-production EAS credential path without changing production.
-- [ ] Freeze the event matrix, preference precedence, payload version, and
-  privacy copy after the non-production configuration audit.
+- [x] Freeze the event matrix, preference precedence, payload version, and
+  privacy copy in the implementation contract.
 
 ### Phase 1 — installation ownership and durable delivery
 
-- [ ] Add installation, delivery-intent, and attempt contracts with indexes,
+- [x] Add installation, delivery-intent, and attempt contracts with indexes,
   expiry, idempotency, and migration from current subscriptions.
-- [ ] Make register, refresh, sign-out, account switch, reinstall, and permanent
+- [x] Make register, refresh, sign-out, account switch, reinstall, and permanent
   token failure explicit lifecycle transitions.
-- [ ] Create delivery intents from message and task events without duplicating
+- [x] Create delivery intents from message and task events without duplicating
   domain content.
 
 ### Phase 2 — reliable provider pipeline
 
-- [ ] Submit bounded Expo batches, classify ticket failures, reconcile receipts,
+- [x] Submit bounded Expo batches, classify ticket failures, reconcile receipts,
   retry transient failures, disable invalid tokens, and expose sanitized
   diagnostics.
-- [ ] Recheck access and preferences immediately before submission.
-- [ ] Add metrics and a development-only test notification path.
+- [x] Recheck access and preferences immediately before submission.
+- [x] Add metrics and a development-only test notification path.
 
 ### Phase 3 — mobile permission, settings, presentation, and routing
 
-- [ ] Add the approved permission education and denial-recovery flow.
-- [ ] Add the global Notifications screen and preserve Channel, thread, and task
+- [x] Add the approved permission education and denial-recovery flow.
+- [x] Add the global Notifications screen and preserve Channel, thread, and task
   controls.
-- [ ] Implement preview, sound, grouping, badge, and foreground rules.
-- [ ] Make cold, warm, and foreground taps idempotently open the exact authorized
+- [x] Implement preview, sound, grouping, badge, and foreground rules.
+- [x] Make cold, warm, and foreground taps idempotently open the exact authorized
   message, thread, or task.
 
 ### Phase 4 — automated hardening
 
-- [ ] Cover event eligibility, preference precedence, membership separation,
+- [x] Cover event eligibility, preference precedence, membership separation,
   access loss, duplicate scheduling, retries, receipt errors, token rotation,
   sign-out/account switch, privacy copy, and deep-link validation.
-- [ ] Run the repository's full lint, typecheck, test, audit, and build gate.
-- [ ] Run one bounded `codex review` on the nontrivial implementation and resolve
+- [x] Run the repository's full lint, typecheck, test, audit, and build gate.
+- [x] Run one bounded `codex review` on the nontrivial implementation and resolve
   actionable findings.
 
 ### Phase 5 — physical-device release proof

@@ -19,8 +19,8 @@ environment override disables any one capability without changing the others.
 Clients keep gated surfaces hidden until that server projection is available.
 
 The [target product contract](./docs/PRODUCT.md) also defines dependable mobile
-push. That companion capability remains independently controlled work tracked in
-[docs/ROADMAP.md](./docs/ROADMAP.md).
+push. Its implemented architecture, product behavior, and release-proof boundary
+are maintained in the mobile push specification and runbook.
 
 ## Repository
 
@@ -49,9 +49,11 @@ Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained doc
 - [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
   implemented Company, Relationship, shared-Project, Channel,
   access, exit, and migration contract.
-- [Mobile push notification intent](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
-  approved reliability direction that still needs a complete implementation
+- [Mobile push notification specification](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
+  implemented installation, delivery, privacy, settings, and verification
   contract.
+- [Mobile push notification runbook](./docs/MOBILE_PUSH_NOTIFICATIONS_RUNBOOK.md):
+  environment setup, delivery operations, diagnostics, and release proof.
 
 ## Requirements
 

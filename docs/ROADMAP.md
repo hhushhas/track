@@ -11,12 +11,12 @@ preserve Project, Channel, thread, and Acting Company access; deduplicate retrie
 respect notification preferences; and open the exact authorized destination
 without leaking unavailable content.
 
-The product intent is in
-[MOBILE_PUSH_NOTIFICATIONS_SPEC.md](./MOBILE_PUSH_NOTIFICATIONS_SPEC.md). That
-specification still needs an implementation-ready contract for eligible events,
-thread and reply behavior, foreground presentation, payload safety, delivery and
-retry semantics, token lifecycle, deep links, observability, platform behavior,
-and acceptance tests before implementation begins.
+The implemented contract is in
+[MOBILE_PUSH_NOTIFICATIONS_SPEC.md](./MOBILE_PUSH_NOTIFICATIONS_SPEC.md), with
+operations in
+[MOBILE_PUSH_NOTIFICATIONS_RUNBOOK.md](./MOBILE_PUSH_NOTIFICATIONS_RUNBOOK.md).
+The remaining roadmap work is non-production native credential proof, the
+physical iPhone and Android release matrix, and an explicitly approved rollout.
 
 ## Planning rule
 

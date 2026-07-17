@@ -59,8 +59,8 @@ export default function RootLayout() {
         <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
           <ThemeProvider value={navTheme}>
             <TrackUserProvider>
-              <PushNotificationBridge />
-              <CompanyProvider>
+              <PushNotificationBridge>
+                <CompanyProvider>
                 <StatusBar style="auto" />
                 <Stack
                 screenOptions={{
@@ -78,6 +78,7 @@ export default function RootLayout() {
                 <Stack.Screen name="index" options={{ headerShown: false }} />
                 <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                 <Stack.Screen name="projects" options={{ title: 'Projects' }} />
+                <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
                 <Stack.Screen name="company" options={{ title: 'Companies' }} />
                 <Stack.Screen name="groups" options={{ title: 'Channels' }} />
                 <Stack.Screen name="conversation" options={{ title: 'Conversation' }} />
@@ -86,7 +87,8 @@ export default function RootLayout() {
                 <Stack.Screen name="threads" options={{ title: 'Threads' }} />
                 <Stack.Screen name="thread" options={{ title: 'Thread' }} />
                 </Stack>
-              </CompanyProvider>
+                </CompanyProvider>
+              </PushNotificationBridge>
             </TrackUserProvider>
           </ThemeProvider>
         </ConvexBetterAuthProvider>

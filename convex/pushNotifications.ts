@@ -6,14 +6,39 @@ import webPush from 'web-push'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { action, internalAction } from './_generated/server'
+import { classifyExpoFailure, messagePushCopy, taskPushCopy } from './lib/pushDelivery'
 
-type NotificationTarget = {
+type NativeTarget = {
   actingCompanyId?: string
-  id: Id<'notificationSubscriptions'>
-  platform: 'web' | 'ios' | 'android'
+  badge?: number
+  eventKind: string
+  installationId: Id<'pushInstallations'>
+  kind: 'native'
+  platform: 'ios' | 'android'
+  previewMode: 'context' | 'hidden'
   projectMemberId?: string
+  recipientUserId: Id<'users'>
+  soundEnabled: boolean
   tokenOrEndpoint: string
 }
+
+type WebTarget = {
+  actingCompanyId?: string
+  eventKind?: string
+  kind: 'web'
+  platform: 'web'
+  projectMemberId?: string
+  recipientUserId?: Id<'users'>
+  subscriptionId: Id<'notificationSubscriptions'>
+  tokenOrEndpoint: string
+}
+
+type LegacyNativeTarget = Omit<NativeTarget, 'installationId' | 'kind'> & {
+  kind: 'legacy_native'
+  subscriptionId: Id<'notificationSubscriptions'>
+}
+
+type ExpoTicket = { status?: string; id?: string; message?: string; details?: { error?: string } }
 
 export function resolveMessageNotificationUrls(input: {
   actingCompanyId?: string
@@ -35,143 +60,187 @@ export function resolveMessageNotificationUrls(input: {
           ...represented,
           groupId: input.groupId,
         })}#message-${encodeURIComponent(input.messageId)}`
-      : input.legacyWebUrl
+      : `${input.legacyWebUrl}#message-${encodeURIComponent(input.messageId)}`
   const mobileContext = represented
     ? `&companyId=${encodeURIComponent(represented.companyId)}&membershipId=${encodeURIComponent(represented.membershipId)}`
     : ''
   const mobileUrl = input.channelThreadId
     ? `/thread?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}&threadId=${encodeURIComponent(input.channelThreadId)}${mobileContext}&messageId=${encodeURIComponent(input.messageId)}`
-    : `/conversation?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}${mobileContext}`
+    : `/conversation?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}${mobileContext}&messageId=${encodeURIComponent(input.messageId)}`
   return { mobileUrl, webUrl }
 }
 
-async function sendExpoPush(input: {
+type ExpoPushInput = {
+  badge?: number
   body: string
-  data?: Record<string, string>
-  target: NotificationTarget
+  data: Record<string, string>
+  soundEnabled: boolean
   title: string
-}) {
-  const response = await fetch('https://exp.host/--/api/v2/push/send', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      to: input.target.tokenOrEndpoint,
-      title: input.title,
-      body: input.body,
-      data: input.data ?? {},
-      sound: 'default',
-    }),
-  })
+  token: string
+}
 
-  if (!response.ok) throw new Error(`expo_push_failed_${response.status}`)
-  const payload = await response.json() as {
-    data?: { status?: string; details?: { error?: string } }
+export async function sendExpoBatch(inputs: ExpoPushInput[]) {
+  if (inputs.length === 0 || inputs.length > 100) throw new Error('expo_batch_size_invalid')
+  if (!process.env.EXPO_PUSH_ACCESS_TOKEN) {
+    return inputs.map(() => ({
+      ok: false as const,
+      category: 'invalid_credentials' as const,
+      permanent: true,
+      latencyMs: 0,
+    }))
   }
-  if (payload.data?.status === 'error') {
-    throw new Error(payload.data.details?.error ?? 'expo_push_error')
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Accept-Encoding': 'gzip, deflate',
+    'Content-Type': 'application/json',
   }
+  headers.Authorization = `Bearer ${process.env.EXPO_PUSH_ACCESS_TOKEN}`
+  const startedAt = Date.now()
+  let response: Response
+  try {
+    response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(inputs.map((input) => ({
+          to: input.token,
+          title: input.title,
+          body: input.body,
+          ...(input.badge === undefined ? {} : { badge: input.badge }),
+          data: input.data,
+          sound: input.soundEnabled ? 'default' : null,
+          priority: 'high',
+          ttl: 24 * 60 * 60,
+        }))),
+    })
+  } catch {
+    const failure = classifyExpoFailure({})
+    return inputs.map(() => ({ ok: false as const, ...failure, latencyMs: Date.now() - startedAt }))
+  }
+  const latencyMs = Date.now() - startedAt
+  if (!response.ok) {
+    const failure = classifyExpoFailure({ httpStatus: response.status })
+    return inputs.map(() => ({ ok: false as const, ...failure, latencyMs }))
+  }
+  let payload: { data?: ExpoTicket | ExpoTicket[] }
+  try {
+    payload = await response.json() as { data?: ExpoTicket | ExpoTicket[] }
+  } catch {
+    const failure = classifyExpoFailure({})
+    return inputs.map(() => ({ ok: false as const, ...failure, latencyMs }))
+  }
+  const tickets = Array.isArray(payload.data) ? payload.data : payload.data ? [payload.data] : []
+  return inputs.map((_, index) => {
+    const ticket = tickets[index]
+    if (ticket?.status === 'ok' && ticket.id) return { ok: true as const, ticketId: ticket.id, latencyMs }
+    const failure = ticket
+      ? classifyExpoFailure({ error: ticket.details?.error, httpStatus: 400 })
+      : classifyExpoFailure({})
+    return { ok: false as const, ...failure, latencyMs }
+  })
+}
+
+function webPushDetails() {
+  const publicKey = process.env.VAPID_PUBLIC_KEY
+  const privateKey = process.env.VAPID_PRIVATE_KEY
+  if (!publicKey || !privateKey) return false
+  webPush.setVapidDetails(process.env.VAPID_SUBJECT ?? 'mailto:support@q9labs.ai', publicKey, privateKey)
+  return true
 }
 
 export const deliverMessageNotifications = internalAction({
-  args: {
-    messageId: v.id('messages'),
-  },
+  args: { messageId: v.id('messages') },
   handler: async (ctx, args) => {
-    const publicKey = process.env.VAPID_PUBLIC_KEY
-    const privateKey = process.env.VAPID_PRIVATE_KEY
-    const subject = process.env.VAPID_SUBJECT ?? 'mailto:support@q9labs.ai'
-
-    console.info('[Track push] deliverMessageNotifications started', {
-      messageId: args.messageId,
-      vapidConfigured: Boolean(publicKey && privateKey),
-    })
-
-    const notification = await ctx.runQuery(internal.notifications.collectMessageNotificationTargets, {
-      messageId: args.messageId,
-    })
-    if (!notification || notification.targets.length === 0) {
-      console.info('[Track push] deliverMessageNotifications skipped without targets', {
-        hasNotification: Boolean(notification),
-        messageId: args.messageId,
+    const notification = await ctx.runQuery(internal.notifications.collectMessageNotificationTargets, args)
+    if (!notification) return
+    if (!notification.targets.length) {
+      await ctx.runMutation(internal.pushDelivery.recordEvent, {
+        sourceKind: 'message', sourceId: String(args.messageId), eventKind: 'message',
+        eligibleRecipientCount: 0, createdIntentCount: 0, webTargetCount: 0,
       })
       return
     }
-
-    if (publicKey && privateKey) {
-      webPush.setVapidDetails(subject, publicKey, privateKey)
-    }
-
-    await Promise.all(
-      notification.targets.map(async (target) => {
+    const webConfigured = webPushDetails()
+    const nativeIntentIds: Array<Id<'pushDeliveryIntents'>> = []
+    await Promise.all(notification.targets.map(async (rawTarget) => {
+      const target = rawTarget as NativeTarget | LegacyNativeTarget | WebTarget
+      const urls = resolveMessageNotificationUrls({
+        actingCompanyId: target.actingCompanyId,
+        channelThreadId: notification.channelThreadId,
+        groupId: String(notification.groupId),
+        legacyWebUrl: notification.url,
+        messageId: String(args.messageId),
+        projectId: String(notification.projectId),
+        projectMemberId: target.projectMemberId,
+      })
+      const copy = messagePushCopy({
+        eventKind: target.eventKind ?? 'message',
+        senderName: notification.senderName,
+        groupName: notification.groupName,
+        threadName: notification.channelThreadName,
+        previewMode: target.kind === 'web' ? 'context' : target.previewMode,
+      })
+      if (target.kind === 'web') {
+        if (!webConfigured) return
         try {
-          const { mobileUrl, webUrl } = resolveMessageNotificationUrls({
-            actingCompanyId: target.actingCompanyId,
-            channelThreadId: notification.channelThreadId,
-            groupId: String(notification.groupId),
-            legacyWebUrl: notification.url,
-            messageId: String(args.messageId),
-            projectId: String(notification.projectId),
-            projectMemberId: target.projectMemberId,
-          })
-          if (target.platform === 'web') {
-            if (!publicKey || !privateKey) return
-            await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
-              body: notification.body.slice(0, 160),
-              icon: '/logo192.png',
-              tag: `track-message-${args.messageId}`,
-              title: `${notification.senderName} in ${notification.groupName}`,
-              url: webUrl,
-            }))
-          } else {
-            await sendExpoPush({
-              target,
-              title: `${notification.senderName} in ${notification.groupName}`,
-              body: notification.body.slice(0, 160),
-              data: {
-                groupId: String(notification.groupId),
-                messageId: String(args.messageId),
-                projectId: String(notification.projectId),
-                ...(notification.channelThreadId
-                  ? { threadId: String(notification.channelThreadId) }
-                  : {}),
-                ...(target.actingCompanyId ? { companyId: String(target.actingCompanyId) } : {}),
-                ...(target.projectMemberId ? { membershipId: String(target.projectMemberId) } : {}),
-                url: mobileUrl,
-              },
-            })
-          }
-          console.info('[Track push] message notification sent', {
-            messageId: args.messageId,
-            subscriptionId: target.id,
-          })
+          await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
+            ...copy, icon: '/logo192.png', tag: `track-message-${args.messageId}`, url: urls.webUrl,
+          }))
         } catch (error) {
           const statusCode = typeof error === 'object' && error && 'statusCode' in error ? error.statusCode : null
-          console.warn('[Track push] message notification failed', {
-            messageId: args.messageId,
-            statusCode,
-            subscriptionId: target.id,
-          })
           if (statusCode === 404 || statusCode === 410) {
-            await ctx.runMutation(internal.notifications.disableSubscription, {
-              subscriptionId: target.id,
-            })
-          }
-          if (
-            error instanceof Error &&
-            (error.message === 'DeviceNotRegistered' ||
-              error.message === 'expo_push_failed_400')
-          ) {
-            await ctx.runMutation(internal.notifications.disableSubscription, {
-              subscriptionId: target.id,
-            })
+            await ctx.runMutation(internal.notifications.disableSubscription, { subscriptionId: target.subscriptionId })
           }
         }
-      }),
-    )
+        return
+      }
+      const installationId = target.kind === 'native'
+        ? target.installationId
+        : await ctx.runMutation(internal.notifications.migrateLegacyNativeSubscription, {
+            subscriptionId: target.subscriptionId,
+          })
+      if (!installationId) return
+      const intentId = await ctx.runMutation(internal.pushDelivery.createIntent, {
+        sourceKind: 'message',
+        sourceId: String(args.messageId),
+        eventKind: target.eventKind,
+        recipientUserId: target.recipientUserId,
+        recipientProjectMemberId: target.projectMemberId as Id<'projectMembers'> | undefined,
+        installationId,
+        idempotencyKey: `message:${args.messageId}:${target.projectMemberId ?? 'legacy'}:${installationId}`,
+        title: copy.title,
+        body: copy.body,
+        data: {
+          schemaVersion: '1',
+          eventKind: target.eventKind,
+          projectId: String(notification.projectId),
+          groupId: String(notification.groupId),
+          messageId: String(args.messageId),
+          ...(notification.channelThreadId ? { threadId: String(notification.channelThreadId) } : {}),
+          ...(target.actingCompanyId ? { companyId: String(target.actingCompanyId) } : {}),
+          ...(target.projectMemberId ? { membershipId: String(target.projectMemberId) } : {}),
+          url: urls.mobileUrl,
+        },
+        soundEnabled: target.soundEnabled,
+        badge: target.badge,
+        ttlMs: 24 * 60 * 60 * 1_000,
+        deferDispatch: false,
+      })
+      if (intentId) nativeIntentIds.push(intentId)
+    }))
+    for (let index = 0; index < nativeIntentIds.length; index += 100) {
+      await ctx.runAction(internal.pushNotifications.dispatchDeliveryBatch, {
+        intentIds: nativeIntentIds.slice(index, index + 100),
+      })
+    }
+    await ctx.runMutation(internal.pushDelivery.recordEvent, {
+      sourceKind: 'message',
+      sourceId: String(args.messageId),
+      eventKind: 'message',
+      eligibleRecipientCount: new Set(notification.targets.map((target) =>
+        `${target.recipientUserId ?? 'web'}:${target.projectMemberId ?? 'legacy'}`)).size,
+      createdIntentCount: nativeIntentIds.length,
+      webTargetCount: notification.targets.filter((target) => target.kind === 'web').length,
+    })
   },
 })
 
@@ -179,126 +248,264 @@ export const deliverTaskNotification = internalAction({
   args: { notificationId: v.id('taskNotifications') },
   handler: async (ctx, args) => {
     const notification = await ctx.runQuery((internal as any).taskNotifications.collectPushTargets, args)
-    if (!notification?.targets.length) return
-    const publicKey = process.env.VAPID_PUBLIC_KEY
-    const privateKey = process.env.VAPID_PRIVATE_KEY
-    if (publicKey && privateKey) webPush.setVapidDetails(
-      process.env.VAPID_SUBJECT ?? 'mailto:support@q9labs.ai', publicKey, privateKey,
-    )
-    await Promise.all(notification.targets.map(async (target: NotificationTarget) => {
-      try {
-        if (target.platform === 'web') {
-          if (!publicKey || !privateKey) return
-          await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
-            body: notification.body, icon: '/logo192.png', tag: `track-task-${args.notificationId}`,
-            title: notification.title, url: notification.url,
+    if (!notification) return
+    if (!notification.targets.length) {
+      await ctx.runMutation(internal.pushDelivery.recordEvent, {
+        sourceKind: 'task', sourceId: String(args.notificationId), eventKind: notification.eventKind,
+        eligibleRecipientCount: 0, createdIntentCount: 0, webTargetCount: 0,
+      })
+      return
+    }
+    const webConfigured = webPushDetails()
+    const nativeIntentIds: Array<Id<'pushDeliveryIntents'>> = []
+    await Promise.all(notification.targets.map(async (rawTarget: NativeTarget | LegacyNativeTarget | WebTarget) => {
+      const copy = taskPushCopy({
+        eventKind: notification.eventKind,
+        projectName: notification.projectName,
+        publicKey: notification.publicKey,
+        previewMode: rawTarget.kind === 'web' ? 'context' : rawTarget.previewMode,
+      })
+      if (rawTarget.kind === 'web') {
+        if (!webConfigured) return
+        try {
+          await webPush.sendNotification(JSON.parse(rawTarget.tokenOrEndpoint), JSON.stringify({
+            ...copy, icon: '/logo192.png', tag: `track-task-${args.notificationId}`, url: notification.url,
           }))
-        } else await sendExpoPush({
-          target, title: notification.title, body: notification.body,
-          data: {
-            projectId: String(notification.projectId), taskKey: notification.publicKey,
-            url: notification.mobileUrl,
-          },
-        })
-      } catch (error) {
-        const statusCode = typeof error === 'object' && error && 'statusCode' in error ? error.statusCode : null
-        if (statusCode === 404 || statusCode === 410 ||
-          error instanceof Error && (error.message === 'DeviceNotRegistered' || error.message === 'expo_push_failed_400')) {
-          await ctx.runMutation(internal.notifications.disableSubscription, { subscriptionId: target.id })
+        } catch (error) {
+          const statusCode = typeof error === 'object' && error && 'statusCode' in error ? error.statusCode : null
+          if (statusCode === 404 || statusCode === 410) {
+            await ctx.runMutation(internal.notifications.disableSubscription, { subscriptionId: rawTarget.subscriptionId })
+          }
         }
+        return
+      }
+      const installationId = rawTarget.kind === 'native'
+        ? rawTarget.installationId
+        : await ctx.runMutation(internal.notifications.migrateLegacyNativeSubscription, {
+            subscriptionId: rawTarget.subscriptionId,
+          })
+      if (!installationId) return
+      const intentId = await ctx.runMutation(internal.pushDelivery.createIntent, {
+        sourceKind: 'task',
+        sourceId: String(args.notificationId),
+        eventKind: notification.eventKind,
+        recipientUserId: rawTarget.recipientUserId,
+        recipientProjectMemberId: notification.recipientProjectMemberId,
+        installationId,
+        idempotencyKey: `task:${args.notificationId}:${notification.recipientProjectMemberId}:${installationId}`,
+        title: copy.title,
+        body: copy.body,
+        data: {
+          schemaVersion: '1', eventKind: notification.eventKind,
+          projectId: String(notification.projectId), taskKey: notification.publicKey,
+          ...(notification.companyId ? { companyId: String(notification.companyId) } : {}),
+          membershipId: String(notification.recipientProjectMemberId),
+          url: notification.mobileUrl,
+        },
+        soundEnabled: rawTarget.soundEnabled,
+        badge: rawTarget.badge,
+        ttlMs: 24 * 60 * 60 * 1_000,
+        deferDispatch: false,
+      })
+      if (intentId) nativeIntentIds.push(intentId)
+    }))
+    for (let index = 0; index < nativeIntentIds.length; index += 100) {
+      await ctx.runAction(internal.pushNotifications.dispatchDeliveryBatch, {
+        intentIds: nativeIntentIds.slice(index, index + 100),
+      })
+    }
+    await ctx.runMutation(internal.pushDelivery.recordEvent, {
+      sourceKind: 'task', sourceId: String(args.notificationId), eventKind: notification.eventKind,
+      eligibleRecipientCount: 1,
+      createdIntentCount: nativeIntentIds.length,
+      webTargetCount: notification.targets.filter((target: any) => target.kind === 'web').length,
+    })
+  },
+})
+
+async function isIntentStillEligible(ctx: any, row: any) {
+  const { intent, installation } = row
+  if (!installation || !installation.enabled || !installation.expoPushToken ||
+    installation.userId !== intent.recipientUserId ||
+    !['granted', 'provisional'].includes(installation.permissionState)) return false
+  if (intent.sourceKind === 'test') return true
+  if (intent.sourceKind === 'message') {
+    const current = await ctx.runQuery(internal.notifications.collectMessageNotificationTargets, {
+      messageId: intent.sourceId as Id<'messages'>,
+    })
+    return Boolean(current?.targets.some((target: any) =>
+      target.kind === 'native' && target.installationId === intent.installationId &&
+      target.projectMemberId === intent.recipientProjectMemberId,
+    ))
+  }
+  const current = await ctx.runQuery((internal as any).taskNotifications.collectPushTargets, {
+    notificationId: intent.sourceId as Id<'taskNotifications'>,
+  })
+  return Boolean(current?.targets.some((target: any) =>
+    target.kind === 'native' && target.installationId === intent.installationId,
+  ))
+}
+
+export const dispatchDeliveryIntent = internalAction({
+  args: { intentId: v.id('pushDeliveryIntents') },
+  handler: async (ctx, args) => {
+    await ctx.runAction((internal as any).pushNotifications.dispatchDeliveryBatch, { intentIds: [args.intentId] })
+  },
+})
+
+export const dispatchDeliveryBatch = internalAction({
+  args: { intentIds: v.array(v.id('pushDeliveryIntents')) },
+  handler: async (ctx, args) => {
+    const prepared: Array<{
+      attemptNumber: number
+      input: ExpoPushInput
+      installationId: Id<'pushInstallations'>
+      intentId: Id<'pushDeliveryIntents'>
+    }> = []
+    for (const intentId of args.intentIds.slice(0, 100)) {
+      const row = await ctx.runQuery(internal.pushDelivery.getIntentForDispatch, { intentId })
+      if (!row || !await isIntentStillEligible(ctx, row)) {
+        await ctx.runMutation(internal.pushDelivery.cancelIntent, { intentId, reason: 'eligibility_changed' })
+        continue
+      }
+      const attemptNumber = await ctx.runMutation(internal.pushDelivery.markSending, { intentId })
+      if (!attemptNumber) continue
+      prepared.push({
+        attemptNumber,
+        installationId: row.installation!._id,
+        intentId,
+        input: {
+          token: row.installation!.expoPushToken!,
+          title: row.intent.title,
+          body: row.intent.body,
+          soundEnabled: row.intent.soundEnabled,
+          badge: row.intent.badge,
+          data: {
+            ...(row.intent.data as Record<string, string>),
+            intentId: String(row.intent._id),
+            soundEnabled: row.intent.soundEnabled ? 'true' : 'false',
+          },
+        },
+      })
+    }
+    if (!prepared.length) return
+    const results = await sendExpoBatch(prepared.map((item) => item.input))
+    await Promise.all(prepared.map(async (item, index) => {
+      const result = results[index]
+      if (result.ok) {
+        await ctx.runMutation(internal.pushDelivery.recordTicket, {
+          intentId: item.intentId,
+          attemptNumber: item.attemptNumber,
+          ticketId: result.ticketId,
+          providerLatencyMs: result.latencyMs,
+        })
+        return
+      }
+      await ctx.runMutation(internal.pushDelivery.recordFailure, {
+        intentId: item.intentId,
+        attemptNumber: item.attemptNumber,
+        category: result.category,
+        permanent: result.permanent,
+        providerLatencyMs: result.latencyMs,
+      })
+      if (result.category === 'device_not_registered') {
+        await ctx.runMutation(internal.notifications.disableInstallation, {
+          installationId: item.installationId, reason: result.category,
+        })
       }
     }))
   },
 })
 
-export const sendTestNotification = action({
-  args: {
-    userId: v.id('users'),
+export const reconcileDeliveryReceipts = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const pending = await ctx.runQuery(internal.pushDelivery.listPendingReceipts, {})
+    if (!pending.length) return
+    const ticketIds = pending.map((row) => row.attempt.providerTicketId!).slice(0, 1_000)
+    const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' }
+    if (process.env.EXPO_PUSH_ACCESS_TOKEN) headers.Authorization = `Bearer ${process.env.EXPO_PUSH_ACCESS_TOKEN}`
+    let response: Response
+    try {
+      response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
+        method: 'POST', headers, body: JSON.stringify({ ids: ticketIds }),
+      })
+    } catch {
+      return
+    }
+    if (!response.ok) return
+    let payload: { data?: Record<string, { status?: string; details?: { error?: string } }> }
+    try {
+      payload = await response.json() as typeof payload
+    } catch {
+      return
+    }
+    for (const row of pending) {
+      const receipt = payload.data?.[row.attempt.providerTicketId!]
+      if (!receipt) {
+        await ctx.runMutation(internal.pushDelivery.expireUnresolvedReceipt, {
+          attemptId: row.attempt._id,
+        })
+        continue
+      }
+      const delivered = receipt.status === 'ok'
+      const failure = delivered ? null : classifyExpoFailure({ error: receipt.details?.error, httpStatus: 400 })
+      const category = delivered ? 'delivered' : failure!.category
+      const installationId = await ctx.runMutation(internal.pushDelivery.resolveReceipt, {
+        attemptId: row.attempt._id,
+        delivered,
+        category,
+        retryable: Boolean(failure && !failure.permanent),
+      })
+      if (!delivered && category === 'device_not_registered' && installationId) {
+        await ctx.runMutation(internal.notifications.disableInstallation, { installationId, reason: category })
+      }
+    }
   },
-  handler: async (ctx, args): Promise<{ attempted: number; sent: number; failed: number }> => {
-    const publicKey = process.env.VAPID_PUBLIC_KEY
-    const privateKey = process.env.VAPID_PRIVATE_KEY
-    const subject = process.env.VAPID_SUBJECT ?? 'mailto:support@q9labs.ai'
+})
 
-    console.info('[Track push] sendTestNotification started', {
-      userId: args.userId,
-      vapidConfigured: Boolean(publicKey && privateKey),
-    })
-
-    const targets = await ctx.runQuery(internal.notifications.collectUserNotificationTargets, {
-      userId: args.userId,
-    })
-    console.info('[Track push] sendTestNotification targets collected', {
-      targetCount: targets.length,
-      userId: args.userId,
-    })
-    if (targets.length === 0) return { attempted: 0, sent: 0, failed: 0 }
-
-    if (publicKey && privateKey) {
-      webPush.setVapidDetails(subject, publicKey, privateKey)
-    }
-
-    const payload = JSON.stringify({
-      body: 'If you can see this, remote browser alerts are connected.',
-      icon: '/logo192.png',
-      requireInteraction: true,
-      tag: `track-test-${Date.now()}`,
-      timestamp: Date.now(),
-      title: 'Track test alert',
-      url: '/workspace',
-      vibrate: [80, 40, 80],
-    })
-
-    const results = await Promise.all(
-      targets.map(async (target) => {
+export const sendTestNotification = action({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args): Promise<{ attempted: number; queued: number; sent: number; failed: number }> => {
+    const targets = await ctx.runQuery(internal.notifications.collectUserNotificationTargets, args)
+    const webConfigured = webPushDetails()
+    let queued = 0
+    let failed = 0
+    for (const rawTarget of targets) {
+      const target = rawTarget as NativeTarget | LegacyNativeTarget | WebTarget
+      if (target.kind === 'web') {
+        if (!webConfigured) { failed += 1; continue }
         try {
-          if (target.platform === 'web') {
-            if (!publicKey || !privateKey) throw new Error('web_push_not_configured')
-            await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), payload, {
-              TTL: 60,
-              urgency: 'high',
-            })
-          } else {
-            await sendExpoPush({
-              target,
-              title: 'Track test alert',
-              body: 'If you can see this, mobile alerts are connected.',
-              data: { url: '/workspace' },
-            })
-          }
-          console.info('[Track push] test notification sent', {
-            subscriptionId: target.id,
-            userId: args.userId,
+          await webPush.sendNotification(JSON.parse(target.tokenOrEndpoint), JSON.stringify({
+            title: 'Track test alert', body: 'Browser alerts are connected.', icon: '/logo192.png',
+            tag: `track-test-${Date.now()}`, url: '/workspace',
+          }))
+          queued += 1
+        } catch { failed += 1 }
+        continue
+      }
+      const installationId = target.kind === 'native'
+        ? target.installationId
+        : await ctx.runMutation(internal.notifications.migrateLegacyNativeSubscription, {
+            subscriptionId: target.subscriptionId,
           })
-          return 'sent'
-        } catch (error) {
-          const statusCode = typeof error === 'object' && error && 'statusCode' in error ? error.statusCode : null
-          console.warn('[Track push] test notification failed', {
-            statusCode,
-            subscriptionId: target.id,
-            userId: args.userId,
-          })
-          if (statusCode === 404 || statusCode === 410) {
-            await ctx.runMutation(internal.notifications.disableSubscription, {
-              subscriptionId: target.id,
-            })
-          }
-          return 'failed'
-        }
-      }),
-    )
-
-    const sent = results.filter((result) => result === 'sent').length
-    console.info('[Track push] sendTestNotification completed', {
-      attempted: targets.length,
-      failed: targets.length - sent,
-      sent,
-      userId: args.userId,
-    })
-    return {
-      attempted: targets.length,
-      failed: targets.length - sent,
-      sent,
+      if (!installationId) { failed += 1; continue }
+      const sourceId = `test:${Date.now()}`
+      const intentId = await ctx.runMutation(internal.pushDelivery.createIntent, {
+        sourceKind: 'test', sourceId, eventKind: 'test', recipientUserId: args.userId,
+        installationId,
+        idempotencyKey: `${sourceId}:${installationId}`,
+        title: 'Track test alert', body: 'Mobile alerts are connected.',
+        data: { schemaVersion: '1', eventKind: 'test', url: '/projects' },
+        soundEnabled: target.soundEnabled, ttlMs: 60_000,
+      })
+      if (intentId) queued += 1
+      else failed += 1
     }
+    await ctx.runMutation(internal.pushDelivery.recordEvent, {
+      sourceKind: 'test', sourceId: `test:${Date.now()}`, eventKind: 'test',
+      eligibleRecipientCount: targets.length ? 1 : 0, createdIntentCount: queued, webTargetCount: 0,
+    })
+    return { attempted: targets.length, queued, sent: queued, failed }
   },
 })

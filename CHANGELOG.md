@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-18
+
+### Added
+
+- Implemented reliable iOS and Android push delivery with account-owned
+  installations, token rotation, sign-out isolation, idempotent delivery
+  intents, bounded Expo batches, retries, ticket and receipt reconciliation,
+  invalid-token cleanup, latency diagnostics, and development test alerts.
+- Added contextual notification education, denial recovery, global conversation
+  and task defaults, privacy-safe preview controls, sound and badge settings,
+  exact message/thread/task routing, persistent duplicate-open suppression, and
+  exact-context foreground suppression.
+
+### Security
+
+- Removed conversation and task content from native push payloads. Expo receives
+  only the selected sender and work-location context plus opaque authorization
+  identifiers; environments are matched explicitly and sign-out fails closed if
+  the device cannot be detached safely.
+
 ## 2026-07-17
 
 The combined Company, task-management, Channel-thread, and supporting UI work

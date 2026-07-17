@@ -24,6 +24,13 @@ describe('mobile push routing', () => {
     })).toBe('/thread?projectId=p&groupId=g&threadId=t&companyId=c&membershipId=m&messageId=x');
   });
 
+  it('preserves an exact Channel timeline message target', () => {
+    expect(resolvePushHref({
+      schemaVersion: '1',
+      url: '/conversation?projectId=p&groupId=g&messageId=m',
+    })).toBe('/conversation?projectId=p&groupId=g&messageId=m');
+  });
+
   it('rejects external, incomplete, and membership-ambiguous payloads', () => {
     expect(resolvePushHref({ url: 'https://evil.example/task?projectId=p&taskKey=T-23456789' })).toBeNull();
     expect(resolvePushHref({ url: '/task?projectId=p' })).toBeNull();
@@ -31,5 +38,7 @@ describe('mobile push routing', () => {
     expect(resolvePushHref({ url: '/thread?projectId=p&groupId=g' })).toBeNull();
     expect(resolvePushHref({ url: '/thread?projectId=p&groupId=g&threadId=t&membershipId=m' })).toBeNull();
     expect(resolvePushHref({ url: '//evil.example/task?projectId=p&taskKey=T-23456789' })).toBeNull();
+    expect(resolvePushHref({ schemaVersion: '2', url: '/projects' })).toBeNull();
+    expect(resolvePushHref({ url: '/conversation?projectId=p&groupId=g&companyId=c' })).toBeNull();
   });
 });

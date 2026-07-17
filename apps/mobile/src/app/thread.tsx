@@ -1,7 +1,7 @@
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useNetworkState } from 'expo-network';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 
@@ -24,6 +24,7 @@ import { hapticLight } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
+import { setActivePushContext } from '@/lib/push-presentation';
 
 export default function ThreadScreen() {
   const theme = useTheme();
@@ -46,6 +47,10 @@ export default function ThreadScreen() {
   const targetMessageId = messageId as Id<'messages'> | undefined;
   const cid = companyId as Id<'companies'> | undefined;
   const pmid = membershipId as Id<'projectMembers'> | undefined;
+  useFocusEffect(useCallback(() => {
+    if (pid && gid && tid) setActivePushContext({ projectId: pid, groupId: gid, threadId: tid });
+    return () => setActivePushContext(null);
+  }, [gid, pid, tid]));
   const context = cid && pmid ? { companyId: cid, membershipId: pmid, archived: archive === '1' } : null;
   const navigation = useQuery(api.mobile.resolveNavigation, releaseConfig.threads && trackUserId && pid && gid
     ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid }

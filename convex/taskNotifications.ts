@@ -2,6 +2,7 @@ import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { v } from 'convex/values'
 
 import { internalQuery, mutation, query } from './_generated/server'
+import { serverPushEnvironment } from './notifications'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { requireTaskAccess, resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskNotificationMode } from './schema/taskValidators'
@@ -59,7 +60,7 @@ export const getPreference = query({
         q.eq('projectMemberId', access.projectMember._id),
       )
       .unique()
-    return setting?.mode ?? 'important'
+    return setting?.mode ?? 'all'
   },
 })
 
@@ -125,11 +126,13 @@ export const collectPushTargets = internalQuery({
       )
         return null
     }
-    const setting = await ctx.db
-      .query('taskNotificationSettings')
-      .withIndex('by_member', (q) => q.eq('projectMemberId', recipient._id))
-      .unique()
-    const mode = setting?.mode ?? 'important'
+    const [setting, globalSetting] = await Promise.all([
+      ctx.db.query('taskNotificationSettings')
+        .withIndex('by_member', (q) => q.eq('projectMemberId', recipient._id)).unique(),
+      ctx.db.query('notificationSettings')
+        .withIndex('by_user', (q) => q.eq('userId', recipient.userId)).unique(),
+    ])
+    const mode = setting?.mode ?? globalSetting?.taskMode ?? 'all'
     const important = [
       'assignment',
       'mention',
@@ -138,25 +141,70 @@ export const collectPushTargets = internalQuery({
       'assignment_lost',
     ].includes(notification.eventType)
     if (mode === 'muted' || (mode === 'important' && !important)) return null
-    const subscriptions = await ctx.db
-      .query('notificationSubscriptions')
-      .withIndex('by_user', (q) => q.eq('userId', recipient.userId))
-      .collect()
-    const subscriptionsByDevice = new Map<string, (typeof subscriptions)[number]>()
-    for (const subscription of subscriptions) {
-      if (!subscription.enabled ||
-        (subscription.projectMemberId && subscription.projectMemberId !== recipient._id)) continue
-      const key = `${subscription.platform}:${subscription.tokenOrEndpoint}`
-      const existing = subscriptionsByDevice.get(key)
-      if (!existing?.projectMemberId || subscription.projectMemberId === recipient._id) {
-        subscriptionsByDevice.set(key, subscription)
-      }
+    const [subscriptions, installations] = await Promise.all([
+      ctx.db.query('notificationSubscriptions')
+        .withIndex('by_user', (q) => q.eq('userId', recipient.userId)).collect(),
+      ctx.db.query('pushInstallations')
+        .withIndex('by_user', (q) => q.eq('userId', recipient.userId)).collect(),
+    ])
+    const targets = [
+      ...subscriptions
+        .filter((subscription) => subscription.enabled && subscription.platform === 'web' &&
+          (!subscription.projectMemberId || subscription.projectMemberId === recipient._id))
+        .map((subscription) => ({
+          kind: 'web' as const,
+          subscriptionId: subscription._id,
+          platform: 'web' as const,
+          tokenOrEndpoint: subscription.tokenOrEndpoint,
+          exactMembership: subscription.projectMemberId === recipient._id,
+        })),
+      ...installations
+        .filter((installation) => installation.enabled &&
+          installation.environment === serverPushEnvironment() &&
+          Boolean(installation.expoPushToken) &&
+          (installation.permissionState === 'granted' || installation.permissionState === 'provisional'))
+        .map((installation) => ({
+          kind: 'native' as const,
+          installationId: installation._id,
+          platform: installation.platform,
+          tokenOrEndpoint: installation.expoPushToken!,
+          recipientUserId: recipient.userId,
+          previewMode: globalSetting?.previewMode ?? 'context',
+          soundEnabled: globalSetting?.soundEnabled ?? true,
+          badge: globalSetting?.badgesEnabled === false ? undefined : 0,
+          eventKind: notification.eventType,
+        })),
+      ...subscriptions
+        .filter((subscription) => subscription.enabled && subscription.platform !== 'web' &&
+          !installations.some((installation) => installation.expoPushToken === subscription.tokenOrEndpoint) &&
+          (!subscription.projectMemberId || subscription.projectMemberId === recipient._id))
+        .map((subscription) => ({
+          kind: 'legacy_native' as const,
+          subscriptionId: subscription._id,
+          platform: subscription.platform,
+          tokenOrEndpoint: subscription.tokenOrEndpoint,
+          recipientUserId: recipient.userId,
+          previewMode: globalSetting?.previewMode ?? 'context',
+          soundEnabled: globalSetting?.soundEnabled ?? true,
+          badge: globalSetting?.badgesEnabled === false ? undefined : 0,
+          eventKind: notification.eventType,
+          exactMembership: subscription.projectMemberId === recipient._id,
+        })),
+    ]
+    const taskBadge = (await ctx.db.query('taskNotifications')
+      .withIndex('by_member_read', (q) => q.eq('recipientProjectMemberId', recipient._id).eq('readAt', undefined))
+      .take(99)).length
+    for (const target of targets) {
+      if (target.kind !== 'web' && target.badge !== undefined) target.badge = taskBadge
     }
-    const targets = Array.from(subscriptionsByDevice.values()).map((subscription) => ({
-        id: subscription._id,
-        platform: subscription.platform,
-        tokenOrEndpoint: subscription.tokenOrEndpoint,
-      }))
+    const uniqueTargets = new Map<string, (typeof targets)[number]>()
+    for (const target of targets) {
+      const key = target.kind === 'native'
+        ? `native:${target.installationId}`
+        : `${target.kind}:${target.tokenOrEndpoint}`
+      const existing = uniqueTargets.get(key)
+      if (!existing || ('exactMembership' in target && target.exactMembership)) uniqueTargets.set(key, target)
+    }
     const identityQuery = recipient.companyId
       ? `&actingCompanyId=${recipient.companyId}&projectMemberId=${recipient._id}`
       : ''
@@ -164,14 +212,13 @@ export const collectPushTargets = internalQuery({
       ? `&companyId=${recipient.companyId}&membershipId=${recipient._id}`
       : ''
     return {
-      body: `${notification.eventType.replaceAll('_', ' ')} · ${task.title}`.slice(
-        0,
-        160,
-      ),
+      companyId: recipient.companyId,
+      eventKind: notification.eventType,
       projectId: task.projectId,
+      projectName: project.name,
       publicKey: task.publicKey,
-      targets,
-      title: task.publicKey,
+      recipientProjectMemberId: recipient._id,
+      targets: Array.from(uniqueTargets.values()),
       url: `/workspace/projects/${task.projectId}/tasks?view=all&task=${task.publicKey}${identityQuery}`,
       mobileUrl: `/task?projectId=${task.projectId}&taskKey=${task.publicKey}${mobileIdentity}`,
     }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from 'convex/react';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
@@ -13,6 +13,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
+import { setActivePushContext } from '@/lib/push-presentation';
 
 type TaskView = {
   task: Doc<'tasks'>;
@@ -49,6 +50,10 @@ export default function TaskScreen() {
     archive?: string;
   }>();
   const project = projectId as Id<'projects'>;
+  useFocusEffect(useCallback(() => {
+    if (projectId && taskKey) setActivePushContext({ projectId, taskKey });
+    return () => setActivePushContext(null);
+  }, [project, projectId, taskKey]));
   const identity = companyId && membershipId ? {
     actingCompanyId: companyId as Id<'companies'>,
     projectMemberId: membershipId as Id<'projectMembers'>,

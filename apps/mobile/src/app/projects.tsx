@@ -252,6 +252,7 @@ export default function ProjectsScreen() {
         </SheetSection>
         <SheetSection>
           <SheetRow icon="account-edit-outline" label="Edit profile" onPress={() => { setToolsOpen(false); openProfileSheet(); }} />
+          <SheetRow icon="bell-outline" label="Notifications" onPress={() => { setToolsOpen(false); router.push('/notifications'); }} />
           <SheetRow icon="shield-lock-outline" label="Privacy policy" onPress={() => void Linking.openURL('https://track.q9labs.ai/privacy')} />
           <SheetRow icon="file-document-outline" label="Terms of Service" onPress={() => void Linking.openURL('https://track.q9labs.ai/terms')} />
           <SheetRow icon="email-outline" label="Support" onPress={() => void Linking.openURL('mailto:q9labs.ai@gmail.com')} />

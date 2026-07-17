@@ -246,6 +246,7 @@ export const listDetailed = query({
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
     limit: v.optional(v.number()),
+    targetMessageId: v.optional(v.id('messages')),
   },
   handler: async (ctx, args) => {
     const group = await ctx.db.get(args.groupId)
@@ -266,7 +267,16 @@ export const listDetailed = query({
       .order('desc')
       .take(args.limit ?? 50)
 
-    return await Promise.all(messages.map(async (message) =>
+    const target = args.targetMessageId ? await ctx.db.get(args.targetMessageId) : null
+    const targetIsVisible = target &&
+      target.groupId === args.groupId &&
+      target.channelThreadId === undefined &&
+      (!cutoff || target.createdAt <= cutoff)
+    const selectedMessages = targetIsVisible && !messages.some((message) => message._id === target._id)
+      ? [...messages, target]
+      : messages
+
+    return await Promise.all(selectedMessages.map(async (message) =>
       await buildMessageDetail(
         ctx,
         message,

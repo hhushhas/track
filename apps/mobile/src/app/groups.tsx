@@ -18,6 +18,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskListHref } from '@/lib/task-navigation';
+import { usePushNotifications } from '@/lib/push-notifications';
 
 type MobileGroup = {
   group: Doc<'groups'>;
@@ -31,6 +32,7 @@ export default function GroupsScreen() {
   const router = useRouter();
   const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
+  const push = usePushNotifications();
   const { projectId, companyId, membershipId, archive } = useLocalSearchParams<{ projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -112,6 +114,18 @@ export default function GroupsScreen() {
           data={groupItems}
           keyExtractor={(item) => item.group._id}
           renderItem={({ item }) => <GroupRow item={item} onPress={() => navigate(item)} />}
+          ListHeaderComponent={push.permissionState === 'not_determined' ? (
+            <View style={[styles.notificationCard, { backgroundColor: theme.backgroundElement }]}>
+              <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
+              <View style={styles.notificationCopy}>
+                <ThemedText type="smallBold">Keep up with {projectName}</ThemedText>
+                <ThemedText style={{ color: theme.textSecondary }} type="small">Receive timely Project activity without putting message or task content in the push payload.</ThemedText>
+              </View>
+              <Pressable accessibilityRole="button" disabled={push.syncing} onPress={() => void push.requestPermission()} style={[styles.enableButton, { backgroundColor: theme.text }]}>
+                <ThemedText style={{ color: theme.background }} type="smallBold">Enable</ThemedText>
+              </Pressable>
+            </View>
+          ) : null}
           ListEmptyComponent={
             <EmptyState icon="forum-outline" title="No Channels visible" body="Only Channels explicitly granted to this represented membership appear here." />
           }
@@ -168,10 +182,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 16,
   },
+  enableButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    justifyContent: 'center',
+    minHeight: 38,
+    paddingHorizontal: Spacing.three,
+  },
   list: {
     gap: Spacing.two,
     padding: Spacing.three,
     paddingTop: Spacing.two,
+  },
+  notificationCard: {
+    alignItems: 'center',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: Spacing.three,
+    marginBottom: Spacing.two,
+    padding: Spacing.three,
+  },
+  notificationCopy: {
+    flex: 1,
+    gap: Spacing.one,
   },
   headerButton: {
     alignItems: 'center',

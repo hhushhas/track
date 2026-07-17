@@ -58,7 +58,7 @@ export function useWorkspaceNotifications({
   const groupNotificationSettings = (notificationSettings?.groups ?? []) as Array<Doc<'groupNotificationSettings'>>
   const groupNotificationMode =
     groupNotificationSettings.find((item) => item.groupId === activeGroupId)?.mode ?? 'inherit'
-  const globalNotificationMode = notificationSettings?.global?.globalMode ?? 'mentions'
+  const globalNotificationMode = notificationSettings?.global?.globalMode ?? 'all'
 
   function setNotificationError(error: unknown, fallback = 'Something went wrong') {
     const message = error instanceof Error ? error.message : fallback

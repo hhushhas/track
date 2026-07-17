@@ -43,6 +43,43 @@ const groupNotificationMode = v.union(
   v.literal('none'),
 )
 
+const taskPushNotificationMode = v.union(
+  v.literal('important'),
+  v.literal('all'),
+  v.literal('muted'),
+)
+
+const pushPermissionState = v.union(
+  v.literal('not_determined'),
+  v.literal('denied'),
+  v.literal('granted'),
+  v.literal('provisional'),
+)
+
+const pushEnvironment = v.union(
+  v.literal('development'),
+  v.literal('preview'),
+  v.literal('production'),
+)
+
+const pushDeliveryStatus = v.union(
+  v.literal('queued'),
+  v.literal('sending'),
+  v.literal('ticket_accepted'),
+  v.literal('retry_wait'),
+  v.literal('delivered'),
+  v.literal('canceled'),
+  v.literal('permanent_failure'),
+  v.literal('expired'),
+)
+
+const pushAttemptStatus = v.union(
+  v.literal('ticket_accepted'),
+  v.literal('transient_failure'),
+  v.literal('permanent_failure'),
+  v.literal('delivered'),
+)
+
 const contentReportTargetType = v.union(
   v.literal('message'),
   v.literal('attachment'),
@@ -415,6 +452,10 @@ export default defineSchema({
   notificationSettings: defineTable({
     userId: v.id('users'),
     globalMode: notificationMode,
+    taskMode: v.optional(taskPushNotificationMode),
+    previewMode: v.optional(v.union(v.literal('context'), v.literal('hidden'))),
+    soundEnabled: v.optional(v.boolean()),
+    badgesEnabled: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
@@ -512,6 +553,77 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
+
+  pushInstallations: defineTable({
+    installationId: v.string(),
+    userId: v.optional(v.id('users')),
+    platform: v.union(v.literal('ios'), v.literal('android')),
+    environment: pushEnvironment,
+    expoPushToken: v.optional(v.string()),
+    enabled: v.boolean(),
+    permissionState: pushPermissionState,
+    appVersion: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    lastSeenAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_installation_id', ['installationId'])
+    .index('by_user', ['userId'])
+    .index('by_token', ['expoPushToken']),
+
+  pushDeliveryIntents: defineTable({
+    sourceKind: v.union(v.literal('message'), v.literal('task'), v.literal('test')),
+    sourceId: v.string(),
+    eventKind: v.string(),
+    recipientUserId: v.id('users'),
+    recipientProjectMemberId: v.optional(v.id('projectMembers')),
+    installationId: v.id('pushInstallations'),
+    idempotencyKey: v.string(),
+    title: v.string(),
+    body: v.string(),
+    data: v.any(),
+    soundEnabled: v.boolean(),
+    badge: v.optional(v.number()),
+    status: pushDeliveryStatus,
+    attemptCount: v.number(),
+    nextAttemptAt: v.optional(v.number()),
+    acceptedAt: v.optional(v.number()),
+    openedAt: v.optional(v.number()),
+    duplicateOpenCount: v.optional(v.number()),
+    terminalAt: v.optional(v.number()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_idempotency', ['idempotencyKey'])
+    .index('by_status_next_attempt', ['status', 'nextAttemptAt'])
+    .index('by_installation_status', ['installationId', 'status'])
+    .index('by_created_at', ['createdAt']),
+
+  pushNotificationEvents: defineTable({
+    sourceKind: v.union(v.literal('message'), v.literal('task'), v.literal('test')),
+    sourceId: v.string(),
+    eventKind: v.string(),
+    eligibleRecipientCount: v.number(),
+    createdIntentCount: v.number(),
+    webTargetCount: v.number(),
+    createdAt: v.number(),
+  }).index('by_source', ['sourceKind', 'sourceId']),
+
+  pushDeliveryAttempts: defineTable({
+    intentId: v.id('pushDeliveryIntents'),
+    attemptNumber: v.number(),
+    status: pushAttemptStatus,
+    providerTicketId: v.optional(v.string()),
+    resultCategory: v.string(),
+    providerLatencyMs: v.number(),
+    createdAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index('by_intent_attempt', ['intentId', 'attemptNumber'])
+    .index('by_status_created_at', ['status', 'createdAt'])
+    .index('by_ticket', ['providerTicketId']),
 
   contentReports: defineTable({
     projectId: v.id('projects'),

@@ -599,10 +599,12 @@ export const requestAccountDeletion = mutation({
       })
     }
 
-    const subscriptions = await ctx.db
-      .query('notificationSubscriptions')
-      .withIndex('by_user', (q) => q.eq('userId', args.userId))
-      .collect()
+    const [subscriptions, pushInstallations] = await Promise.all([
+      ctx.db.query('notificationSubscriptions')
+        .withIndex('by_user', (q) => q.eq('userId', args.userId)).collect(),
+      ctx.db.query('pushInstallations')
+        .withIndex('by_user', (q) => q.eq('userId', args.userId)).collect(),
+    ])
     await Promise.all(
       subscriptions.map((subscription) =>
         ctx.db.patch(subscription._id, {
@@ -611,6 +613,15 @@ export const requestAccountDeletion = mutation({
         }),
       ),
     )
+    await Promise.all(pushInstallations.map((installation) =>
+      ctx.db.patch(installation._id, {
+        userId: undefined,
+        expoPushToken: undefined,
+        enabled: false,
+        failureReason: 'account_deleted',
+        updatedAt: now,
+      }),
+    ))
     await Promise.all(companyMemberships.map((membership) =>
       ctx.db.patch(membership._id, { status: 'removed', endedAt: now, updatedAt: now }),
     ))

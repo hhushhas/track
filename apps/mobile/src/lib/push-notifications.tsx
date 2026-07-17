@@ -1,66 +1,213 @@
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import { useMutation } from 'convex/react';
-import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { useAction, useMutation, useQuery } from 'convex/react';
+import { useRouter, type Href } from 'expo-router';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState, Linking, Platform } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
+import { consumePushResponseId, getPushInstallationId } from '@/lib/push-installation';
+import { shouldPresentPush } from '@/lib/push-presentation';
 import { resolvePushHref } from '@/lib/push-routing';
 
+export type PushPermissionState = 'not_determined' | 'denied' | 'granted' | 'provisional';
+
+type PushContextValue = {
+  error: string | null;
+  installationId: string | null;
+  permissionState: PushPermissionState;
+  registered: boolean;
+  requestPermission: () => Promise<void>;
+  refresh: () => Promise<void>;
+  openDeviceSettings: () => Promise<void>;
+  sendTestNotification: () => Promise<{ attempted: number; queued: number; sent: number; failed: number } | null>;
+  syncing: boolean;
+};
+
+const PushContext = createContext<PushContextValue | null>(null);
+
+function permissionState(permission: Notifications.NotificationPermissionsStatus): PushPermissionState {
+  if (permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL ||
+    permission.ios?.status === Notifications.IosAuthorizationStatus.EPHEMERAL) return 'provisional';
+  if (permission.granted) return 'granted';
+  if (permission.status === Notifications.PermissionStatus.DENIED) return 'denied';
+  return 'not_determined';
+}
+
+function pushEnvironment(): 'development' | 'preview' | 'production' {
+  const configured = process.env.EXPO_PUBLIC_APP_ENV;
+  if (configured === 'development' || configured === 'preview' || configured === 'production') return configured;
+  return __DEV__ ? 'development' : 'production';
+}
+
+function expoProjectId() {
+  return Constants.easConfig?.projectId ??
+    (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+}
+
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async (notification) => {
+    const data = notification.request.content.data;
+    const present = shouldPresentPush(data);
+    return {
+      shouldPlaySound: present && data?.soundEnabled !== 'false',
+      shouldSetBadge: present && notification.request.content.badge !== null,
+      shouldShowBanner: present,
+      shouldShowList: present,
+    };
+  },
 });
 
-export function PushNotificationBridge() {
+export function usePushNotifications() {
+  const context = useContext(PushContext);
+  if (!context) throw new Error('usePushNotifications must be used inside PushNotificationBridge');
+  return context;
+}
+
+export function PushNotificationBridge({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { trackUserId } = useTrackUser();
-  const { membershipId } = useLocalSearchParams<{ membershipId?: string }>();
-  const registerToken = useMutation(api.notifications.registerNativeToken);
+  const registerInstallation = useMutation(api.notifications.registerNativeInstallation);
+  const reportPermission = useMutation(api.notifications.reportNativePermission);
+  const recordOpen = useMutation(api.notifications.recordPushOpen);
+  const sendTest = useAction(api.pushNotifications.sendTestNotification);
+  const [installationId, setInstallationId] = useState<string | null>(null);
+  const [localPermission, setLocalPermission] = useState<PushPermissionState>('not_determined');
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const serverStatus = useQuery(
+    api.notifications.getNativeStatus,
+    trackUserId ? { userId: trackUserId, installationId: installationId ?? undefined } : 'skip',
+  );
 
-  useEffect(() => {
+  const sync = useCallback(async (request: boolean) => {
     if (!trackUserId || Platform.OS === 'web') return;
-    let canceled = false;
-    void (async () => {
-      const permission = await Notifications.getPermissionsAsync();
-      const result = permission.granted ? permission : await Notifications.requestPermissionsAsync();
-      if (!result.granted || canceled) return;
+    setSyncing(true);
+    setError(null);
+    try {
+      const id = installationId ?? await getPushInstallationId();
+      setInstallationId(id);
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
           importance: Notifications.AndroidImportance.HIGH,
           name: 'Track notifications',
+          sound: 'default',
+          vibrationPattern: [0, 180, 80, 180],
         });
       }
-      const projectId = Constants.easConfig?.projectId ??
-        (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
-      const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-      if (canceled) return;
-      await registerToken({
+      const existing = await Notifications.getPermissionsAsync();
+      const permission = request && !existing.granted && existing.canAskAgain
+        ? await Notifications.requestPermissionsAsync()
+        : existing;
+      const state = permissionState(permission);
+      setLocalPermission(state);
+      const common = {
         userId: trackUserId,
-        projectMemberId: membershipId as Id<'projectMembers'> | undefined,
-        platform: Platform.OS === 'ios' ? 'ios' : 'android',
-        token: token.data,
-      });
-    })().catch(() => undefined);
-    return () => { canceled = true; };
-  }, [membershipId, registerToken, trackUserId]);
+        installationId: id,
+        platform: Platform.OS === 'ios' ? 'ios' as const : 'android' as const,
+        environment: pushEnvironment(),
+        permissionState: state,
+        appVersion: Constants.expoConfig?.version,
+      };
+      if (state !== 'granted' && state !== 'provisional') {
+        await reportPermission(common);
+        return;
+      }
+      const projectId = expoProjectId();
+      if (!projectId) throw new Error('expo_project_id_missing');
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      await registerInstallation({ ...common, token: token.data });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'notification_sync_failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [installationId, registerInstallation, reportPermission, trackUserId]);
 
   useEffect(() => {
-    function open(response: Notifications.NotificationResponse | null) {
-      const href = resolvePushHref(response?.notification.request.content.data);
-      if (href) router.push(href as Href);
+    if (!trackUserId || Platform.OS === 'web') return;
+    void sync(false);
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void sync(false);
+    });
+    const tokenSubscription = Notifications.addPushTokenListener((devicePushToken) => {
+      if (!installationId) return;
+      void (async () => {
+        const projectId = expoProjectId();
+        if (!projectId) throw new Error('expo_project_id_missing');
+        const [permission, expoToken] = await Promise.all([
+          Notifications.getPermissionsAsync(),
+          Notifications.getExpoPushTokenAsync({ devicePushToken, projectId }),
+        ]);
+        await registerInstallation({
+          userId: trackUserId,
+          installationId,
+          platform: Platform.OS === 'ios' ? 'ios' : 'android',
+          environment: pushEnvironment(),
+          permissionState: permissionState(permission),
+          appVersion: Constants.expoConfig?.version,
+          token: expoToken.data,
+        });
+      })().catch(() => setError('push_token_refresh_failed'));
+    });
+    return () => {
+      appState.remove();
+      tokenSubscription.remove();
+    };
+  }, [installationId, registerInstallation, sync, trackUserId]);
+
+  useEffect(() => {
+    if (!trackUserId || Platform.OS === 'web') return;
+    async function open(response: Notifications.NotificationResponse | null) {
+      if (!response) return;
+      const responseId = response.notification.request.identifier;
+      if (!await consumePushResponseId(responseId)) return;
+      const data = response.notification.request.content.data;
+      const href = resolvePushHref(data);
+      if (!href) return;
+      const id = installationId ?? await getPushInstallationId();
+      const intentId = data?.intentId;
+      if (typeof intentId === 'string') {
+        await recordOpen({
+          userId: trackUserId!, installationId: id,
+          intentId: intentId as Id<'pushDeliveryIntents'>,
+        }).catch(() => undefined);
+      }
+      router.push(href as Href);
     }
-    const subscription = Notifications.addNotificationResponseReceivedListener(open);
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { void open(response); });
     void Notifications.getLastNotificationResponseAsync().then(open);
     return () => subscription.remove();
-  }, [router]);
+  }, [installationId, recordOpen, router, trackUserId]);
 
-  return null;
+  const value = useMemo<PushContextValue>(() => ({
+    error,
+    installationId,
+    permissionState: serverStatus?.permissionState ?? localPermission,
+    registered: serverStatus?.registered ?? false,
+    requestPermission: () => sync(true),
+    refresh: () => sync(false),
+    openDeviceSettings: () => Linking.openSettings(),
+    sendTestNotification: async () => {
+      if (!trackUserId) return null;
+      if (serverStatus?.registered) return await sendTest({ userId: trackUserId });
+      if (__DEV__ && (localPermission === 'granted' || localPermission === 'provisional')) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Track simulator test',
+            body: 'Local notification presentation and routing are connected.',
+            data: { schemaVersion: '1', eventKind: 'test', url: '/projects' },
+          },
+          trigger: null,
+        });
+        return { attempted: 1, queued: 1, sent: 1, failed: 0 };
+      }
+      return await sendTest({ userId: trackUserId });
+    },
+    syncing,
+  }), [error, installationId, localPermission, sendTest, serverStatus, sync, syncing, trackUserId]);
+
+  return <PushContext.Provider value={value}>{children}</PushContext.Provider>;
 }

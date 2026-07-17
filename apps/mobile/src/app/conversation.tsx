@@ -1,7 +1,7 @@
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import * as DocumentPicker from 'expo-document-picker';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { api } from '../../../../convex/_generated/api';
@@ -22,6 +22,7 @@ import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
+import { setActivePushContext } from '@/lib/push-presentation';
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
 
@@ -60,6 +61,10 @@ export default function ConversationScreen() {
   const cid = companyId as Id<'companies'> | undefined;
   const pmid = membershipId as Id<'projectMembers'> | undefined;
   const targetMessageId = messageId as Id<'messages'> | undefined;
+  useFocusEffect(useCallback(() => {
+    if (pid && gid) setActivePushContext({ projectId: pid, groupId: gid });
+    return () => setActivePushContext(null);
+  }, [gid, pid]));
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const readOnly = archive === '1' || navigation?.archived === true;
   const taskIdentity: MobileTaskIdentity | null = cid && pmid ? {
@@ -69,7 +74,7 @@ export default function ConversationScreen() {
   } : null;
 
   const groups = useQuery(api.mobile.listGroups, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
-  const messages = useQuery(api.messages.listDetailed, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 120 } : 'skip');
+  const messages = useQuery(api.messages.listDetailed, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 120, targetMessageId } : 'skip');
   const assistantStreams = useQuery(api.assistant.listForGroup, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 40 } : 'skip');
   const notifSettings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId, projectMemberId: pmid } : 'skip');
   const projectMembers = useQuery(api.mobile.listProjectMembers, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
@@ -92,7 +97,7 @@ export default function ConversationScreen() {
   const groupItems = useMemo(() => (groups ?? []) as { group: Doc<'groups'>; membership: Doc<'groupMembers'>; lastMessage: Doc<'messages'> | null; unreadCount: number }[], [groups]);
   const memberItems = useMemo(() => (projectMembers ?? []) as ProjectMemberRow[], [projectMembers]);
   const activeGroup = groupItems.find((g) => g.group._id === gid)?.group ?? null;
-  const globalMode = notifSettings?.global?.globalMode ?? 'mentions';
+  const globalMode = notifSettings?.global?.globalMode ?? 'all';
   const groupMode = notifSettings?.groups?.find((g) => g.groupId === gid)?.mode ?? 'inherit';
 
   const threadItems = useMemo<GroupedThreadItem[]>(() => {
@@ -445,6 +450,16 @@ export default function ConversationScreen() {
       </OptionsSheet>
 
       <OptionsSheet onClose={() => setToolsOpen(false)} title="Notifications" visible={toolsOpen}>
+        <SheetSection>
+          <SheetRow
+            icon="bell-outline"
+            label="Manage notification settings"
+            onPress={() => {
+              setToolsOpen(false);
+              router.push('/notifications');
+            }}
+          />
+        </SheetSection>
         {releaseConfig.threads && pid && gid ? <SheetSection title="Conversation">
           <SheetRow
             icon="forum-outline"
