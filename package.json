@@ -29,7 +29,7 @@
   "devDependencies": {
     "@types/node": "^25.9.5",
     "@types/web-push": "^3.6.4",
-    "convex": "^1.42.1",
+    "convex": "^1.42.3",
     "convex-test": "0.0.54",
     "oxlint": "^1.73.0",
     "turbo": "^2.10.4",
@@ -53,12 +53,12 @@
     "@track/shared": "workspace:*",
     "@convex-dev/better-auth": "^0.12.5",
     "@convex-dev/rate-limiter": "^0.3.2",
-    "@openrouter/ai-sdk-provider": "^2.10.0",
-    "@upstash/box": "0.4.4",
-    "ai": "^6.0.223",
-    "better-auth": "1.6.15",
-    "fflate": "0.8.2",
-    "hono": "4.12.29",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
+    "@upstash/box": "0.5.3",
+    "ai": "^7.0.31",
+    "better-auth": "1.6.23",
+    "fflate": "0.8.3",
+    "hono": "4.12.30",
     "react": "19.2.7",
     "web-push": "^3.6.7"
   }
