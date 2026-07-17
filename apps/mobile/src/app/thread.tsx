@@ -96,9 +96,9 @@ export default function ThreadScreen() {
     if (thread) setRenameValue(thread.thread.name);
   }, [thread]);
   useEffect(() => {
-    if (!queryArgs || messages === undefined || navigation?.archived) return;
+    if (!queryArgs || messages === undefined || navigation?.readStateImmutable) return;
     void markRead(queryArgs).catch(() => undefined);
-  }, [markRead, messages, navigation?.archived, queryArgs]);
+  }, [markRead, messages, navigation?.readStateImmutable, queryArgs]);
 
   const threadItems = useMemo<GroupedThreadItem[]>(() => {
     const uniqueMessages = [...new Map(

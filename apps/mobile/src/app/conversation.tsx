@@ -211,14 +211,14 @@ export default function ConversationScreen() {
   }, [cid, gid, navigation?.available, pid, pmid, setLastActive, trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || !gid || readOnly || threadItems.length === 0) return;
+    if (!trackUserId || !gid || navigation?.readStateImmutable || threadItems.length === 0) return;
     const last = [...threadItems].reverse().find((i) => i.kind === 'message');
     void markRead({
       userId: trackUserId, groupId: gid,
       actingCompanyId: cid, projectMemberId: pmid,
       lastReadMessageId: last?.kind === 'message' ? last.item.message._id : undefined,
     }).catch(() => undefined);
-  }, [cid, gid, markRead, pmid, readOnly, threadItems, trackUserId]);
+  }, [cid, gid, markRead, navigation?.readStateImmutable, pmid, threadItems, trackUserId]);
 
   async function withBusy(key: string, fn: () => Promise<unknown>) {
     setBusy(key);

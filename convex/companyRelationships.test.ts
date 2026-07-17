@@ -685,6 +685,13 @@ describe('Company model authorization and lifecycle', () => {
       expect.objectContaining({ _id: exitThreadId, replyCount: 1 }),
     ]))
     expect(firstExit.taskSnapshots).toHaveLength(1)
+    expect(await asUser(t, a).query(api.mobile.resolveNavigation, {
+      actingCompanyId: aCompany,
+      groupId,
+      projectId,
+      projectMemberId: firstExit.aMember!._id,
+      userId: a,
+    })).toEqual({ available: true, archived: true, readStateImmutable: true })
 
     const replacementOwner = await seedUser(t, 'company-a-replacement-owner')
     await addCompanyMember(t, aCompany, replacementOwner, 'owner')

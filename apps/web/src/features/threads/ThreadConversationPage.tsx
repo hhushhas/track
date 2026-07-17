@@ -95,9 +95,9 @@ export function ThreadConversationPage({
   const sendKey = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!scopedArgs || !messages || navigation?.archived) return
+    if (!scopedArgs || !messages || navigation?.readStateImmutable) return
     void markRead(scopedArgs).catch(() => undefined)
-  }, [markRead, messages, navigation?.archived, scopedArgs])
+  }, [markRead, messages, navigation?.readStateImmutable, scopedArgs])
   useEffect(() => {
     if (thread) setRenameValue(thread.thread.name)
   }, [thread])

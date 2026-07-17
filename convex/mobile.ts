@@ -167,17 +167,19 @@ export const resolveNavigation = query({
       }, args.groupId ? 'readChannel' : 'readProject')
       const group = args.groupId ? await ctx.db.get(args.groupId) : null
       if (args.groupId && (!group || group.projectId !== args.projectId)) {
-        return { available: false, archived: false }
+        return { available: false, archived: false, readStateImmutable: false }
       }
+      const readStateImmutable = access.companyAccess?.projectMember.status === 'archived'
       return {
         available: true,
         archived:
-          access.companyAccess?.projectMember.status === 'archived' ||
+          readStateImmutable ||
           access.project.status === 'archived' ||
           group?.status === 'archived',
+        readStateImmutable,
       }
     } catch {
-      return { available: false, archived: false }
+      return { available: false, archived: false, readStateImmutable: false }
     }
   },
 })

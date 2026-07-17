@@ -349,7 +349,7 @@ describe('Channel threads', () => {
       groupId,
       projectId,
       userId: member,
-    })).toEqual({ available: true, archived: true })
+    })).toEqual({ available: true, archived: true, readStateImmutable: false })
 
     await asUser(t, member).mutation(api.channelThreads.markRead, { threadId, userId: member })
     expect(await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))
