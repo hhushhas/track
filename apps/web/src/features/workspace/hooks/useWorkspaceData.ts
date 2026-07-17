@@ -142,7 +142,6 @@ export function useWorkspaceData({
     currentAvatarUrl,
     currentTrackProfileIncomplete,
     currentTrackUser,
-    channelMembers,
     groupAssistantStreams,
     groupMessages,
     groups,

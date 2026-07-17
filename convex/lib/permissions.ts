@@ -1,4 +1,5 @@
 import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
+import { isActiveChannelMembership } from '@track/shared/channel-membership'
 import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 
@@ -68,11 +69,15 @@ export async function requireGroupMember(
       q.eq('groupId', groupId).eq('userId', userId),
     )
     .unique()
-  if (!membership || (membership.status && membership.status !== 'active')) {
+  if (!membership) {
     throw new Error('not_group_member')
   }
   const project = await ctx.db.get(membership.projectId)
-  if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy') {
+  const accessProfile = resolveProjectAccessProfile(project?.accessProfile)
+  if (!isActiveChannelMembership(membership, accessProfile)) {
+    throw new Error('not_group_member')
+  }
+  if (!project || accessProfile !== 'legacy') {
     throw new Error('company_policy_required')
   }
   return membership

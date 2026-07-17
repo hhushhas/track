@@ -2,7 +2,7 @@ import { useQuery } from 'convex/react'
 import { useMemo } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
-import type { Doc } from '../../../../../../convex/_generated/dataModel'
+import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { buildComposerPlaceholder } from '#/features/workspace/lib/mentions'
 import { buildChatSearchMatches } from '#/features/workspace/search/chat-search'
 import { buildMessageCitations, buildWorkspaceThreadItems } from '#/features/workspace/search/chat-thread-data'
@@ -15,21 +15,21 @@ type PresentationDataOptions = Pick<
   WorkspaceData,
   | 'activeChannelMembers'
   | 'activeGroup'
-  | 'activeProjectMembers'
   | 'groupAssistantStreams'
   | 'groupMessages'
   | 'projectSearchResults'
 > & {
   activeChatMatchIndex: number
   chatSearchQuery: string
+  currentUserId: Id<'users'> | null
 }
 
 export function useWorkspacePresentationData({
   activeChatMatchIndex,
   activeChannelMembers,
   activeGroup,
-  activeProjectMembers,
   chatSearchQuery,
+  currentUserId,
   groupAssistantStreams,
   groupMessages,
   projectSearchResults,
@@ -90,7 +90,8 @@ export function useWorkspacePresentationData({
     chatSearchTerm,
     composerPlaceholder: buildComposerPlaceholder({
       activeGroupName: activeGroup?.name,
-      activeProjectMembers,
+      activeChannelMembers,
+      currentUserId,
     }),
     extraHeaderMemberCount: Math.max(
       activeChannelMembers.length - headerMembers.length,

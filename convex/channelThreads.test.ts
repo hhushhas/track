@@ -231,6 +231,59 @@ describe('Channel threads', () => {
     expect(memberThreads[0].thread).toMatchObject({ name: 'Decision log', sourceMessageId })
   })
 
+  it('keeps forwarded-note mentions inside the target Channel membership', async () => {
+    const { groupId, member, outsider, owner, projectId, t } = await seedLegacyChannel()
+    const targetGroupId = await t.run(async (ctx) => {
+      const now = Date.now()
+      await ctx.db.insert('projectMembers', {
+        projectId,
+        userId: outsider,
+        role: 'staff',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+      const targetGroupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: 'custom',
+        name: 'Target Channel',
+        status: 'active',
+        createdBy: owner,
+        createdAt: now,
+        updatedAt: now,
+      })
+      for (const userId of [owner, outsider]) {
+        await ctx.db.insert('groupMembers', {
+          projectId,
+          groupId: targetGroupId,
+          userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+      }
+      return targetGroupId
+    })
+    const actor = asUser(t, owner)
+    const sourceMessageId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Forward this update.',
+      groupId,
+      projectId,
+    })
+
+    const forwardedMessageId = await actor.mutation(api.messages.forwardMessage, {
+      actorId: owner,
+      body: '@thread-member @thread-outsider',
+      mentions: [member, outsider],
+      projectId,
+      sourceMessageId,
+      targetGroupId,
+    })
+
+    expect(await t.run(async (ctx) => await ctx.db.get(forwardedMessageId)))
+      .toMatchObject({ mentions: [outsider] })
+  })
+
   it('keeps follow and read state private and clears unread when opened', async () => {
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {

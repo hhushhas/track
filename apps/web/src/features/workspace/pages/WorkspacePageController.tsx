@@ -145,11 +145,15 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     visibleGroups,
   } = workspaceData
   const mentionOptions = useMemo(
-    () => buildWorkspaceMentionOptions(activeProjectMembers, visibleGroups),
-    [activeProjectMembers, visibleGroups],
+    () => buildWorkspaceMentionOptions(activeChannelMembers, visibleGroups),
+    [activeChannelMembers, visibleGroups],
   )
   const mentionGroups = useMemo(
-    () => buildMentionGroups(activeProjectMembers, visibleGroups),
+    () => buildMentionGroups(activeChannelMembers, visibleGroups),
+    [activeChannelMembers, visibleGroups],
+  )
+  const forwardMentionOptions = useMemo(
+    () => buildWorkspaceMentionOptions(activeProjectMembers, visibleGroups),
     [activeProjectMembers, visibleGroups],
   )
   const activeMention = useMemo(
@@ -170,8 +174,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     activeChatMatchIndex,
     activeChannelMembers,
     activeGroup,
-    activeProjectMembers,
     chatSearchQuery,
+    currentUserId: trackUserId,
     groupAssistantStreams,
     groupMessages,
     projectSearchResults,
@@ -359,6 +363,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     activeGroupId,
     activeProjectId,
     composer,
+    forwardMentionOptions,
     mentionOptions,
     onAfterSend: handleMessageSent,
     onBusyChange: setBusyAction,

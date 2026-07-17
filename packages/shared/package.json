@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./channel-membership": "./src/channel-membership.ts",
     "./company": "./src/company.ts",
     "./domain": "./src/domain.ts",
     "./feature-flags": "./src/feature-flags.ts",

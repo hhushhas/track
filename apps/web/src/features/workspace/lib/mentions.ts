@@ -2,6 +2,11 @@ import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getAvatarTone, getMentionHandle } from '#/features/workspace/identity'
 
+export type WorkspaceChannelMember = {
+  membership: Doc<'groupMembers'>
+  user: Doc<'users'>
+}
+
 export type WorkspaceProjectMember = {
   membership: Doc<'projectMembers'>
   user: Doc<'users'> | null
@@ -39,18 +44,20 @@ export type WorkspaceMentionSection = {
 }
 
 export function buildWorkspaceMentionOptions(
-  activeProjectMembers: Array<WorkspaceProjectMember>,
+  activeMembers: Array<WorkspaceChannelMember | WorkspaceProjectMember>,
   visibleGroups: Array<Doc<'groups'>>,
 ): Array<WorkspaceMentionOption> {
-  const members = activeProjectMembers
-    .filter((item) => item.user)
+  const members = activeMembers
+    .filter((item) => item.user !== null)
     .map((item) => {
       const user = item.user as Doc<'users'>
       return {
         id: user._id,
         kind: 'member' as const,
         label: user.displayName,
-        sublabel: item.membership.role,
+        sublabel: 'role' in item.membership
+          ? item.membership.role
+          : 'Channel member',
         handle: getMentionHandle(user.displayName) || getMentionHandle(user.email),
         tone: getAvatarTone(user.email),
       }
@@ -82,16 +89,15 @@ export function buildWorkspaceMentionOptions(
 }
 
 export function buildMentionGroups(
-  activeProjectMembers: Array<WorkspaceProjectMember>,
+  activeChannelMembers: Array<WorkspaceChannelMember>,
   visibleGroups: Array<Doc<'groups'>>,
 ) {
   const groupsByHandle = new Map<string, Doc<'groups'>>()
   const reservedHandles = new Set([
     'track',
-    ...activeProjectMembers
-      .filter((item) => item.user)
+    ...activeChannelMembers
       .map((item) => {
-        const user = item.user as Doc<'users'>
+        const user = item.user
         return getMentionHandle(user.displayName) || getMentionHandle(user.email)
       }),
   ])
@@ -145,17 +151,26 @@ export function buildMentionSections(
 
 export function buildComposerPlaceholder({
   activeGroupName,
-  activeProjectMembers,
+  activeChannelMembers,
+  currentUserId,
 }: {
   activeGroupName: string | undefined
-  activeProjectMembers: Array<WorkspaceProjectMember>
+  activeChannelMembers: Array<WorkspaceChannelMember>
+  currentUserId: Id<'users'> | null
 }) {
-  const composerPeople = activeProjectMembers
-    .filter((item) => item.user)
-    .slice(0, 3)
-    .map((item) => item.user?.displayName.split(' ')[0])
+  const composerPeople = activeChannelMembers
+    .filter((item) => item.user._id !== currentUserId)
+    .map((item) => item.user.displayName.trim().split(/\s+/)[0])
     .filter(Boolean)
-  return composerPeople.length > 0
-    ? `Write to the project - ${composerPeople.join(', ')}${activeProjectMembers.length > composerPeople.length ? ` and ${activeProjectMembers.length - composerPeople.length} others` : ''}`
-    : `Message ${activeGroupName ?? 'the project'} or ask @track...`
+  const destination = activeGroupName ?? 'this Channel'
+  if (composerPeople.length === 0) return `Message ${destination} or ask @track...`
+
+  const visiblePeople = composerPeople.slice(0, 2)
+  let participantCopy = visiblePeople[0]
+  if (composerPeople.length === 2) participantCopy = visiblePeople.join(' and ')
+  if (composerPeople.length > 2) {
+    const remainingCount = composerPeople.length - visiblePeople.length
+    participantCopy = `${visiblePeople.join(', ')}, and ${remainingCount} other${remainingCount === 1 ? '' : 's'}`
+  }
+  return `Write to ${participantCopy} in ${destination} or ask @track...`
 }

@@ -17,7 +17,6 @@ export function getActiveChannelMembers(
 
   return members.filter((item): item is ActiveChannelMemberItem =>
     item.membership.groupId === activeGroupId &&
-    item.membership.status === 'active' &&
     item.user !== null,
   )
 }

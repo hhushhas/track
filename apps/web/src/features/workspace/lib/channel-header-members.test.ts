@@ -8,7 +8,7 @@ const channelB = 'channel-b' as never
 function member({
   groupId,
   name,
-  status = 'active',
+  status,
   user = true,
 }: {
   groupId: typeof channelA
@@ -32,16 +32,17 @@ describe('getActiveChannelMembers', () => {
     expect(getActiveChannelMembers(channelA, members).map((item) => item.user.displayName)).toEqual(['Amina'])
   })
 
-  it('includes active Channel members and excludes inactive or missing-user memberships', () => {
+  it('keeps the authoritative Channel response while excluding missing users', () => {
     const members = [
-      member({ groupId: channelA, name: 'Active member' }),
-      member({ groupId: channelA, name: 'Removed member', status: 'removed' }),
-      member({ groupId: channelA, name: 'Suspended member', status: 'suspended' }),
-      member({ groupId: channelA, name: 'Archived member', status: 'archived' }),
+      member({ groupId: channelA, name: 'Legacy member' }),
+      member({ groupId: channelA, name: 'Explicit active member', status: 'active' }),
       member({ groupId: channelA, name: 'Missing user', user: false }),
     ]
 
-    expect(getActiveChannelMembers(channelA, members).map((item) => item.user.displayName)).toEqual(['Active member'])
+    expect(getActiveChannelMembers(channelA, members).map((item) => item.user.displayName)).toEqual([
+      'Legacy member',
+      'Explicit active member',
+    ])
   })
 
   it('clears a previous Channel response until the newly selected Channel response arrives', () => {

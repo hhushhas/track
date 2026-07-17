@@ -16,6 +16,7 @@ export function useWorkspaceMessageActions({
   activeGroupId,
   activeProjectId,
   composer,
+  forwardMentionOptions,
   mentionOptions,
   onAfterSend,
   onBusyChange,
@@ -28,6 +29,7 @@ export function useWorkspaceMessageActions({
   activeGroupId: Id<'groups'> | null
   activeProjectId: Id<'projects'> | null
   composer: string
+  forwardMentionOptions: Array<WorkspaceMentionOption>
   mentionOptions: Array<WorkspaceMentionOption>
   onAfterSend: () => void
   onBusyChange: (label: string | null) => void
@@ -118,7 +120,7 @@ export function useWorkspaceMessageActions({
     try {
       const body = input.body.trim()
       const mentionHandles = parseMentions(body)
-      const mentionedUserIds = resolveMentionedUserIds(mentionHandles, mentionOptions)
+      const mentionedUserIds = resolveMentionedUserIds(mentionHandles, forwardMentionOptions)
       const messageId = await forwardMessageMutation({
         projectId: activeProjectId,
         sourceMessageId: input.sourceMessageId,

@@ -1,8 +1,10 @@
 import { v } from 'convex/values'
+import { isActiveChannelMembership } from '@track/shared/channel-membership'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
+import { listActiveChannelMemberships } from './lib/channelMembership'
 import {
   canRoleJoinDefaultGroup,
   requireGroupMember,
@@ -32,7 +34,9 @@ export const listVisible = query({
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .collect()
     const visibleMemberships = memberships.filter(
-      (membership) => membership.projectId === args.projectId,
+      (membership) =>
+        membership.projectId === args.projectId &&
+        isActiveChannelMembership(membership, 'legacy'),
     )
 
     const groups = await Promise.all(
@@ -332,15 +336,13 @@ export const listMembers = query({
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.userId)
     await requireGroupMember(ctx, args.groupId, args.userId)
-    const memberships = await ctx.db
-      .query('groupMembers')
-      .withIndex('by_group', (q) => q.eq('groupId', args.groupId))
-      .collect()
-    return await Promise.all(
-      memberships.filter((membership) => membership.status === 'active').map(async (membership) => {
+    const memberships = await listActiveChannelMemberships(ctx, args.groupId, 'legacy')
+    const members = await Promise.all(
+      memberships.map(async (membership) => {
         const user = await ctx.db.get(membership.userId)
         return { membership, user }
       }),
     )
+    return members.filter((item) => item.user !== null)
   },
 })

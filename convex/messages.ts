@@ -1,4 +1,7 @@
-import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
+import {
+  resolveProjectAccessProfile,
+  resolveReleaseFeatureFlag,
+} from '@track/shared/feature-flags'
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
@@ -6,6 +9,7 @@ import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import { appendAuditEvent } from './lib/audit'
+import { listActiveChannelMemberships } from './lib/channelMembership'
 import { rateLimiter } from './lib/rateLimit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import {
@@ -466,6 +470,11 @@ export const forwardMessage = mutation({
     if (!targetGroup || targetGroup.projectId !== args.projectId) {
       throw new Error('target_group_mismatch')
     }
+    const targetMemberships = await listActiveChannelMemberships(
+      ctx,
+      args.targetGroupId,
+      resolveProjectAccessProfile(access.project.accessProfile),
+    )
     const projectMember = await resolveActorProjectMember(
       ctx,
       args.projectId,
@@ -505,10 +514,11 @@ export const forwardMessage = mutation({
       if (existing) return existing._id
     }
     if (access.companyAccess) {
-      const [sourceMemberships, targetMemberships] = await Promise.all([
-        ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', sourceMessage.groupId)).collect(),
-        ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', args.targetGroupId)).collect(),
-      ])
+      const sourceMemberships = await listActiveChannelMemberships(
+        ctx,
+        sourceMessage.groupId,
+        'company',
+      )
       const [sourceMembers, targetMembers] = await Promise.all([
         Promise.all(sourceMemberships.filter((item) => item.status === 'active' && item.projectMemberId).map(async (item) => await ctx.db.get(item.projectMemberId!))),
         Promise.all(targetMemberships.filter((item) => item.status === 'active' && item.projectMemberId).map(async (item) => await ctx.db.get(item.projectMemberId!))),
@@ -537,6 +547,16 @@ export const forwardMessage = mutation({
     ])
     const attachmentsToCopy = sourceAttachments.filter((attachment) => attachment !== null)
     const body = args.body?.trim() ?? ''
+    const targetUserIds = new Set(targetMemberships.map((membership) => String(membership.userId)))
+    const targetProjectMemberIds = new Set(targetMemberships.flatMap((membership) =>
+      membership.projectMemberId ? [String(membership.projectMemberId)] : [],
+    ))
+    const mentions = Array.from(new Set(args.mentions ?? []))
+      .filter((userId) => targetUserIds.has(String(userId)))
+    const mentionedProjectMemberIds = args.mentionedProjectMemberIds
+      ? Array.from(new Set(args.mentionedProjectMemberIds))
+        .filter((memberId) => targetProjectMemberIds.has(String(memberId)))
+      : undefined
     const channelSequence = await allocateChannelSequence(ctx, targetGroup)
     const messageId = await ctx.db.insert('messages', {
       projectId: args.projectId,
@@ -548,8 +568,8 @@ export const forwardMessage = mutation({
       channelSequence,
       idempotencyKey: args.idempotencyKey,
       body,
-      mentions: args.mentions ?? [],
-      mentionedProjectMemberIds: args.mentionedProjectMemberIds,
+      mentions,
+      mentionedProjectMemberIds,
       attachmentIds: [],
       forwardedFrom: {
         sourceProjectId: sourceMessage.projectId,
@@ -589,8 +609,8 @@ export const forwardMessage = mutation({
       await followMentionedThreadMembers(
         ctx,
         targetThread,
-        args.mentions ?? [],
-        args.mentionedProjectMemberIds,
+        mentions,
+        mentionedProjectMemberIds,
       )
       await markThreadAuthorRead(ctx, targetThread, projectMember, args.actorId, channelSequence, access.companyAccess?.company._id)
     }

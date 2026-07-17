@@ -1,4 +1,5 @@
 export * from './company'
+export * from './channel-membership'
 export * from './domain'
 export * from './dev-auth'
 export * from './feature-flags'
