@@ -198,7 +198,6 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     devAuthEnabled: devAuthBypass.enabled,
     ensureStarterProject,
     groups,
-    hasSessionData: Boolean(session.data),
     mentionIndex,
     mentionOptionRefs,
     navCollapsed,

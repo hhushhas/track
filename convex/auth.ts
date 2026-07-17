@@ -7,10 +7,11 @@ import { twoFactor } from 'better-auth/plugins'
 import type { GenericDatabaseReader, GenericDatabaseWriter } from 'convex/server'
 
 import { components } from './_generated/api'
-import type { DataModel, Id } from './_generated/dataModel'
+import type { DataModel } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
+import { devAuthBypassUser, isDevAuthBypassEnabled } from './lib/devAuth'
 
 const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
 const trustedOrigins = [
@@ -24,15 +25,6 @@ const trustedOrigins = [
   'exp://',
   'https://appleid.apple.com',
 ]
-const devAuthBypassUser = {
-  googleSubject: 'demo:track-developer',
-  email: 'developer@track.local',
-  displayName: 'Track Developer',
-  profileDesignation: 'Developer',
-  profileBannerStyle: 'silk',
-  timezone: 'UTC',
-} as const
-
 const stepUpFreshMs = 10 * 60 * 1000
 
 export const authComponent = createClient<DataModel>(components.betterAuth)
@@ -122,21 +114,9 @@ function isProfileComplete(user: {
   return Boolean(user.displayName?.trim())
 }
 
-function isDevAuthBypassEnabled() {
-  return process.env.DEV_AUTH_BYPASS === '1' && siteUrl !== 'https://track.q9labs.ai'
-}
-
 async function assertCanManageTrackUser(ctx: WriteCtx, userId: string) {
   const authUser = await getOptionalAuthUser(ctx)
-  if (!authUser) {
-    if (isDevAuthBypassEnabled()) {
-      const trackUser = await ctx.db.get(userId as Id<'users'>)
-      if (trackUser?.googleSubject === devAuthBypassUser.googleSubject) {
-        return { authUser: null, trackUser }
-      }
-    }
-    throw new Error('unauthenticated')
-  }
+  if (!authUser) throw new Error('unauthenticated')
 
   const trackUser = await findTrackUserByAuth(ctx, authUser)
   if (!trackUser || trackUser._id !== userId) throw new Error('forbidden')
@@ -291,6 +271,10 @@ export const syncDevUser = mutation({
     if (!isDevAuthBypassEnabled()) {
       throw new Error('dev_auth_bypass_disabled')
     }
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity || normalizeEmail(identity.email ?? '') !== devAuthBypassUser.email) {
+      throw new Error('dev_auth_identity_required')
+    }
 
     const now = Date.now()
     const existing = await ctx.db
@@ -302,7 +286,7 @@ export const syncDevUser = mutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        authUserId: devAuthBypassUser.googleSubject,
+        authUserId: identity.subject,
         normalizedEmail: normalizeEmail(devAuthBypassUser.email),
         email: devAuthBypassUser.email,
         displayName: devAuthBypassUser.displayName,
@@ -317,7 +301,7 @@ export const syncDevUser = mutation({
 
     return await ctx.db.insert('users', {
       googleSubject: devAuthBypassUser.googleSubject,
-      authUserId: devAuthBypassUser.googleSubject,
+      authUserId: identity.subject,
       normalizedEmail: normalizeEmail(devAuthBypassUser.email),
       email: devAuthBypassUser.email,
       displayName: devAuthBypassUser.displayName,

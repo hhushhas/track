@@ -4,14 +4,20 @@ import {
   devAuthBypassStorageKey,
   shouldAllowDevAuthBypass,
 } from '@track/shared'
+import { authClient } from './auth-client'
 
 const devAuthBypassChangedEvent = 'track-dev-auth-bypass-changed'
+const devAuthBypassPassword = import.meta.env.DEV
+  ? import.meta.env.VITE_DEV_AUTH_BYPASS_PASSWORD
+  : undefined
 let memoryDevAuthBypassEnabled = false
 
-export const isDevAuthBypassAllowed = shouldAllowDevAuthBypass({
-  flag: import.meta.env.VITE_DEV_AUTH_BYPASS,
-  isDev: import.meta.env.DEV,
-})
+export const isDevAuthBypassAllowed = Boolean(
+  devAuthBypassPassword && shouldAllowDevAuthBypass({
+    flag: import.meta.env.VITE_DEV_AUTH_BYPASS,
+    isDev: import.meta.env.DEV,
+  }),
+)
 
 function getStoredDevAuthBypassEnabled() {
   if (!isDevAuthBypassAllowed || typeof window === 'undefined') return false
@@ -22,8 +28,26 @@ function notifyDevAuthBypassChanged() {
   window.dispatchEvent(new Event(devAuthBypassChangedEvent))
 }
 
-export function enableDevAuthBypass() {
-  if (!isDevAuthBypassAllowed || typeof window === 'undefined') return
+export async function enableDevAuthBypass() {
+  if (!isDevAuthBypassAllowed || !devAuthBypassPassword || typeof window === 'undefined') {
+    throw new Error('dev_auth_bypass_disabled')
+  }
+
+  const signIn = await authClient.signIn.email({
+    email: 'developer@track.local',
+    password: devAuthBypassPassword,
+    callbackURL: '/workspace',
+  })
+  if (signIn.error) {
+    const signUp = await authClient.signUp.email({
+      email: 'developer@track.local',
+      password: devAuthBypassPassword,
+      name: 'Track Developer',
+      callbackURL: '/workspace',
+    })
+    if (signUp.error) throw new Error('dev_auth_sign_in_failed')
+  }
+
   memoryDevAuthBypassEnabled = true
   window.localStorage.setItem(devAuthBypassStorageKey, '1')
   notifyDevAuthBypassChanged()

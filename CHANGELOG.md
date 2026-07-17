@@ -56,6 +56,9 @@ not deployed.
 
 ### Fixed
 
+- Local demo authentication now establishes a credential-backed Better Auth
+  session before resolving its provisioned developer user through Convex, while
+  remaining exact-opt-in and restricted to loopback development URLs.
 - Company-exit archives now retain only active entitlements and frozen member,
   Channel, thread, and message metadata in archive views and search.
 - Company-aware message delivery now uses exact membership overlap for

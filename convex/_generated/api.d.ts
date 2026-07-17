@@ -31,6 +31,7 @@ import type * as lib_channelThreadPolicy from "../lib/channelThreadPolicy.js";
 import type * as lib_companyInvitations from "../lib/companyInvitations.js";
 import type * as lib_companyPolicy from "../lib/companyPolicy.js";
 import type * as lib_companyProjectLifecycle from "../lib/companyProjectLifecycle.js";
+import type * as lib_devAuth from "../lib/devAuth.js";
 import type * as lib_memoryPolicy from "../lib/memoryPolicy.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
@@ -109,6 +110,7 @@ declare const fullApi: ApiFromModules<{
   "lib/companyInvitations": typeof lib_companyInvitations;
   "lib/companyPolicy": typeof lib_companyPolicy;
   "lib/companyProjectLifecycle": typeof lib_companyProjectLifecycle;
+  "lib/devAuth": typeof lib_devAuth;
   "lib/memoryPolicy": typeof lib_memoryPolicy;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;

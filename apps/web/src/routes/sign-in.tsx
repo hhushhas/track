@@ -132,9 +132,17 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     return window.localStorage.getItem(pendingSetPasswordEmailKey) ?? ''
   }, [mode])
 
-  function handleDevBypass() {
-    enableDevAuthBypass()
-    void navigate({ to: '/workspace' })
+  async function handleDevBypass() {
+    setBusy(true)
+    setMessage('')
+    try {
+      await enableDevAuthBypass()
+      await navigate({ to: '/workspace' })
+    } catch {
+      setMessage('Demo sign-in is unavailable in this development environment.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function continueWithGoogle() {
@@ -428,7 +436,8 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           {isDevAuthBypassAllowed ? (
             <Button
               className="track-button track-auth-button"
-              onClick={handleDevBypass}
+              disabled={busy}
+              onClick={() => void handleDevBypass()}
               style={{ marginTop: 10 }}
               type="button"
               variant="outline"

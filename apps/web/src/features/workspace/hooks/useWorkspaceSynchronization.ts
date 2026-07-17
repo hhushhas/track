@@ -20,7 +20,6 @@ export function useWorkspaceSynchronization({
   devAuthEnabled,
   ensureStarterProject,
   groups,
-  hasSessionData,
   mentionIndex,
   mentionOptionRefs,
   navCollapsed,
@@ -57,7 +56,6 @@ export function useWorkspaceSynchronization({
   devAuthEnabled: boolean
   ensureStarterProject: (args: { userId: Id<'users'> }) => Promise<Id<'projects'>>
   groups: Array<Doc<'groups'>> | undefined
-  hasSessionData: boolean
   mentionIndex: number
   mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
   navCollapsed: boolean
@@ -139,7 +137,7 @@ export function useWorkspaceSynchronization({
       return
     }
     if (trackUserId) return
-    const syncUser = devAuthEnabled && !hasSessionData
+    const syncUser = devAuthEnabled
       ? syncDevUser()
       : syncCurrentUser({
           googleSubject: sessionUser.id,
@@ -151,7 +149,7 @@ export function useWorkspaceSynchronization({
       setTrackUserId(userId)
       await acceptPendingInvitations({ userId })
     }).catch(setActionError)
-  }, [acceptPendingInvitations, devAuthEnabled, hasSessionData, sessionUser, setActionError, setTrackUserId, syncCurrentUser, syncDevUser, trackUserId])
+  }, [acceptPendingInvitations, devAuthEnabled, sessionUser, setActionError, setTrackUserId, syncCurrentUser, syncDevUser, trackUserId])
 
   useEffect(() => {
     if (!trackUserId || projects === undefined || projectItems.length > 0) return
