@@ -12,6 +12,7 @@ import { Textarea } from '#/components/ui/textarea'
 import { MarkdownText } from '#/features/workspace/markdown'
 import type { TaskIdentity, TaskView } from './task-types'
 import { taskError } from './TaskCreateDialog'
+import { PriorityGlyph, StateRing, TaskAvatar } from './ui/TaskVisuals'
 
 type TaskDetail = TaskView & {
   comments: Array<{ _id: Id<'taskComments'>; authorProjectMemberId: Id<'projectMembers'>; body: string; createdAt: number; updatedAt: number; archivedAt?: number; revision: number }>
@@ -87,6 +88,11 @@ export function TaskDetailDrawer({
 
   const board = boardRows?.find((item) => item.board._id === detail?.task.boardId)
   const subtasks = tasks?.filter((item) => item.task.parentTaskId === detail?.task._id) ?? []
+  const selectedState = board?.states.find((state) => state._id === draft.stateId) ?? detail?.state
+  const selectedAssignee = draft.assigneeId
+    ? assignees?.find((item) => item.member._id === draft.assigneeId)?.member
+      ?? (detail?.assignee?._id === draft.assigneeId ? detail.assignee : null)
+    : null
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -161,28 +167,31 @@ export function TaskDetailDrawer({
         ) : (
           <>
             <SheetHeader>
-              <span className="task-card-key">{detail.task.publicKey}</span>
-              <SheetTitle>{detail.task.title}</SheetTitle>
-              <SheetDescription>{detail.board?.name ?? 'Archived board'} · {detail.state?.name ?? 'Unavailable status'}</SheetDescription>
+              <div className="task-detail-topline">
+                <StateRing category={selectedState?.category ?? 'backlog'} />
+                <span>{detail.task.publicKey} · {detail.board?.name ?? 'Archived board'}</span>
+              </div>
+              <SheetTitle className="sr-only">{detail.task.title}</SheetTitle>
+              <SheetDescription className="sr-only">{detail.state?.name ?? 'Unavailable status'}</SheetDescription>
             </SheetHeader>
             <div className="task-detail-body">
-              <form className="task-form" onSubmit={(event) => void save(event)}>
-                <label>Title<Input disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, title: event.target.value })} value={draft.title} /></label>
-                <label>Description<Textarea disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, description: event.target.value })} value={draft.description} /></label>
-                <div className="task-form-grid">
-                  <label>Status<NativeSelect disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, stateId: event.target.value })} value={draft.stateId}>
+              <form className="task-detail-editor" onSubmit={(event) => void save(event)}>
+                <Input aria-label="Task title" className="task-detail-title-input" disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, title: event.target.value })} value={draft.title} />
+                <Textarea aria-label="Task description" className="task-detail-description" disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, description: event.target.value })} placeholder="Add a description…" value={draft.description} />
+                <div className="task-property-row">
+                  <label className="task-property-control"><StateRing category={selectedState?.category ?? 'backlog'} size="dense" /><span className="sr-only">Status</span><NativeSelect disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, stateId: event.target.value })} value={draft.stateId}>
                     {board?.states.map((state) => <NativeSelectOption key={state._id} value={state._id}>{state.name} · {state.category}</NativeSelectOption>)}
                   </NativeSelect></label>
-                  <label>Priority<NativeSelect disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, priority: event.target.value })} value={draft.priority}>
+                  <label className="task-property-control"><PriorityGlyph priority={draft.priority as TaskView['task']['priority']} /><span className="sr-only">Priority</span><NativeSelect disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, priority: event.target.value })} value={draft.priority}>
                     {['none', 'urgent', 'high', 'medium', 'low'].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
                   </NativeSelect></label>
-                  <label>Assignee<NativeSelect disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, assigneeId: event.target.value })} value={draft.assigneeId}>
+                  <label className="task-property-control"><TaskAvatar member={selectedAssignee} /><span className="sr-only">Assignee</span><NativeSelect disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, assigneeId: event.target.value })} value={draft.assigneeId}>
                     <NativeSelectOption value="">Unassigned</NativeSelectOption>
                     {assignees?.map((item) => <NativeSelectOption key={item.member._id} value={item.member._id}>{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</NativeSelectOption>)}
                   </NativeSelect></label>
-                  <label>Due date<Input disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} type="date" value={draft.dueDate} /></label>
+                  <label className="task-property-control"><span className="sr-only">Due date</span><Input disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} type="date" value={draft.dueDate} /></label>
                 </div>
-                {detail.capabilities.canEdit ? <Button disabled={saving} type="submit"><Check size={13} /> {saving ? 'Saving…' : 'Save changes'}</Button> : <p className="task-read-only">Read-only task history</p>}
+                {detail.capabilities.canEdit ? <Button className="task-save-button" disabled={saving} size="sm" type="submit"><Check size={13} /> {saving ? 'Saving…' : 'Save changes'}</Button> : <p className="task-read-only">Read-only task history</p>}
               </form>
 
               {error ? <p className="task-form-error" role="alert">{error}</p> : null}
@@ -198,20 +207,23 @@ export function TaskDetailDrawer({
 
               {detail.capabilities.canChangeScope && !detail.task.parentTaskId ? <section className="task-detail-section"><h3>Change visibility scope</h3><p>Scope changes include this task and every subtask. Earlier evidence, comments, and activity keep their original access boundary.</p><NativeSelect aria-label="Destination scope board" onChange={(event) => { setScopeBoardId(event.target.value); setScopeConfirmed(false) }} value={scopeBoardId}><NativeSelectOption value="">Choose a board in another scope</NativeSelectOption>{boardRows?.filter((item) => item.board.groupId !== detail.task.groupId).map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name} · {item.board.groupId ? 'Channel scope' : 'Project scope'}</NativeSelectOption>)}</NativeSelect><label className="task-scope-confirm"><input checked={scopeConfirmed} onChange={(event) => setScopeConfirmed(event.target.checked)} type="checkbox" /> I confirm the audience change for task key, title, description, creator, assignee, priority, due date, labels, workflow state, and all subtask fields. Earlier restricted context will not be exposed.</label><Button disabled={!scopeBoardId || !scopeConfirmed} onClick={() => void changeScope({ taskId: detail.task._id, destinationBoardId: scopeBoardId as Id<'taskBoards'>, declassificationConfirmed: Boolean(detail.task.groupId), audienceReductionConfirmed: !detail.task.groupId, ...identity }).then(() => { setScopeBoardId(''); setScopeConfirmed(false); onAnnounce('Task scope changed.') })} variant="outline">Change task scope</Button></section> : null}
 
-              <section className="task-detail-section"><h3>Subtasks</h3>
-                {subtasks.map((item) => <div className="task-subtask" key={item.task._id}><span>{item.state?.name}</span><strong>{item.task.title}</strong></div>)}
+              <section className="task-detail-section"><h3><span>Subtasks</span><small>{subtasks.filter((item) => item.terminal).length}/{subtasks.length}</small></h3>
+                {subtasks.map((item) => <div className={`task-subtask${item.terminal ? ' terminal' : ''}`} key={item.task._id}><StateRing category={item.state?.category ?? 'backlog'} size="subtask" /><strong>{item.task.title}</strong><span>{item.state?.name}</span></div>)}
                 {detail.capabilities.canEdit && !detail.task.parentTaskId ? <form className="task-inline-form" onSubmit={(event) => void addSubtask(event)}><Input aria-label="Subtask title" onChange={(event) => setSubtaskTitle(event.target.value)} placeholder="Add a subtask" value={subtaskTitle} /><Button disabled={!subtaskTitle.trim()} size="sm" type="submit"><Plus size={12} /> Add</Button></form> : null}
               </section>
 
               <section className="task-detail-section"><h3><Link2 size={14} /> Evidence</h3>
-                {detail.references.length ? detail.references.map((reference) => <blockquote key={reference._id}>{reference.quote ?? 'Source unavailable'}<span>{reference.type.replaceAll('_', ' ')}</span></blockquote>) : <p>No linked evidence.</p>}
+                {detail.references.length ? detail.references.map((reference) => <div className="task-origin-evidence" key={reference._id}><svg aria-hidden="true" className="task-origin-track" viewBox="0 0 18 72"><path d="M15 2C4 10 4 24 9 34s5 24-6 36" /></svg><blockquote>{reference.quote ?? 'Source unavailable'}<span>{reference.channelThreadId ? 'thread' : reference.type.replaceAll('_', ' ')}</span></blockquote></div>) : <p className="task-empty-note">No linked evidence.</p>}
                 {detail.restrictedEarlierContext ? <p className="task-restricted-context">Earlier context is restricted.</p> : null}
               </section>
 
               <section className="task-detail-section"><h3><MessageSquare size={14} /> Comments and activity</h3>
                 <div className="task-activity-list">
-                  {detail.comments.filter((item) => !item.archivedAt).map((item) => <article key={item._id}>{editingComment?.id === item._id ? <form className="task-inline-form" onSubmit={(event) => { event.preventDefault(); void editComment({ commentId: item._id, expectedRevision: editingComment.revision, body: editingComment.body, ...identity }).then(() => setEditingComment(undefined)) }}><Input onChange={(event) => setEditingComment({ ...editingComment, body: event.target.value })} value={editingComment.body} /><Button size="sm" type="submit">Save</Button></form> : <MarkdownText text={item.body} />}<time>{new Date(item.createdAt).toLocaleString()}{item.updatedAt > item.createdAt ? ' · edited' : ''}</time><div className="task-detail-actions">{item.authorProjectMemberId === detail.currentProjectMemberId ? <Button onClick={() => setEditingComment({ id: item._id, body: item.body, revision: item.revision })} size="sm" variant="ghost">Edit</Button> : null}{item.authorProjectMemberId === detail.currentProjectMemberId || detail.capabilities.canArchive ? <Button onClick={() => void archiveComment({ commentId: item._id, ...identity })} size="sm" variant="ghost">Archive</Button> : null}</div></article>)}
-                  {detail.activities.map((item) => <p className="task-activity" key={item._id}>{item.action.replaceAll('_', ' ')} <time>{new Date(item.createdAt).toLocaleString()}</time></p>)}
+                  {detail.comments.filter((item) => !item.archivedAt).map((item) => {
+                    const author = assignees?.find((candidate) => candidate.member._id === item.authorProjectMemberId)
+                    return <article className="task-comment" key={item._id}><TaskAvatar member={author?.member ?? null} /><div className="task-comment-copy"><div className="task-comment-meta"><strong>{author?.user.displayName ?? 'Project member'}</strong><time>{new Date(item.createdAt).toLocaleString()}{item.updatedAt > item.createdAt ? ' · edited' : ''}</time></div>{editingComment?.id === item._id ? <form className="task-inline-form" onSubmit={(event) => { event.preventDefault(); void editComment({ commentId: item._id, expectedRevision: editingComment.revision, body: editingComment.body, ...identity }).then(() => setEditingComment(undefined)) }}><Input onChange={(event) => setEditingComment({ ...editingComment, body: event.target.value })} value={editingComment.body} /><Button size="sm" type="submit">Save</Button></form> : <MarkdownText text={item.body} />}<div className="task-detail-actions">{item.authorProjectMemberId === detail.currentProjectMemberId ? <Button onClick={() => setEditingComment({ id: item._id, body: item.body, revision: item.revision })} size="sm" variant="ghost">Edit</Button> : null}{item.authorProjectMemberId === detail.currentProjectMemberId || detail.capabilities.canArchive ? <Button onClick={() => void archiveComment({ commentId: item._id, ...identity })} size="sm" variant="ghost">Archive</Button> : null}</div></div></article>
+                  })}
+                  {detail.activities.map((item) => <p className="task-activity" key={item._id}><StateRing category="completed" size="dense" /><span>{item.action.replaceAll('_', ' ')}</span><time>{new Date(item.createdAt).toLocaleString()}</time></p>)}
                 </div>
                 {detail.capabilities.canComment ? <form className="task-comment-form" onSubmit={(event) => void addComment(event)}><Textarea aria-label="Task comment" onChange={(event) => setComment(event.target.value)} placeholder="Write a comment" value={comment} /><div className="task-detail-actions">{assignees?.map((item) => <Button key={item.member._id} onClick={() => setMentionIds((current) => current.includes(item.member._id) ? current.filter((id) => id !== item.member._id) : [...current, item.member._id])} size="sm" type="button" variant={mentionIds.includes(item.member._id) ? 'default' : 'outline'}>@{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</Button>)}</div><Button disabled={!comment.trim()} type="submit">Comment</Button></form> : null}
               </section>

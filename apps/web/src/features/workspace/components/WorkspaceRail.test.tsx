@@ -48,7 +48,7 @@ describe('WorkspaceRail', () => {
   it('does not render invitation emails or audit history when expanded', () => {
     render(<WorkspaceRail {...baseProps} railCollapsed={false} />)
 
-    expect(screen.getByText('Channel references')).toBeTruthy()
+    expect(screen.getByText('Recent references')).toBeTruthy()
     expect(screen.queryByText('Invitations')).toBeNull()
     expect(screen.queryByText('Audit Trail')).toBeNull()
   })

@@ -15,6 +15,8 @@ import type { TaskBoardView, TaskIdentity } from './task-types'
 export function TaskCreateDialog({
   boards,
   identity,
+  initialBoardId,
+  initialWorkflowStateId,
   onCreated,
   onOpenChange,
   open,
@@ -22,6 +24,8 @@ export function TaskCreateDialog({
 }: {
   boards: Array<TaskBoardView>
   identity: TaskIdentity
+  initialBoardId?: Id<'taskBoards'>
+  initialWorkflowStateId?: Id<'taskWorkflowStates'>
   onCreated: (publicKey: string) => void
   onOpenChange: (open: boolean) => void
   open: boolean
@@ -31,6 +35,7 @@ export function TaskCreateDialog({
   const [boardId, setBoardId] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [workflowStateId, setWorkflowStateId] = useState('')
   const [priority, setPriority] = useState<'none' | 'urgent' | 'high' | 'medium' | 'low'>('none')
   const [dueDate, setDueDate] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -45,8 +50,16 @@ export function TaskCreateDialog({
   const labels = useQuery(api.taskLabels.list, open ? { projectId, ...identity } : 'skip')
 
   useEffect(() => {
-    if (!boardId && boards.length) setBoardId((boards.find((item) => item.board.isDefault) ?? boards[0]).board._id)
-  }, [boardId, boards])
+    if (!open || !boards.length) return
+    const initialBoard = boards.find((item) => item.board._id === initialBoardId)
+      ?? boards.find((item) => item.board.isDefault)
+      ?? boards[0]
+    setBoardId(initialBoard.board._id)
+    const initialState = initialBoard.states.find((item) => item._id === initialWorkflowStateId)
+      ?? initialBoard.states.find((item) => item.isDefault)
+      ?? initialBoard.states[0]
+    setWorkflowStateId(initialState?._id ?? '')
+  }, [boards, initialBoardId, initialWorkflowStateId, open])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -56,6 +69,7 @@ export function TaskCreateDialog({
       const result = await createTask({
         projectId,
         boardId: boardId ? boardId as Id<'taskBoards'> : undefined,
+        workflowStateId: workflowStateId ? workflowStateId as Id<'taskWorkflowStates'> : undefined,
         title,
         description: description || undefined,
         priority,
@@ -86,9 +100,16 @@ export function TaskCreateDialog({
           <label>Title<Input autoFocus maxLength={180} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
           <label>Description<Textarea maxLength={20_000} onChange={(event) => setDescription(event.target.value)} value={description} /></label>
           <div className="task-form-grid">
-            <label>Board<NativeSelect disabled={!boards.length} onChange={(event) => setBoardId(event.target.value)} value={boardId}>
+            <label>Board<NativeSelect disabled={!boards.length} onChange={(event) => {
+              const nextBoard = boards.find((item) => item.board._id === event.target.value)
+              setBoardId(event.target.value)
+              setWorkflowStateId(nextBoard?.states.find((item) => item.isDefault)?._id ?? nextBoard?.states[0]?._id ?? '')
+            }} value={boardId}>
               {!boards.length ? <NativeSelectOption value="">Project tasks (create automatically)</NativeSelectOption> : null}
               {boards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}
+            </NativeSelect></label>
+            <label>Status<NativeSelect disabled={!board?.states.length} onChange={(event) => setWorkflowStateId(event.target.value)} value={workflowStateId}>
+              {board?.states.map((item) => <NativeSelectOption key={item._id} value={item._id}>{item.name}</NativeSelectOption>)}
             </NativeSelect></label>
             <label>Priority<NativeSelect onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}>
               {['none', 'urgent', 'high', 'medium', 'low'].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}

@@ -16,6 +16,7 @@ import { TaskCreateDialog } from './TaskCreateDialog'
 import { TaskDetailDrawer } from './TaskDetailDrawer'
 import { TaskInbox } from './TaskInbox'
 import { taskIdentity, type TaskBoardView, type TaskView } from './task-types'
+import { StateRing, TaskDenseRow } from './ui/TaskVisuals'
 
 type TaskSearch = {
   actingCompanyId?: string
@@ -75,6 +76,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
       : 'skip',
   ) as Array<TaskView> | undefined
   const [createOpen, setCreateOpen] = useState(false)
+  const [createWorkflowStateId, setCreateWorkflowStateId] = useState<Id<'taskWorkflowStates'>>()
   const [adminOpen, setAdminOpen] = useState(false)
   const [announcement, setAnnouncement] = useState('')
 
@@ -145,7 +147,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
             <h1>{pageTitle}</h1>
           </div>
           <div className="task-header-actions">
-            <Button onClick={() => setCreateOpen(true)}><Plus size={14} /> New task</Button>
+            <Button onClick={() => { setCreateWorkflowStateId(undefined); setCreateOpen(true) }}><Plus size={14} /> New task</Button>
             <Button aria-label="Task settings" onClick={() => setAdminOpen(true)} variant="outline"><Settings2 size={14} /></Button>
             <TaskNotificationButton identity={identity} projectId={project} />
           </div>
@@ -199,6 +201,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
               board={selectedBoard}
               identity={identity}
               onAnnounce={setAnnouncement}
+              onCreate={(stateId) => { setCreateWorkflowStateId(stateId); setCreateOpen(true) }}
               onOpen={(publicKey) => void navigate({
                 to: '/workspace/projects/$projectId/tasks', params: { projectId },
                 search: { ...search, task: publicKey },
@@ -206,17 +209,14 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
               tasks={visibleTasks}
             />
           ) : visibleTasks.length ? (
-            <div className="task-dense-list">
-              {visibleTasks.map((item) => (
-                <button key={item.task._id} onClick={() => void navigate({
-                  to: '/workspace/projects/$projectId/tasks', params: { projectId },
-                  search: { ...search, task: item.task.publicKey },
-                })} type="button">
-                  <span>{item.task.publicKey}</span><strong>{item.task.title}</strong>
-                  <span>{item.state?.name ?? 'Unavailable state'}</span><span>{item.task.priority}</span>
-                </button>
-              ))}
-            </div>
+            <TaskGroupedList
+              items={visibleTasks}
+              omitAssignee={view === 'my'}
+              onOpen={(publicKey) => void navigate({
+                to: '/workspace/projects/$projectId/tasks', params: { projectId },
+                search: { ...search, task: publicKey },
+              })}
+            />
           ) : <TaskEmpty title="No task matches" body="Change the current filters or create a task." />}
           </section>
         )}
@@ -226,6 +226,8 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
       <TaskCreateDialog
         boards={boards ?? []}
         identity={identity}
+        initialBoardId={selectedBoard?.board._id}
+        initialWorkflowStateId={createWorkflowStateId}
         onCreated={(publicKey) => {
           setCreateOpen(false)
           setAnnouncement(`Created ${publicKey}`)
@@ -234,7 +236,10 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
             search: { ...search, task: publicKey },
           })
         }}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) setCreateWorkflowStateId(undefined)
+        }}
         open={createOpen}
         projectId={project}
       />
@@ -279,4 +284,21 @@ function TaskLoading() {
 
 function TaskEmpty({ title, body }: { title: string; body: string }) {
   return <div className="task-empty"><ListTodo aria-hidden="true" size={26} /><h2>{title}</h2><p>{body}</p></div>
+}
+
+function TaskGroupedList({ items, omitAssignee, onOpen }: { items: Array<TaskView>; omitAssignee: boolean; onOpen: (publicKey: string) => void }) {
+  const groups = Array.from(items.reduce((result, item) => {
+    const key = item.state?._id ?? 'unavailable'
+    const current = result.get(key) ?? { state: item.state, items: [] as Array<TaskView> }
+    current.items.push(item)
+    result.set(key, current)
+    return result
+  }, new Map<string, { state: TaskView['state']; items: Array<TaskView> }>()).values())
+
+  return <div className="task-dense-list">{groups.map((group) => (
+    <section className="task-list-group" key={group.state?._id ?? 'unavailable'}>
+      <header><StateRing category={group.state?.category ?? 'backlog'} /><h2>{group.state?.name ?? 'Unavailable state'}</h2><span>{group.items.length}</span></header>
+      {group.items.map((item) => <TaskDenseRow item={item} key={item.task._id} omitAssignee={omitAssignee} onOpen={() => onOpen(item.task.publicKey)} />)}
+    </section>
+  ))}</div>
 }

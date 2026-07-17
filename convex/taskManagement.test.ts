@@ -77,6 +77,43 @@ describe('task management authorization and invariants', () => {
     expect(state.follower?.enabled).toBe(false)
   })
 
+  it('creates a board task in the workflow state selected by the client', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const boardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Placement board',
+    })
+    const boards = await owner.query(api.taskBoards.list, { projectId: fixture.projectId })
+    const board = boards.find((item) => item.board._id === boardId)
+    const started = board?.states.find((item) => item.category === 'started')
+    expect(started).toBeTruthy()
+
+    const created = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      workflowStateId: started?._id,
+      title: 'Start in progress',
+      priority: 'none',
+      idempotencyKey: 'selected-create-state',
+    })
+    const task = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
+    expect(task?.workflowStateId).toBe(started?._id)
+
+    const otherBoardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Other board',
+    })
+    await expect(owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId: otherBoardId,
+      workflowStateId: started?._id,
+      title: 'Wrong board state',
+      priority: 'none',
+      idempotencyKey: 'invalid-selected-create-state',
+    })).rejects.toThrow('task_destination_invalid')
+  })
+
   it('keeps Channel boards invisible to an administrator outside that Channel', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })

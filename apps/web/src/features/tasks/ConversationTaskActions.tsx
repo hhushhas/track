@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react'
-import { CalendarDays, ListPlus, UserRound } from 'lucide-react'
+import { ListPlus } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
@@ -12,6 +12,7 @@ import { useReleaseConfig } from '#/lib/release-config'
 import { Textarea } from '#/components/ui/textarea'
 import { taskError } from './TaskCreateDialog'
 import type { TaskIdentity } from './task-types'
+import { DueChip, formatTaskDate, PriorityGlyph, StateRing, TaskAvatar } from './ui/TaskVisuals'
 
 type TaskCard = {
   task: Doc<'tasks'>
@@ -103,25 +104,28 @@ function TaskSourceCreate({
 export function MessageInlineTasks({ message, identity = {} }: { message: Doc<'messages'>; identity?: TaskIdentity }) {
   const release = useReleaseConfig()
   const cards = useQuery(api.tasks.listForMessage, release.tasks ? { messageId: message._id, ...identity } : 'skip') as Array<TaskCard> | undefined
-  return <InlineCards cards={cards} identity={identity} projectId={message.projectId} />
+  return <InlineCards cards={cards} identity={identity} projectId={message.projectId} sourceLabel="this Channel message" />
 }
 
 export function AssistantInlineTasks({ stream, identity = {} }: { stream: Doc<'assistantStreams'>; identity?: TaskIdentity }) {
   const release = useReleaseConfig()
   const cards = useQuery(api.tasks.listForAssistant, release.tasks ? { assistantStreamId: stream._id, ...identity } : 'skip') as Array<TaskCard> | undefined
-  return <InlineCards cards={cards} identity={identity} projectId={stream.projectId} />
+  return <InlineCards cards={cards} identity={identity} projectId={stream.projectId} sourceLabel="this Assistant answer" />
 }
 
-function InlineCards({ cards, identity, projectId }: { cards: Array<TaskCard> | undefined; identity: TaskIdentity; projectId: Id<'projects'> }) {
+function InlineCards({ cards, identity, projectId, sourceLabel }: { cards: Array<TaskCard> | undefined; identity: TaskIdentity; projectId: Id<'projects'>; sourceLabel: string }) {
   if (!cards?.length) return null
   const identityQuery = identity.actingCompanyId && identity.projectMemberId
     ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}` : ''
   return <div className="task-inline-cards">{cards.map((card) => <a href={`/workspace/projects/${projectId}/tasks?view=board&task=${card.task.publicKey}${identityQuery}`} key={card.task._id}>
-    <span>{card.task.publicKey}</span><strong>{card.task.title}</strong><small>{card.state?.name ?? 'Unavailable status'} · {card.assignee ? <><UserRound size={11} /> {card.assignee.userDisplayNameSnapshot ?? 'Assigned'}</> : 'Unassigned'}{card.task.dueDate ? <><CalendarDays size={11} /> {card.task.dueDate}</> : null}</small>
+    <span className="task-inline-idline"><span>{card.task.publicKey}</span><StateRing category={card.state?.category ?? 'backlog'} size="dense" /></span>
+    <strong>{card.task.title}</strong>
+    <span className="task-inline-properties"><TaskAvatar member={card.assignee} /><span>{card.state?.name ?? 'Unavailable status'}</span><DueChip dueDate={card.task.dueDate} terminal={card.state?.category === 'completed' || card.state?.category === 'canceled'} /><PriorityGlyph priority={card.task.priority} /></span>
+    <small>Linked to {sourceLabel}</small>
   </a>)}</div>
 }
 
-export function ChannelTaskPanel({ group, identity = {} }: { group: Doc<'groups'>; identity?: TaskIdentity }) {
+export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { group: Doc<'groups'>; identity?: TaskIdentity; variant?: 'panel' | 'rail' }) {
   const release = useReleaseConfig()
   const tasks = useQuery(
     api.tasks.list,
@@ -141,6 +145,24 @@ export function ChannelTaskPanel({ group, identity = {} }: { group: Doc<'groups'
     setDetectionError('')
     try { await action() } catch (failure) { setDetectionError(taskError(failure)) }
   }
+  const boardQuery = open[0]?.task.boardId ? `&board=${open[0].task.boardId}` : ''
+  if (variant === 'rail') return <section aria-label="Channel tasks" className="track-rail-task-section">
+    <header><span>Open tasks · this Channel</span><a href={`/workspace/projects/${group.projectId}/tasks?view=board${boardQuery}${identityQuery}`}>Board →</a></header>
+    <div className="track-rail-task-list">
+      {open.slice(0, 4).map((item) => <a href={`/workspace/projects/${group.projectId}/tasks?view=board&task=${item.task.publicKey}${identityQuery}`} key={item.task._id}>
+        <StateRing category={item.state?.category ?? 'backlog'} size="dense" />
+        <span><strong>{item.task.title}</strong><small>{item.task.publicKey}{item.task.dueDate ? ` · due ${formatTaskDate(item.task.dueDate)}` : ''}</small></span>
+        <TaskAvatar member={item.assignee} size="rail" />
+      </a>)}
+      {!open.length ? <p className="track-rail-empty">No open tasks in this Channel.</p> : null}
+    </div>
+    {detection?.canManage ? <details className="track-rail-task-settings"><summary>Task detection · {detection.enabled ? 'on' : 'off'} · {detection.lastRunStatus ?? 'idle'}</summary>
+      <Button onClick={() => void run(() => setDetection({ projectId: group.projectId, groupId: group._id, enabled: !detection.enabled, ...identity }))} size="sm" variant="ghost">Turn {detection.enabled ? 'off' : 'on'}</Button>
+      <div><Input aria-label="History start date" onChange={(event) => setHistoryFrom(event.target.value)} type="date" value={historyFrom} /><Input aria-label="History end date" onChange={(event) => setHistoryTo(event.target.value)} type="date" value={historyTo} /><Button onClick={() => void run(() => requestHistory({ projectId: group.projectId, groupId: group._id, from: new Date(`${historyFrom}T00:00:00`).getTime(), to: new Date(`${historyTo}T23:59:59.999`).getTime(), ...identity }))} size="sm">Scan history</Button></div>
+      {detection.lastErrorCategory ? <p role="alert">Detection failed: {detection.lastErrorCategory.replaceAll('_', ' ')}</p> : null}
+      {detectionError ? <p role="alert">{detectionError}</p> : null}
+    </details> : null}
+  </section>
   return <aside className="task-channel-panel" aria-label="Channel tasks">
     <div><ListPlus size={14} /><strong>{open.length} open task{open.length === 1 ? '' : 's'}</strong></div>
     <div>{open.slice(0, 3).map((item) => <a href={`/workspace/projects/${group.projectId}/tasks?view=board&task=${item.task.publicKey}${identityQuery}`} key={item.task._id}>{item.task.publicKey} · {item.task.title}</a>)}</div>

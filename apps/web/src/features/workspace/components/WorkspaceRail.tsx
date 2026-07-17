@@ -1,7 +1,6 @@
-import { Bell, ExternalLink, GripVertical, Paperclip, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Bell, GripVertical, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
-import { Card } from '#/components/ui/card'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +19,7 @@ import { ChannelTaskPanel } from '#/features/tasks/ConversationTaskActions'
 import { ChannelThreadBrowser } from '#/features/threads/ChannelThreadBrowser'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import { useReleaseConfig } from '#/lib/release-config'
+import { AttachmentTypeIcon } from '../attachment-ui'
 
 type WorkspaceRailProps = {
   activeGroup: Doc<'groups'> | undefined
@@ -128,7 +128,11 @@ export function WorkspaceRail({
 }: WorkspaceRailProps) {
   const releaseConfig = useReleaseConfig()
   const references = visibleMessages
-    .flatMap((item) => item.attachments)
+    .flatMap((item) => item.attachments.map((file) => ({
+      ...file,
+      author: item.author?.displayName ?? 'Unknown member',
+      createdAt: item.message.createdAt,
+    })))
     .slice(-4)
     .reverse()
   if (railCollapsed) {
@@ -174,49 +178,40 @@ export function WorkspaceRail({
           <GripVertical size={14} />
         </span>
       </button>
-      <Card className="track-rail-section" size="sm">
-        <div className="track-rail-title">
-          <span>
-            <span className="track-rail-heading">Workspace</span>
-          </span>
-          <div className="track-rail-icon-actions">
-            <button
-              aria-label="Collapse workspace details"
-              className="track-rail-icon-button"
-              onClick={onCollapse}
-              type="button"
-            >
-              <PanelRightClose size={14} />
-            </button>
-            <NotificationMenu
-              activeProjectId={activeProjectId}
-              busyAction={busyAction}
-              globalNotificationMode={globalNotificationMode}
-              groupNotificationMode={groupNotificationMode}
-              notificationPermission={notificationPermission}
-              notificationStatus={notificationStatus}
-              onEnableBrowserNotifications={onEnableBrowserNotifications}
-              onNotificationMode={onNotificationMode}
-              onSendTestNotification={onSendTestNotification}
-            />
-          </div>
-        </div>
-      </Card>
-      <Card className="track-rail-section track-rail-reference-section" size="sm">
+      <div className="track-rail-toolbar">
+        <button
+          aria-label="Collapse workspace details"
+          className="track-rail-icon-button"
+          onClick={onCollapse}
+          type="button"
+        >
+          <PanelRightClose size={14} />
+        </button>
+        <NotificationMenu
+          activeProjectId={activeProjectId}
+          busyAction={busyAction}
+          globalNotificationMode={globalNotificationMode}
+          groupNotificationMode={groupNotificationMode}
+          notificationPermission={notificationPermission}
+          notificationStatus={notificationStatus}
+          onEnableBrowserNotifications={onEnableBrowserNotifications}
+          onNotificationMode={onNotificationMode}
+          onSendTestNotification={onSendTestNotification}
+        />
+      </div>
+      <section className="track-rail-section track-rail-reference-section">
         <div className="track-rail-heading-row">
-          <span className="track-rail-heading">Channel references</span>
-          <span className="track-rail-sub">{references.length}</span>
+          <span className="track-rail-heading">Recent references</span>
         </div>
         <div className="track-rail-reference-list">
-          {references.map(({ attachment, url }) => {
+          {references.map(({ attachment, author, createdAt, url }) => {
             const content = (
               <>
-                <span className="track-rail-reference-icon"><Paperclip size={13} /></span>
-                <span>
+                <AttachmentTypeIcon contentType={attachment.contentType} filename={attachment.filename} />
+                <span className="track-rail-reference-copy">
                   <strong>{attachment.filename}</strong>
-                  <small>{attachment.contentType}</small>
+                  <small>from {author} · {new Date(createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small>
                 </span>
-                {url ? <ExternalLink size={12} /> : null}
               </>
             )
             return url ? (
@@ -227,8 +222,8 @@ export function WorkspaceRail({
           })}
           {!references.length ? <p className="track-rail-empty">Files shared in this Channel appear here.</p> : null}
         </div>
-      </Card>
-      {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} /> : null}
+      </section>
+      {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} variant="rail" /> : null}
       {releaseConfig.threads && activeGroup && activeProjectId ? (
         <ChannelThreadBrowser
           groupId={activeGroup._id}
@@ -236,6 +231,7 @@ export function WorkspaceRail({
           readOnly={activeGroup.status === 'archived'}
           timelineMessages={visibleMessages}
           userId={userId}
+          variant="rail"
         />
       ) : null}
     </aside>

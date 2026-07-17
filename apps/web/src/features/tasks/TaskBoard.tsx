@@ -1,22 +1,25 @@
 import { useMutation } from 'convex/react'
-import { ArrowLeft, ArrowRight, CalendarDays, GripVertical, UserRound } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { groupTaskViewsByState, type TaskBoardView, type TaskIdentity, type TaskView } from './task-types'
+import { DueChip, OriginCaption, PriorityGlyph, StateRing, TaskAvatar } from './ui/TaskVisuals'
 
 export function TaskBoard({
   board,
   identity,
   onAnnounce,
+  onCreate,
   onOpen,
   tasks,
 }: {
   board: TaskBoardView
   identity: TaskIdentity
   onAnnounce: (message: string) => void
+  onCreate: (stateId: Id<'taskWorkflowStates'>) => void
   onOpen: (publicKey: string) => void
   tasks: Array<TaskView>
 }) {
@@ -66,7 +69,12 @@ export function TaskBoard({
               setDraggedTask(null)
             }}
           >
-            <header><span className={`task-state-ring ${state.category}`} /><h2>{state.name}</h2><span>{columnTasks.length}</span></header>
+            <header>
+              <StateRing category={state.category} />
+              <h2>{state.name}</h2>
+              <span>{columnTasks.length}</span>
+              <button aria-label={`Add task to ${state.name}`} className="task-column-add" onClick={() => onCreate(state._id)} type="button"><Plus size={13} /></button>
+            </header>
             <div className="task-column-list">
               {columnTasks.map((item) => (
                 <article
@@ -77,12 +85,14 @@ export function TaskBoard({
                   onDragStart={() => setDraggedTask(item.task._id)}
                 >
                   <button className="task-card-open" onClick={() => onOpen(item.task.publicKey)} type="button">
-                    <span className="task-card-key"><GripVertical aria-hidden="true" size={12} /> {item.task.publicKey}</span>
+                    <span className="task-card-idline"><span>{item.task.publicKey}</span><StateRing category={state.category} size="dense" /></span>
                     <strong>{item.task.title}</strong>
-                    <span className={`task-priority ${item.task.priority}`}>{item.task.priority}</span>
-                    <span className="task-card-meta">
-                      {item.assignee ? <><UserRound size={12} /> {item.assignee.userDisplayNameSnapshot ?? 'Assigned'}</> : 'Unassigned'}
-                      {item.task.dueDate ? <><CalendarDays size={12} /> {item.task.dueDate}</> : null}
+                    <span className="task-card-foot">
+                      <TaskAvatar member={item.assignee} />
+                      <OriginCaption boardName={board.board.name} item={item} />
+                      <span className="task-card-spacer" />
+                      <DueChip dueDate={item.task.dueDate} terminal={item.terminal} />
+                      <PriorityGlyph priority={item.task.priority} />
                     </span>
                   </button>
                   <div aria-label="Keyboard move controls" className="task-card-moves">

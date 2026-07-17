@@ -396,6 +396,7 @@ export const create = mutation({
   args: {
     projectId: v.id('projects'),
     boardId: v.optional(v.id('taskBoards')),
+    workflowStateId: v.optional(v.id('taskWorkflowStates')),
     groupId: v.optional(v.id('groups')),
     parentTaskId: v.optional(v.id('tasks')),
     title: v.string(),
@@ -446,7 +447,12 @@ export const create = mutation({
     if (board.projectId !== args.projectId || board.groupId !== groupId || board.archivedAt) {
       throw new Error('task_destination_invalid')
     }
-    const state = await getDefaultWorkflowState(ctx, board._id)
+    const state = args.workflowStateId
+      ? await ctx.db.get(args.workflowStateId)
+      : await getDefaultWorkflowState(ctx, board._id)
+    if (!state || state.boardId !== board._id || state.archivedAt) {
+      throw new Error('task_destination_invalid')
+    }
     assertCanAssignTaskMember(
       initialAccess.projectMember._id,
       args.assigneeProjectMemberId,

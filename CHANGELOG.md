@@ -56,7 +56,7 @@ not deployed.
 
 ### Fixed
 
-- Rebuilt the authenticated web visual system around the approved conversation-led UI direction, with denser amber-accent navigation, Channel view tabs, a useful reference/task/thread rail, consistent conversation primitives, a persistent task-work shell, compact task details, and aligned Company and thread surfaces across desktop and responsive layouts.
+- Rebuilt the authenticated web visual system around the approved conversation-led UI direction, with denser amber-accent navigation, Channel view tabs, live reference/task/thread rail sections, shared state rings, priority marks, avatars and evidence connectors, prototype-shaped board cards and grouped task rows, a compact editable task drawer, and aligned Company and thread surfaces across desktop and responsive layouts.
 - Local demo authentication now establishes a credential-backed Better Auth
   session before resolving its provisioned developer user through Convex, while
   remaining exact-opt-in and restricted to loopback development URLs.

@@ -178,7 +178,7 @@ export function GroupChatPage({
   return (
     <>
       <div className="track-chat-mobile-context">
-        {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} /> : null}
+        {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} variant="rail" /> : null}
         {releaseConfig.threads && activeGroupId && activeProjectId ? (
           <ChannelThreadBrowser
             groupId={activeGroupId}
@@ -186,6 +186,7 @@ export function GroupChatPage({
             readOnly={activeGroup?.status === 'archived'}
             timelineMessages={visibleMessages}
             userId={currentUserId}
+            variant="rail"
           />
         ) : null}
       </div>
