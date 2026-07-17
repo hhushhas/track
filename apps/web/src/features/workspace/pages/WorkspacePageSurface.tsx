@@ -335,6 +335,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
 
       {route.view === 'group' ? (
         <WorkspaceRail
+          activeGroup={activeGroup}
           activeProjectId={state.activeProjectId}
           busyAction={notifications.notificationBusyAction ?? state.busyAction}
           globalNotificationMode={notifications.globalNotificationMode}
@@ -348,6 +349,8 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           onSendTestNotification={() => void notifications.handleSendTestNotification()}
           onStartResize={() => update.setRailResizing(true)}
           railCollapsed={state.railCollapsed}
+          userId={auth.trackUserId}
+          visibleMessages={presentation.visibleMessages}
         />
       ) : null}
       <ProjectSearchDialog

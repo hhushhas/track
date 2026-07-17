@@ -1,6 +1,6 @@
-import { Bell, GripVertical, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Bell, ExternalLink, GripVertical, Paperclip, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
-import type { Id } from '../../../../../../convex/_generated/dataModel'
+import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { Card } from '#/components/ui/card'
 import {
   DropdownMenu,
@@ -16,8 +16,13 @@ import {
 import { formatRailLabel } from '#/features/workspace/lib/formatting'
 import { notificationModes } from '#/features/workspace/constants'
 import { notificationPermissionLabels, type WebNotificationPermission } from '#/features/workspace/web-notifications'
+import { ChannelTaskPanel } from '#/features/tasks/ConversationTaskActions'
+import { ChannelThreadBrowser } from '#/features/threads/ChannelThreadBrowser'
+import type { GroupMessageItem } from '#/features/workspace/thread-items'
+import { useReleaseConfig } from '#/lib/release-config'
 
 type WorkspaceRailProps = {
+  activeGroup: Doc<'groups'> | undefined
   activeProjectId: Id<'projects'> | null
   busyAction: string | null
   globalNotificationMode: (typeof notificationModes)[number]
@@ -31,6 +36,8 @@ type WorkspaceRailProps = {
   onEnableBrowserNotifications: () => void
   onStartResize: () => void
   railCollapsed: boolean
+  userId: Id<'users'>
+  visibleMessages: Array<GroupMessageItem>
 }
 
 type NotificationMenuProps = Pick<
@@ -102,6 +109,7 @@ function NotificationMenu({
 }
 
 export function WorkspaceRail({
+  activeGroup,
   activeProjectId,
   busyAction,
   globalNotificationMode,
@@ -115,7 +123,14 @@ export function WorkspaceRail({
   onEnableBrowserNotifications,
   onStartResize,
   railCollapsed,
+  userId,
+  visibleMessages,
 }: WorkspaceRailProps) {
+  const releaseConfig = useReleaseConfig()
+  const references = visibleMessages
+    .flatMap((item) => item.attachments)
+    .slice(-4)
+    .reverse()
   if (railCollapsed) {
     return (
       <aside className="track-rail collapsed">
@@ -187,6 +202,42 @@ export function WorkspaceRail({
           </div>
         </div>
       </Card>
+      <Card className="track-rail-section track-rail-reference-section" size="sm">
+        <div className="track-rail-heading-row">
+          <span className="track-rail-heading">Channel references</span>
+          <span className="track-rail-sub">{references.length}</span>
+        </div>
+        <div className="track-rail-reference-list">
+          {references.map(({ attachment, url }) => {
+            const content = (
+              <>
+                <span className="track-rail-reference-icon"><Paperclip size={13} /></span>
+                <span>
+                  <strong>{attachment.filename}</strong>
+                  <small>{attachment.contentType}</small>
+                </span>
+                {url ? <ExternalLink size={12} /> : null}
+              </>
+            )
+            return url ? (
+              <a href={url} key={attachment._id} rel="noreferrer" target="_blank">{content}</a>
+            ) : (
+              <span className="track-rail-reference" key={attachment._id}>{content}</span>
+            )
+          })}
+          {!references.length ? <p className="track-rail-empty">Files shared in this Channel appear here.</p> : null}
+        </div>
+      </Card>
+      {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} /> : null}
+      {releaseConfig.threads && activeGroup && activeProjectId ? (
+        <ChannelThreadBrowser
+          groupId={activeGroup._id}
+          projectId={activeProjectId}
+          readOnly={activeGroup.status === 'archived'}
+          timelineMessages={visibleMessages}
+          userId={userId}
+        />
+      ) : null}
     </aside>
   )
 }

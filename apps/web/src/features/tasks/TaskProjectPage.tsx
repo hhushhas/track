@@ -96,24 +96,30 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
     return <main className="task-page task-unavailable"><h1>Tasks are unavailable</h1><p>This Project keeps its conversation workflow while the task release is disabled.</p></main>
   }
 
+  const conversationHref = identity.projectMemberId
+    ? `/workspace/company-projects/${projectId}?companyId=${identity.actingCompanyId}&membershipId=${identity.projectMemberId}`
+    : `/workspace/projects/${projectId}`
+  const pageTitle = view === 'board'
+    ? selectedBoard?.board.name ?? 'Board'
+    : view === 'my'
+      ? 'My tasks'
+      : view === 'inbox'
+        ? 'Suggestion inbox'
+        : 'All tasks'
+
   return (
     <main className="task-page">
-      <header className="task-page-header">
-        <div>
-          <a className="task-back-link" href={identity.projectMemberId ? `/workspace/company-projects/${projectId}?companyId=${identity.actingCompanyId}&membershipId=${identity.projectMemberId}` : `/workspace/projects/${projectId}`}>
-            ← Project conversation
-          </a>
-          <span className="task-eyebrow">Project work</span>
-          <h1>Tasks</h1>
-        </div>
-        <div className="task-header-actions">
-          <Button onClick={() => setCreateOpen(true)}><Plus size={14} /> Create task</Button>
-          <Button aria-label="Task settings" onClick={() => setAdminOpen(true)} variant="outline"><Settings2 size={14} /></Button>
-          <TaskNotificationButton identity={identity} projectId={project} />
-        </div>
-      </header>
-
-      <nav aria-label="Task views" className="task-view-tabs">
+      <aside className="task-route-sidebar">
+        <a className="task-route-brand" href="/workspace">
+          <img alt="" height="21" src="/track-mark.svg" width="30" />
+          <strong>Track</strong>
+        </a>
+        <a className="task-route-project" href={conversationHref}>
+          <span className="task-route-project-glyph">P</span>
+          <span><strong>Project workspace</strong><small>Conversation and work</small></span>
+        </a>
+        <span className="task-route-label">Work</span>
+        <nav aria-label="Task views" className="task-view-tabs">
         {taskViews.map(([value, label, Icon]) => (
           <Button
             aria-current={view === value ? 'page' : undefined}
@@ -128,12 +134,27 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
             <Icon size={14} /> {label}
           </Button>
         ))}
-      </nav>
+        </nav>
+        <a className="task-route-conversation" href={conversationHref}>← Project conversation</a>
+      </aside>
 
-      {view === 'inbox' ? (
-        <TaskInbox boards={boards ?? []} identity={identity} projectId={project} onAnnounce={setAnnouncement} />
-      ) : (
-        <section className="task-workspace">
+      <section className="task-page-main">
+        <header className="task-page-header">
+          <div>
+            <span className="task-eyebrow">Project work</span>
+            <h1>{pageTitle}</h1>
+          </div>
+          <div className="task-header-actions">
+            <Button onClick={() => setCreateOpen(true)}><Plus size={14} /> New task</Button>
+            <Button aria-label="Task settings" onClick={() => setAdminOpen(true)} variant="outline"><Settings2 size={14} /></Button>
+            <TaskNotificationButton identity={identity} projectId={project} />
+          </div>
+        </header>
+
+        {view === 'inbox' ? (
+          <TaskInbox boards={boards ?? []} identity={identity} projectId={project} onAnnounce={setAnnouncement} />
+        ) : (
+          <section className="task-workspace">
           <div className="task-toolbar">
             {view === 'board' ? (
               <NativeSelect
@@ -197,10 +218,11 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
               ))}
             </div>
           ) : <TaskEmpty title="No task matches" body="Change the current filters or create a task." />}
-        </section>
-      )}
+          </section>
+        )}
 
-      <p aria-live="polite" className="sr-only">{announcement}</p>
+        <p aria-live="polite" className="sr-only">{announcement}</p>
+      </section>
       <TaskCreateDialog
         boards={boards ?? []}
         identity={identity}

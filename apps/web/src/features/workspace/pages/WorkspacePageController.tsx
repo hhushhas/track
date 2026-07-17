@@ -70,7 +70,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('track-nav-collapsed') === 'true'
   })
-  const [railCollapsed, setRailCollapsed] = useState(true)
+  const [railCollapsed, setRailCollapsed] = useState(false)
   const [railWidth, setRailWidth] = useState(312)
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)

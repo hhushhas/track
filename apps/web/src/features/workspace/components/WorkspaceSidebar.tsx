@@ -186,7 +186,7 @@ export function WorkspaceSidebar({
           <div className="track-nav-secondary">
             <div className="track-sidebar-groups">
               <div className="track-nav-section">
-                <span>Groups</span>
+                <span>Channels</span>
                 <button
                   aria-label="Create group"
                   className="track-nav-action"
@@ -232,7 +232,7 @@ export function WorkspaceSidebar({
 
             <div className="track-sidebar-tools">
               <div className="track-nav-section no-action">
-                <span>Project</span>
+                <span>Work</span>
               </div>
               <Button
                 className="track-nav-item"
@@ -259,7 +259,7 @@ export function WorkspaceSidebar({
                   <ListTodo className="track-nav-icon" size={14} />
                   <span className="track-nav-copy">
                     <span className="track-nav-title">Tasks</span>
-                    <span className="track-nav-meta">Boards, work, Inbox</span>
+                    <span className="track-nav-meta">Boards, my tasks, inbox</span>
                   </span>
                 </Link>
               ) : null}

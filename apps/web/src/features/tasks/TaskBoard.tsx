@@ -66,7 +66,7 @@ export function TaskBoard({
               setDraggedTask(null)
             }}
           >
-            <header><span className={`task-state-dot ${state.visualToken}`} /><h2>{state.name}</h2><span>{columnTasks.length}</span></header>
+            <header><span className={`task-state-ring ${state.category}`} /><h2>{state.name}</h2><span>{columnTasks.length}</span></header>
             <div className="task-column-list">
               {columnTasks.map((item) => (
                 <article

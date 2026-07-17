@@ -177,12 +177,8 @@ export function GroupChatPage({
   const releaseConfig = useReleaseConfig()
   return (
     <>
-      {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} /> : null}
-      <div
-        className="track-thread-scroll"
-        onScroll={onThreadScroll}
-        ref={threadScrollRef}
-      >
+      <div className="track-chat-mobile-context">
+        {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} /> : null}
         {releaseConfig.threads && activeGroupId && activeProjectId ? (
           <ChannelThreadBrowser
             groupId={activeGroupId}
@@ -192,6 +188,12 @@ export function GroupChatPage({
             userId={currentUserId}
           />
         ) : null}
+      </div>
+      <div
+        className="track-thread-scroll"
+        onScroll={onThreadScroll}
+        ref={threadScrollRef}
+      >
         <div className="track-thread">
           {activeGroup && messagesLoaded && visibleMessages.length === 0 ? (
             <div className="track-empty-conversation">
