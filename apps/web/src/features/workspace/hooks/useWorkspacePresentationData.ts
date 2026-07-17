@@ -13,6 +13,7 @@ type WorkspaceData = ReturnType<typeof useWorkspaceData>
 
 type PresentationDataOptions = Pick<
   WorkspaceData,
+  | 'activeChannelMembers'
   | 'activeGroup'
   | 'activeProjectMembers'
   | 'groupAssistantStreams'
@@ -25,6 +26,7 @@ type PresentationDataOptions = Pick<
 
 export function useWorkspacePresentationData({
   activeChatMatchIndex,
+  activeChannelMembers,
   activeGroup,
   activeProjectMembers,
   chatSearchQuery,
@@ -47,8 +49,8 @@ export function useWorkspacePresentationData({
     [chatSearchMatches],
   )
   const headerMembers = useMemo(
-    () => activeProjectMembers.filter((item) => item.user).slice(0, 5),
-    [activeProjectMembers],
+    () => activeChannelMembers.slice(0, 5),
+    [activeChannelMembers],
   )
   const headerMemberAvatarUrls = useQuery(
     api.auth.getAvatarUrls,
@@ -73,8 +75,8 @@ export function useWorkspacePresentationData({
     [messageAuthorAvatarUrls],
   )
   const hiddenHeaderMembers = useMemo(
-    () => activeProjectMembers.filter((item) => item.user).slice(headerMembers.length),
-    [activeProjectMembers, headerMembers.length],
+    () => activeChannelMembers.slice(headerMembers.length),
+    [activeChannelMembers, headerMembers.length],
   )
   const projectSearchSections = useMemo(
     () => buildProjectSearchSections(projectSearchResults),
@@ -91,7 +93,7 @@ export function useWorkspacePresentationData({
       activeProjectMembers,
     }),
     extraHeaderMemberCount: Math.max(
-      activeProjectMembers.filter((item) => item.user).length - headerMembers.length,
+      activeChannelMembers.length - headerMembers.length,
       0,
     ),
     headerMemberAvatarUrlById,

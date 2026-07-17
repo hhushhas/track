@@ -337,7 +337,7 @@ export const listMembers = query({
       .withIndex('by_group', (q) => q.eq('groupId', args.groupId))
       .collect()
     return await Promise.all(
-      memberships.map(async (membership) => {
+      memberships.filter((membership) => membership.status === 'active').map(async (membership) => {
         const user = await ctx.db.get(membership.userId)
         return { membership, user }
       }),

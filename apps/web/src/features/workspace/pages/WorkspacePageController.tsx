@@ -126,6 +126,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     trackUserId,
   })
   const {
+    activeChannelMembers,
     activeGroup,
     activeProject,
     activeProjectMembers,
@@ -167,6 +168,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const composerHasTypingText = composer.trim().length > 0
   const presentation = useWorkspacePresentationData({
     activeChatMatchIndex,
+    activeChannelMembers,
     activeGroup,
     activeProjectMembers,
     chatSearchQuery,

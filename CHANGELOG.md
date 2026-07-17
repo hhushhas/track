@@ -55,6 +55,9 @@ ships with independent server-authoritative controls enabled by default.
 
 ### Fixed
 
+- Workspace header avatar stacks now use only active members of the selected
+  Channel, clear during Channel transitions, exclude missing user records, and
+  label their accessible controls as Channel members.
 - Rebuilt the authenticated web visual system around the approved conversation-led UI direction, with denser amber-accent navigation, Channel view tabs, live reference/task/thread rail sections, shared state rings, priority marks, avatars and evidence connectors, prototype-shaped board cards and grouped task rows, a compact editable task drawer, and aligned Company and thread surfaces across desktop and responsive layouts.
 - Local demo authentication now establishes a credential-backed Better Auth
   session before resolving its provisioned developer user through Convex, while

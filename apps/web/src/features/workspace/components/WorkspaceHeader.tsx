@@ -10,16 +10,12 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { AvatarNameTooltip } from '#/features/workspace/avatar-tooltip'
 import { getAvatarTone, getInitials } from '#/features/workspace/identity'
+import type { ActiveChannelMemberItem } from '#/features/workspace/lib/channel-header-members'
 import { useReleaseConfig } from '#/lib/release-config'
 
 type ProjectItem = {
   project: Doc<'projects'>
   membership: Doc<'projectMembers'>
-}
-
-type ProjectMemberItem = {
-  membership: Doc<'projectMembers'>
-  user: Doc<'users'> | null
 }
 
 type WorkspaceHeaderProps = {
@@ -30,8 +26,8 @@ type WorkspaceHeaderProps = {
   extraHeaderMemberCount: number
   fileInputRef: RefObject<HTMLInputElement | null>
   headerMemberAvatarUrlById: Map<string, string>
-  headerMembers: Array<ProjectMemberItem>
-  hiddenHeaderMembers: Array<ProjectMemberItem>
+  headerMembers: Array<ActiveChannelMemberItem>
+  hiddenHeaderMembers: Array<ActiveChannelMemberItem>
   onCreateGroup: () => void
   onFileSelected: (event: ChangeEvent<HTMLInputElement>) => void
   onInvite: () => void
@@ -115,15 +111,15 @@ export function WorkspaceHeader({
         </nav>
       ) : null}
       <div className="track-header-actions">
-        <div className="track-header-members" aria-label="Project members">
+        <div className="track-header-members" aria-label="Channel members">
           {headerMembers.map((item) => {
-            const user = item.user as Doc<'users'>
+            const user = item.user
             return (
               <AvatarNameTooltip
                 avatarUrl={headerMemberAvatarUrlById.get(user._id)}
                 bannerStyle={user.profileBannerStyle}
                 bio={user.profileBio}
-                detail={user.profileDesignation ?? item.membership.role.replaceAll('_', ' ')}
+                detail={user.profileDesignation ?? 'Channel member'}
                 key={user._id}
                 name={user.displayName}
                 toneSource={user.email}
@@ -143,7 +139,7 @@ export function WorkspaceHeader({
                 .filter(Boolean)
                 .slice(0, 4)
                 .join(', ')}
-              name={`${extraHeaderMemberCount} more member${extraHeaderMemberCount === 1 ? '' : 's'}`}
+              name={`${extraHeaderMemberCount} more Channel member${extraHeaderMemberCount === 1 ? '' : 's'}`}
             >
               <span className="track-member-more">+{extraHeaderMemberCount}</span>
             </AvatarNameTooltip>

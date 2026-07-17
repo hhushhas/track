@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
+import { getActiveChannelMembers } from '#/features/workspace/lib/channel-header-members'
 import { filterVisibleProjectGroups } from '#/features/workspace/lib/route-state'
 import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
 
@@ -61,6 +62,12 @@ export function useWorkspaceData({
     groups !== undefined && activeGroupId && visibleGroups.some((group) => group._id === activeGroupId)
       ? activeGroupId
       : null
+  const channelMembers = useQuery(
+    api.groups.listMembers,
+    trackUserId && confirmedActiveGroupId
+      ? { groupId: confirmedActiveGroupId, userId: trackUserId }
+      : 'skip',
+  )
   const messages = useQuery(
     api.messages.listDetailed,
     trackUserId && confirmedActiveGroupId
@@ -118,8 +125,16 @@ export function useWorkspaceData({
   )
   const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
+  const activeChannelMembers = useMemo(
+    () => getActiveChannelMembers(
+      confirmedActiveGroupId,
+      channelMembers ?? [],
+    ),
+    [channelMembers, confirmedActiveGroupId],
+  )
 
   return {
+    activeChannelMembers,
     activeGroup,
     activeProject,
     activeProjectMembers,
@@ -127,6 +142,7 @@ export function useWorkspaceData({
     currentAvatarUrl,
     currentTrackProfileIncomplete,
     currentTrackUser,
+    channelMembers,
     groupAssistantStreams,
     groupMessages,
     groups,
