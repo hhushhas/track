@@ -8,7 +8,9 @@ type ExportedTable = {
   searchIndexes: Array<{ indexDescriptor: string; searchField: string; filterFields: string[] }>
 }
 
-const exportedSchema = JSON.parse(schema.export()) as { tables: ExportedTable[] }
+const exportedSchema = JSON.parse(
+  (schema as unknown as { export(): string }).export(),
+) as { tables: ExportedTable[] }
 const tables = new Map(exportedSchema.tables.map((table) => [table.tableName, table]))
 
 const companyTableNames = [
@@ -76,7 +78,7 @@ describe('combined foundation schema', () => {
     ['tasks', 'by_board_state_rank'],
     ['taskSuggestions', 'by_project_fingerprint'],
     ['channelThreads', 'by_group_idempotency'],
-    ['channelThreadFollowers', 'by_thread_member'],
+    ['channelThreadFollowers', 'by_thread_project_member'],
     ['messages', 'by_group_channel_sequence'],
   ] as const)('exports %s.%s', (tableName, indexName) => {
     const indexNames = tables.get(tableName)?.indexes.map((index) => index.indexDescriptor)

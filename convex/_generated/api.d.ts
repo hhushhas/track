@@ -8,17 +8,12 @@
  * @module
  */
 
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
 import type * as assistant from "../assistant.js";
 import type * as assistantNode from "../assistantNode.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
-import type * as channels from "../channels.js";
 import type * as channelThreads from "../channelThreads.js";
+import type * as channels from "../channels.js";
 import type * as companies from "../companies.js";
 import type * as companyMigration from "../companyMigration.js";
 import type * as crons from "../crons.js";
@@ -32,10 +27,10 @@ import type * as lib_assistantAttachments from "../lib/assistantAttachments.js";
 import type * as lib_attachmentTextExtraction from "../lib/attachmentTextExtraction.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_box from "../lib/box.js";
+import type * as lib_channelThreadPolicy from "../lib/channelThreadPolicy.js";
 import type * as lib_companyInvitations from "../lib/companyInvitations.js";
 import type * as lib_companyPolicy from "../lib/companyPolicy.js";
 import type * as lib_companyProjectLifecycle from "../lib/companyProjectLifecycle.js";
-import type * as lib_channelThreadPolicy from "../lib/channelThreadPolicy.js";
 import type * as lib_memoryPolicy from "../lib/memoryPolicy.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
@@ -54,11 +49,12 @@ import type * as memoryActions from "../memoryActions.js";
 import type * as messages from "../messages.js";
 import type * as mobile from "../mobile.js";
 import type * as notifications from "../notifications.js";
-import type * as projects from "../projects.js";
 import type * as projectArchives from "../projectArchives.js";
 import type * as projectExit from "../projectExit.js";
 import type * as projectExitActions from "../projectExitActions.js";
+import type * as projects from "../projects.js";
 import type * as pushNotifications from "../pushNotifications.js";
+import type * as relationships from "../relationships.js";
 import type * as releaseConfig from "../releaseConfig.js";
 import type * as reports from "../reports.js";
 import type * as schema_companyCoreTables from "../schema/companyCoreTables.js";
@@ -67,7 +63,6 @@ import type * as schema_companyValidators from "../schema/companyValidators.js";
 import type * as schema_taskAutomationTables from "../schema/taskAutomationTables.js";
 import type * as schema_taskCoreTables from "../schema/taskCoreTables.js";
 import type * as schema_taskValidators from "../schema/taskValidators.js";
-import type * as relationships from "../relationships.js";
 import type * as search from "../search.js";
 import type * as sharedProjects from "../sharedProjects.js";
 import type * as taskBoards from "../taskBoards.js";
@@ -80,25 +75,23 @@ import type * as taskMemoryExtractionNode from "../taskMemoryExtractionNode.js";
 import type * as taskNotifications from "../taskNotifications.js";
 import type * as taskReminders from "../taskReminders.js";
 import type * as taskSearch from "../taskSearch.js";
-import type * as tasks from "../tasks.js";
 import type * as taskSuggestions from "../taskSuggestions.js";
+import type * as tasks from "../tasks.js";
 import type * as typingIndicators from "../typingIndicators.js";
 
-/**
- * A utility for referencing Convex functions in your app's API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
- * ```
- */
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
+
 declare const fullApi: ApiFromModules<{
   assistant: typeof assistant;
   assistantNode: typeof assistantNode;
   audit: typeof audit;
   auth: typeof auth;
-  channels: typeof channels;
   channelThreads: typeof channelThreads;
+  channels: typeof channels;
   companies: typeof companies;
   companyMigration: typeof companyMigration;
   crons: typeof crons;
@@ -112,10 +105,10 @@ declare const fullApi: ApiFromModules<{
   "lib/attachmentTextExtraction": typeof lib_attachmentTextExtraction;
   "lib/audit": typeof lib_audit;
   "lib/box": typeof lib_box;
+  "lib/channelThreadPolicy": typeof lib_channelThreadPolicy;
   "lib/companyInvitations": typeof lib_companyInvitations;
   "lib/companyPolicy": typeof lib_companyPolicy;
   "lib/companyProjectLifecycle": typeof lib_companyProjectLifecycle;
-  "lib/channelThreadPolicy": typeof lib_channelThreadPolicy;
   "lib/memoryPolicy": typeof lib_memoryPolicy;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;
@@ -134,11 +127,12 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   mobile: typeof mobile;
   notifications: typeof notifications;
-  projects: typeof projects;
   projectArchives: typeof projectArchives;
   projectExit: typeof projectExit;
   projectExitActions: typeof projectExitActions;
+  projects: typeof projects;
   pushNotifications: typeof pushNotifications;
+  relationships: typeof relationships;
   releaseConfig: typeof releaseConfig;
   reports: typeof reports;
   "schema/companyCoreTables": typeof schema_companyCoreTables;
@@ -147,7 +141,6 @@ declare const fullApi: ApiFromModules<{
   "schema/taskAutomationTables": typeof schema_taskAutomationTables;
   "schema/taskCoreTables": typeof schema_taskCoreTables;
   "schema/taskValidators": typeof schema_taskValidators;
-  relationships: typeof relationships;
   search: typeof search;
   sharedProjects: typeof sharedProjects;
   taskBoards: typeof taskBoards;
@@ -160,14 +153,32 @@ declare const fullApi: ApiFromModules<{
   taskNotifications: typeof taskNotifications;
   taskReminders: typeof taskReminders;
   taskSearch: typeof taskSearch;
-  tasks: typeof tasks;
   taskSuggestions: typeof taskSuggestions;
+  tasks: typeof tasks;
   typingIndicators: typeof typingIndicators;
 }>;
+
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 >;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">

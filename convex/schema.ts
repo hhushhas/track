@@ -319,7 +319,6 @@ export default defineSchema({
   })
     .index('by_project', ['projectId'])
     .index('by_group', ['groupId'])
-    .index('by_thread_member', ['channelThreadId', 'projectMemberId'])
     .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
     .index('by_project_member_preference', ['projectMemberId', 'preference'])
     .index('by_thread_preference', ['channelThreadId', 'preference']),
