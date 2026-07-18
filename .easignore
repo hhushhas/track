@@ -1,0 +1,50 @@
+.DS_Store
+.git/
+node_modules/
+.turbo/
+coverage/
+dist/
+build/
+.output/
+.expo/
+.eas/
+.wrangler/
+.convex/
+scratchpad/
+firebase-debug.log
+
+# Operator-specific deployment and release configuration
+convex.prod.env
+wrangler.toml
+apps/mobile/eas.json
+apps/mobile/app.json
+.credentials/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Provisioning credentials and generated private material
+credentials.json
+apps/mobile/credentials.json
+*.p8
+*.p12
+*.jks
+*.mobileprovision
+*.cer
+*.key
+*.pem
+*.csr
+
+# Local screenshots / scratch captures
+SCR-*.png
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/
+
+# EAS needs these ignored operator files to resolve the release profile and app
+# identity inside the isolated build archive.
+!apps/mobile/eas.json
+!apps/mobile/app.json
