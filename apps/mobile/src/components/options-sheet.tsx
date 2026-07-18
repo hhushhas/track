@@ -121,8 +121,9 @@ export function SheetInput({
   const theme = useTheme();
   return (
     <View style={styles.inputWrap}>
-      <ThemedText style={{ color: theme.textSecondary }} type="code">{label}</ThemedText>
+      <ThemedText accessible={false} style={{ color: theme.textSecondary }} type="code">{label}</ThemedText>
       <TextInput
+        accessibilityLabel={label}
         allowFontScaling={false}
         multiline={multiline}
         onChangeText={onChangeText}

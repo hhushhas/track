@@ -231,6 +231,7 @@ export default function ProjectsScreen() {
           </View>
         </SheetSection>
         <Pressable
+          accessibilityLabel="Submit project creation"
           accessibilityRole="button"
           disabled={!projectName.trim() || creating}
           onPress={() => void submitCreateProject()}

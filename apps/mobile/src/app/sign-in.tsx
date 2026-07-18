@@ -101,6 +101,22 @@ export default function SignInScreen() {
     }
   }
 
+  async function signInWithDevBypass() {
+    setBusy(true);
+    setError(null);
+    hapticMedium();
+    try {
+      await devAuthBypass.enable();
+      await waitForSessionReady(session.refetch);
+      router.replace('/');
+    } catch {
+      hapticLight();
+      setError('Development sign-in failed. Check the development auth configuration.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const showApple = Platform.OS !== 'android';
 
   return (
@@ -246,11 +262,8 @@ export default function SignInScreen() {
               {/* Dev bypass */}
               {devAuthBypass.allowed ? (
                 <Pressable
-                  onPress={() => {
-                    hapticLight();
-                    devAuthBypass.enable();
-                    router.replace('/');
-                  }}
+                  disabled={busy}
+                  onPress={() => void signInWithDevBypass()}
                   style={styles.devBypass}
                 >
                   <ThemedText style={{ color: theme.textSecondary }} type="code">
