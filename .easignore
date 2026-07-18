@@ -18,6 +18,7 @@ convex.prod.env
 wrangler.toml
 apps/mobile/eas.json
 apps/mobile/app.json
+apps/mobile/google-services.json
 .credentials/
 
 # Local environment and secrets
@@ -48,3 +49,4 @@ SCR-*.png
 # identity inside the isolated build archive.
 !apps/mobile/eas.json
 !apps/mobile/app.json
+!apps/mobile/google-services.json

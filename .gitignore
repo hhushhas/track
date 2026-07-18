@@ -16,6 +16,7 @@ convex.prod.env
 wrangler.toml
 apps/mobile/eas.json
 apps/mobile/app.json
+apps/mobile/google-services.json
 .credentials/
 
 # Local environment and secrets
