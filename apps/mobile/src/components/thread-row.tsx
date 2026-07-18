@@ -155,7 +155,7 @@ export function ThreadRow({ item, isFirstInGroup, isOwnMessage, onLongPress, onS
               <View style={styles.evidenceRow}>
                 {item.stream.evidence.slice(0, 3).map((_, i) => (
                   <View key={i} style={[styles.evidenceChip, { backgroundColor: theme.accentSoft }]}>
-                    <ThemedText style={{ color: theme.accent }} type="code">Source {i + 1}</ThemedText>
+                    <ThemedText style={{ color: theme.accent }} type="code">Reference {i + 1}</ThemedText>
                   </View>
                 ))}
               </View>

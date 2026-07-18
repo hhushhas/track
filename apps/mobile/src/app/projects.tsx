@@ -117,7 +117,7 @@ export default function ProjectsScreen() {
     hapticDestructive();
     Alert.alert(
       'Delete account',
-      'Track will remove your profile and disable notifications. Shared project evidence is retained for project integrity.',
+      'Track will remove your profile and disable notifications. Shared Project and Channel content is retained for collaboration integrity.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

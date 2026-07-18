@@ -169,8 +169,8 @@ export default function TaskScreen() {
           {!readOnly && !detail.task.parentTaskId ? <><SheetInput label="New subtask" onChangeText={setSubtask} value={subtask} /><Action disabled={!subtask.trim()} label="Add subtask" onPress={() => void run(() => createTask({ projectId: project, boardId: detail.task.boardId, parentTaskId: detail.task._id, title: subtask, priority: 'none', idempotencyKey: `${Date.now()}-subtask`, ...identity }), () => setSubtask(''))} /></> : null}
         </Section>
 
-        <Section title="Evidence">
-          {detail.references.length ? detail.references.map((reference) => <View key={reference._id} style={[styles.evidence, { borderLeftColor: theme.accent }]}><ThemedText type="small">{reference.quote ?? 'Source unavailable'}</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="code">{reference.type.replaceAll('_', ' ')}</ThemedText></View>) : <ThemedText style={{ color: theme.textSecondary }} type="small">No linked evidence.</ThemedText>}
+        <Section title="References">
+          {detail.references.length ? detail.references.map((reference) => <View key={reference._id} style={[styles.evidence, { borderLeftColor: theme.accent }]}><ThemedText type="small">{reference.quote ?? 'Reference unavailable'}</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="code">{reference.type.replaceAll('_', ' ')}</ThemedText></View>) : <ThemedText style={{ color: theme.textSecondary }} type="small">No linked references.</ThemedText>}
           {detail.restrictedEarlierContext ? <ThemedText style={{ color: theme.textSecondary }} type="smallBold">Earlier context is restricted.</ThemedText> : null}
         </Section>
 

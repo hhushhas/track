@@ -38,7 +38,7 @@ const priorities = ['none', 'urgent', 'high', 'medium', 'low'] as const;
 function readableError(failure: unknown) {
   if (!(failure instanceof Error)) return 'The task action failed.';
   if (failure.message.includes('task_access_changed')) return 'Your access changed. Refresh and try again.';
-  if (failure.message.includes('task_duplicate_decision_required')) return 'Choose whether to add evidence or create a separate task.';
+  if (failure.message.includes('task_duplicate_decision_required')) return 'Choose whether to add a reference or create a separate task.';
   return failure.message.replaceAll('_', ' ');
 }
 
@@ -178,7 +178,7 @@ export default function TasksScreen() {
                   <ThemedText type="subtitle">{row.suggestion.proposedTitle}</ThemedText>
                   {row.suggestion.proposedDescription ? <ThemedText type="small">{row.suggestion.proposedDescription}</ThemedText> : null}
                   {row.proposedAssignee ? <ThemedText type="small">Proposed assignee: {row.proposedAssignee.user.displayName}{row.proposedAssignee.company ? ` · ${row.proposedAssignee.company.displayName}` : ''}</ThemedText> : null}
-                  {row.references.map((reference) => <ThemedText key={reference._id} style={{ color: theme.textSecondary }} type="small">“{reference.quote ?? 'Source unavailable'}”</ThemedText>)}
+                  {row.references.map((reference) => <ThemedText key={reference._id} style={{ color: theme.textSecondary }} type="small">“{reference.quote ?? 'Reference unavailable'}”</ThemedText>)}
                   {row.possibleDuplicateTask ? <ThemedText type="smallBold">Possible duplicate: {row.possibleDuplicateTask.publicKey} · {row.possibleDuplicateTask.title}</ThemedText> : null}
                   <View style={styles.actions}>
                     <Action label={row.possibleDuplicateTask ? 'Create separately' : 'Accept'} onPress={() => destination && void runSuggestion(() => acceptSuggestion({
@@ -193,7 +193,7 @@ export default function TasksScreen() {
                       idempotencyKey: `${Date.now()}-${row.suggestion._id}`,
                       ...queryIdentity,
                     }))} />
-                    {row.possibleDuplicateTask ? <Action label="Add evidence" onPress={() => void runSuggestion(() => linkSuggestion({ suggestionId: row.suggestion._id, taskId: row.possibleDuplicateTask!._id, idempotencyKey: `${Date.now()}-link`, ...queryIdentity }))} /> : null}
+                    {row.possibleDuplicateTask ? <Action label="Add reference" onPress={() => void runSuggestion(() => linkSuggestion({ suggestionId: row.suggestion._id, taskId: row.possibleDuplicateTask!._id, idempotencyKey: `${Date.now()}-link`, ...queryIdentity }))} /> : null}
                     {row.canDismiss ? <Action label="Dismiss" onPress={() => void runSuggestion(() => dismissSuggestion({ suggestionId: row.suggestion._id, reason: 'not_actionable', idempotencyKey: `${Date.now()}-dismiss`, ...queryIdentity }))} /> : null}
                     <Action label="Hide" onPress={() => void runSuggestion(() => hideSuggestion({ suggestionId: row.suggestion._id, ...queryIdentity }))} />
                   </View>

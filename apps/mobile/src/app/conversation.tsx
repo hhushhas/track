@@ -432,7 +432,7 @@ export default function ConversationScreen() {
         />}
       </KeyboardAvoidingView>
 
-      <OptionsSheet onClose={() => setGroupSwitchOpen(false)} title="Switch Group" visible={groupSwitchOpen}>
+      <OptionsSheet onClose={() => setGroupSwitchOpen(false)} title="Switch Channel" visible={groupSwitchOpen}>
         <SheetSection>
           {groupItems.map((item) => (
             <SheetRow
@@ -480,7 +480,7 @@ export default function ConversationScreen() {
             />
           ))}
         </SheetSection>
-        <SheetSection title="This Group">
+        <SheetSection title="This Channel">
           {(['inherit', 'all', 'mentions', 'none'] as const).map((mode) => (
             <SheetRow
               key={mode}

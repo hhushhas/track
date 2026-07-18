@@ -342,8 +342,8 @@ export default function ThreadScreen() {
           'unavailable' in source ? undefined : source.messageId,
         ) as never)}
         style={[styles.source, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="code">SOURCE MESSAGE</ThemedText>
-        <ThemedText numberOfLines={2} type="small">{'unavailable' in source ? 'Source message unavailable.' : source.body || 'Attachment message'}</ThemedText>
+        <ThemedText type="code">REFERENCE MESSAGE</ThemedText>
+        <ThemedText numberOfLines={2} type="small">{'unavailable' in source ? 'Reference message unavailable.' : source.body || 'Attachment message'}</ThemedText>
       </Pressable> : null}
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={styles.notice} type="small">{notice}</ThemedText> : null}
       {error ? <ThemedText accessibilityLiveRegion="assertive" style={styles.error} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}

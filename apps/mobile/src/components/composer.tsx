@@ -99,7 +99,7 @@ export function Composer({ activeGroupName, busy, isRecording, recordingDuration
               allowFontScaling
               multiline
               onChangeText={onChangeText}
-              placeholder={`Message ${activeGroupName ?? 'Group'} or ask @track…`}
+              placeholder={`Message ${activeGroupName ?? 'Channel'} or ask @track…`}
               placeholderTextColor={theme.textSecondary}
               style={[styles.pill, { backgroundColor: theme.backgroundElement, color: theme.text, flex: 1 }]}
               value={value}

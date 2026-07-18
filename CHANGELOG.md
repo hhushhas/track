@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Aligned customer-facing mobile terminology with the shipped product model by
+  naming collaboration spaces Channels and linked context References.
 - Development bypass sign-in now establishes its credential-backed mobile
   session before entering the app, and sheet form fields expose stable native
   accessibility labels for automation and assistive technology.
