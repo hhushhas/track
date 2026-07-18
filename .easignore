@@ -50,3 +50,7 @@ SCR-*.png
 !apps/mobile/eas.json
 !apps/mobile/app.json
 !apps/mobile/google-services.json
+
+# Let EAS regenerate Android from the release config so config plugins (notably
+# Firebase/FCM) are applied instead of uploading a stale local native project.
+apps/mobile/android
