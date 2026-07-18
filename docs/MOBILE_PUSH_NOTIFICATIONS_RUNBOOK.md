@@ -41,8 +41,12 @@ EXPO_PUBLIC_CONVEX_SITE_URL=<matching Convex site>
 
 The Expo configuration must include `expo-notifications` and the EAS Project id.
 iOS needs the APNs entitlement and EAS-managed APNs key. Android needs an FCM v1
-service account associated with the package's Firebase project. Keep credential
-files outside the repository.
+service account associated with the package's Firebase project. Android builds
+also require `GOOGLE_SERVICES_JSON` to point at the matching
+`google-services.json`; `apps/mobile/app.config.ts` passes that file into Expo
+Prebuild when the variable is present. Store it as an EAS file variable for
+hosted builds or use an ignored local credential path. Keep credential files
+outside the repository.
 
 Convex values:
 

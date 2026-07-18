@@ -13,6 +13,14 @@
   exact message/thread/task routing, persistent duplicate-open suppression, and
   exact-context foreground suppression.
 
+### Fixed
+
+- Development bypass sign-in now establishes its credential-backed mobile
+  session before entering the app, and sheet form fields expose stable native
+  accessibility labels for automation and assistive technology.
+- Android notification channels now use the platform default sound without
+  asking Expo to resolve a nonexistent custom sound resource.
+
 ### Security
 
 - Removed conversation and task content from native push payloads. Expo receives

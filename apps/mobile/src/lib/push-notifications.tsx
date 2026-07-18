@@ -93,7 +93,6 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
         await Notifications.setNotificationChannelAsync('default', {
           importance: Notifications.AndroidImportance.HIGH,
           name: 'Track notifications',
-          sound: 'default',
           vibrationPattern: [0, 180, 80, 180],
         });
       }
