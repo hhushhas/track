@@ -83,6 +83,7 @@ export function ThreadConversationPage({
   const rename = useMutation(api.channelThreads.rename)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const attachFile = useMutation(api.messages.attachFile)
+  const deleteMessage = useMutation(api.messages.remove)
   const createReport = useMutation(api.reports.create)
   const askTrack = useAction(api.assistant.ask)
   const [composer, setComposer] = useState('')
@@ -227,6 +228,26 @@ export function ThreadConversationPage({
       size: file.size,
       kind: file.type.startsWith('audio/') ? 'voice_note' : 'file',
     })
+  }
+
+  async function removeMessage(messageId: Id<'messages'>) {
+    if (!currentUser || !window.confirm('Delete this message? This can’t be undone.')) return
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteMessage({
+        messageId,
+        actorId: currentUser._id,
+        actingCompanyId: context?.actingCompanyId,
+        projectMemberId: context?.projectMemberId,
+      })
+      if (replyTo === messageId) setReplyTo(null)
+      setNotice('Message deleted.')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't delete message")
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function toggleFollowing() {
@@ -374,6 +395,19 @@ export function ThreadConversationPage({
             ) : null)}
             <footer>
               {!archived ? <button onClick={() => setReplyTo(entry.item.message._id)} type="button">Reply</button> : null}
+              {!archived &&
+                entry.item.message.authorId === currentUser._id &&
+                (!context?.projectMemberId ||
+                  !entry.item.message.authorProjectMemberId ||
+                  entry.item.message.authorProjectMemberId === context.projectMemberId) ? (
+                <Button
+                  disabled={busy}
+                  onClick={() => void removeMessage(entry.item.message._id)}
+                  variant="destructive"
+                >
+                  Delete
+                </Button>
+              ) : null}
               {releaseConfig.tasks && !archived ? (
                 <CreateTaskFromMessage
                   identity={{ actingCompanyId: context?.actingCompanyId, projectMemberId: context?.projectMemberId }}

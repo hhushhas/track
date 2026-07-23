@@ -270,6 +270,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             messageCitations={presentation.messageCitations}
             messagesLoaded={messages !== undefined}
             currentUserId={auth.trackUserId}
+            onDeleteMessage={messageActions.handleDeleteMessage}
             onComposerBlur={threadInteractions.handleComposerBlur}
             onComposerChange={update.onComposerChange}
             onComposerFocus={threadInteractions.handleComposerFocus}

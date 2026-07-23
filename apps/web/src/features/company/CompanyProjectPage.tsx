@@ -124,6 +124,7 @@ export function CompanyProjectPage({
   const approveChannelArchive = useMutation(api.channels.approveArchive);
   const cancelChannelArchive = useMutation(api.channels.cancelArchive);
   const sendMessage = useMutation(api.messages.send);
+  const deleteMessage = useMutation(api.messages.remove);
   const requestProjectArchive = useMutation(api.projectArchives.request);
   const approveProjectArchive = useMutation(api.projectArchives.approve);
   const prepareExit = useMutation(api.projectExit.prepare);
@@ -242,6 +243,18 @@ export function CompanyProjectPage({
       }),
     );
     if (saved) setComposer("");
+  }
+
+  async function deleteAuthoredMessage(messageId: Id<"messages">) {
+    if (!currentUser || !window.confirm("Delete this message? This can’t be undone.")) return;
+    await run(() =>
+      deleteMessage({
+        actingCompanyId,
+        actorId: currentUser._id,
+        messageId,
+        projectMemberId,
+      }),
+    );
   }
 
   if (!releaseConfig.companyModel)
@@ -392,6 +405,18 @@ export function CompanyProjectPage({
                     </time>
                   </div>
                   <p>{detail.message.body || "Attachment message"}</p>
+                  {!readOnly &&
+                  (detail.message.authorProjectMemberId
+                    ? detail.message.authorProjectMemberId === projectMemberId
+                    : detail.message.authorId === currentUser?._id) ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void deleteAuthoredMessage(detail.message._id)}
+                      variant="destructive"
+                    >
+                      Delete
+                    </Button>
+                  ) : null}
                   {releaseConfig.tasks && !readOnly ? (
                     <CreateTaskFromMessage
                       identity={{ actingCompanyId, projectMemberId }}

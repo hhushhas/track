@@ -72,6 +72,7 @@ type GroupChatPageProps = {
   messageCitations: Map<string, MessageCitationPreview>
   messagesLoaded: boolean
   currentUserId: Id<'users'>
+  onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onComposerBlur: () => void
   onComposerChange: (value: string, cursor: number) => void
   onComposerFocus: () => void
@@ -138,6 +139,7 @@ export function GroupChatPage({
   messageCitations,
   messagesLoaded,
   currentUserId,
+  onDeleteMessage,
   onComposerBlur,
   onComposerChange,
   onComposerFocus,
@@ -232,6 +234,8 @@ export function GroupChatPage({
                     activeGroupId={activeGroupId}
                     avatarUrl={messageAuthorAvatarUrlById.get(threadItem.item.author?._id ?? '')}
                     busyAction={busyAction}
+                    canDeleteMessages={activeGroup?.status !== 'archived'}
+                    currentUserId={currentUserId}
                     groups={visibleGroups}
                     isFlashing={flashingMessageId === threadItem.item.message._id}
                     item={{
@@ -241,6 +245,7 @@ export function GroupChatPage({
                         threadItem.item.authorRole,
                     }}
                     mentionGroups={mentionGroups}
+                    onDeleteMessage={onDeleteMessage}
                     onForwardMessage={onForwardMessage}
                     onOpenGroup={onOpenGroup}
                     onOpenMessageSource={onOpenMessageSource}

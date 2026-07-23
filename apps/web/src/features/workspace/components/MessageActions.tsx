@@ -1,4 +1,4 @@
-import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search } from 'lucide-react'
+import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
@@ -14,17 +14,21 @@ import { CreateTaskFromMessage } from '#/features/tasks/ConversationTaskActions'
 export function MessageActions({
   activeGroupId,
   busyAction,
+  canDelete,
   canForward,
   groups,
   item,
+  onDeleteMessage,
   onForwardMessage,
   onReplyMessage,
 }: {
   activeGroupId: Id<'groups'> | null
   busyAction: string | null
+  canDelete: boolean
   canForward: boolean
   groups: Array<Doc<'groups'>>
   item: GroupMessageItem
+  onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
     targetGroupId: Id<'groups'>
@@ -75,6 +79,19 @@ export function MessageActions({
             >
               Copy text
             </DropdownMenuItem>
+            {canDelete ? (
+              <DropdownMenuItem
+                disabled={busyAction === `delete-${item.message._id}`}
+                onClick={() => {
+                  if (!window.confirm('Delete this message? This can’t be undone.')) return
+                  void onDeleteMessage(item.message._id)
+                }}
+                variant="destructive"
+              >
+                <Trash2 />
+                Delete message
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -19,6 +19,7 @@ export function useWorkspaceMessageActions({
   forwardMentionOptions,
   mentionOptions,
   onAfterSend,
+  onAfterDelete,
   onBusyChange,
   onClearError,
   onError,
@@ -32,6 +33,7 @@ export function useWorkspaceMessageActions({
   forwardMentionOptions: Array<WorkspaceMentionOption>
   mentionOptions: Array<WorkspaceMentionOption>
   onAfterSend: () => void
+  onAfterDelete: (messageId: Id<'messages'>) => void
   onBusyChange: (label: string | null) => void
   onClearError: () => void
   onError: (error: unknown) => void
@@ -41,6 +43,7 @@ export function useWorkspaceMessageActions({
 }) {
   const sendMessageMutation = useMutation(api.messages.send)
   const forwardMessageMutation = useMutation(api.messages.forwardMessage)
+  const deleteMessageMutation = useMutation(api.messages.remove)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
   const attachFileMutation = useMutation(api.messages.attachFile)
   const askTrackAction = useAction(api.assistant.ask)
@@ -147,7 +150,24 @@ export function useWorkspaceMessageActions({
     }
   }
 
+  async function handleDeleteMessage(messageId: Id<'messages'>) {
+    if (!trackUserId) return false
+    onBusyChange(`delete-${messageId}`)
+    onClearError()
+    try {
+      await deleteMessageMutation({ messageId, actorId: trackUserId })
+      onAfterDelete(messageId)
+      return true
+    } catch (error) {
+      onError(error)
+      return false
+    } finally {
+      onBusyChange(null)
+    }
+  }
+
   return {
+    handleDeleteMessage,
     handleForwardMessage,
     handleSendMessage,
   }

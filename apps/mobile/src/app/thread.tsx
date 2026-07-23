@@ -3,7 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -78,6 +78,7 @@ export default function ThreadScreen() {
   const rename = useMutation(api.channelThreads.rename);
   const createReport = useMutation(api.reports.create);
   const createTask = useMutation(api.tasks.create);
+  const deleteMessage = useMutation(api.messages.remove);
   const [composer, setComposer] = useState('');
   const [replyTo, setReplyTo] = useState<DetailedMessage | null>(null);
   const [busy, setBusy] = useState(false);
@@ -237,6 +238,43 @@ export default function ThreadScreen() {
           });
         },
       }] : []),
+      ...(!readOnly &&
+        actionTarget.kind === 'message' &&
+        actionTarget.item.message.authorId === trackUserId &&
+        (!pmid || !actionTarget.item.message.authorProjectMemberId ||
+          actionTarget.item.message.authorProjectMemberId === pmid) ? [{
+        label: 'Delete message',
+        icon: 'trash-can-outline' as const,
+        destructive: true,
+        onPress: () => {
+          Alert.alert(
+            'Delete message?',
+            'This can’t be undone.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                  setBusy(true);
+                  setError(null);
+                  void deleteMessage({
+                    messageId: actionTarget.item.message._id,
+                    actorId: trackUserId,
+                    actingCompanyId: cid,
+                    projectMemberId: pmid,
+                  }).then(() => {
+                    setReplyTo((current) => current?.message._id === actionTarget.item.message._id ? null : current);
+                    setNotice('Message deleted.');
+                  }).catch((caught) => {
+                    setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't delete message");
+                  }).finally(() => setBusy(false));
+                },
+              },
+            ],
+          );
+        },
+      }] : []),
       { label: 'Report', icon: 'trash-can-outline' as const, destructive: true, onPress: () => {
         if (!trackUserId || !pid) return;
         void createReport({
@@ -251,7 +289,7 @@ export default function ThreadScreen() {
         });
       } },
     ];
-  }, [actionTarget, cid, createReport, createTask, gid, pid, pmid, readOnly, releaseConfig.tasks, trackUserId]);
+  }, [actionTarget, cid, createReport, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, trackUserId]);
 
   const renderItem = useCallback<ListRenderItem<GroupedThreadItem>>(({ item }) => {
     if (item.kind === 'date-sep') return null;

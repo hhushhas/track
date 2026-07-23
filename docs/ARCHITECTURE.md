@@ -82,6 +82,13 @@ unread aggregation, and Company-exit snapshots apply that same boundary.
 Focused message history is cursor-paginated, while denormalized counters keep
 thread lists and source chips bounded.
 
+Authors may delete their own messages only while the parent Channel and, for a
+reply, its thread remain writable. The mutation revalidates the authenticated
+user's exact Project membership, removes unshared attachment storage, repairs
+thread summary state, invalidates task and assistant evidence previews, and
+emits a body-free audit event. A deleted source message never deletes its
+thread.
+
 `TRACK_THREADS_ENABLED` is independent from Company collaboration and task
 management. When it is off, public reads fail closed or return empty generic
 states, mutation surfaces reject thread work, and clients hide thread routes and

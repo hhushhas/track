@@ -365,6 +365,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     composer,
     forwardMentionOptions,
     mentionOptions,
+    onAfterDelete: (messageId) => {
+      if (replyToMessage?.message._id === messageId) setReplyToMessage(null)
+    },
     onAfterSend: handleMessageSent,
     onBusyChange: setBusyAction,
     onClearError: () => setUiError(null),

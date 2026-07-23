@@ -3,7 +3,7 @@ import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder, u
 import * as DocumentPicker from 'expo-document-picker';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -55,6 +55,7 @@ export default function ConversationScreen() {
   const setGroupNotif = useMutation(api.notifications.setGroupMode);
   const createReport = useMutation(api.reports.create);
   const createTask = useMutation(api.tasks.create);
+  const deleteMessage = useMutation(api.messages.remove);
 
   const gid = groupId as Id<'groups'> | undefined;
   const pid = projectId as Id<'projects'> | undefined;
@@ -185,6 +186,41 @@ export default function ConversationScreen() {
           });
         },
       }] : []),
+      ...(!readOnly &&
+        actionTarget.kind === 'message' &&
+        actionTarget.item.message.authorId === trackUserId &&
+        (!pmid || !actionTarget.item.message.authorProjectMemberId ||
+          actionTarget.item.message.authorProjectMemberId === pmid) ? [{
+        label: 'Delete message',
+        icon: 'trash-can-outline' as const,
+        destructive: true,
+        onPress: () => {
+          Alert.alert(
+            'Delete message?',
+            'This can’t be undone.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                  setBusy(`delete-${actionTarget.item.message._id}`);
+                  void deleteMessage({
+                    messageId: actionTarget.item.message._id,
+                    actorId: trackUserId,
+                    actingCompanyId: cid,
+                    projectMemberId: pmid,
+                  }).then(() => {
+                    setReplyTo((current) => current?.message._id === actionTarget.item.message._id ? null : current);
+                  }).catch(() => {
+                    Alert.alert('Message not deleted', 'Check your connection and try again.');
+                  }).finally(() => setBusy(null));
+                },
+              },
+            ],
+          );
+        },
+      }] : []),
       {
         label: 'Report',
         icon: 'trash-can-outline' as const,
@@ -192,7 +228,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget, cid, createTask, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router]);
+  }, [actionTarget, cid, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, trackUserId]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {

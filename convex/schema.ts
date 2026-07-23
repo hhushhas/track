@@ -444,6 +444,7 @@ export default defineSchema({
   })
     .index('by_message', ['messageId'])
     .index('by_group', ['groupId'])
+    .index('by_storage', ['storageId'])
     .searchIndex('search_filename_by_project', {
       searchField: 'filename',
       filterFields: ['projectId'],

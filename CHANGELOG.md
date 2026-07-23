@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-23
+
+### Added
+
+- Added author-only message deletion to Channel timelines and threads on web,
+  iOS, and Android, including confirmation prompts, attachment cleanup,
+  unavailable task-evidence handling, audit events, and repaired thread counts.
+
+### Security
+
+- Forced vulnerable transitive Sharp releases to the patched 0.35.3 line so
+  Miniflare-based web tooling no longer includes the affected libvips build.
+
 ## 2026-07-18
 
 ### Added

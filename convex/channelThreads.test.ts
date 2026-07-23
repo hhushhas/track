@@ -992,6 +992,189 @@ describe('Channel threads', () => {
     expect(mentionDelivery?.url).toContain(`#message-${mentionMessageId}`)
   })
 
+  it('lets only the author delete a message and invalidates its task evidence', async () => {
+    process.env.TRACK_TASKS_ENABLED = 'true'
+    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
+    const ownerActor = asUser(t, owner)
+    const messageId = await ownerActor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Delete this source after creating the task.',
+      groupId,
+      idempotencyKey: 'deletable-message',
+      projectId,
+    })
+    const task = await ownerActor.mutation(api.tasks.create, {
+      projectId,
+      groupId,
+      title: 'Keep the work, lose the source',
+      priority: 'none',
+      references: [{ type: 'message', messageId, isPrimary: true }],
+      idempotencyKey: 'deletable-message-task',
+    })
+    const assistantStreamId = await t.run(async (ctx) =>
+      await ctx.db.insert('assistantStreams', {
+        projectId,
+        groupId,
+        requesterId: owner,
+        promptMessageId: messageId,
+        status: 'completed',
+        answer: 'Grounded answer',
+        evidence: [{ messageId, quote: 'Delete this source after creating the task.' }],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    )
+
+    await expect(asUser(t, member).mutation(api.messages.remove, {
+      actorId: member,
+      messageId,
+    })).rejects.toThrow('message_delete_forbidden')
+    expect(await t.run(async (ctx) => await ctx.db.get(messageId))).not.toBeNull()
+
+    await ownerActor.mutation(api.messages.remove, {
+      actorId: owner,
+      messageId,
+    })
+
+    expect(await t.run(async (ctx) => await ctx.db.get(messageId))).toBeNull()
+    const taskDetail = await ownerActor.query(api.tasks.getByKey, {
+      projectId,
+      publicKey: task.publicKey,
+    })
+    expect(taskDetail).toMatchObject({
+      references: [{ availability: 'unavailable' }],
+    })
+    expect(taskDetail?.references[0]).not.toHaveProperty('quote')
+    const assistantStream = await t.run(async (ctx) => await ctx.db.get(assistantStreamId))
+    expect(assistantStream).toMatchObject({ evidence: [] })
+    expect(assistantStream).not.toHaveProperty('promptMessageId')
+    const deletionAudit = await t.run(async (ctx) =>
+      await ctx.db
+        .query('auditEvents')
+        .withIndex('by_entity', (q) => q.eq('entityType', 'message').eq('entityId', messageId))
+        .filter((q) => q.eq(q.field('action'), 'message.deleted'))
+        .unique(),
+    )
+    expect(deletionAudit?.before).toMatchObject({ attachmentCount: 0 })
+    expect(deletionAudit?.before).not.toHaveProperty('body')
+  })
+
+  it('recalculates thread metadata after an author deletes a reply', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const threadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'delete-reply-thread',
+      name: 'Deletion metadata',
+      projectId,
+    })
+    const firstReplyId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Keep this reply.',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'keep-reply',
+      projectId,
+    })
+    const deletedReplyId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Delete this reply.',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'delete-reply',
+      projectId,
+    })
+    const firstReply = await t.run(async (ctx) => await ctx.db.get(firstReplyId))
+
+    await t.run(async (ctx) => await ctx.db.patch(threadId, { status: 'archived' }))
+    await expect(actor.mutation(api.messages.remove, {
+      actorId: owner,
+      messageId: deletedReplyId,
+    })).rejects.toThrow('thread_archived')
+    await t.run(async (ctx) => await ctx.db.patch(threadId, { status: 'active' }))
+    await actor.mutation(api.messages.remove, {
+      actorId: owner,
+      messageId: deletedReplyId,
+    })
+
+    expect(await t.run(async (ctx) => await ctx.db.get(threadId))).toMatchObject({
+      replyCount: 1,
+      latestReplyAt: firstReply?.createdAt,
+      latestChannelSequence: firstReply?.channelSequence,
+    })
+    expect((await actor.query(api.channelThreads.listMessages, {
+      threadId,
+      userId: owner,
+    })).map((item) => item.message._id)).toEqual([firstReplyId])
+  })
+
+  it('removes attachment rows without deleting storage still used by a forwarded copy', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const firstMessageId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Original attachment',
+      groupId,
+      idempotencyKey: 'original-attachment',
+      projectId,
+    })
+    const secondMessageId = await actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Copied attachment',
+      groupId,
+      idempotencyKey: 'copied-attachment',
+      projectId,
+    })
+    const { firstAttachmentId, secondAttachmentId, storageId } = await t.run(async (ctx) => {
+      const createdAt = Date.now()
+      const storageId = await ctx.storage.store(new Blob(['shared attachment']))
+      const attachment = {
+        projectId,
+        groupId,
+        storageId,
+        filename: 'shared.txt',
+        contentType: 'text/plain',
+        size: 17,
+        kind: 'file' as const,
+        uploadedBy: owner,
+        extractionStatus: 'preserved' as const,
+        createdAt,
+      }
+      const firstAttachmentId = await ctx.db.insert('attachments', {
+        ...attachment,
+        messageId: firstMessageId,
+      })
+      const secondAttachmentId = await ctx.db.insert('attachments', {
+        ...attachment,
+        messageId: secondMessageId,
+      })
+      await ctx.db.patch(firstMessageId, { attachmentIds: [firstAttachmentId] })
+      await ctx.db.patch(secondMessageId, { attachmentIds: [secondAttachmentId] })
+      return { firstAttachmentId, secondAttachmentId, storageId }
+    })
+
+    await actor.mutation(api.messages.remove, {
+      actorId: owner,
+      messageId: firstMessageId,
+    })
+    expect(await t.run(async (ctx) => ({
+      firstAttachment: await ctx.db.get(firstAttachmentId),
+      secondAttachment: await ctx.db.get(secondAttachmentId),
+      storage: await ctx.db.system.get(storageId),
+    }))).toMatchObject({
+      firstAttachment: null,
+      secondAttachment: { _id: secondAttachmentId },
+      storage: { _id: storageId },
+    })
+
+    await actor.mutation(api.messages.remove, {
+      actorId: owner,
+      messageId: secondMessageId,
+    })
+    expect(await t.run(async (ctx) => await ctx.db.system.get(storageId))).toBeNull()
+  })
+
   it('removes thread-owned rows during a legacy Project hard delete', async () => {
     const { groupId, owner, projectId, t } = await seedLegacyChannel()
     const actor = asUser(t, owner)

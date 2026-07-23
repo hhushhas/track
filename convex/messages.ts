@@ -12,6 +12,7 @@ import { appendAuditEvent } from './lib/audit'
 import { listActiveChannelMemberships } from './lib/channelMembership'
 import { rateLimiter } from './lib/rateLimit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { invalidateTaskEvidence } from './lib/taskEvidence'
 import {
   allocateChannelSequence,
   assertReplyScope,
@@ -677,6 +678,136 @@ export const forwardMessage = mutation({
     })
 
     return messageId
+  },
+})
+
+export const remove = mutation({
+  args: {
+    messageId: v.id('messages'),
+    actorId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId)
+    if (!message) throw new Error('message_not_found')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: message.projectId,
+      groupId: message.groupId,
+      claimedUserId: args.actorId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
+    const projectMember = await resolveActorProjectMember(
+      ctx,
+      message.projectId,
+      args.actorId,
+      access.companyAccess?.projectMember,
+    )
+    const channelThread = message.channelThreadId
+      ? await ctx.db.get(message.channelThreadId)
+      : null
+    if (message.channelThreadId) {
+      requireThreadsEnabled()
+      if (
+        !channelThread ||
+        channelThread.projectId !== message.projectId ||
+        channelThread.groupId !== message.groupId
+      ) {
+        throw new Error('thread_access_changed')
+      }
+      if (channelThread.status !== 'active') throw new Error('thread_archived')
+    }
+    const isAuthor = message.authorProjectMemberId
+      ? message.authorProjectMemberId === projectMember._id
+      : message.authorId === args.actorId
+    if (!isAuthor) throw new Error('message_delete_forbidden')
+
+    const attachments = await Promise.all(
+      message.attachmentIds.map(async (attachmentId) => await ctx.db.get(attachmentId)),
+    )
+    const deletingAttachmentIds = new Set(message.attachmentIds.map(String))
+    const storageIds = [
+      ...new Map(
+        attachments.flatMap((attachment) =>
+          attachment ? [[String(attachment.storageId), attachment.storageId] as const] : [],
+        ),
+      ).values(),
+    ]
+    const unsharedStorageIds = (
+      await Promise.all(storageIds.map(async (storageId) => {
+        const storageReferences = await ctx.db
+          .query('attachments')
+          .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+          .collect()
+        return storageReferences.some((candidate) =>
+          !deletingAttachmentIds.has(String(candidate._id)),
+        ) ? null : storageId
+      }))
+    ).filter((storageId) => storageId !== null)
+
+    await appendAuditEvent(ctx, {
+      projectId: message.projectId,
+      groupId: message.groupId,
+      channelThreadId: message.channelThreadId,
+      actorId: args.actorId,
+      actorProjectMemberId: projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
+      entityType: 'message',
+      entityId: message._id,
+      action: 'message.deleted',
+      before: {
+        attachmentCount: attachments.filter(Boolean).length,
+        channelSequence: message.channelSequence,
+        createdAt: message.createdAt,
+      },
+    })
+
+    await invalidateTaskEvidence(ctx, { messageId: message._id })
+    const deletingAttachmentIdStrings = new Set(message.attachmentIds.map(String))
+    const assistantStreams = await ctx.db
+      .query('assistantStreams')
+      .withIndex('by_group_created_at', (q) => q.eq('groupId', message.groupId))
+      .collect()
+    await Promise.all(assistantStreams.map(async (stream) => {
+      const evidence = stream.evidence.filter((item) =>
+        item.messageId !== message._id &&
+        (!item.attachmentId || !deletingAttachmentIdStrings.has(String(item.attachmentId))),
+      )
+      const clearsPrompt = stream.promptMessageId === message._id
+      if (evidence.length === stream.evidence.length && !clearsPrompt) return
+      await ctx.db.patch(stream._id, {
+        evidence,
+        promptMessageId: clearsPrompt ? undefined : stream.promptMessageId,
+        updatedAt: Date.now(),
+      })
+    }))
+    for (const attachment of attachments) {
+      if (!attachment) continue
+      await invalidateTaskEvidence(ctx, { attachmentId: attachment._id })
+      await ctx.db.delete(attachment._id)
+    }
+    await ctx.db.delete(message._id)
+    await Promise.all(
+      unsharedStorageIds.map(async (storageId) =>
+        await ctx.storage.delete(storageId).catch(() => undefined),
+      ),
+    )
+
+    if (channelThread) {
+      const remainingReplies = await ctx.db
+        .query('messages')
+        .withIndex('by_thread_created_at', (q) => q.eq('channelThreadId', channelThread._id))
+        .order('desc')
+        .collect()
+      const latestReply = remainingReplies[0]
+      await ctx.db.patch(channelThread._id, {
+        replyCount: remainingReplies.length,
+        latestReplyAt: latestReply?.createdAt,
+        latestChannelSequence: latestReply?.channelSequence,
+        updatedAt: Date.now(),
+      })
+    }
   },
 })
 

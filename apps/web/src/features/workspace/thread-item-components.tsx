@@ -77,11 +77,14 @@ export function formatCopiedAttachmentCount(count: number) {
 export function MessageRow({
   activeGroupId,
   busyAction,
+  canDeleteMessages,
+  currentUserId,
   groups,
   isFlashing,
   item,
   avatarUrl,
   mentionGroups,
+  onDeleteMessage,
   onForwardMessage,
   onOpenGroup,
   onOpenMessageSource,
@@ -90,11 +93,14 @@ export function MessageRow({
 }: {
   activeGroupId: Id<'groups'> | null
   busyAction: string | null
+  canDeleteMessages: boolean
+  currentUserId: Id<'users'>
   groups: Array<Doc<'groups'>>
   isFlashing?: boolean
   item: GroupMessageItem
   avatarUrl?: string | null
   mentionGroups: Map<string, Doc<'groups'>>
+  onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
     targetGroupId: Id<'groups'>
@@ -135,6 +141,8 @@ export function MessageRow({
           canForward={canForward}
           groups={groups}
           item={item}
+          canDelete={canDeleteMessages && item.message.authorId === currentUserId}
+          onDeleteMessage={onDeleteMessage}
           onForwardMessage={onForwardMessage}
           onReplyMessage={onReplyMessage}
         />
