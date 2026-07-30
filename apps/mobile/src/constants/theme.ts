@@ -12,6 +12,8 @@ export const Colors = {
     hairline: '#e3dfd7',
     accent: '#f0b100',
     accentSoft: '#fef3c7',
+    danger: '#b91c1c',
+    warning: '#9a3412',
   },
   dark: {
     text: '#faf9f7',
@@ -22,6 +24,8 @@ export const Colors = {
     hairline: '#3a3631',
     accent: '#f0b100',
     accentSoft: '#7a5800',
+    danger: '#fca5a5',
+    warning: '#fdba74',
   },
 } as const;
 

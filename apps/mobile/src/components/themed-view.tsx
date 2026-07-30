@@ -1,7 +1,7 @@
 import { View, type ViewProps } from 'react-native';
 
 import type { ThemeColor } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeOverride } from '@/contexts/theme-override-context';
 import { useTheme } from '@/hooks/use-theme';
 
 export type ThemedViewProps = ViewProps & {
@@ -11,9 +11,9 @@ export type ThemedViewProps = ViewProps & {
 };
 
 export function ThemedView({ style, lightColor, darkColor, type, ...otherProps }: ThemedViewProps) {
-  const scheme = useColorScheme();
+  const { theme: themeName } = useThemeOverride();
   const theme = useTheme();
-  const overrideColor = scheme === 'dark' ? darkColor : lightColor;
+  const overrideColor = themeName === 'dark' ? darkColor : lightColor;
 
   return (
     <View

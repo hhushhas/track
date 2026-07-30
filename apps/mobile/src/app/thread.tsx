@@ -386,10 +386,12 @@ export default function ThreadScreen() {
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={styles.notice} type="small">{notice}</ThemedText> : null}
       {error ? <ThemedText accessibilityLiveRegion="assertive" style={styles.error} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}
       {readOnly ? <View style={[styles.archive, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Archived thread</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">This conversation is read-only.</ThemedText></View> : null}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <FlatList
           contentContainerStyle={styles.list}
           data={threadItems}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => item.key}
           ListEmptyComponent={messagePageStatus === 'LoadingFirstPage'
             ? <ThemedText style={{ color: theme.textSecondary, padding: Spacing.three }}>Loading replies…</ThemedText>
@@ -411,6 +413,7 @@ export default function ThreadScreen() {
           onAttach={() => void pickAttachment(false)}
           onCancelReply={() => setReplyTo(null)}
           onChangeText={setComposer}
+          onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
           onRecord={() => void pickAttachment(true)}
           onSend={() => void submitMessage()}
           replyTo={replyTo}

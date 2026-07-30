@@ -18,6 +18,7 @@
     },
     "android": {
       "package": "com.example.track",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#faf7f2",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

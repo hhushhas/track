@@ -9,6 +9,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: config.slug ?? 'track',
     android: {
       ...config.android,
+      softwareKeyboardLayoutMode: 'resize',
       ...(googleServicesFile ? { googleServicesFile } : {}),
     },
   };

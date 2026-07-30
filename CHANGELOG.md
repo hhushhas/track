@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-30
+
+### Added
+
+- Added four high-fidelity mobile task-management concept boards covering core
+  task flows, creation and editing, system states, keyboard behavior, and
+  light/dark parity.
+- Rebuilt the mobile task experience around those concepts with live Kanban,
+  personal and all-task views, richer task cards, create and update sheets,
+  checklist progress, linked context, task discussion, activity history, and
+  functional loading, empty, offline, conflict, restricted, archive, and dark
+  states.
+
+### Fixed
+
+- Unified mobile theme resolution across React surfaces and native navigation
+  so Project, Channel, task, and other cards update immediately with the
+  selected light, dark, or system appearance.
+- Kept Channel and thread composers above the native keyboard with Android
+  window resizing, iOS keyboard avoidance, keyboard-aware safe-area spacing,
+  interactive dismissal, and automatic focus on the latest message.
+
 ## 2026-07-23
 
 ### Added

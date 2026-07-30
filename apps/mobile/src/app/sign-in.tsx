@@ -22,7 +22,7 @@ import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeOverride } from '@/contexts/theme-override-context';
 import { useTheme } from '@/hooks/use-theme';
 
 import googleMarkImage from '@/assets/images/google-g.png';
@@ -31,7 +31,7 @@ import trackMarkReversedImage from '@/assets/images/track-mark-reversed.png';
 
 export default function SignInScreen() {
   const theme = useTheme();
-  const colorScheme = useColorScheme();
+  const { theme: themeName } = useThemeOverride();
   const router = useRouter();
   const devAuthBypass = useDevAuthBypass();
   const session = authClient.useSession();
@@ -41,7 +41,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const markSource = colorScheme === 'dark' ? trackMarkReversedImage : trackMarkImage;
+  const markSource = themeName === 'dark' ? trackMarkReversedImage : trackMarkImage;
 
   async function signIn(provider: 'google' | 'apple') {
     setBusy(true);

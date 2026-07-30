@@ -1,5 +1,5 @@
 import { Children, Fragment } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PlatformIcon } from '@/components/platform-icon';
@@ -22,28 +22,31 @@ export function OptionsSheet({ children, onClose, title, visible }: Props) {
 
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={styles.scrim} />
-      <ThemedView style={[styles.sheet, { borderTopColor: theme.hairline }]}>
-        <View style={[styles.handle, { backgroundColor: theme.textSecondary }]} />
-        <View style={styles.header}>
-          <ThemedText type="subtitle">{title}</ThemedText>
-          <Pressable
-            accessibilityLabel="Close"
-            android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-            hitSlop={12}
-            onPress={() => { hapticLight(); onClose(); }}
-            style={[styles.closeButton, { backgroundColor: theme.backgroundElement }]}>
-            <PlatformIcon color={theme.textSecondary} name="close" size={18} />
-          </Pressable>
-        </View>
-        <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.four }]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          style={styles.scroll}>
-          {children}
-        </ScrollView>
-      </ThemedView>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modal}>
+        <Pressable onPress={onClose} style={styles.scrim} />
+        <ThemedView style={[styles.sheet, { borderTopColor: theme.hairline }]}>
+          <View style={[styles.handle, { backgroundColor: theme.textSecondary }]} />
+          <View style={styles.header}>
+            <ThemedText type="subtitle">{title}</ThemedText>
+            <Pressable
+              accessibilityLabel="Close"
+              android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+              hitSlop={12}
+              onPress={() => { hapticLight(); onClose(); }}
+              style={[styles.closeButton, { backgroundColor: theme.backgroundElement }]}>
+              <PlatformIcon color={theme.textSecondary} name="close" size={18} />
+            </Pressable>
+          </View>
+          <ScrollView
+            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.four }]}
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.scroll}>
+            {children}
+          </ScrollView>
+        </ThemedView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -179,6 +182,9 @@ const styles = StyleSheet.create({
   },
   inputWrap: {
     gap: Spacing.one,
+  },
+  modal: {
+    flex: 1,
   },
   scrim: {
     backgroundColor: 'rgba(0,0,0,0.4)',

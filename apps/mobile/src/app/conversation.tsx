@@ -413,14 +413,15 @@ export default function ConversationScreen() {
       />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}>
         <FlatList
           ref={listRef}
           contentContainerStyle={styles.thread}
           contentInsetAdjustmentBehavior="automatic"
           data={threadItems}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
           onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           initialNumToRender={24}
           keyExtractor={(item) => item.key}
@@ -461,6 +462,7 @@ export default function ConversationScreen() {
           onAttach={() => void pickDocument()}
           onCancelReply={() => setReplyTo(null)}
           onChangeText={setComposer}
+          onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
           onRecord={() => void toggleRecording()}
           onSend={() => void handleSend()}
           replyTo={replyTo}

@@ -1,7 +1,7 @@
-import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { DetailedMessage } from '@/components/thread-row';
 import { PlatformIcon } from '@/components/platform-icon';
@@ -18,6 +18,7 @@ type Props = {
   onAttach: () => void;
   onCancelReply: () => void;
   onChangeText: (v: string) => void;
+  onFocus?: () => void;
   onRecord: () => void;
   onSend: () => void;
   replyTo: DetailedMessage | null;
@@ -40,10 +41,20 @@ function RecordingDot() {
   return <Animated.View style={[styles.recordingDotBase, style]} />;
 }
 
-export function Composer({ activeGroupName, busy, isRecording, recordingDuration = 0, onAttach, onCancelReply, onChangeText, onRecord, onSend, replyTo, value }: Props) {
+export function Composer({ activeGroupName, busy, isRecording, recordingDuration = 0, onAttach, onCancelReply, onChangeText, onFocus, onRecord, onSend, replyTo, value }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   const canSend = Boolean(value.trim()) && !busy;
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   return (
     <View style={[
@@ -51,7 +62,7 @@ export function Composer({ activeGroupName, busy, isRecording, recordingDuration
       {
         backgroundColor: theme.background,
         borderTopColor: theme.hairline,
-        paddingBottom: insets.bottom > 0 ? insets.bottom : Spacing.three,
+        paddingBottom: keyboardVisible ? Spacing.two : insets.bottom > 0 ? insets.bottom : Spacing.three,
       },
     ]}>
       {replyTo ? (
@@ -99,6 +110,7 @@ export function Composer({ activeGroupName, busy, isRecording, recordingDuration
               allowFontScaling
               multiline
               onChangeText={onChangeText}
+              onFocus={onFocus}
               placeholder={`Message ${activeGroupName ?? 'Channel'} or ask @track…`}
               placeholderTextColor={theme.textSecondary}
               style={[styles.pill, { backgroundColor: theme.backgroundElement, color: theme.text, flex: 1 }]}
