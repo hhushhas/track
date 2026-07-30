@@ -617,6 +617,7 @@ export const requestAccountDeletion = mutation({
       ctx.db.patch(installation._id, {
         userId: undefined,
         expoPushToken: undefined,
+        nativePushToken: undefined,
         enabled: false,
         failureReason: 'account_deleted',
         updatedAt: now,

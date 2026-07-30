@@ -257,7 +257,7 @@
       <span class="layer-label">Convex and delivery transport</span>
       <div class="blocks">
         <div class="block risk" data-current="Fire-and-forget job" data-desired="Durable delivery intent"><b class="state-title">Fire-and-forget job</b><span class="state-sub">No persistent attempt or retry state</span></div>
-        <div class="block risk" data-current="Ticket response only" data-desired="Ticket plus receipt reconciliation"><b class="state-title">Ticket response only</b><span class="state-sub">Provider result is not reconciled</span></div>
+        <div class="block good" data-current="Direct provider acceptance" data-desired="Direct provider acceptance"><b class="state-title">Direct provider acceptance</b><span class="state-sub">APNs and FCM outcomes are classified per device</span></div>
         <div class="block risk" data-current="Console logs" data-desired="Content-free delivery metrics"><b class="state-title">Console logs</b><span class="state-sub">No release service objective</span></div>
       </div>
     </div>
@@ -380,7 +380,7 @@
   </div>
   <div class="tiles">
     <div class="card tile"><p class="kicker">Authority</p><b>Convex</b><span class="caption">access, preferences, delivery state</span></div>
-    <div class="card tile"><p class="kicker"><span class="term" tabindex="0" data-def="A service that forwards Track's notification to Apple or Google for delivery.">Transport</span></p><b>Expo</b><span class="caption">recommended first release</span></div>
+    <div class="card tile"><p class="kicker"><span class="term" tabindex="0" data-def="The native provider that accepts Track's notification for device delivery.">Transport</span></p><b>APNs + FCM</b><span class="caption">direct native providers</span></div>
     <div class="card tile"><p class="kicker">Final display</p><b>iOS / Android</b><span class="caption">system permission remains authoritative</span></div>
   </div>
 </section>
@@ -391,7 +391,7 @@
   <ol class="phase-list">
     <li class="phase"><span class="phase-num">0</span><span><b>Finish provider configuration audit</b><small>Product, privacy, transport, and service-objective choices are settled; the non-production credential and build configuration audit remains.</small></span><span class="badge amber">now</span></li>
     <li class="phase"><span class="phase-num">1</span><span><b>Installation ownership and durable delivery</b><small>Account-safe installation lifecycle, idempotent delivery intents, attempt records, migration.</small></span><span class="badge">pending</span></li>
-    <li class="phase"><span class="phase-num">2</span><span><b>Reliable provider pipeline</b><small>Bounded batches, tickets, receipts, retries, invalid-token handling, content-free diagnostics.</small></span><span class="badge">pending</span></li>
+    <li class="phase"><span class="phase-num">2</span><span><b>Reliable provider pipeline</b><small>Bounded native sends, provider acceptance, retries, invalid-token handling, content-free diagnostics.</small></span><span class="badge green">implemented</span></li>
     <li class="phase"><span class="phase-num">3</span><span><b>Mobile behavior</b><small>Permission education, settings, previews, foreground policy, badges, sounds, exact tap routing.</small></span><span class="badge">pending</span></li>
     <li class="phase"><span class="phase-num">4</span><span><b>Automated hardening</b><small>Eligibility, access loss, duplicate work, token lifecycle, retries, privacy, deep links, full repository gate and bounded review.</small></span><span class="badge">pending</span></li>
     <li class="phase"><span class="phase-num">5</span><span><b>Physical-device proof</b><small>Unique builds on iPhone and Android; foreground, background, terminated, denied, offline, sign-out, and access-revoked matrix.</small></span><span class="badge red">release gate</span></li>
@@ -404,14 +404,14 @@
   <div class="cols3">
     <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">All eligible activity</h3><p>New users receive joined-Channel messages, followed-thread replies, and important task events by default. Global and local mutes remain in charge.</p></div>
     <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">Context-aware permission</h3><p>Track explains first, shows safe context with a privacy toggle, and suppresses only the banner for the exact item already visible.</p></div>
-    <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">Harden Expo</h3><p>Track keeps the existing transport and adds durable intents, tickets, receipts, retries, security, metrics, and physical-device proof.</p></div>
+    <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">Direct native providers</h3><p>Track sends directly to APNs and FCM with durable intents, classified acceptance, retries, security, metrics, and physical-device proof.</p></div>
   </div>
   <div class="cols2" style="margin-top:.8rem">
-    <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">Context-only payloads</h3><p>“Bilal mentioned you in #launch-readiness” is allowed. Message bodies, task titles, filenames, evidence, and assistant content never enter the Expo payload.</p></div>
-    <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">Measurable objective</h3><p>95% accepted by Expo within 5 seconds, 99% within 30 seconds, and every ticket classified within 20 minutes during normal provider availability.</p></div>
+    <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">User-controlled previews</h3><p>Full mode includes a bounded message body or task title. Context and hidden modes progressively remove work content before provider submission.</p></div>
+    <div class="card"><span class="badge green">settled</span><h3 style="margin-top:.55rem">Measurable objective</h3><p>95% accepted by APNs or FCM within 5 seconds and 99% within 30 seconds during normal provider availability.</p></div>
   </div>
-  <div class="callout" style="margin-top:.8rem"><b>Expo fits the product goal.</b> It supports interactive alerts, routing data, sounds, badges, foreground handling, provider tickets, and receipts. The 600-notifications-per-second Project limit is well above the expected first-release load.</div>
-  <div class="callout amber" style="margin-top:.7rem"><b>Honest boundary.</b> Expo is best-effort and at-least-once to Apple and Google, has no service-level agreement, and cannot prove the operating system displayed an alert. Track owns idempotency and measurement around that boundary.</div>
+  <div class="callout" style="margin-top:.8rem"><b>Direct native delivery fits the product goal.</b> APNs and FCM support interactive alerts, routing data, sounds, badges, foreground handling, and per-device provider outcomes without an Expo relay.</div>
+  <div class="callout amber" style="margin-top:.7rem"><b>Honest boundary.</b> APNs and FCM acceptance cannot prove that the operating system displayed an alert. Track owns idempotency and measurement around that boundary.</div>
 </section>
 
 <section class="slide" id="done">
@@ -490,7 +490,7 @@
   const storyScenes = {
     new: [
       { title: 'Track', caption: 'Aisha is away from Track when Bilal mentions her in a followed Project thread.', html: '<p class="screen-label">Track is closed</p><div class="chat"><div class="bubble">Bilal is writing in Launch readiness…</div></div>' },
-      { title: 'Notification', caption: 'One authorized alert arrives with safe sender, event, Channel, and Project context, but no message body.', html: '<div class="push-card"><div class="push-app"><span class="app-dot">T</span> Track · now</div><strong>Bilal mentioned you</strong><p>#launch-readiness · Mobile release</p></div>' },
+      { title: 'Notification', caption: 'One authorized alert arrives with the user-selected full, context-only, or hidden preview.', html: '<div class="push-card"><div class="push-app"><span class="app-dot">T</span> Track · now</div><strong>Bilal · #launch-readiness</strong><p>The production build is ready.</p></div>' },
       { title: 'Opening Track', caption: 'Her tap restores the exact Project membership and thread, then rechecks access.', html: '<div style="display:grid;place-items:center;height:380px"><div class="app-dot" style="width:64px;height:64px;border-radius:18px;font-size:1.5rem">T</div><p class="screen-label">Checking access…</p></div>' },
       { title: 'Launch readiness', caption: 'Track opens the exact message once, even though the app started from a terminated state.', html: '<div class="chat"><div class="bubble">Bilal<br><b>@Aisha can you verify the Android build?</b></div><div class="bubble mine">On it — checking now.</div></div>' },
       { title: 'Launch readiness', caption: 'The notification is now an entry point to work, with no duplicate navigation or cross-Company context.', html: '<div class="chat"><div class="bubble">Bilal<br><b>@Aisha can you verify the Android build?</b></div><div class="bubble mine">On it — checking now.</div></div><p class="screen-label">Exact thread · exact membership · one open</p>' }

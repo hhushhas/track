@@ -37,29 +37,18 @@
     "vitest": "^4.1.10",
     "wrangler": "^4.110.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "lightningcss",
-      "msw",
-      "sharp",
-      "workerd"
-    ],
-    "overrides": {
-      "sharp@<0.35.0": "0.35.3",
-      "uuid@<11.1.1": "11.1.1"
-    }
-  },
   "dependencies": {
-    "@track/shared": "workspace:*",
     "@convex-dev/better-auth": "^0.12.5",
     "@convex-dev/rate-limiter": "^0.3.2",
     "@openrouter/ai-sdk-provider": "^2.10.0",
+    "@track/shared": "workspace:*",
     "@upstash/box": "0.4.4",
     "ai": "^6.0.223",
-    "better-auth": "1.6.15",
+    "better-auth": "1.6.25",
     "fflate": "0.8.2",
+    "firebase-admin": "14.2.0",
     "hono": "4.12.29",
+    "jose": "6.2.5",
     "react": "19.2.7",
     "web-push": "^3.6.7"
   }

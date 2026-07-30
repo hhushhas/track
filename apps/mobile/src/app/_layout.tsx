@@ -5,7 +5,7 @@ import { Stack } from 'expo-router';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect } from 'react';
+import { useEffect, type ComponentProps } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -16,6 +16,9 @@ import { CompanyProvider } from '@/contexts/company-context';
 import { ThemeOverrideProvider, useThemeOverride } from '@/contexts/theme-override-context';
 import { Colors } from '@/constants/theme';
 import { PushNotificationBridge } from '@/lib/push-notifications';
+
+type ProviderAuthClient = ComponentProps<typeof ConvexBetterAuthProvider>['authClient'];
+const providerAuthClient = authClient as unknown as ProviderAuthClient;
 
 const NAV_THEME_LIGHT = {
   ...DefaultTheme,
@@ -65,13 +68,13 @@ function AppLayout() {
   const navTheme = theme === 'dark' ? NAV_THEME_DARK : NAV_THEME_LIGHT;
 
   return (
-    <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
+    <ConvexBetterAuthProvider client={convexClient} authClient={providerAuthClient}>
       <ThemeProvider value={navTheme}>
         <TrackUserProvider>
           <PushNotificationBridge>
             <CompanyProvider>
-                <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-                <Stack
+              <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+              <Stack
                 screenOptions={{
                   headerShown: true,
                   headerBackTitle: 'Back',
@@ -95,7 +98,7 @@ function AppLayout() {
                 <Stack.Screen name="task" options={{ title: 'Task' }} />
                 <Stack.Screen name="threads" options={{ title: 'Threads' }} />
                 <Stack.Screen name="thread" options={{ title: 'Thread' }} />
-                </Stack>
+              </Stack>
             </CompanyProvider>
           </PushNotificationBridge>
         </TrackUserProvider>

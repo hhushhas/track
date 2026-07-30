@@ -102,7 +102,7 @@ export default function ProjectsScreen() {
 
     if (projectItems.length === 0) {
       const projectId = await ensureStarter({ userId: trackUserId });
-      router.push(`/groups?projectId=${projectId}`);
+      router.push(projectChannelsHref(projectId, null));
     } else {
       router.push(projectChannelsHref(item.project._id, actingCompanyId ? {
         archived: item.membership.status === 'archived',

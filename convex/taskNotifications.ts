@@ -161,22 +161,23 @@ export const collectPushTargets = internalQuery({
       ...installations
         .filter((installation) => installation.enabled &&
           installation.environment === serverPushEnvironment() &&
-          Boolean(installation.expoPushToken) &&
+          Boolean(installation.nativePushToken) &&
           (installation.permissionState === 'granted' || installation.permissionState === 'provisional'))
         .map((installation) => ({
           kind: 'native' as const,
           installationId: installation._id,
           platform: installation.platform,
-          tokenOrEndpoint: installation.expoPushToken!,
+          tokenOrEndpoint: installation.nativePushToken!,
           recipientUserId: recipient.userId,
-          previewMode: globalSetting?.previewMode ?? 'context',
+          previewMode: globalSetting?.previewMode ?? 'full',
           soundEnabled: globalSetting?.soundEnabled ?? true,
           badge: globalSetting?.badgesEnabled === false ? undefined : 0,
           eventKind: notification.eventType,
         })),
       ...subscriptions
         .filter((subscription) => subscription.enabled && subscription.platform !== 'web' &&
-          !installations.some((installation) => installation.expoPushToken === subscription.tokenOrEndpoint) &&
+          !installations.some((installation) =>
+            (installation.nativePushToken ?? installation.expoPushToken) === subscription.tokenOrEndpoint) &&
           (!subscription.projectMemberId || subscription.projectMemberId === recipient._id))
         .map((subscription) => ({
           kind: 'legacy_native' as const,
@@ -217,6 +218,7 @@ export const collectPushTargets = internalQuery({
       projectId: task.projectId,
       projectName: project.name,
       publicKey: task.publicKey,
+      taskTitle: task.title,
       recipientProjectMemberId: recipient._id,
       targets: Array.from(uniqueTargets.values()),
       url: `/workspace/projects/${task.projectId}/tasks?view=all&task=${task.publicKey}${identityQuery}`,

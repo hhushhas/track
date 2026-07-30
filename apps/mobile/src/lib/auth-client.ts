@@ -1,11 +1,12 @@
 import { expoClient } from '@better-auth/expo/client';
 import { convexClient } from '@convex-dev/better-auth/client/plugins';
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
+import type { BetterAuthClientPlugin } from 'better-auth/client';
 import { twoFactorClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 
 import { authStoragePrefix } from '@/lib/auth-storage';
+import { platformStorage } from '@/lib/platform-storage';
 
 const extraConfig = Constants.expoConfig?.extra as Record<string, string | undefined> | undefined;
 const authBaseURL =
@@ -26,8 +27,8 @@ export const authClient = createAuthClient({
     expoClient({
       scheme: authStoragePrefix,
       storagePrefix: authStoragePrefix,
-      storage: SecureStore,
-    }),
+      storage: platformStorage,
+    }) as unknown as BetterAuthClientPlugin,
     convexClient(),
     twoFactorClient({
       onTwoFactorRedirect: ({ twoFactorMethods }) => {

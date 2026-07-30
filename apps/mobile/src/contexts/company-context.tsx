@@ -1,9 +1,9 @@
-import * as SecureStore from 'expo-secure-store';
 import { useQuery } from 'convex/react';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import { platformStorage } from '@/lib/platform-storage';
 import { useReleaseConfig } from '@/lib/release-config';
 import { useTrackUser } from './track-user-context';
 
@@ -32,7 +32,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    void SecureStore.getItemAsync(STORAGE_KEY).then((stored) => {
+    void platformStorage.getItemAsync(STORAGE_KEY).then((stored) => {
       setSelectedCompanyId(stored as Id<'companies'> | null);
       setLoaded(true);
     });
@@ -42,14 +42,14 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
     if (!loaded || companies === undefined) return;
     if (actingCompanyId && !companies.some(({ company }) => company?._id === actingCompanyId && company.status === 'active')) {
       setSelectedCompanyId(null);
-      void SecureStore.deleteItemAsync(STORAGE_KEY);
+      void platformStorage.deleteItemAsync(STORAGE_KEY);
     }
   }, [actingCompanyId, companies, loaded]);
 
   function setActingCompanyId(companyId: Id<'companies'> | null) {
     setSelectedCompanyId(companyId);
-    if (companyId) void SecureStore.setItemAsync(STORAGE_KEY, companyId);
-    else void SecureStore.deleteItemAsync(STORAGE_KEY);
+    if (companyId) void platformStorage.setItemAsync(STORAGE_KEY, companyId);
+    else void platformStorage.deleteItemAsync(STORAGE_KEY);
   }
 
   const value = useMemo<CompanyContextValue>(() => ({

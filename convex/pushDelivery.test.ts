@@ -21,7 +21,7 @@ describe('durable mobile push lifecycle', () => {
     const args = {
       installationId: 'installation-1', platform: 'ios' as const,
       environment: 'development' as const, permissionState: 'granted' as const,
-      token: 'ExponentPushToken[installation-1]',
+      token: 'apns-installation-token-1',
     }
     await asUser(t, first).mutation(api.notifications.registerNativeInstallation, { ...args, userId: first })
     await asUser(t, second).mutation(api.notifications.registerNativeInstallation, { ...args, userId: second })
@@ -47,14 +47,18 @@ describe('durable mobile push lifecycle', () => {
       environment: 'preview' as const, permissionState: 'granted' as const,
     }
     await actor.mutation(api.notifications.registerNativeInstallation, {
-      ...common, token: 'ExponentPushToken[old]',
+      ...common, token: 'fcm-registration-token-old',
     })
     await actor.mutation(api.notifications.registerNativeInstallation, {
-      ...common, token: 'ExponentPushToken[new]',
+      ...common, token: 'fcm-registration-token-new',
     })
     const installations = await t.run(async (ctx) => ctx.db.query('pushInstallations').collect())
     expect(installations).toHaveLength(1)
-    expect(installations[0]).toMatchObject({ expoPushToken: 'ExponentPushToken[new]', enabled: true })
+    expect(installations[0]).toMatchObject({
+      nativePushToken: 'fcm-registration-token-new',
+      enabled: true,
+    })
+    expect(installations[0].expoPushToken).toBeUndefined()
   })
 
   it('disables the matching legacy token before an upgraded installation signs out', async () => {
@@ -138,7 +142,7 @@ describe('durable mobile push lifecycle', () => {
     const userId = await seedUser(t, 'push-intent')
     const installationId = await t.run(async (ctx) => ctx.db.insert('pushInstallations', {
       installationId: 'intent-installation', userId, platform: 'ios', environment: 'development',
-      expoPushToken: 'ExponentPushToken[intent]', enabled: true, permissionState: 'granted',
+      nativePushToken: 'apns-intent-token', enabled: true, permissionState: 'granted',
       lastSeenAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(),
     }))
     const args = {
@@ -159,12 +163,81 @@ describe('durable mobile push lifecycle', () => {
     })
   })
 
+  it('records direct provider acceptance as a terminal delivery attempt', async () => {
+    const t = convexTest(schema, modules)
+    const userId = await seedUser(t, 'push-direct-acceptance')
+    const installationId = await t.run(async (ctx) => ctx.db.insert('pushInstallations', {
+      installationId: 'direct-acceptance-installation', userId, platform: 'android',
+      environment: 'production', nativePushToken: 'fcm-direct-acceptance-token',
+      enabled: true, permissionState: 'granted', lastSeenAt: Date.now(),
+      createdAt: Date.now(), updatedAt: Date.now(),
+    }))
+    const intentId = await t.mutation(internal.pushDelivery.createIntent, {
+      sourceKind: 'test', sourceId: 'direct-acceptance', eventKind: 'test',
+      recipientUserId: userId, installationId, idempotencyKey: 'direct-acceptance',
+      title: 'Track', body: 'Direct provider test', data: { schemaVersion: '1' },
+      soundEnabled: true, ttlMs: 60_000, deferDispatch: true,
+    })
+    const attemptNumber = await t.mutation(internal.pushDelivery.markSending, { intentId: intentId! })
+    await t.mutation(internal.pushDelivery.recordDelivery, {
+      intentId: intentId!, attemptNumber: attemptNumber!, provider: 'fcm',
+      providerMessageId: 'projects/track/messages/provider-id', providerLatencyMs: 18,
+    })
+
+    expect(await t.run(async (ctx) => ctx.db.get(intentId!))).toMatchObject({
+      body: '',
+      status: 'delivered',
+      terminalAt: expect.any(Number),
+      title: 'Track',
+    })
+    expect(await t.run(async (ctx) => ctx.db.query('pushDeliveryAttempts').first()))
+      .toMatchObject({
+        attemptNumber: 1,
+        providerTicketId: 'projects/track/messages/provider-id',
+        resultCategory: 'fcm_accepted',
+        status: 'delivered',
+      })
+  })
+
+  it('expires unresolved legacy Expo receipts without contacting Expo', async () => {
+    const t = convexTest(schema, modules)
+    const userId = await seedUser(t, 'push-legacy-expiry')
+    const now = Date.now()
+    const installationId = await t.run(async (ctx) => ctx.db.insert('pushInstallations', {
+      installationId: 'legacy-expiry-installation', userId, platform: 'ios',
+      environment: 'development', expoPushToken: 'ExponentPushToken[legacy-expiry]',
+      enabled: true, permissionState: 'granted', lastSeenAt: now,
+      createdAt: now, updatedAt: now,
+    }))
+    const intentId = await t.run(async (ctx) => ctx.db.insert('pushDeliveryIntents', {
+      sourceKind: 'test', sourceId: 'legacy-expiry', eventKind: 'test',
+      recipientUserId: userId, installationId, idempotencyKey: 'legacy-expiry',
+      title: 'Track', body: 'Legacy receipt', data: {}, soundEnabled: true,
+      status: 'ticket_accepted', attemptCount: 1, acceptedAt: now - 30 * 60_000,
+      expiresAt: now + 60_000, createdAt: now - 30 * 60_000, updatedAt: now - 30 * 60_000,
+    }))
+    await t.run(async (ctx) => ctx.db.insert('pushDeliveryAttempts', {
+      intentId, attemptNumber: 1, status: 'ticket_accepted',
+      providerTicketId: 'legacy-expo-ticket', resultCategory: 'accepted',
+      providerLatencyMs: 12, createdAt: now - 30 * 60_000,
+    }))
+
+    expect(await t.mutation(internal.pushDelivery.expireLegacyProviderReceipts, {})).toBe(1)
+    expect(await t.run(async (ctx) => ctx.db.get(intentId))).toMatchObject({
+      body: '',
+      status: 'expired',
+      title: 'Track',
+    })
+    expect(await t.run(async (ctx) => ctx.db.query('pushDeliveryAttempts').first()))
+      .toMatchObject({ resultCategory: 'legacy_receipt_expired', status: 'permanent_failure' })
+  })
+
   it('recovers an interrupted sending attempt instead of stranding it', async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t, 'push-interrupted')
     const installationId = await t.run(async (ctx) => ctx.db.insert('pushInstallations', {
       installationId: 'interrupted-installation', userId, platform: 'ios', environment: 'development',
-      expoPushToken: 'ExponentPushToken[interrupted]', enabled: true, permissionState: 'granted',
+      nativePushToken: 'apns-interrupted-token', enabled: true, permissionState: 'granted',
       lastSeenAt: Date.now(), createdAt: Date.now(), updatedAt: Date.now(),
     }))
     const intentId = await t.run(async (ctx) => ctx.db.insert('pushDeliveryIntents', {

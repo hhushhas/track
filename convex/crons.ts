@@ -6,9 +6,9 @@ const crons = cronJobs()
 
 crons.interval('memory run view cleanup', { hours: 12 }, (internal as any).memoryActions.cleanupRunViews, {})
 crons.interval(
-  'push receipt reconciliation',
+  'legacy push receipt expiry',
   { minutes: 5 },
-  internal.pushNotifications.reconcileDeliveryReceipts,
+  internal.pushDelivery.expireLegacyProviderReceipts,
   {},
 )
 crons.interval(

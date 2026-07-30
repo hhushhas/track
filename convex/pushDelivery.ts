@@ -6,6 +6,7 @@ import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContex
 import { retryDelayMs } from './lib/pushDelivery'
 
 const sourceKind = v.union(v.literal('message'), v.literal('task'), v.literal('test'))
+const terminalContent = { title: 'Track', body: '' }
 
 export const recordEvent = internalMutation({
   args: {
@@ -52,7 +53,7 @@ export const createIntent = internalMutation({
       .unique()
     if (existing) return existing._id
     const installation = await ctx.db.get(args.installationId)
-    if (!installation || !installation.enabled || !installation.expoPushToken ||
+    if (!installation || !installation.enabled || !installation.nativePushToken ||
       installation.userId !== args.recipientUserId) return null
     const now = Date.now()
     const intentId = await ctx.db.insert('pushDeliveryIntents', {
@@ -99,7 +100,12 @@ export const markSending = internalMutation({
     if (!intent || !['queued', 'retry_wait'].includes(intent.status)) return null
     const now = Date.now()
     if (intent.expiresAt <= now) {
-      await ctx.db.patch(intent._id, { status: 'expired', terminalAt: now, updatedAt: now })
+      await ctx.db.patch(intent._id, {
+        ...terminalContent,
+        status: 'expired',
+        terminalAt: now,
+        updatedAt: now,
+      })
       return null
     }
     await ctx.db.patch(intent._id, {
@@ -118,7 +124,12 @@ export const cancelIntent = internalMutation({
     const intent = await ctx.db.get(args.intentId)
     if (!intent || ['delivered', 'permanent_failure', 'expired', 'canceled'].includes(intent.status)) return
     const now = Date.now()
-    await ctx.db.patch(intent._id, { status: 'canceled', terminalAt: now, updatedAt: now })
+    await ctx.db.patch(intent._id, {
+      ...terminalContent,
+      status: 'canceled',
+      terminalAt: now,
+      updatedAt: now,
+    })
     await ctx.db.insert('pushDeliveryAttempts', {
       intentId: intent._id,
       attemptNumber: intent.attemptCount,
@@ -131,11 +142,12 @@ export const cancelIntent = internalMutation({
   },
 })
 
-export const recordTicket = internalMutation({
+export const recordDelivery = internalMutation({
   args: {
     intentId: v.id('pushDeliveryIntents'),
     attemptNumber: v.number(),
-    ticketId: v.string(),
+    provider: v.union(v.literal('apns'), v.literal('fcm')),
+    providerMessageId: v.optional(v.string()),
     providerLatencyMs: v.number(),
   },
   handler: async (ctx, args) => {
@@ -145,13 +157,20 @@ export const recordTicket = internalMutation({
     await ctx.db.insert('pushDeliveryAttempts', {
       intentId: intent._id,
       attemptNumber: args.attemptNumber,
-      status: 'ticket_accepted',
-      providerTicketId: args.ticketId,
-      resultCategory: 'accepted',
+      status: 'delivered',
+      providerTicketId: args.providerMessageId,
+      resultCategory: `${args.provider}_accepted`,
       providerLatencyMs: Math.max(0, args.providerLatencyMs),
       createdAt: now,
+      resolvedAt: now,
     })
-    await ctx.db.patch(intent._id, { status: 'ticket_accepted', acceptedAt: now, updatedAt: now })
+    await ctx.db.patch(intent._id, {
+      ...terminalContent,
+      status: 'delivered',
+      acceptedAt: now,
+      terminalAt: now,
+      updatedAt: now,
+    })
   },
 })
 
@@ -179,6 +198,7 @@ export const recordFailure = internalMutation({
     })
     if (!canRetry) {
       await ctx.db.patch(intent._id, {
+        ...terminalContent,
         status: intent.expiresAt <= now ? 'expired' : 'permanent_failure',
         terminalAt: now,
         updatedAt: now,
@@ -196,22 +216,34 @@ export const recordFailure = internalMutation({
   },
 })
 
-export const listPendingReceipts = internalQuery({
+export const expireLegacyProviderReceipts = internalMutation({
   args: {},
   handler: async (ctx) => {
+    const now = Date.now()
     const attempts = await ctx.db.query('pushDeliveryAttempts')
       .withIndex('by_status_created_at', (q) =>
-        q.eq('status', 'ticket_accepted').lte('createdAt', Date.now() - 15 * 60 * 1_000),
+        q.eq('status', 'ticket_accepted').lte('createdAt', now - 20 * 60 * 1_000),
       )
       .order('asc')
       .take(1_000)
-    const rows = []
+    let expired = 0
     for (const attempt of attempts) {
-      if (!attempt.providerTicketId) continue
       const intent = await ctx.db.get(attempt.intentId)
-      if (intent?.status === 'ticket_accepted') rows.push({ attempt, intent })
+      await ctx.db.patch(attempt._id, {
+        status: 'permanent_failure',
+        resultCategory: 'legacy_receipt_expired',
+        resolvedAt: now,
+      })
+      if (intent?.status !== 'ticket_accepted') continue
+      await ctx.db.patch(intent._id, {
+        ...terminalContent,
+        status: 'expired',
+        terminalAt: now,
+        updatedAt: now,
+      })
+      expired += 1
     }
-    return rows
+    return expired
   },
 })
 
@@ -237,6 +269,7 @@ export const recoverStaleSendingIntents = internalMutation({
           resolvedAt: now,
         })
         await ctx.db.patch(intent._id, {
+          ...terminalContent,
           status: intent.expiresAt <= now ? 'expired' : 'permanent_failure',
           terminalAt: now,
           updatedAt: now,
@@ -263,59 +296,6 @@ export const recoverStaleSendingIntents = internalMutation({
       recovered += 1
     }
     return recovered
-  },
-})
-
-export const resolveReceipt = internalMutation({
-  args: {
-    attemptId: v.id('pushDeliveryAttempts'),
-    delivered: v.boolean(),
-    category: v.string(),
-    retryable: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const attempt = await ctx.db.get(args.attemptId)
-    if (!attempt || attempt.status !== 'ticket_accepted') return null
-    const intent = await ctx.db.get(attempt.intentId)
-    if (!intent || intent.status !== 'ticket_accepted') return null
-    const now = Date.now()
-    const canRetry = !args.delivered && args.retryable && intent.attemptCount < 5 && intent.expiresAt > now
-    await ctx.db.patch(attempt._id, {
-      status: args.delivered ? 'delivered' : canRetry ? 'transient_failure' : 'permanent_failure',
-      resultCategory: args.category.slice(0, 80),
-      resolvedAt: now,
-    })
-    if (canRetry) {
-      const delay = retryDelayMs(intent.attemptCount)
-      await ctx.db.patch(intent._id, {
-        status: 'retry_wait', nextAttemptAt: now + delay, updatedAt: now,
-      })
-      await ctx.scheduler.runAfter(delay, internal.pushNotifications.dispatchDeliveryIntent, { intentId: intent._id })
-      return intent.installationId
-    }
-    await ctx.db.patch(intent._id, {
-      status: args.delivered ? 'delivered' : 'permanent_failure',
-      terminalAt: now,
-      updatedAt: now,
-    })
-    return intent.installationId
-  },
-})
-
-export const expireUnresolvedReceipt = internalMutation({
-  args: { attemptId: v.id('pushDeliveryAttempts') },
-  handler: async (ctx, args) => {
-    const attempt = await ctx.db.get(args.attemptId)
-    if (!attempt || attempt.status !== 'ticket_accepted') return false
-    const intent = await ctx.db.get(attempt.intentId)
-    if (!intent || intent.status !== 'ticket_accepted') return false
-    const now = Date.now()
-    if (now - attempt.createdAt < 20 * 60 * 1_000) return false
-    await ctx.db.patch(attempt._id, {
-      status: 'permanent_failure', resultCategory: 'receipt_expired', resolvedAt: now,
-    })
-    await ctx.db.patch(intent._id, { status: 'expired', terminalAt: now, updatedAt: now })
-    return true
   },
 })
 

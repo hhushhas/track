@@ -1,4 +1,5 @@
 import type { Id } from '../../../../convex/_generated/dataModel';
+import type { Href } from 'expo-router';
 
 export type RepresentedProjectContext = {
   companyId: Id<'companies'>;
@@ -12,7 +13,7 @@ export function representedContextQuery(context: RepresentedProjectContext | nul
 }
 
 export function projectChannelsHref(projectId: Id<'projects'>, context: RepresentedProjectContext | null) {
-  return `/groups?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}`;
+  return `/groups?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}` as Href;
 }
 
 export function channelHref(
@@ -22,7 +23,7 @@ export function channelHref(
   messageId?: Id<'messages'>,
 ) {
   const message = messageId ? `&messageId=${encodeURIComponent(messageId)}` : '';
-  return `/conversation?groupId=${encodeURIComponent(groupId)}&projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}${message}`;
+  return `/conversation?groupId=${encodeURIComponent(groupId)}&projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}${message}` as Href;
 }
 
 export function navigationUnavailableCopy(hasCompanyContext: boolean) {

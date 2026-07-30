@@ -13,7 +13,7 @@ import { usePushNotifications } from '@/lib/push-notifications';
 
 type ConversationMode = 'all' | 'mentions' | 'none';
 type TaskMode = 'important' | 'all' | 'muted';
-type PreviewMode = 'context' | 'hidden';
+type PreviewMode = 'full' | 'context' | 'hidden';
 
 export default function NotificationSettingsScreen() {
   const theme = useTheme();
@@ -25,7 +25,7 @@ export default function NotificationSettingsScreen() {
   const global = settings?.global ?? {
     globalMode: 'all' as const,
     taskMode: 'all' as const,
-    previewMode: 'context' as const,
+    previewMode: 'full' as const,
     soundEnabled: true,
     badgesEnabled: true,
   };
@@ -60,7 +60,7 @@ export default function NotificationSettingsScreen() {
     ? `Enable Track in ${Platform.OS === 'ios' ? 'iOS' : 'Android'} Settings to receive Project activity.`
     : push.permissionState === 'granted' || push.permissionState === 'provisional'
       ? 'Track will notify this device for eligible conversation and task activity.'
-      : 'Get timely mentions, replies, Channel activity, and task changes without including message or task content in the push payload.';
+      : 'Get timely message previews, mentions, replies, Channel activity, and task changes.';
 
   return (
     <ThemedView style={styles.screen}>
@@ -94,6 +94,7 @@ export default function NotificationSettingsScreen() {
         </SheetSection>
 
         <SheetSection title="Privacy">
+          <SheetRow label="Show message and task previews" selected={global.previewMode === 'full'} onPress={() => update({ previewMode: 'full' })} />
           <SheetRow label="Show sender and work context" selected={global.previewMode === 'context'} onPress={() => update({ previewMode: 'context' })} />
           <SheetRow label="Hide all work context" selected={global.previewMode === 'hidden'} onPress={() => update({ previewMode: 'hidden' })} />
         </SheetSection>
@@ -109,7 +110,7 @@ export default function NotificationSettingsScreen() {
         </SheetSection> : null}
 
         <ThemedText style={[styles.footnote, { color: theme.textSecondary }]} type="small">
-          Push delivery is best effort. Track records provider acceptance and receipts, but Apple and Google control final device presentation. Payloads contain only the context level selected above.
+          Push delivery is best effort. Apple and Google control final device presentation. Notification payloads contain the preview level selected above.
         </ThemedText>
       </ScrollView>
     </ThemedView>

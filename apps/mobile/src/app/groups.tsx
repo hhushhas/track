@@ -119,7 +119,7 @@ export default function GroupsScreen() {
               <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
               <View style={styles.notificationCopy}>
                 <ThemedText type="smallBold">Keep up with {projectName}</ThemedText>
-                <ThemedText style={{ color: theme.textSecondary }} type="small">Receive timely Project activity without putting message or task content in the push payload.</ThemedText>
+                <ThemedText style={{ color: theme.textSecondary }} type="small">Get timely Project activity with full, context-only, or hidden previews you control.</ThemedText>
               </View>
               <Pressable accessibilityRole="button" disabled={push.syncing} onPress={() => void push.requestPermission()} style={[styles.enableButton, { backgroundColor: theme.text }]}>
                 <ThemedText style={{ color: theme.background }} type="smallBold">Enable</ThemedText>

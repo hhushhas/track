@@ -157,7 +157,7 @@ describe('Company model authorization and lifecycle', () => {
     await recipientActor.mutation(api.notifications.registerNativeToken, {
       userId: recipient,
       platform: 'ios',
-      token: 'ExponentPushToken[company-global]',
+      token: 'apns-company-global-device-token',
     })
     const firstTask = await asUser(t, owner).mutation(api.tasks.create, {
       projectId,
@@ -183,7 +183,7 @@ describe('Company model authorization and lifecycle', () => {
       userId: recipient,
       projectMemberId: recipientProjectMemberId,
       platform: 'ios',
-      token: 'ExponentPushToken[company-global]',
+      token: 'apns-company-global-device-token',
     })
     expect((await t.query(internal.taskNotifications.collectPushTargets, {
       notificationId: firstNotification!._id,

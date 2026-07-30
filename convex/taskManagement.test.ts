@@ -922,7 +922,7 @@ describe('task management authorization and invariants', () => {
       userId: fixture.staffId,
       projectMemberId: fixture.staffMemberId,
       platform: 'ios',
-      token: 'ExponentPushToken[test-staff]',
+      token: 'apns-test-staff-device-token',
     })
     const created = await owner.mutation(api.tasks.create, {
       projectId: fixture.projectId,

@@ -454,7 +454,7 @@ export default defineSchema({
     userId: v.id('users'),
     globalMode: notificationMode,
     taskMode: v.optional(taskPushNotificationMode),
-    previewMode: v.optional(v.union(v.literal('context'), v.literal('hidden'))),
+    previewMode: v.optional(v.union(v.literal('full'), v.literal('context'), v.literal('hidden'))),
     soundEnabled: v.optional(v.boolean()),
     badgesEnabled: v.optional(v.boolean()),
     createdAt: v.number(),
@@ -561,6 +561,7 @@ export default defineSchema({
     platform: v.union(v.literal('ios'), v.literal('android')),
     environment: pushEnvironment,
     expoPushToken: v.optional(v.string()),
+    nativePushToken: v.optional(v.string()),
     enabled: v.boolean(),
     permissionState: pushPermissionState,
     appVersion: v.optional(v.string()),
@@ -571,7 +572,8 @@ export default defineSchema({
   })
     .index('by_installation_id', ['installationId'])
     .index('by_user', ['userId'])
-    .index('by_token', ['expoPushToken']),
+    .index('by_token', ['expoPushToken'])
+    .index('by_native_token', ['nativePushToken']),
 
   pushDeliveryIntents: defineTable({
     sourceKind: v.union(v.literal('message'), v.literal('task'), v.literal('test')),

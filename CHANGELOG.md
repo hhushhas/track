@@ -12,6 +12,17 @@
   checklist progress, linked context, task discussion, activity history, and
   functional loading, empty, offline, conflict, restricted, archive, and dark
   states.
+- Added direct APNs and Firebase Cloud Messaging delivery for native device
+  tokens, including environment-specific Apple credentials, per-device provider
+  outcomes, bounded retries, invalid-token cleanup, and native Android audible
+  and silent channels.
+- Added full notification previews for message bodies and task titles alongside
+  the existing context-only and hidden choices.
+
+### Changed
+
+- Retained `expo-notifications` for native permission, token, presentation, and
+  tap handling while removing the Expo Push Service from backend delivery.
 
 ### Fixed
 
@@ -21,6 +32,15 @@
 - Kept Channel and thread composers above the native keyboard with Android
   window resizing, iOS keyboard avoidance, keyboard-aware safe-area spacing,
   interactive dismissal, and automatic focus on the latest message.
+
+### Security
+
+- Limited full preview copy to bounded APNs or FCM payloads and active retry
+  intents, then redacted it from terminal delivery records. Operational metrics
+  and provider attempt records remain content-free.
+- Updated Better Auth and forced patched PostCSS and `brace-expansion` releases
+  after the production dependency audit identified account-takeover,
+  source-map traversal, and denial-of-service advisories.
 
 ## 2026-07-23
 

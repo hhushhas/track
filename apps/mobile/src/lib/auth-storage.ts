@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
-import * as SecureStore from 'expo-secure-store';
 
 import { hasUsableStoredAuthSession } from '@/lib/auth-storage-core';
+import { platformStorage } from '@/lib/platform-storage';
 
 const scheme = Array.isArray(Constants.expoConfig?.scheme)
   ? Constants.expoConfig?.scheme[0]
@@ -26,7 +26,7 @@ export function clearStoredAuthSession() {
 
 function readAuthStorage(key: string) {
   try {
-    return SecureStore.getItem(key);
+    return platformStorage.getItem(key);
   } catch {
     return null;
   }
@@ -34,7 +34,7 @@ function readAuthStorage(key: string) {
 
 function writeAuthStorage(key: string, value: string) {
   try {
-    SecureStore.setItem(key, value);
+    platformStorage.setItem(key, value);
   } catch {
     // Best effort cleanup. Better Auth will also clear its in-memory session.
   }

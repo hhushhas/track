@@ -6,7 +6,9 @@ import webPush from 'web-push'
 import { internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import { action, internalAction } from './_generated/server'
-import { classifyExpoFailure, messagePushCopy, taskPushCopy } from './lib/pushDelivery'
+import { sendNativePushBatch } from './lib/nativePush'
+import { messagePushCopy, taskPushCopy } from './lib/pushDelivery'
+import type { NativePushInput } from './lib/pushProviderTypes'
 
 type NativeTarget = {
   actingCompanyId?: string
@@ -15,7 +17,7 @@ type NativeTarget = {
   installationId: Id<'pushInstallations'>
   kind: 'native'
   platform: 'ios' | 'android'
-  previewMode: 'context' | 'hidden'
+  previewMode: 'full' | 'context' | 'hidden'
   projectMemberId?: string
   recipientUserId: Id<'users'>
   soundEnabled: boolean
@@ -37,8 +39,6 @@ type LegacyNativeTarget = Omit<NativeTarget, 'installationId' | 'kind'> & {
   kind: 'legacy_native'
   subscriptionId: Id<'notificationSubscriptions'>
 }
-
-type ExpoTicket = { status?: string; id?: string; message?: string; details?: { error?: string } }
 
 export function resolveMessageNotificationUrls(input: {
   actingCompanyId?: string
@@ -68,75 +68,6 @@ export function resolveMessageNotificationUrls(input: {
     ? `/thread?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}&threadId=${encodeURIComponent(input.channelThreadId)}${mobileContext}&messageId=${encodeURIComponent(input.messageId)}`
     : `/conversation?projectId=${encodeURIComponent(input.projectId)}&groupId=${encodeURIComponent(input.groupId)}${mobileContext}&messageId=${encodeURIComponent(input.messageId)}`
   return { mobileUrl, webUrl }
-}
-
-type ExpoPushInput = {
-  badge?: number
-  body: string
-  data: Record<string, string>
-  soundEnabled: boolean
-  title: string
-  token: string
-}
-
-export async function sendExpoBatch(inputs: ExpoPushInput[]) {
-  if (inputs.length === 0 || inputs.length > 100) throw new Error('expo_batch_size_invalid')
-  if (!process.env.EXPO_PUSH_ACCESS_TOKEN) {
-    return inputs.map(() => ({
-      ok: false as const,
-      category: 'invalid_credentials' as const,
-      permanent: true,
-      latencyMs: 0,
-    }))
-  }
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Accept-Encoding': 'gzip, deflate',
-    'Content-Type': 'application/json',
-  }
-  headers.Authorization = `Bearer ${process.env.EXPO_PUSH_ACCESS_TOKEN}`
-  const startedAt = Date.now()
-  let response: Response
-  try {
-    response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(inputs.map((input) => ({
-          to: input.token,
-          title: input.title,
-          body: input.body,
-          ...(input.badge === undefined ? {} : { badge: input.badge }),
-          data: input.data,
-          sound: input.soundEnabled ? 'default' : null,
-          priority: 'high',
-          ttl: 24 * 60 * 60,
-        }))),
-    })
-  } catch {
-    const failure = classifyExpoFailure({})
-    return inputs.map(() => ({ ok: false as const, ...failure, latencyMs: Date.now() - startedAt }))
-  }
-  const latencyMs = Date.now() - startedAt
-  if (!response.ok) {
-    const failure = classifyExpoFailure({ httpStatus: response.status })
-    return inputs.map(() => ({ ok: false as const, ...failure, latencyMs }))
-  }
-  let payload: { data?: ExpoTicket | ExpoTicket[] }
-  try {
-    payload = await response.json() as { data?: ExpoTicket | ExpoTicket[] }
-  } catch {
-    const failure = classifyExpoFailure({})
-    return inputs.map(() => ({ ok: false as const, ...failure, latencyMs }))
-  }
-  const tickets = Array.isArray(payload.data) ? payload.data : payload.data ? [payload.data] : []
-  return inputs.map((_, index) => {
-    const ticket = tickets[index]
-    if (ticket?.status === 'ok' && ticket.id) return { ok: true as const, ticketId: ticket.id, latencyMs }
-    const failure = ticket
-      ? classifyExpoFailure({ error: ticket.details?.error, httpStatus: 400 })
-      : classifyExpoFailure({})
-    return { ok: false as const, ...failure, latencyMs }
-  })
 }
 
 function webPushDetails() {
@@ -177,6 +108,7 @@ export const deliverMessageNotifications = internalAction({
         senderName: notification.senderName,
         groupName: notification.groupName,
         threadName: notification.channelThreadName,
+        messagePreview: notification.messagePreview,
         previewMode: target.kind === 'web' ? 'context' : target.previewMode,
       })
       if (target.kind === 'web') {
@@ -223,7 +155,7 @@ export const deliverMessageNotifications = internalAction({
         soundEnabled: target.soundEnabled,
         badge: target.badge,
         ttlMs: 24 * 60 * 60 * 1_000,
-        deferDispatch: false,
+        deferDispatch: true,
       })
       if (intentId) nativeIntentIds.push(intentId)
     }))
@@ -263,6 +195,7 @@ export const deliverTaskNotification = internalAction({
         eventKind: notification.eventKind,
         projectName: notification.projectName,
         publicKey: notification.publicKey,
+        taskTitle: notification.taskTitle,
         previewMode: rawTarget.kind === 'web' ? 'context' : rawTarget.previewMode,
       })
       if (rawTarget.kind === 'web') {
@@ -305,7 +238,7 @@ export const deliverTaskNotification = internalAction({
         soundEnabled: rawTarget.soundEnabled,
         badge: rawTarget.badge,
         ttlMs: 24 * 60 * 60 * 1_000,
-        deferDispatch: false,
+        deferDispatch: true,
       })
       if (intentId) nativeIntentIds.push(intentId)
     }))
@@ -325,7 +258,7 @@ export const deliverTaskNotification = internalAction({
 
 async function isIntentStillEligible(ctx: any, row: any) {
   const { intent, installation } = row
-  if (!installation || !installation.enabled || !installation.expoPushToken ||
+  if (!installation || !installation.enabled || !installation.nativePushToken ||
     installation.userId !== intent.recipientUserId ||
     !['granted', 'provisional'].includes(installation.permissionState)) return false
   if (intent.sourceKind === 'test') return true
@@ -358,7 +291,7 @@ export const dispatchDeliveryBatch = internalAction({
   handler: async (ctx, args) => {
     const prepared: Array<{
       attemptNumber: number
-      input: ExpoPushInput
+      input: NativePushInput
       installationId: Id<'pushInstallations'>
       intentId: Id<'pushDeliveryIntents'>
     }> = []
@@ -375,9 +308,12 @@ export const dispatchDeliveryBatch = internalAction({
         installationId: row.installation!._id,
         intentId,
         input: {
-          token: row.installation!.expoPushToken!,
+          token: row.installation!.nativePushToken!,
           title: row.intent.title,
           body: row.intent.body,
+          environment: row.installation!.environment,
+          expiresAt: row.intent.expiresAt,
+          platform: row.installation!.platform,
           soundEnabled: row.intent.soundEnabled,
           badge: row.intent.badge,
           data: {
@@ -389,14 +325,15 @@ export const dispatchDeliveryBatch = internalAction({
       })
     }
     if (!prepared.length) return
-    const results = await sendExpoBatch(prepared.map((item) => item.input))
+    const results = await sendNativePushBatch(prepared.map((item) => item.input))
     await Promise.all(prepared.map(async (item, index) => {
       const result = results[index]
       if (result.ok) {
-        await ctx.runMutation(internal.pushDelivery.recordTicket, {
+        await ctx.runMutation(internal.pushDelivery.recordDelivery, {
           intentId: item.intentId,
           attemptNumber: item.attemptNumber,
-          ticketId: result.ticketId,
+          provider: result.provider,
+          providerMessageId: result.providerMessageId,
           providerLatencyMs: result.latencyMs,
         })
         return
@@ -417,50 +354,39 @@ export const dispatchDeliveryBatch = internalAction({
   },
 })
 
-export const reconcileDeliveryReceipts = internalAction({
+export const verifyNativeProviderConnectivity = internalAction({
   args: {},
-  handler: async (ctx) => {
-    const pending = await ctx.runQuery(internal.pushDelivery.listPendingReceipts, {})
-    if (!pending.length) return
-    const ticketIds = pending.map((row) => row.attempt.providerTicketId!).slice(0, 1_000)
-    const headers: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' }
-    if (process.env.EXPO_PUSH_ACCESS_TOKEN) headers.Authorization = `Bearer ${process.env.EXPO_PUSH_ACCESS_TOKEN}`
-    let response: Response
-    try {
-      response = await fetch('https://exp.host/--/api/v2/push/getReceipts', {
-        method: 'POST', headers, body: JSON.stringify({ ids: ticketIds }),
-      })
-    } catch {
-      return
-    }
-    if (!response.ok) return
-    let payload: { data?: Record<string, { status?: string; details?: { error?: string } }> }
-    try {
-      payload = await response.json() as typeof payload
-    } catch {
-      return
-    }
-    for (const row of pending) {
-      const receipt = payload.data?.[row.attempt.providerTicketId!]
-      if (!receipt) {
-        await ctx.runMutation(internal.pushDelivery.expireUnresolvedReceipt, {
-          attemptId: row.attempt._id,
-        })
-        continue
-      }
-      const delivered = receipt.status === 'ok'
-      const failure = delivered ? null : classifyExpoFailure({ error: receipt.details?.error, httpStatus: 400 })
-      const category = delivered ? 'delivered' : failure!.category
-      const installationId = await ctx.runMutation(internal.pushDelivery.resolveReceipt, {
-        attemptId: row.attempt._id,
-        delivered,
-        category,
-        retryable: Boolean(failure && !failure.permanent),
-      })
-      if (!delivered && category === 'device_not_registered' && installationId) {
-        await ctx.runMutation(internal.notifications.disableInstallation, { installationId, reason: category })
-      }
-    }
+  handler: async () => {
+    const expiresAt = Date.now() + 60_000
+    const configuredEnvironment = process.env.TRACK_PUSH_ENVIRONMENT
+    const environment = configuredEnvironment === 'preview' || configuredEnvironment === 'production'
+      ? configuredEnvironment
+      : 'development'
+    const results = await sendNativePushBatch([
+      {
+        body: '',
+        data: { eventKind: 'connectivity_probe', schemaVersion: '1' },
+        environment,
+        expiresAt,
+        platform: 'ios',
+        soundEnabled: false,
+        title: 'Track',
+        token: '0'.repeat(64),
+      },
+      {
+        body: '',
+        data: { eventKind: 'connectivity_probe', schemaVersion: '1' },
+        environment,
+        expiresAt,
+        platform: 'android',
+        soundEnabled: false,
+        title: 'Track',
+        token: `fcm-connectivity-probe:${'a'.repeat(140)}`,
+      },
+    ])
+    return results.map((result) => result.ok
+      ? { provider: result.provider, outcome: 'unexpected_acceptance' }
+      : { provider: result.provider, outcome: result.category })
   },
 })
 

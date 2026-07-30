@@ -1,7 +1,7 @@
-import * as SecureStore from 'expo-secure-store';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Appearance } from 'react-native';
+import { Appearance, Platform } from 'react-native';
 
+import { platformStorage } from '@/lib/platform-storage';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
   isThemeOverride,
@@ -29,17 +29,21 @@ export function ThemeOverrideProvider({ children }: { children: React.ReactNode 
   const [themeOverride, setThemeOverrideState] = useState<ThemeOverride>('system');
 
   useEffect(() => {
-    void SecureStore.getItemAsync(STORE_KEY).then((saved) => {
+    void platformStorage.getItemAsync(STORE_KEY).then((saved) => {
       const value = isThemeOverride(saved) ? saved : 'system';
       setThemeOverrideState(value);
-      Appearance.setColorScheme(value === 'system' ? 'unspecified' : value);
+      if (Platform.OS !== 'web') {
+        Appearance.setColorScheme(value === 'system' ? 'unspecified' : value);
+      }
     });
   }, []);
 
   const setThemeOverride = useCallback((value: ThemeOverride) => {
     setThemeOverrideState(value);
-    Appearance.setColorScheme(value === 'system' ? 'unspecified' : value);
-    void SecureStore.setItemAsync(STORE_KEY, value);
+    if (Platform.OS !== 'web') {
+      Appearance.setColorScheme(value === 'system' ? 'unspecified' : value);
+    }
+    void platformStorage.setItemAsync(STORE_KEY, value);
   }, []);
 
   const value = useMemo(() => ({

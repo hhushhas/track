@@ -42,11 +42,6 @@ function pushEnvironment(): 'development' | 'preview' | 'production' {
   return __DEV__ ? 'development' : 'production';
 }
 
-function expoProjectId() {
-  return Constants.easConfig?.projectId ??
-    (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
-}
-
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data;
@@ -90,9 +85,16 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       const id = installationId ?? await getPushInstallationId();
       setInstallationId(id);
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
+        await Notifications.setNotificationChannelAsync('track-default', {
           importance: Notifications.AndroidImportance.HIGH,
           name: 'Track notifications',
+          sound: 'default',
+          vibrationPattern: [0, 180, 80, 180],
+        });
+        await Notifications.setNotificationChannelAsync('track-silent', {
+          importance: Notifications.AndroidImportance.HIGH,
+          name: 'Track notifications (silent)',
+          sound: null,
           vibrationPattern: [0, 180, 80, 180],
         });
       }
@@ -114,9 +116,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
         await reportPermission(common);
         return;
       }
-      const projectId = expoProjectId();
-      if (!projectId) throw new Error('expo_project_id_missing');
-      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      const token = await Notifications.getDevicePushTokenAsync();
       await registerInstallation({ ...common, token: token.data });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'notification_sync_failed');
@@ -134,12 +134,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
     const tokenSubscription = Notifications.addPushTokenListener((devicePushToken) => {
       if (!installationId) return;
       void (async () => {
-        const projectId = expoProjectId();
-        if (!projectId) throw new Error('expo_project_id_missing');
-        const [permission, expoToken] = await Promise.all([
-          Notifications.getPermissionsAsync(),
-          Notifications.getExpoPushTokenAsync({ devicePushToken, projectId }),
-        ]);
+        const permission = await Notifications.getPermissionsAsync();
         await registerInstallation({
           userId: trackUserId,
           installationId,
@@ -147,7 +142,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
           environment: pushEnvironment(),
           permissionState: permissionState(permission),
           appVersion: Constants.expoConfig?.version,
-          token: expoToken.data,
+          token: devicePushToken.data,
         });
       })().catch(() => setError('push_token_refresh_failed'));
     });

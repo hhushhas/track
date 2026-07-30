@@ -4,6 +4,7 @@ import type { Id } from './_generated/dataModel'
 import { internalMutation, internalQuery, mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
+import { isExpoPushToken } from './lib/pushTokens'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import { threadsEnabled } from './lib/channelThreadPolicy'
 
@@ -60,6 +61,12 @@ function legacyInstallationId(platform: 'ios' | 'android', token: string) {
   return `legacy:${platform}:${(hash >>> 0).toString(16)}`
 }
 
+function installationTokenValues(token: string) {
+  return isExpoPushToken(token)
+    ? { expoPushToken: token, nativePushToken: undefined }
+    : { expoPushToken: undefined, nativePushToken: token }
+}
+
 export function serverPushEnvironment(): 'development' | 'preview' | 'production' {
   const configured = process.env.TRACK_PUSH_ENVIRONMENT
   return configured === 'preview' || configured === 'production' ? configured : 'development'
@@ -89,7 +96,7 @@ export const getSettings = query({
       global: {
         globalMode: global?.globalMode ?? 'all',
         taskMode: global?.taskMode ?? 'all',
-        previewMode: global?.previewMode ?? 'context',
+        previewMode: global?.previewMode ?? 'full',
         soundEnabled: global?.soundEnabled ?? true,
         badgesEnabled: global?.badgesEnabled ?? true,
       },
@@ -139,7 +146,7 @@ export const setMobilePreferences = mutation({
     userId: v.id('users'),
     conversationMode: v.optional(notificationMode),
     taskMode: v.optional(taskNotificationMode),
-    previewMode: v.optional(v.union(v.literal('context'), v.literal('hidden'))),
+    previewMode: v.optional(v.union(v.literal('full'), v.literal('context'), v.literal('hidden'))),
     soundEnabled: v.optional(v.boolean()),
     badgesEnabled: v.optional(v.boolean()),
   },
@@ -154,7 +161,7 @@ export const setMobilePreferences = mutation({
     const values = {
       globalMode: args.conversationMode ?? existing?.globalMode ?? 'all',
       taskMode: args.taskMode ?? existing?.taskMode ?? 'all',
-      previewMode: args.previewMode ?? existing?.previewMode ?? 'context',
+      previewMode: args.previewMode ?? existing?.previewMode ?? 'full',
       soundEnabled: args.soundEnabled ?? existing?.soundEnabled ?? true,
       badgesEnabled: args.badgesEnabled ?? existing?.badgesEnabled ?? true,
       updatedAt: now,
@@ -332,7 +339,7 @@ export const registerNativeToken = mutation({
       userId: args.userId,
       platform: args.platform,
       environment: serverPushEnvironment(),
-      expoPushToken: token,
+      ...installationTokenValues(token),
       enabled: true,
       permissionState: 'granted' as const,
       lastSeenAt: now,
@@ -394,10 +401,12 @@ export const registerNativeInstallation = mutation({
     if (!token || token.length > 512) throw new Error('push_token_invalid')
     const now = Date.now()
 
-    const tokenOwners = await ctx.db
-      .query('pushInstallations')
-      .withIndex('by_token', (q) => q.eq('expoPushToken', token))
-      .collect()
+    const expoToken = isExpoPushToken(token)
+    const tokenOwners = expoToken
+      ? await ctx.db.query('pushInstallations')
+          .withIndex('by_token', (q) => q.eq('expoPushToken', token)).collect()
+      : await ctx.db.query('pushInstallations')
+          .withIndex('by_native_token', (q) => q.eq('nativePushToken', token)).collect()
     const existing = await ctx.db
       .query('pushInstallations')
       .withIndex('by_installation_id', (q) => q.eq('installationId', installationId))
@@ -406,7 +415,7 @@ export const registerNativeInstallation = mutation({
     for (const tokenOwner of tokenOwners) {
       if (tokenOwner._id === existing?._id) continue
       await ctx.db.patch(tokenOwner._id, {
-        expoPushToken: undefined,
+        ...(expoToken ? { expoPushToken: undefined } : { nativePushToken: undefined }),
         enabled: false,
         failureReason: 'token_rotated',
         updatedAt: now,
@@ -417,7 +426,7 @@ export const registerNativeInstallation = mutation({
       userId: args.userId,
       platform: args.platform,
       environment: args.environment,
-      expoPushToken: token,
+      ...installationTokenValues(token),
       enabled: args.permissionState === 'granted' || args.permissionState === 'provisional',
       permissionState: args.permissionState,
       appVersion: args.appVersion,
@@ -466,7 +475,7 @@ export const reportNativePermission = mutation({
       .withIndex('by_installation_id', (q) => q.eq('installationId', installationId))
       .unique()
     const enabled = (args.permissionState === 'granted' || args.permissionState === 'provisional') &&
-      Boolean(existing?.expoPushToken)
+      Boolean(existing?.nativePushToken)
     const values = {
       userId: args.userId,
       platform: args.platform,
@@ -505,7 +514,8 @@ export const detachNativeInstallation = mutation({
       .collect()
     for (const subscription of legacySubscriptions) {
       if (subscription.platform === 'web' || !subscription.enabled) continue
-      const matchesToken = subscription.tokenOrEndpoint === existing.expoPushToken
+      const matchesToken = subscription.tokenOrEndpoint ===
+        (existing.nativePushToken ?? existing.expoPushToken)
       const matchesLegacyInstallation = legacyInstallationId(
         subscription.platform,
         subscription.tokenOrEndpoint,
@@ -543,7 +553,7 @@ export const getNativeStatus = query({
       lastSeenAt: installation.lastSeenAt,
       permissionState: installation.permissionState,
       platform: installation.platform,
-      registered: Boolean(installation.expoPushToken),
+      registered: Boolean(installation.nativePushToken),
     }
   },
 })
@@ -725,23 +735,24 @@ export const collectMessageNotificationTargets = internalQuery({
           .filter((installation) =>
             installation.enabled &&
             installation.environment === pushEnvironment &&
-            Boolean(installation.expoPushToken) &&
+            Boolean(installation.nativePushToken) &&
             (installation.permissionState === 'granted' || installation.permissionState === 'provisional'),
           )
           .map((installation) => ({
             kind: 'native' as const,
             installationId: installation._id,
             platform: installation.platform,
-            tokenOrEndpoint: installation.expoPushToken!,
+            tokenOrEndpoint: installation.nativePushToken!,
             actingCompanyId,
             projectMemberId,
             recipientUserId: membership.userId,
-            previewMode: globalSettings?.previewMode ?? 'context',
+            previewMode: globalSettings?.previewMode ?? 'full',
             soundEnabled: globalSettings?.soundEnabled ?? true,
             badge: globalSettings?.badgesEnabled === false ? undefined : badge,
             eventKind: mentioned ? 'mention' : directReply ? 'direct_reply' : message.channelThreadId ? 'thread_reply' : 'message',
           }))
-        const installationTokens = new Set(installations.map((installation) => installation.expoPushToken))
+        const installationTokens = new Set(installations.flatMap((installation) =>
+          [installation.nativePushToken, installation.expoPushToken].filter(Boolean)))
         const legacyNativeTargets = subscriptions
           .filter((subscription) => subscription.enabled && subscription.platform !== 'web' &&
             !installationTokens.has(subscription.tokenOrEndpoint) &&
@@ -783,6 +794,7 @@ export const collectMessageNotificationTargets = internalQuery({
       projectId: message.projectId,
       projectName: project.name,
       senderName: author?.displayName ?? 'Track',
+      messagePreview: message.body || message.notificationPreview || 'Sent an attachment.',
       targets: Array.from(uniqueTargets.values()),
       url: message.channelThreadId
         ? `/workspace/projects/${message.projectId}/groups/${message.groupId}/threads/${message.channelThreadId}#message-${message._id}`
@@ -818,17 +830,18 @@ export const collectUserNotificationTargets = internalQuery({
       ...installations
         .filter((installation) => installation.enabled &&
           installation.environment === serverPushEnvironment() &&
-          Boolean(installation.expoPushToken))
+          Boolean(installation.nativePushToken))
         .map((installation) => ({
           kind: 'native' as const,
           installationId: installation._id,
           platform: installation.platform,
-          tokenOrEndpoint: installation.expoPushToken!,
+          tokenOrEndpoint: installation.nativePushToken!,
           soundEnabled: settings?.soundEnabled ?? true,
         })),
       ...subscriptions
         .filter((subscription) => subscription.enabled && subscription.platform !== 'web' &&
-          !installations.some((installation) => installation.expoPushToken === subscription.tokenOrEndpoint))
+          !installations.some((installation) =>
+            (installation.nativePushToken ?? installation.expoPushToken) === subscription.tokenOrEndpoint))
         .map((subscription) => ({
           kind: 'legacy_native' as const,
           subscriptionId: subscription._id,
@@ -860,13 +873,14 @@ export const disableInstallation = internalMutation({
   handler: async (ctx, args) => {
     const installation = await ctx.db.get(args.installationId)
     const now = Date.now()
-    if (installation?.userId && installation.expoPushToken) {
+    const pushToken = installation?.nativePushToken ?? installation?.expoPushToken
+    if (installation?.userId && pushToken) {
       const subscriptions = await ctx.db.query('notificationSubscriptions')
         .withIndex('by_user', (q) => q.eq('userId', installation.userId!))
         .collect()
       for (const subscription of subscriptions) {
         if (subscription.platform === 'web' || !subscription.enabled) continue
-        const matchesToken = subscription.tokenOrEndpoint === installation.expoPushToken
+        const matchesToken = subscription.tokenOrEndpoint === pushToken
         const matchesLegacyInstallation = legacyInstallationId(
           subscription.platform,
           subscription.tokenOrEndpoint,
@@ -878,6 +892,7 @@ export const disableInstallation = internalMutation({
     }
     await ctx.db.patch(args.installationId, {
       expoPushToken: undefined,
+      nativePushToken: undefined,
       enabled: false,
       failureReason: args.reason.slice(0, 80),
       updatedAt: now,
@@ -899,7 +914,7 @@ export const migrateLegacyNativeSubscription = internalMutation({
       userId: subscription.userId,
       platform: subscription.platform,
       environment: serverPushEnvironment(),
-      expoPushToken: subscription.tokenOrEndpoint,
+      ...installationTokenValues(subscription.tokenOrEndpoint),
       enabled: true,
       permissionState: 'granted' as const,
       lastSeenAt: now,
