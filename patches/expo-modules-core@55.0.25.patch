@@ -1,0 +1,10 @@
+diff --git a/android/cmake/main.cmake b/android/cmake/main.cmake
+index 911f22659f006da09ad95471630eaff48e633e03..1db06b47f7320432db4c2c84e8797e768b3734a6 100644
+--- a/android/cmake/main.cmake
++++ b/android/cmake/main.cmake
+@@ -81,4 +81,4 @@ if (REACT_NATIVE_WORKLETS_DIR)
+     worklets
+     PROPERTIES
+     IMPORTED_LOCATION
+-    "${REACT_NATIVE_WORKLETS_DIR}/android/build/intermediates/cmake/${BUILD_TYPE}/obj/${ANDROID_ABI}/libworklets.so"
++    "${REACT_NATIVE_WORKLETS_DIR}/android/build/intermediates/prefab_package/${BUILD_TYPE}/prefab/modules/worklets/libs/android.${ANDROID_ABI}/libworklets.so"

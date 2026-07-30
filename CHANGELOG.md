@@ -32,6 +32,10 @@
 - Kept Channel and thread composers above the native keyboard with Android
   window resizing, iOS keyboard avoidance, keyboard-aware safe-area spacing,
   interactive dismissal, and automatic focus on the latest message.
+- Preserved the legacy CommonJS API required by React Native codegen while
+  retaining patched `brace-expansion` limits, and linked Reanimated and Expo
+  Modules Core to the deterministic Worklets prefab output used by current
+  Android Gradle builds.
 
 ### Security
 
