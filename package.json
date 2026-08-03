@@ -29,7 +29,7 @@
   "devDependencies": {
     "@types/node": "^25.9.5",
     "@types/web-push": "^3.6.4",
-    "convex": "^1.42.1",
+    "convex": "^1.42.3",
     "convex-test": "0.0.54",
     "oxlint": "^1.73.0",
     "turbo": "^2.10.4",
@@ -40,16 +40,16 @@
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.5",
     "@convex-dev/rate-limiter": "^0.3.2",
-    "@openrouter/ai-sdk-provider": "^2.10.0",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@track/shared": "workspace:*",
-    "@upstash/box": "0.4.4",
-    "ai": "^6.0.223",
+    "@upstash/box": "0.6.0",
+    "ai": "^7.0.44",
     "better-auth": "1.6.25",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "firebase-admin": "14.2.0",
-    "hono": "4.12.29",
+    "hono": "4.12.32",
     "jose": "6.2.5",
-    "react": "19.2.7",
+    "react": "19.2.8",
     "web-push": "^3.6.7"
   }
 }
