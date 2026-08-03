@@ -1,7 +1,14 @@
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { Radius } from '@/constants/theme';
 
+/**
+ * Fixed identity colours, not theme colours: an avatar keeps the same hue in
+ * light and dark so a Project or Company stays recognisable. Each pair is
+ * self-contained, so its contrast (all above 4.8:1) holds in both themes.
+ * Colour is never the only signal — the initial and the adjacent name carry it.
+ */
 const PALETTE = [
   { bg: '#5b6d4a', fg: '#e8f0e3' }, // olive
   { bg: '#7a4a3a', fg: '#f5e8e4' }, // clay
@@ -24,11 +31,14 @@ type Props = {
 
 export function ColoredAvatar({ label, seed, size = 40, shape = 'circle' }: Props) {
   const { bg, fg } = hashPalette(seed ?? label);
-  const radius = shape === 'circle' ? size / 2 : size * 0.22;
+  const radius = shape === 'circle' ? Radius.pill : Radius.medium;
   const fontSize = size * 0.38;
 
   return (
-    <View style={[styles.base, { backgroundColor: bg, borderRadius: radius, width: size, height: size }]}>
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.base, { backgroundColor: bg, borderRadius: radius, width: size, height: size }]}>
       <ThemedText style={[styles.letter, { color: fg, fontSize, lineHeight: size }]}>
         {label.slice(0, 1).toUpperCase()}
       </ThemedText>

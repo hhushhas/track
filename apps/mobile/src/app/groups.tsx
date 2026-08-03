@@ -1,6 +1,5 @@
-import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
 import { useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
@@ -9,10 +8,10 @@ import { useTrackUser } from '@/contexts/track-user-context';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
-import { SkeletonRow } from '@/components/skeleton-row';
+import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
@@ -34,7 +33,6 @@ export default function GroupsScreen() {
   const { trackUserId } = useTrackUser();
   const push = usePushNotifications();
   const { projectId, companyId, membershipId, archive } = useLocalSearchParams<{ projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
-  const [refreshing, setRefreshing] = useState(false);
 
   const projects = useQuery(
     api.mobile.listProjects,
@@ -60,18 +58,13 @@ export default function GroupsScreen() {
   const projectName = (projects as { project: Doc<'projects'> }[] | undefined)
     ?.find((p) => p.project._id === projectId)?.project.name ?? 'Channels';
 
-  function onRefresh() {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }
-
   function navigate(item: MobileGroup) {
     hapticLight();
     router.push(channelHref(projectId as Id<'projects'>, item.group._id, companyId && membershipId ? {
       archived: archive === '1',
       companyId: companyId as Id<'companies'>,
       membershipId: membershipId as Id<'projectMembers'>,
-    } : null));
+    } : null) as never);
   }
 
   return (
@@ -101,12 +94,7 @@ export default function GroupsScreen() {
       {navigation && !navigation.available ? <View style={styles.list}><EmptyState icon="shield-lock-outline" title="Project unavailable" body={navigationUnavailableCopy(Boolean(companyId))} /></View> : null}
 
       {!navigation || navigation.available && groups === undefined ? (
-        <View style={styles.list}>
-          <SkeletonRow />
-          <SkeletonRow />
-          <SkeletonRow />
-          <SkeletonRow />
-        </View>
+        <SkeletonList label="Loading Channels" />
       ) : navigation.available ? (
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
@@ -118,19 +106,18 @@ export default function GroupsScreen() {
             <View style={[styles.notificationCard, { backgroundColor: theme.backgroundElement }]}>
               <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
               <View style={styles.notificationCopy}>
-                <ThemedText type="smallBold">Keep up with {projectName}</ThemedText>
-                <ThemedText style={{ color: theme.textSecondary }} type="small">Get timely Project activity with full, context-only, or hidden previews you control.</ThemedText>
+                <ThemedText type="title">Keep up with {projectName}</ThemedText>
+                <ThemedText themeColor="textSecondary" type="caption">
+                  Get timely Project activity with full, context-only, or hidden previews you control.
+                </ThemedText>
               </View>
               <Pressable accessibilityRole="button" disabled={push.syncing} onPress={() => void push.requestPermission()} style={[styles.enableButton, { backgroundColor: theme.text }]}>
-                <ThemedText style={{ color: theme.background }} type="smallBold">Enable</ThemedText>
+                <ThemedText style={{ color: theme.background }} type="title">Enable</ThemedText>
               </Pressable>
             </View>
           ) : null}
           ListEmptyComponent={
             <EmptyState icon="forum-outline" title="No Channels visible" body="Only Channels explicitly granted to this represented membership appear here." />
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} colors={[theme.accent]} />
           }
         />
       ) : null}
@@ -141,52 +128,56 @@ export default function GroupsScreen() {
 function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable
-      android_ripple={{ color: theme.backgroundSelected }}
-      hitSlop={4}
-      onPress={() => { hapticLight(); onPress(); }}
-      style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
-      <ColoredAvatar label={item.group.name} seed={item.group._id} shape="rounded" size={44} />
-      <View style={styles.rowBody}>
-        <ThemedText type="smallBold">{item.group.name}</ThemedText>
-        <ThemedText numberOfLines={1} style={{ color: theme.textSecondary }} type="code">
-          {item.lastMessage?.body || 'No messages yet'}
-          {item.group.status === 'archived' ? ' · read-only archive' : ''}
-        </ThemedText>
-      </View>
-      {item.unreadCount > 0 ? (
-        <View style={[styles.badge, { backgroundColor: theme.accent }]}>
-          <ThemedText style={styles.badgeText}>
-            {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+    // See projects.tsx: a themed fill and a ripple on the same pressable share
+    // one Android drawable that never repaints on a theme change.
+    <View style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
+      <Pressable
+        android_ripple={{ color: theme.backgroundSelected }}
+        hitSlop={4}
+        onPress={() => { hapticLight(); onPress(); }}
+        style={styles.rowPressable}>
+        <ColoredAvatar label={item.group.name} seed={item.group._id} shape="rounded" size={44} />
+        <View style={styles.rowBody}>
+          <ThemedText numberOfLines={1} type="title">{item.group.name}</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
+            {item.lastMessage?.body || 'No messages yet'}
+            {item.group.status === 'archived' ? ' · read-only archive' : ''}
           </ThemedText>
         </View>
-      ) : (
-        <PlatformIcon color={theme.hairline} name="chevron-right" size={18} />
-      )}
-    </Pressable>
+        {item.unreadCount > 0 ? (
+          <View
+            accessibilityLabel={`${item.unreadCount} unread`}
+            style={[styles.badge, { backgroundColor: theme.accent }]}>
+            <ThemedText style={styles.badgeText} type="captionBold">
+              {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+            </ThemedText>
+          </View>
+        ) : (
+          <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
+        )}
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   badge: {
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: Radius.pill,
     minWidth: 22,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
+  // The accent is the same yellow in both themes, so the badge ink is fixed
+  // to the light-theme stone that clears AA against it (9.18:1).
   badgeText: {
-    color: '#1b1917',
-    fontFamily: 'ui-monospace',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
+    color: Colors.light.text,
   },
   enableButton: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     justifyContent: 'center',
-    minHeight: 38,
+    minHeight: TouchTarget,
     paddingHorizontal: Spacing.three,
   },
   list: {
@@ -196,7 +187,7 @@ const styles = StyleSheet.create({
   },
   notificationCard: {
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: Radius.large,
     flexDirection: 'row',
     gap: Spacing.three,
     marginBottom: Spacing.two,
@@ -208,24 +199,26 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     alignItems: 'center',
-    height: 44,
+    height: TouchTarget,
     justifyContent: 'center',
-    width: 44,
+    width: TouchTarget,
   },
   row: {
-    alignItems: 'center',
-    borderRadius: 10,
-    flexDirection: 'row',
-    gap: Spacing.three,
-    minHeight: 64,
+    borderRadius: Radius.large,
     overflow: 'hidden',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
   },
   rowBody: {
     flex: 1,
     gap: 2,
     minWidth: 0,
+  },
+  rowPressable: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.three,
+    minHeight: 64,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
   },
   screen: {
     flex: 1,

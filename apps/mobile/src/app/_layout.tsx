@@ -8,6 +8,7 @@ import * as SystemUI from 'expo-system-ui';
 import { useEffect, type ComponentProps } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { authClient } from '@/lib/auth-client';
 import { convexClient } from '@/lib/convex-client';
@@ -49,9 +50,11 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeOverrideProvider>
-        <AppLayout />
-      </ThemeOverrideProvider>
+      <KeyboardProvider>
+        <ThemeOverrideProvider>
+          <AppLayout />
+        </ThemeOverrideProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

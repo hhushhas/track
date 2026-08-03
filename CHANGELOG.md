@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-03
+
+### Added
+
+- Released mobile 1.2.0 with the redesigned Project, Channel, task board, and
+  task-detail experience, including task movement, richer assignment and due
+  date controls, attachment capture, voice notes, and mention suggestions.
+
+### Fixed
+
+- Aligned the production task API with mobile board movement and shipped the
+  linked message cleanup and direct native-notification indexes and functions.
+- Verified the release manifests target Android API 36 and include the iOS
+  camera, photo-library, microphone, push-notification, and Sign in with Apple
+  declarations used by the app.
+
 ## 2026-07-30
 
 ### Added

@@ -30,19 +30,28 @@ export function ThemeOverrideProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     void platformStorage.getItemAsync(STORE_KEY).then((saved) => {
-      const value = isThemeOverride(saved) ? saved : 'system';
-      setThemeOverrideState(value);
-      if (Platform.OS !== 'web') {
-        Appearance.setColorScheme(value === 'system' ? 'unspecified' : value);
-      }
+      setThemeOverrideState(isThemeOverride(saved) ? saved : 'system');
     });
   }, []);
 
+  /**
+   * Native chrome — keyboards, alerts, text selection, scroll indicators — has
+   * to follow the app override, so it is pushed to `Appearance`. It is pushed
+   * from one effect rather than from the setter and the restore path, so the
+   * two cannot disagree about ordering.
+   *
+   * `Appearance.setColorScheme` mutates the cached scheme without emitting a
+   * `change` event, so it never notifies `useColorScheme` subscribers. React
+   * state stays the single source of truth for every colour Track draws itself.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      Appearance.setColorScheme(themeOverride === 'system' ? 'unspecified' : themeOverride);
+    }
+  }, [themeOverride]);
+
   const setThemeOverride = useCallback((value: ThemeOverride) => {
     setThemeOverrideState(value);
-    if (Platform.OS !== 'web') {
-      Appearance.setColorScheme(value === 'system' ? 'unspecified' : value);
-    }
     void platformStorage.setItemAsync(STORE_KEY, value);
   }, []);
 

@@ -7,9 +7,11 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import { DateField } from '@/components/date-field';
 import { EmptyState } from '@/components/empty-state';
 import { OptionsSheet, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
+import type { TaskMoveInput } from '@/components/task-board';
 import {
   SuggestionInbox,
   TaskCollection,
@@ -17,15 +19,10 @@ import {
   type MobileSuggestionView,
   type MobileTaskView,
 } from '@/components/task-list-content';
-import {
-  TaskAction,
-  TaskSegmentedControl,
-  TaskStateBanner,
-  TaskStatusPill,
-} from '@/components/task-ui';
+import { TaskAction, TaskSegmentedControl, TaskStateBanner } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
@@ -111,16 +108,18 @@ export default function TasksScreen() {
     ...queryIdentity,
   } : 'skip') as MobileSuggestionView[] | undefined;
   const createTask = useMutation(api.tasks.create);
+  const moveTask = useMutation(api.tasks.moveTask);
   const acceptSuggestion = useMutation(api.taskSuggestions.accept);
   const dismissSuggestion = useMutation(api.taskSuggestions.dismiss);
   const hideSuggestion = useMutation(api.taskSuggestions.hide);
   const linkSuggestion = useMutation(api.taskSuggestions.linkToExisting);
   const [createOpen, setCreateOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<MobileTaskView | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('none');
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState<string | null>(null);
   const [assigneeId, setAssigneeId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -135,21 +134,40 @@ export default function TasksScreen() {
     item.member._id === assigneeId,
   ) ? assigneeId : '';
 
-  const grouped = useMemo(() => selectedBoard
-    ? groupMobileTasksByState(selectedBoard.states.map((state) => state._id), tasks ?? [])
-    : [], [selectedBoard, tasks]);
-  const counts = useMemo(() => {
-    const result: Record<string, number> = {};
-    for (const item of tasks ?? []) {
-      const stateId = item.state?._id;
-      if (stateId) result[stateId] = (result[stateId] ?? 0) + 1;
-    }
-    return result;
-  }, [tasks]);
+  const columns = useMemo(() => {
+    if (!selectedBoard) return [];
+    const grouped = groupMobileTasksByState(
+      selectedBoard.states.map((state) => state._id),
+      tasks ?? [],
+    );
+    return selectedBoard.states.map((state, index) => ({
+      state,
+      tasks: grouped[index].tasks,
+    }));
+  }, [selectedBoard, tasks]);
+  const statusStates = boards?.find((item) =>
+    item.board._id === statusTarget?.task.boardId,
+  )?.states ?? [];
 
   function setPrimaryTab(next: PrimaryTaskTab) {
     setTab(next);
     setError('');
+  }
+
+  async function move(input: TaskMoveInput) {
+    await moveTask({ ...input, ...queryIdentity });
+    hapticMedium();
+  }
+
+  function moveToState(state: Doc<'taskWorkflowStates'>) {
+    const item = statusTarget;
+    setStatusTarget(null);
+    if (!item || state._id === item.task.workflowStateId) return;
+    void move({
+      expectedRevision: item.task.revision,
+      taskId: item.task._id,
+      workflowStateId: state._id,
+    }).catch((failure) => setError(readableError(failure)));
   }
 
   function assigneeName(item: MobileTaskView) {
@@ -169,7 +187,7 @@ export default function TasksScreen() {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
-        dueDate: dueDate.trim() || undefined,
+        dueDate: dueDate ?? undefined,
         assigneeProjectMemberId: selectedCreateAssigneeId
           ? selectedCreateAssigneeId as Id<'projectMembers'>
           : undefined,
@@ -181,7 +199,7 @@ export default function TasksScreen() {
       setTitle('');
       setDescription('');
       setPriority('none');
-      setDueDate('');
+      setDueDate(null);
       setAssigneeId('');
       router.push(taskDetailHref(project, result.publicKey, identity));
     } catch (failure) {
@@ -235,12 +253,87 @@ export default function TasksScreen() {
     );
   }
 
+  const heading = (
+    <>
+      {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
+      {readOnly ? <TaskStateBanner icon="shield-lock-outline" message="Read-only Company exit archive" /> : null}
+      {tab !== 'inbox' ? (
+        <>
+          <View style={styles.contextHeading}>
+            <View style={styles.contextTitle}>
+              <ThemedText numberOfLines={1} type="subtitle">
+                {tab === 'board'
+                  ? selectedBoard?.board.name ?? 'Project tasks'
+                  : tab === 'my' ? 'My tasks' : 'All project tasks'}
+              </ThemedText>
+              <ThemedText themeColor="textSecondary" type="small">
+                {tasks ? `${tasks.length} task${tasks.length === 1 ? '' : 's'}` : 'Loading work…'}
+              </ThemedText>
+            </View>
+            {tab === 'board' && boards && boards.length > 1 ? (
+              <Pressable
+                accessibilityHint="Opens the list of boards"
+                accessibilityLabel={`Board: ${selectedBoard?.board.name ?? 'none'}`}
+                accessibilityRole="button"
+                onPress={() => {
+                  hapticLight();
+                  setBoardOpen(true);
+                }}
+                style={[styles.boardPicker, {
+                  backgroundColor: theme.backgroundElement,
+                  borderColor: theme.hairline,
+                }]}>
+                <PlatformIcon color={theme.textSecondary} name="view-board" size={18} />
+                <ThemedText numberOfLines={1} style={styles.boardPickerLabel} type="label">
+                  {selectedBoard?.board.name ?? 'Choose board'}
+                </ThemedText>
+                <PlatformIcon color={theme.textSecondary} name="selector" size={18} />
+              </Pressable>
+            ) : null}
+          </View>
+          <TaskSegmentedControl onChange={setPrimaryTab} segments={primaryTabs} value={tab} />
+        </>
+      ) : (
+        <View style={styles.inboxHeading}>
+          <ThemedText type="subtitle">Conversation suggestions</ThemedText>
+          <ThemedText themeColor="textSecondary" type="small">
+            Review grounded work detected from the conversations you can access.
+          </ThemedText>
+        </View>
+      )}
+      {error ? (
+        <TaskStateBanner
+          action={{ label: 'Dismiss', onPress: () => setError('') }}
+          icon="refresh"
+          message={error}
+          tone="danger"
+        />
+      ) : null}
+    </>
+  );
+
+  const collection = (
+    <TaskCollection
+      assigneeName={assigneeName}
+      columns={columns}
+      onCreate={() => setCreateOpen(true)}
+      onMove={move}
+      onOpen={(item) => router.push(taskDetailHref(project, item.task.publicKey, identity))}
+      onStatusPress={setStatusTarget}
+      onViewAll={() => setTab('all')}
+      readOnly={readOnly}
+      selectedBoard={selectedBoard}
+      tab={tab === 'inbox' ? 'all' : tab}
+      tasks={boards === undefined ? undefined : tasks}
+    />
+  );
+
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
         title: tab === 'inbox' ? 'Task inbox' : 'Tasks',
-        headerLargeTitle: Platform.OS === 'ios',
-        headerTransparent: Platform.OS === 'ios',
+        headerLargeTitle: Platform.OS === 'ios' && tab !== 'board',
+        headerTransparent: Platform.OS === 'ios' && tab !== 'board',
         headerBlurEffect: 'systemMaterial',
         headerRight: () => (
           <View style={styles.headerActions}>
@@ -264,114 +357,63 @@ export default function TasksScreen() {
         ),
       }} />
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        contentInsetAdjustmentBehavior="automatic"
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled">
-        {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
-        {readOnly ? <TaskStateBanner icon="shield-lock-outline" message="Read-only Company exit archive" /> : null}
-        {tab !== 'inbox' ? (
-          <>
-            <View style={styles.contextHeading}>
-              <View style={styles.contextTitle}>
-                <ThemedText numberOfLines={1} type="subtitle">
-                  {tab === 'board'
-                    ? selectedBoard?.board.name ?? 'Project tasks'
-                    : tab === 'my' ? 'My tasks' : 'All project tasks'}
-                </ThemedText>
-                <ThemedText style={{ color: theme.textSecondary }} type="small">
-                  {tasks ? `${tasks.length} task${tasks.length === 1 ? '' : 's'}` : 'Loading work…'}
-                </ThemedText>
-              </View>
-              {tab === 'board' && boards && boards.length > 1 ? (
-                <Pressable
-                  accessibilityLabel="Change board"
-                  onPress={() => setBoardOpen(true)}
-                  style={[styles.boardPicker, { backgroundColor: theme.backgroundElement }]}>
-                  <PlatformIcon color={theme.textSecondary} name="chevron-down" size={18} />
-                </Pressable>
-              ) : null}
-            </View>
-            <TaskSegmentedControl onChange={setPrimaryTab} segments={primaryTabs} value={tab} />
-            {tab === 'board' && tasks?.length ? (
-              <ScrollView
-                contentContainerStyle={styles.summary}
-                horizontal
-                showsHorizontalScrollIndicator={false}>
-                {selectedBoard?.states.map((state) => (
-                  <View key={state._id} style={styles.summaryItem}>
-                    <TaskStatusPill category={state.category} label={state.name} />
-                    <ThemedText style={{ color: theme.textSecondary }} type="code">{counts[state._id] ?? 0}</ThemedText>
-                  </View>
-                ))}
-              </ScrollView>
-            ) : null}
-          </>
-        ) : (
-          <View style={styles.inboxHeading}>
-            <ThemedText type="subtitle">Conversation suggestions</ThemedText>
-            <ThemedText style={{ color: theme.textSecondary }} type="small">
-              Review grounded work detected from the conversations you can access.
-            </ThemedText>
-          </View>
-        )}
-
-        {error ? <TaskStateBanner action={{ label: 'Dismiss', onPress: () => setError('') }} icon="refresh" message={error} tone="danger" /> : null}
-
-        {tab === 'inbox'
-          ? <SuggestionInbox
-              onAccept={accept}
-              onDismiss={(row) => void runSuggestion(() => dismissSuggestion({
-                suggestionId: row.suggestion._id,
-                reason: 'not_actionable',
-                idempotencyKey: `${Date.now()}-dismiss`,
-                ...queryIdentity,
-              }))}
-              onHide={(row) => void runSuggestion(() => hideSuggestion({
-                suggestionId: row.suggestion._id,
-                ...queryIdentity,
-              }))}
-              onLink={(row) => row.possibleDuplicateTask && void runSuggestion(() => linkSuggestion({
-                suggestionId: row.suggestion._id,
-                taskId: row.possibleDuplicateTask!._id,
-                idempotencyKey: `${Date.now()}-link`,
-                ...queryIdentity,
-              }))}
-              readOnly={readOnly}
-              suggestions={suggestions}
-            />
-          : boards === undefined
-            ? <TaskCollection
-                assigneeName={assigneeName}
-                counts={counts}
-                grouped={grouped}
-                onCreate={() => setCreateOpen(true)}
-                onOpen={(item) => router.push(taskDetailHref(project, item.task.publicKey, identity))}
-                onViewAll={() => setTab('all')}
+      {tab === 'board' ? (
+        <View style={styles.boardScreen}>
+          {heading}
+          {collection}
+        </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.content}
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled">
+          {heading}
+          {tab === 'inbox'
+            ? <SuggestionInbox
+                onAccept={accept}
+                onDismiss={(row) => void runSuggestion(() => dismissSuggestion({
+                  suggestionId: row.suggestion._id,
+                  reason: 'not_actionable',
+                  idempotencyKey: `${Date.now()}-dismiss`,
+                  ...queryIdentity,
+                }))}
+                onHide={(row) => void runSuggestion(() => hideSuggestion({
+                  suggestionId: row.suggestion._id,
+                  ...queryIdentity,
+                }))}
+                onLink={(row) => row.possibleDuplicateTask && void runSuggestion(() => linkSuggestion({
+                  suggestionId: row.suggestion._id,
+                  taskId: row.possibleDuplicateTask!._id,
+                  idempotencyKey: `${Date.now()}-link`,
+                  ...queryIdentity,
+                }))}
                 readOnly={readOnly}
-                selectedBoard={selectedBoard}
-                tab={tab}
+                suggestions={suggestions}
               />
-            : <TaskCollection
-                assigneeName={assigneeName}
-                counts={counts}
-                grouped={grouped}
-                onCreate={() => setCreateOpen(true)}
-                onOpen={(item) => router.push(taskDetailHref(project, item.task.publicKey, identity))}
-                onViewAll={() => setTab('all')}
-                readOnly={readOnly}
-                selectedBoard={selectedBoard}
-                tab={tab}
-                tasks={tasks}
-              />}
-      </ScrollView>
+            : collection}
+        </ScrollView>
+      )}
+
+      <OptionsSheet onClose={() => setStatusTarget(null)} title="Move to" visible={Boolean(statusTarget)}>
+        <SheetSection title={statusTarget?.task.title}>
+          {statusStates.map((state) => (
+            <SheetRow
+              icon={state.category === 'completed' ? 'check-circle' : 'circle-outline'}
+              key={state._id}
+              label={state.name}
+              onPress={() => moveToState(state)}
+              selected={state._id === statusTarget?.task.workflowStateId}
+            />
+          ))}
+        </SheetSection>
+      </OptionsSheet>
 
       <OptionsSheet onClose={() => setBoardOpen(false)} title="Choose board" visible={boardOpen}>
         <SheetSection>
           {boards?.map((item) => (
             <SheetRow
-              icon="view-column"
+              icon="view-board"
               key={item.board._id}
               label={item.board.name}
               selected={item.board._id === selectedBoard?.board._id}
@@ -387,18 +429,18 @@ export default function TasksScreen() {
       <OptionsSheet onClose={() => setCreateOpen(false)} title="Create task" visible={createOpen}>
         <View style={styles.sheetIntro}>
           <ThemedText type="subtitle">Turn work into a clear next step</ThemedText>
-          <ThemedText style={{ color: theme.textSecondary }} type="small">
+          <ThemedText themeColor="textSecondary" type="small">
             Keep the title actionable; the details can evolve with the conversation.
           </ThemedText>
         </View>
         <SheetInput label="Title" onChangeText={setTitle} value={title} />
         <SheetInput label="Description" multiline onChangeText={setDescription} value={description} />
-        <SheetInput label="Due date (YYYY-MM-DD)" onChangeText={setDueDate} value={dueDate} />
+        <DateField onChange={setDueDate} value={dueDate} />
         {boards && boards.length > 1 ? (
           <SheetSection title="Board">
             {boards.map((item) => (
               <SheetRow
-                icon="view-column"
+                icon="view-board"
                 key={item.board._id}
                 label={item.board.name}
                 selected={item.board._id === selectedBoard?.board._id}
@@ -430,7 +472,7 @@ export default function TasksScreen() {
             />
           ))}
         </SheetSection>
-        {error ? <ThemedText style={{ color: theme.danger }} type="small">{error}</ThemedText> : null}
+        {error ? <ThemedText themeColor="danger" type="small">{error}</ThemedText> : null}
         <TaskAction disabled={busy || !title.trim()} label={busy ? 'Creating…' : 'Create task'} onPress={() => void create()} primary />
       </OptionsSheet>
     </ThemedView>
@@ -438,7 +480,18 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  boardPicker: { alignItems: 'center', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
+  boardPicker: {
+    alignItems: 'center',
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: Spacing.two,
+    maxWidth: 190,
+    minHeight: 38,
+    paddingHorizontal: Spacing.three,
+  },
+  boardPickerLabel: { flexShrink: 1 },
+  boardScreen: { flex: 1, gap: Spacing.three, padding: Spacing.three },
   content: { gap: Spacing.three, padding: Spacing.three, paddingBottom: Spacing.six },
   contextHeading: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
   contextTitle: { flex: 1, gap: 2 },
@@ -447,6 +500,4 @@ const styles = StyleSheet.create({
   inboxHeading: { gap: Spacing.one },
   screen: { flex: 1 },
   sheetIntro: { gap: Spacing.one },
-  summary: { gap: Spacing.three, paddingRight: Spacing.three },
-  summaryItem: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
 });

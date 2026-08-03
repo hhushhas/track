@@ -1,9 +1,45 @@
 import { Text, type TextProps } from 'react-native';
 
-import { ThemeColor, Typography } from '@/constants/theme';
+import { MaxFontScale, ThemeColor, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-export type ThemedTextType = 'default' | 'title' | 'subtitle' | 'small' | 'smallBold' | 'code' | 'link';
+export type ThemedTextType =
+  | 'default'
+  | 'display'
+  | 'titleLarge'
+  | 'title'
+  | 'subtitle'
+  | 'message'
+  | 'small'
+  | 'smallBold'
+  | 'label'
+  | 'caption'
+  | 'captionBold'
+  | 'code'
+  | 'mono'
+  | 'link';
+
+/**
+ * `code` renders in the sans caption style: it is used throughout the app for
+ * timestamps, counts, and labels, none of which are identifiers. Use `mono`
+ * for genuine identifiers such as task keys.
+ */
+const TYPE_STYLES: Record<ThemedTextType, object> = {
+  default: Typography.body,
+  display: Typography.display,
+  titleLarge: Typography.titleLarge,
+  title: Typography.title,
+  subtitle: Typography.subtitle,
+  message: Typography.message,
+  small: Typography.body,
+  smallBold: Typography.bodyBold,
+  label: Typography.label,
+  caption: Typography.caption,
+  captionBold: Typography.captionBold,
+  code: Typography.caption,
+  mono: Typography.metadata,
+  link: Typography.body,
+};
 
 export type ThemedTextProps = TextProps & {
   type?: ThemedTextType;
@@ -15,16 +51,11 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
 
   return (
     <Text
-      allowFontScaling={false}
+      maxFontSizeMultiplier={MaxFontScale}
       style={[
         { color: theme[themeColor ?? 'text'] },
-        type === 'default' && Typography.body,
-        type === 'small' && Typography.body,
-        type === 'smallBold' && Typography.bodyBold,
-        type === 'title' && Typography.title,
-        type === 'subtitle' && Typography.subtitle,
-        type === 'code' && Typography.metadata,
-        type === 'link' && { ...Typography.body, color: '#1d4ed8' },
+        TYPE_STYLES[type],
+        type === 'link' && { color: theme.info },
         style,
       ]}
       {...rest}

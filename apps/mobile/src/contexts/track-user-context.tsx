@@ -9,10 +9,12 @@ import { authClient, setTwoFactorRedirectHandler } from '@/lib/auth-client';
 import { clearStoredAuthSession } from '@/lib/auth-storage';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
 import { getStoredPushInstallationId } from '@/lib/push-installation';
-import { OptionsSheet, SheetInput, SheetSection } from '@/components/options-sheet';
+import { OptionsSheet, SheetFieldButton, SheetInput, SheetSection } from '@/components/options-sheet';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { TimezonePicker } from '@/components/timezone-picker';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { deviceTimezone, findTimezone } from '@/lib/timezones';
 
 type TrackUserContextValue = {
   trackUserId: Id<'users'> | null;
@@ -23,6 +25,12 @@ type TrackUserContextValue = {
 };
 
 const TrackUserContext = createContext<TrackUserContextValue | null>(null);
+
+/** Shows the saved IANA id as a place; unknown ids fall back to the raw id. */
+function timezoneLabel(id: string) {
+  const zone = findTimezone(id);
+  return zone ? `${zone.flag} ${zone.city} · ${zone.countryName}` : id;
+}
 
 export function useTrackUser() {
   const ctx = useContext(TrackUserContext);
@@ -52,10 +60,11 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
     profileDesignation: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    timezone: deviceTimezone(),
   });
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [twoFactorMethod, setTwoFactorMethod] = useState<'totp' | 'backup_code'>('totp');
+  const [timezoneOpen, setTimezoneOpen] = useState(false);
 
   const trackUser = useQuery(api.auth.getCurrentUser);
   const profileStatus = useQuery(
@@ -99,7 +108,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
     setProfileDraft({
       displayName: profileStatus.user.displayName ?? '',
       profileDesignation: profileStatus.user.profileDesignation ?? '',
-      timezone: profileStatus.user.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+      timezone: profileStatus.user.timezone ?? deviceTimezone(),
     });
     if (!profileStatus.complete) setSheet('profile');
   }, [profileStatus?.complete, profileStatus?.user]);
@@ -271,10 +280,15 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         </View>
       ) : null}
 
+      {/*
+        Android will not reliably present a second modal over a first, so the
+        profile sheet stands down while the timezone picker is up. The draft
+        lives in state, so the sheet comes back exactly as it was left.
+      */}
       <OptionsSheet
         onClose={() => profileStatus?.complete ? setSheet(null) : undefined}
         title="Profile"
-        visible={sheet === 'profile'}>
+        visible={sheet === 'profile' && !timezoneOpen}>
         <SheetSection>
           <View style={styles.profileInputs}>
             <SheetInput
@@ -287,10 +301,12 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
               onChangeText={(profileDesignation) => setProfileDraft((d) => ({ ...d, profileDesignation }))}
               value={profileDraft.profileDesignation}
             />
-            <SheetInput
+            <SheetFieldButton
+              icon="earth"
               label="Timezone"
-              onChangeText={(timezone) => setProfileDraft((d) => ({ ...d, timezone }))}
-              value={profileDraft.timezone}
+              onPress={() => setTimezoneOpen(true)}
+              placeholder="Choose a timezone"
+              value={timezoneLabel(profileDraft.timezone)}
             />
           </View>
         </SheetSection>
@@ -305,6 +321,16 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         </Pressable>
       </OptionsSheet>
 
+      <TimezonePicker
+        onClose={() => setTimezoneOpen(false)}
+        onSelect={(timezone) => {
+          setProfileDraft((d) => ({ ...d, timezone }));
+          setTimezoneOpen(false);
+        }}
+        value={profileDraft.timezone}
+        visible={timezoneOpen}
+      />
+
       <OptionsSheet onClose={() => setSheet(null)} title="Two-Factor Auth" visible={sheet === 'two-factor'}>
         <SheetSection>
           <View style={styles.segmented}>
@@ -316,7 +342,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
                   styles.segment,
                   { backgroundColor: twoFactorMethod === method ? theme.backgroundSelected : theme.backgroundElement },
                 ]}>
-                <ThemedText type="code">{method === 'totp' ? 'Authenticator' : 'Backup Code'}</ThemedText>
+                <ThemedText type="small">{method === 'totp' ? 'Authenticator' : 'Backup code'}</ThemedText>
               </Pressable>
             ))}
           </View>
@@ -338,7 +364,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 
 const styles = StyleSheet.create({
   errorBanner: {
-    borderRadius: 12,
+    borderRadius: Radius.large,
     bottom: Spacing.four,
     gap: Spacing.two,
     left: Spacing.four,
@@ -351,9 +377,9 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: Radius.medium,
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: TouchTarget,
     paddingHorizontal: Spacing.four,
   },
   profileInputs: {
@@ -363,15 +389,15 @@ const styles = StyleSheet.create({
   retryButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     borderWidth: 1,
-    minHeight: 44,
+    minHeight: TouchTarget,
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
   },
   segment: {
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     flex: 1,
     paddingVertical: Spacing.two,
   },

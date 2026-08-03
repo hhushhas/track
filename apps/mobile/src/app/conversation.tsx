@@ -1,9 +1,8 @@
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
-import * as DocumentPicker from 'expo-document-picker';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { KeyboardEvents } from 'react-native-keyboard-controller';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -15,16 +14,30 @@ import { DateSeparator, ThreadRow, type DetailedMessage, type GroupedThreadItem,
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { OptionsSheet, SheetSection, SheetRow } from '@/components/options-sheet';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
+import { buildMentionCandidates } from '@/lib/mention-autocomplete';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
 
+/** WhatsApp-style grouping gap: a longer pause re-states who is speaking. */
+const FIVE_MINUTES = 5 * 60 * 1000;
+
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
+
+const reportReasonLabels: Record<(typeof reportReasons)[number], string> = {
+  harassment: 'Harassment',
+  inaccurate: 'Inaccurate',
+  other: 'Something else',
+  privacy: 'Privacy',
+  spam: 'Spam',
+  unsafe: 'Unsafe',
+};
 
 type PendingMessage = { id: string; body: string; at: number };
 
@@ -68,11 +81,12 @@ export default function ConversationScreen() {
   }, [gid, pid]));
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const readOnly = archive === '1' || navigation?.archived === true;
-  const taskIdentity: MobileTaskIdentity | null = cid && pmid ? {
+  // Memoised so composing a message does not rebuild every row's identity props.
+  const taskIdentity = useMemo<MobileTaskIdentity | null>(() => cid && pmid ? {
     archived: readOnly,
     companyId: cid,
     membershipId: pmid,
-  } : null;
+  } : null, [cid, pmid, readOnly]);
 
   const groups = useQuery(api.mobile.listGroups, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const messages = useQuery(api.messages.listDetailed, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 120, targetMessageId } : 'skip');
@@ -81,8 +95,9 @@ export default function ConversationScreen() {
   const projectMembers = useQuery(api.mobile.listProjectMembers, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
 
   const listRef = useRef<FlatList<GroupedThreadItem>>(null);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recordingState = useAudioRecorderState(recorder, 250);
+  /** Tracks whether the reader is pinned to the newest message, so arriving messages never yank them off history. */
+  const atBottomRef = useRef(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
 
   const [composer, setComposer] = useState('');
   const [replyTo, setReplyTo] = useState<DetailedMessage | null>(null);
@@ -94,6 +109,21 @@ export default function ConversationScreen() {
   const [reportReason, setReportReason] = useState<(typeof reportReasons)[number]>('inaccurate');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
+  /**
+   * Rows that render task cards below them; those cards interrupt author
+   * grouping. Rows only report while mounted, so scrolling never regroups.
+   */
+  const [cardRowIds, setCardRowIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  const trackCardRow = useCallback((rowId: string, hasCards: boolean) => {
+    setCardRowIds((prev) => {
+      if (prev.has(rowId) === hasCards) return prev;
+      const next = new Set(prev);
+      if (hasCards) next.add(rowId);
+      else next.delete(rowId);
+      return next;
+    });
+  }, []);
 
   const groupItems = useMemo(() => (groups ?? []) as { group: Doc<'groups'>; membership: Doc<'groupMembers'>; lastMessage: Doc<'messages'> | null; unreadCount: number }[], [groups]);
   const memberItems = useMemo(() => (projectMembers ?? []) as ProjectMemberRow[], [projectMembers]);
@@ -115,28 +145,53 @@ export default function ConversationScreen() {
     let lastDateStr = '';
     let lastAuthorKey = '';
     let lastAt = 0;
-    let lastWasDateSep = false;
+    /** Anything between two messages — a date pill, an answer, a task card — starts a new group. */
+    let interrupted = true;
 
     for (const raw of sorted) {
       const dateStr = new Date(raw.at).toDateString();
       if (dateStr !== lastDateStr) {
         result.push({ kind: 'date-sep', key: `sep-${raw.at}`, at: raw.at, label: dateSepLabel(raw.at) });
         lastDateStr = dateStr;
-        lastWasDateSep = true;
+        interrupted = true;
       }
 
       const authorKey = raw.kind === 'message' ? (raw.item.author?._id ?? 'anon') : '__assistant__';
-      const tooLong = raw.at - lastAt > 5 * 60 * 1000;
-      const isFirstInGroup = lastWasDateSep || authorKey !== lastAuthorKey || tooLong;
+      const tooLong = raw.at - lastAt > FIVE_MINUTES;
+      const isFirstInGroup = interrupted || authorKey !== lastAuthorKey || tooLong;
 
       result.push({ ...raw, isFirstInGroup });
       lastAuthorKey = authorKey;
       lastAt = raw.at;
-      lastWasDateSep = false;
+      interrupted = cardRowIds.has(raw.key);
     }
 
     return result;
-  }, [assistantStreams, messages]);
+  }, [assistantStreams, cardRowIds, messages]);
+  // Lets a row jump to its quoted message without rebuilding every row when the thread grows.
+  const threadItemsRef = useRef<GroupedThreadItem[]>(threadItems);
+  useEffect(() => {
+    threadItemsRef.current = threadItems;
+  }, [threadItems]);
+
+  const mentionCandidates = useMemo(() => buildMentionCandidates(memberItems), [memberItems]);
+
+  /** The composer grows over the list when the keyboard opens; follow it down. */
+  const pinToLatest = useCallback(() => {
+    if (!atBottomRef.current) return;
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
+
+  useEffect(() => {
+    const subscriptions = [
+      KeyboardEvents.addListener('keyboardWillShow', pinToLatest),
+      KeyboardEvents.addListener('keyboardDidShow', pinToLatest),
+    ];
+    return () => {
+      for (const subscription of subscriptions) subscription.remove();
+    };
+  }, [pinToLatest]);
+
   useEffect(() => {
     if (!targetMessageId) return;
     const index = threadItems.findIndex((item) => item.kind === 'message' && item.item.message._id === targetMessageId);
@@ -266,75 +321,57 @@ export default function ConversationScreen() {
     try { await fn(); } finally { setBusy(null); }
   }
 
-  async function handleSend() {
-    if (!trackUserId || !pid || !gid) return;
-    const body = composer.trim();
-    if (!body) return;
+  async function handleSendMessage(payload: ComposerSubmission): Promise<ComposerSubmissionResult> {
+    if (!trackUserId || !pid || !gid) return { failedIds: payload.attachments.map((a) => a.id), messageId: null };
     hapticMedium();
+    const body = payload.body.trim();
     const replyToMessageId = replyTo?.message._id;
-    setComposer('');
-    setReplyTo(null);
-    const pendingId = Date.now().toString();
-    setPendingMessages((prev) => [...prev, { id: pendingId, body, at: Date.now() }]);
-    await withBusy('send', async () => {
+    // Only text-only sends get an optimistic row; attachment sends show their own progress.
+    const pendingId = body && payload.attachments.length === 0 ? Date.now().toString() : null;
+    if (pendingId) setPendingMessages((prev) => [...prev, { id: pendingId, body, at: Date.now() }]);
+
+    setBusy('send');
+    try {
+      const result = await sendComposerMessage({
+        ...payload,
+        body,
+        replyToMessageId,
+        target: {
+          attachFile: (input) => attachFile({
+            projectId: pid, groupId: gid, userId: trackUserId,
+            actingCompanyId: cid, projectMemberId: pmid,
+            messageId: input.messageId as Id<'messages'>,
+            storageId: input.storageId as Id<'_storage'>,
+            filename: input.filename, contentType: input.contentType,
+            size: input.size, kind: input.kind, durationMs: input.durationMs,
+          }),
+          generateUploadUrl: () => generateUploadUrl({ groupId: gid, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid }),
+          sendMessage: (input) => sendMessage({
+            projectId: pid, groupId: gid, authorId: trackUserId,
+            actingCompanyId: cid, projectMemberId: pmid,
+            body: input.body, mentions: resolveMentionIds(input.body, memberItems),
+            replyToMessageId: input.replyToMessageId as Id<'messages'> | undefined,
+            notificationPreview: input.body,
+          }),
+        },
+      });
+
       const { parseMentions } = await import('@track/shared');
-      const messageId = await sendMessage({
-        projectId: pid, groupId: gid, authorId: trackUserId,
-        actingCompanyId: cid, projectMemberId: pmid,
-        body, mentions: resolveMentionIds(body, memberItems),
-        replyToMessageId, notificationPreview: body,
-      });
-      if (parseMentions(body).includes('track')) {
-        await askTrack({ projectId: pid, groupId: gid, requesterId: trackUserId, actingCompanyId: cid, projectMemberId: pmid, promptMessageId: messageId, question: body });
+      if (result.messageId && parseMentions(body).includes('track')) {
+        await askTrack({
+          projectId: pid, groupId: gid, requesterId: trackUserId,
+          actingCompanyId: cid, projectMemberId: pmid,
+          promptMessageId: result.messageId as Id<'messages'>, question: body,
+        });
       }
-    });
-  }
-
-  async function uploadAttachment(input: { uri: string; filename: string; contentType: string; body: string; kind?: 'file' | 'voice_note'; durationMs?: number }) {
-    if (!trackUserId || !pid || !gid) return;
-    await withBusy(input.kind ?? 'attach', async () => {
-      const uploadUrl = await generateUploadUrl({ groupId: gid, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid });
-      const blob = await (await fetch(input.uri)).blob();
-      const res = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': input.contentType }, body: blob });
-      if (!res.ok) throw new Error('upload_failed');
-      const { storageId } = await res.json() as { storageId: Id<'_storage'> };
-      const messageId = await sendMessage({
-        projectId: pid, groupId: gid, authorId: trackUserId,
-        actingCompanyId: cid, projectMemberId: pmid,
-        body: input.body, mentions: resolveMentionIds(input.body, memberItems),
-        replyToMessageId: replyTo?.message._id, notificationPreview: input.body,
-      });
-      await attachFile({
-        projectId: pid, groupId: gid, messageId, userId: trackUserId,
-        actingCompanyId: cid, projectMemberId: pmid,
-        storageId, filename: input.filename, contentType: input.contentType,
-        size: blob.size, kind: input.kind, durationMs: input.durationMs,
-      });
-      setComposer('');
-      setReplyTo(null);
-    });
-  }
-
-  async function pickDocument() {
-    hapticLight();
-    const picked = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
-    if (picked.canceled || !picked.assets[0]) return;
-    const file = picked.assets[0];
-    await uploadAttachment({ uri: file.uri, filename: file.name, contentType: file.mimeType ?? 'application/octet-stream', body: composer.trim() || `Attached ${file.name}`, kind: 'file' });
-  }
-
-  async function toggleRecording() {
-    if (recordingState.isRecording) {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) return;
-      await uploadAttachment({ uri, filename: `voice-note-${Date.now()}.m4a`, contentType: 'audio/mp4', body: composer.trim() || 'Sent a voice note.', kind: 'voice_note', durationMs: Math.max(0, Math.round(recordingState.durationMillis)) });
-      return;
+      return result;
+    } catch {
+      if (pendingId) setPendingMessages((prev) => prev.filter((p) => p.id !== pendingId));
+      Alert.alert('Message not sent', 'Check your connection and try again.');
+      return { failedIds: payload.attachments.map((a) => a.id), messageId: null };
+    } finally {
+      setBusy(null);
     }
-    const perm = await requestRecordingPermissionsAsync();
-    if (!perm.granted) return;
-    await recorder.prepareToRecordAsync();
-    recorder.record();
   }
 
   async function submitReport() {
@@ -371,16 +408,26 @@ export default function ConversationScreen() {
             hapticLight();
             if (item.kind === 'message') setReplyTo(item.item);
           }}
+          onOpenThread={releaseConfig.threads && pid && gid && item.kind === 'message' && item.item.channelThread ? () => {
+            router.push(threadConversationHref(pid, gid, item.item.channelThread!.threadId, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
+          } : undefined}
+          onPressReply={item.kind === 'message' && item.item.replyTo ? () => {
+            const quotedId = item.item.replyTo?.messageId;
+            const index = threadItemsRef.current.findIndex((entry) => entry.kind === 'message' && entry.item.message._id === quotedId);
+            if (index >= 0) listRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.5 });
+          } : undefined}
         />
         {releaseConfig.tasks && pid ? <TaskInlineCards
           assistantStreamId={item.kind === 'assistant' ? item.stream._id : undefined}
           identity={taskIdentity}
+          isOwnMessage={isOwnMessage}
           messageId={item.kind === 'message' ? item.item.message._id : undefined}
+          onCardsChange={trackCardRow}
           projectId={pid}
         /> : null}
       </View>
     );
-  }, [pid, readOnly, releaseConfig.tasks, taskIdentity, trackUserId]);
+  }, [cid, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, taskIdentity, trackCardRow, trackUserId]);
 
   if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
 
@@ -412,10 +459,8 @@ export default function ConversationScreen() {
         }}
       />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}>
-        <FlatList
+      <View style={styles.flex}>
+      <FlatList
           ref={listRef}
           contentContainerStyle={styles.thread}
           contentInsetAdjustmentBehavior="automatic"
@@ -426,9 +471,18 @@ export default function ConversationScreen() {
           initialNumToRender={24}
           keyExtractor={(item) => item.key}
           maxToRenderPerBatch={16}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          onScroll={({ nativeEvent }) => {
+            const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.contentOffset.y - nativeEvent.layoutMeasurement.height;
+            atBottomRef.current = distanceFromBottom < 80;
+            setShowJumpToLatest(distanceFromBottom > 320);
+          }}
+          scrollEventThrottle={16}
+          onContentSizeChange={() => {
+            if (!targetMessageId && atBottomRef.current) listRef.current?.scrollToEnd({ animated: true });
+          }}
           removeClippedSubviews={false}
           renderItem={renderItem}
+          style={styles.flex}
           windowSize={9}
           ListEmptyComponent={
             messages !== undefined ? (
@@ -453,22 +507,36 @@ export default function ConversationScreen() {
             ) : null
           }
         />
+      {showJumpToLatest ? (
+        <Pressable
+          accessibilityLabel="Jump to latest messages"
+          accessibilityRole="button"
+          onPress={() => {
+            hapticLight();
+            atBottomRef.current = true;
+            setShowJumpToLatest(false);
+            listRef.current?.scrollToEnd({ animated: true });
+          }}
+          style={[styles.jumpToLatest, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+          <PlatformIcon color={theme.text} name="chevron-down" size={22} />
+        </Pressable>
+      ) : null}
+      </View>
 
-        {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only Company exit archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
-          activeGroupName={activeGroup?.name ?? null}
-          busy={busy === 'send'}
-          isRecording={recordingState.isRecording}
-          recordingDuration={recordingState.durationMillis}
-          onAttach={() => void pickDocument()}
-          onCancelReply={() => setReplyTo(null)}
-          onChangeText={setComposer}
-          onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
-          onRecord={() => void toggleRecording()}
-          onSend={() => void handleSend()}
-          replyTo={replyTo}
-          value={composer}
-        />}
-      </KeyboardAvoidingView>
+      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only Company exit archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
+        activeGroupName={activeGroup?.name ?? null}
+        busy={busy === 'send'}
+        mentionCandidates={mentionCandidates}
+        onCancelReply={() => setReplyTo(null)}
+        onChangeText={setComposer}
+        onFocus={() => {
+          atBottomRef.current = true;
+          requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+        }}
+        onSendMessage={handleSendMessage}
+        replyTo={replyTo}
+        value={composer}
+      />}
 
       <OptionsSheet onClose={() => setGroupSwitchOpen(false)} title="Switch Channel" visible={groupSwitchOpen}>
         <SheetSection>
@@ -480,7 +548,7 @@ export default function ConversationScreen() {
               onPress={() => {
                 setGroupSwitchOpen(false);
                 hapticLight();
-                router.replace(channelHref(pid!, item.group._id, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null));
+                router.replace(channelHref(pid!, item.group._id, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null) as never);
               }}
             />
           ))}
@@ -538,7 +606,7 @@ export default function ConversationScreen() {
                 key={r}
                 onPress={() => setReportReason(r)}
                 style={[styles.reasonChip, { backgroundColor: reportReason === r ? theme.backgroundSelected : theme.backgroundElement }]}>
-                <ThemedText type="code">{r}</ThemedText>
+                <ThemedText type="small">{reportReasonLabels[r]}</ThemedText>
               </Pressable>
             ))}
           </View>
@@ -546,8 +614,8 @@ export default function ConversationScreen() {
         <Pressable
           disabled={busy === 'report'}
           onPress={() => void submitReport()}
-          style={[styles.reportButton, { backgroundColor: busy === 'report' ? theme.hairline : '#b91c1c' }]}>
-          <ThemedText style={{ color: '#fff' }} type="smallBold">Submit Report</ThemedText>
+          style={[styles.reportButton, { backgroundColor: busy === 'report' ? theme.hairline : theme.danger }]}>
+          <ThemedText style={{ color: theme.background }} type="smallBold">Submit report</ThemedText>
         </Pressable>
       </OptionsSheet>
 
@@ -564,6 +632,18 @@ const styles = StyleSheet.create({
   archiveBanner: { gap: Spacing.one, padding: Spacing.three },
   empty: { alignItems: 'center', padding: Spacing.six },
   flex: { flex: 1 },
+  jumpToLatest: {
+    alignItems: 'center',
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    bottom: Spacing.three,
+    elevation: 3,
+    height: 40,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: Spacing.three,
+    width: 40,
+  },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   headerTitle: { alignItems: 'center', flexDirection: 'row', gap: 4 },
   pendingAvatarSpacer: { width: 36 },

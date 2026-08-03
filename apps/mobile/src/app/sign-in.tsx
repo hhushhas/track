@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 
@@ -42,6 +42,14 @@ export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const markSource = themeName === 'dark' ? trackMarkReversedImage : trackMarkImage;
+  const signedIn = Boolean(session.data);
+
+  // A session that arrives while this screen is up — a restore that finished
+  // late, or a sign-in on another tab of the same flow — carries the user in
+  // instead of leaving them staring at a form they no longer need.
+  useEffect(() => {
+    if (signedIn) router.replace('/');
+  }, [router, signedIn]);
 
   async function signIn(provider: 'google' | 'apple') {
     setBusy(true);
@@ -134,8 +142,8 @@ export default function SignInScreen() {
                 <Image accessibilityIgnoresInvertColors resizeMode="contain" source={markSource} style={styles.mark} />
               </View>
               <View style={styles.brandText}>
-                <ThemedText style={[styles.brandLabel, { color: theme.textSecondary }]} type="code">
-                  Q9 LABS
+                <ThemedText style={[styles.brandLabel, { color: theme.textSecondary }]} type="captionBold">
+                  Q9 Labs
                 </ThemedText>
                 <ThemedText style={styles.brandName}>Track</ThemedText>
                 <ThemedText style={[styles.brandTagline, { color: theme.textSecondary }]} type="small">
@@ -147,8 +155,8 @@ export default function SignInScreen() {
             {/* Auth panel */}
             <View style={styles.panel}>
               {error ? (
-                <View style={[styles.errorBox, { backgroundColor: '#fee2e2', borderColor: '#fecaca' }]}>
-                  <ThemedText style={{ color: '#b91c1c' }} type="small">
+                <View style={[styles.errorBox, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}>
+                  <ThemedText style={{ color: theme.danger }} type="small">
                     {error}
                   </ThemedText>
                 </View>
@@ -266,7 +274,7 @@ export default function SignInScreen() {
                   onPress={() => void signInWithDevBypass()}
                   style={styles.devBypass}
                 >
-                  <ThemedText style={{ color: theme.textSecondary }} type="code">
+                  <ThemedText style={{ color: theme.textSecondary }} type="small">
                     Dev bypass
                   </ThemedText>
                 </Pressable>
@@ -289,7 +297,7 @@ export default function SignInScreen() {
                       );
                     }}
                   >
-                    <ThemedText style={{ color: theme.textSecondary }} type="code">
+                    <ThemedText style={{ color: theme.textSecondary }} type="small">
                       {item}
                     </ThemedText>
                   </Pressable>

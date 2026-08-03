@@ -1,9 +1,8 @@
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
-import * as DocumentPicker from 'expo-document-picker';
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -16,11 +15,13 @@ import { TaskInlineCards } from '@/components/task-inline-cards';
 import { ThreadRow, type DetailedMessage, type GroupedThreadItem, type ProjectMemberRow, resolveMentionIds, resolveMentionProjectMemberIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Colors, Spacing, TouchTarget } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
+import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
 import { hapticLight } from '@/lib/haptics';
+import { idempotencyKey } from '@/lib/idempotency';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
@@ -133,81 +134,64 @@ export default function ThreadScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.5 }));
   }, [targetMessageId, threadItems]);
 
-  async function submitMessage() {
-    if (!trackUserId || !pid || !gid || !tid || readOnly) return;
-    const body = composer.trim();
-    if (!body) return;
-    setBusy(true);
-    setError(null);
-    sendKey.current ??= crypto.randomUUID();
-    try {
-      const { parseMentions } = await import('@track/shared');
-      const messageId = await sendMessage({
-        projectId: pid,
-        groupId: gid,
-        channelThreadId: tid,
-        authorId: trackUserId,
-        actingCompanyId: cid,
-        projectMemberId: pmid,
-        idempotencyKey: sendKey.current,
-        body,
-        mentions: resolveMentionIds(body, memberItems),
-        mentionedProjectMemberIds: resolveMentionProjectMemberIds(body, memberItems),
-        replyToMessageId: replyTo?.message._id,
-        notificationPreview: body,
-      });
-      if (parseMentions(body).includes('track')) {
-        await askTrack({ projectId: pid, groupId: gid, channelThreadId: tid, requesterId: trackUserId, actingCompanyId: cid, projectMemberId: pmid, promptMessageId: messageId, question: body });
-      }
-      sendKey.current = null;
-      setComposer('');
-      setReplyTo(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save");
-    } finally {
-      setBusy(false);
+  async function handleSendMessage(payload: ComposerSubmission): Promise<ComposerSubmissionResult> {
+    if (!trackUserId || !pid || !gid || !tid || readOnly) {
+      return { failedIds: payload.attachments.map((a) => a.id), messageId: null };
     }
-  }
-
-  async function pickAttachment(audioOnly = false) {
-    if (!trackUserId || !pid || !gid || !tid || readOnly) return;
-    const picked = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      type: audioOnly ? 'audio/*' : '*/*',
-    });
-    if (picked.canceled || !picked.assets[0]) return;
-    const file = picked.assets[0];
+    const body = payload.body.trim();
+    const replyToMessageId = replyTo?.message._id;
     setBusy(true);
     setError(null);
-    sendKey.current ??= crypto.randomUUID();
     try {
-      const contentType = file.mimeType ?? 'application/octet-stream';
-      const uploadUrl = await generateUploadUrl({ groupId: gid, channelThreadId: tid, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid });
-      const blob = await (await fetch(file.uri)).blob();
-      const response = await fetch(uploadUrl, { method: 'POST', headers: { 'Content-Type': contentType }, body: blob });
-      if (!response.ok) throw new Error('upload_failed');
-      const { storageId } = await response.json() as { storageId: Id<'_storage'> };
-      const body = composer.trim() || (audioOnly ? 'Sent a voice note.' : `Attached ${file.name}`);
-      const messageId = await sendMessage({
-        projectId: pid,
-        groupId: gid,
-        channelThreadId: tid,
-        authorId: trackUserId,
-        actingCompanyId: cid,
-        projectMemberId: pmid,
-        idempotencyKey: sendKey.current,
+      // Generated inside the guard: Hermes does not guarantee
+      // `crypto.randomUUID`, and a throw out here left the composer stuck busy
+      // with nothing shown to the sender.
+      sendKey.current ??= idempotencyKey();
+      const result = await sendComposerMessage({
+        ...payload,
         body,
-        mentions: resolveMentionIds(body, memberItems),
-        mentionedProjectMemberIds: resolveMentionProjectMemberIds(body, memberItems),
-        replyToMessageId: replyTo?.message._id,
-        notificationPreview: body,
+        replyToMessageId,
+        target: {
+          attachFile: (input) => attachFile({
+            projectId: pid, groupId: gid, userId: trackUserId,
+            actingCompanyId: cid, projectMemberId: pmid,
+            messageId: input.messageId as Id<'messages'>,
+            storageId: input.storageId as Id<'_storage'>,
+            filename: input.filename, contentType: input.contentType,
+            size: input.size, kind: input.kind, durationMs: input.durationMs,
+          }),
+          generateUploadUrl: () => generateUploadUrl({ groupId: gid, channelThreadId: tid, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid }),
+          sendMessage: (input) => sendMessage({
+            projectId: pid,
+            groupId: gid,
+            channelThreadId: tid,
+            authorId: trackUserId,
+            actingCompanyId: cid,
+            projectMemberId: pmid,
+            idempotencyKey: sendKey.current ?? undefined,
+            body: input.body,
+            mentions: resolveMentionIds(input.body, memberItems),
+            mentionedProjectMemberIds: resolveMentionProjectMemberIds(input.body, memberItems),
+            replyToMessageId: input.replyToMessageId as Id<'messages'> | undefined,
+            notificationPreview: input.body,
+          }),
+        },
       });
-      await attachFile({ projectId: pid, groupId: gid, messageId, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid, storageId, filename: file.name, contentType, size: blob.size, kind: audioOnly ? 'voice_note' : 'file' });
-      sendKey.current = null;
-      setComposer('');
-      setReplyTo(null);
+
+      const { parseMentions } = await import('@track/shared');
+      if (result.messageId && parseMentions(body).includes('track')) {
+        await askTrack({
+          projectId: pid, groupId: gid, channelThreadId: tid, requesterId: trackUserId,
+          actingCompanyId: cid, projectMemberId: pmid,
+          promptMessageId: result.messageId as Id<'messages'>, question: body,
+        });
+      }
+      // Only retire the idempotency key once every attachment landed; a retry reuses the same message.
+      if (result.failedIds.length === 0) sendKey.current = null;
+      return result;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save");
+      return { failedIds: payload.attachments.map((a) => a.id), messageId: null };
     } finally {
       setBusy(false);
     }
@@ -357,7 +341,7 @@ export default function ThreadScreen() {
         accessibilityRole="button"
         onPress={() => pid && gid && tid && router.replace(threadConversationHref(pid, gid, tid, context, targetMessageId) as never)}
         style={[styles.retry, { backgroundColor: theme.accent }]}>
-        <ThemedText style={{ color: '#1b1917' }} type="smallBold">Retry</ThemedText>
+        <ThemedText style={{ color: Colors.light.text }} type="smallBold">Retry</ThemedText>
       </Pressable>
     </ThemedView>;
   }
@@ -380,15 +364,15 @@ export default function ThreadScreen() {
           'unavailable' in source ? undefined : source.messageId,
         ) as never)}
         style={[styles.source, { backgroundColor: theme.backgroundElement }]}>
-        <ThemedText type="code">REFERENCE MESSAGE</ThemedText>
+        <ThemedText style={{ color: theme.textSecondary }} type="captionBold">Reference message</ThemedText>
         <ThemedText numberOfLines={2} type="small">{'unavailable' in source ? 'Reference message unavailable.' : source.body || 'Attachment message'}</ThemedText>
       </Pressable> : null}
-      {notice ? <ThemedText accessibilityLiveRegion="polite" style={styles.notice} type="small">{notice}</ThemedText> : null}
-      {error ? <ThemedText accessibilityLiveRegion="assertive" style={styles.error} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}
+      {notice ? <ThemedText accessibilityLiveRegion="polite" style={[styles.notice, { color: theme.success }]} type="small">{notice}</ThemedText> : null}
+      {error ? <ThemedText accessibilityLiveRegion="assertive" style={[styles.error, { color: theme.danger }]} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}
       {readOnly ? <View style={[styles.archive, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Archived thread</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">This conversation is read-only.</ThemedText></View> : null}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <FlatList
+      <FlatList
           contentContainerStyle={styles.list}
+          style={styles.flex}
           data={threadItems}
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
@@ -404,22 +388,20 @@ export default function ThreadScreen() {
           </Pressable> : null}
           onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           ref={listRef}
+          // Matches conversation.tsx: Android cell clipping leaves stale colors after a theme change.
+          removeClippedSubviews={false}
           renderItem={renderItem}
         />
-        {!readOnly ? <Composer
-          activeGroupName={thread.thread.name}
-          busy={busy}
-          isRecording={false}
-          onAttach={() => void pickAttachment(false)}
-          onCancelReply={() => setReplyTo(null)}
-          onChangeText={setComposer}
-          onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
-          onRecord={() => void pickAttachment(true)}
-          onSend={() => void submitMessage()}
-          replyTo={replyTo}
-          value={composer}
-        /> : null}
-      </KeyboardAvoidingView>
+      {!readOnly ? <Composer
+        activeGroupName={thread.thread.name}
+        busy={busy}
+        onCancelReply={() => setReplyTo(null)}
+        onChangeText={setComposer}
+        onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
+        onSendMessage={handleSendMessage}
+        replyTo={replyTo}
+        value={composer}
+      /> : null}
       <OptionsSheet onClose={() => setToolsOpen(false)} title="Thread" visible={toolsOpen}>
         <SheetSection>
           {!navigation.archived ? <SheetRow label={thread.following ? 'Unfollow' : 'Follow'} icon="bell-outline" onPress={() => void changeFollowing()} /> : null}
@@ -441,12 +423,12 @@ export default function ThreadScreen() {
 
 const styles = StyleSheet.create({
   archive: { gap: 2, padding: Spacing.three },
-  error: { color: '#b91c1c', padding: Spacing.three },
+  error: { padding: Spacing.three },
   flex: { flex: 1 },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   list: { flexGrow: 1, paddingVertical: Spacing.two },
   loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
-  notice: { color: '#166534', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  notice: { paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   retry: { alignItems: 'center', alignSelf: 'center', borderRadius: 9, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   screen: { flex: 1 },
   source: { gap: 3, margin: Spacing.three, marginBottom: 0, padding: Spacing.three, borderRadius: 10 },

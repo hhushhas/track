@@ -1,4 +1,5 @@
 import { convexTest } from 'convex-test'
+import type { FunctionReturnType } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { api, internal } from './_generated/api'
@@ -1167,6 +1168,177 @@ describe('task management authorization and invariants', () => {
     expect(archivedTasks[0]?.payload).toMatchObject({
       title: 'Visible at exit',
     })
+  })
+
+  it('reorders and restates a board card through moveTask', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const created: FunctionReturnType<typeof api.tasks.create>[] = []
+    for (const title of ['First', 'Second', 'Third']) {
+      created.push(await owner.mutation(api.tasks.create, {
+        projectId: fixture.projectId,
+        groupId: fixture.groupId,
+        title,
+        priority: 'none',
+        idempotencyKey: `move-${title}`,
+      }))
+    }
+    const board = (await owner.query(api.taskBoards.list, { projectId: fixture.projectId }))[0]!
+    const started = board.states.find((state) => state.category === 'started')!
+
+    const first = await owner.mutation(api.tasks.moveTask, {
+      taskId: created[0]!.taskId,
+      workflowStateId: started._id,
+      expectedRevision: 1,
+    })
+    expect(first.workflowStateId).toBe(started._id)
+    expect(first.revision).toBe(2)
+
+    const second = await owner.mutation(api.tasks.moveTask, {
+      taskId: created[2]!.taskId,
+      workflowStateId: started._id,
+      beforeTaskId: created[0]!.taskId,
+      expectedRevision: 1,
+    })
+    expect(second.rank < first.rank).toBe(true)
+
+    const column = await fixture.t.run(async (ctx) => await ctx.db.query('tasks')
+      .withIndex('by_board_state_rank', (q) =>
+        q.eq('boardId', board.board._id).eq('workflowStateId', started._id),
+      ).collect())
+    expect(column.map((task) => task.title)).toEqual(['Third', 'First'])
+
+    const activities = await fixture.t.run(async (ctx) => await ctx.db.query('taskActivities')
+      .withIndex('by_task_created_at', (q) => q.eq('taskId', created[0]!.taskId)).collect())
+    expect(activities.filter((item) => item.action === 'state_changed')).toHaveLength(1)
+
+    await expect(owner.mutation(api.tasks.moveTask, {
+      taskId: created[0]!.taskId,
+      workflowStateId: started._id,
+      expectedRevision: 1,
+    })).rejects.toThrow('task_conflict')
+
+    await expect(owner.mutation(api.tasks.moveTask, {
+      taskId: created[1]!.taskId,
+      workflowStateId: started._id,
+      afterTaskId: created[1]!.taskId,
+      expectedRevision: 1,
+    })).rejects.toThrow('task_destination_invalid')
+
+    const outsider = fixture.t.withIdentity({ subject: 'outsider' })
+    await expect(outsider.mutation(api.tasks.moveTask, {
+      taskId: created[1]!.taskId,
+      workflowStateId: started._id,
+      expectedRevision: 1,
+    })).rejects.toThrow()
+
+    await owner.mutation(api.tasks.moveTask, {
+      taskId: created[1]!.taskId,
+      workflowStateId: started._id,
+      expectedRevision: 1,
+    })
+    const appended = await fixture.t.run(async (ctx) => await ctx.db.query('tasks')
+      .withIndex('by_board_state_rank', (q) =>
+        q.eq('boardId', board.board._id).eq('workflowStateId', started._id),
+      ).collect())
+    expect(appended.map((task) => task.title)).toEqual(['Third', 'First', 'Second'])
+  })
+
+  it('accepts the neighbour payload the mobile board sends for a drag', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    for (const title of ['One', 'Two', 'Three', 'Four']) {
+      await owner.mutation(api.tasks.create, {
+        projectId: fixture.projectId,
+        groupId: fixture.groupId,
+        title,
+        priority: 'none',
+        idempotencyKey: `board-${title}`,
+      })
+    }
+    const board = (await owner.query(api.taskBoards.list, { projectId: fixture.projectId }))[0]!
+    const started = board.states.find((state) => state.category === 'started')!
+    const todo = board.states.find((state) => state.isDefault)!
+
+    // The board reads its columns exactly as the mobile screen does, so the
+    // payload below is the one a real drag produces.
+    const column = async (stateId: Id<'taskWorkflowStates'>) =>
+      (await owner.query(api.tasks.list, {
+        projectId: fixture.projectId,
+        boardId: board.board._id,
+      }))
+        .filter((view) => view.task.workflowStateId === stateId)
+        .sort((a, b) => a.task.rank < b.task.rank ? -1 : a.task.rank > b.task.rank ? 1 : 0)
+
+    const unstarted = await column(todo._id)
+    expect(unstarted.map((view) => view.task.title)).toEqual(['One', 'Two', 'Three', 'Four'])
+
+    // Drag "Four" between "One" and "Two": both neighbours travel with the call.
+    const dragged = unstarted[3]!
+    const others = unstarted.filter((view) => view.task._id !== dragged.task._id)
+    await owner.mutation(api.tasks.moveTask, {
+      afterTaskId: others[0]!.task._id,
+      beforeTaskId: others[1]!.task._id,
+      taskId: dragged.task._id,
+      workflowStateId: todo._id,
+      expectedRevision: dragged.task.revision,
+    })
+    expect((await column(todo._id)).map((view) => view.task.title))
+      .toEqual(['One', 'Four', 'Two', 'Three'])
+
+    // Dropping into an empty column names no neighbour at all.
+    const crossing = (await column(todo._id))[2]!
+    await owner.mutation(api.tasks.moveTask, {
+      afterTaskId: undefined,
+      beforeTaskId: undefined,
+      taskId: crossing.task._id,
+      workflowStateId: started._id,
+      expectedRevision: crossing.task.revision,
+    })
+    expect((await column(started._id)).map((view) => view.task.title)).toEqual(['Two'])
+  })
+
+  it('requires subtask confirmation before a drag completes a parent task', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const parent = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      title: 'Ship the release',
+      priority: 'none',
+      idempotencyKey: 'drag-parent',
+    })
+    const detail = await owner.query(api.tasks.getByKey, {
+      projectId: fixture.projectId,
+      publicKey: parent.publicKey,
+    })
+    await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId: detail!.task.boardId,
+      parentTaskId: parent.taskId,
+      title: 'Still open',
+      priority: 'none',
+      idempotencyKey: 'drag-subtask',
+    })
+    const board = (await owner.query(api.taskBoards.list, { projectId: fixture.projectId }))[0]!
+    const completed = board.states.find((state) => state.category === 'completed')!
+
+    await expect(owner.mutation(api.tasks.moveTask, {
+      taskId: parent.taskId,
+      workflowStateId: completed._id,
+      expectedRevision: 1,
+    })).rejects.toThrow('task_open_subtasks_confirmation_required')
+
+    const moved = await owner.mutation(api.tasks.moveTask, {
+      taskId: parent.taskId,
+      workflowStateId: completed._id,
+      confirmOpenSubtasks: true,
+      expectedRevision: 1,
+    })
+    expect(moved.workflowStateId).toBe(completed._id)
+    expect(await fixture.t.run(async (ctx) =>
+      (await ctx.db.get(parent.taskId))?.terminalAt !== undefined,
+    )).toBe(true)
   })
 })
 

@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight, hapticDestructive } from '@/lib/haptics';
 
@@ -18,13 +18,20 @@ export function MessageActions({ visible, onClose, actions }: Props) {
 
   return (
     <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={styles.scrim} />
+      <Pressable
+        accessibilityLabel="Close"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={[styles.scrim, { backgroundColor: theme.overlay }]}
+      />
       <ThemedView style={[styles.sheet, { borderTopColor: theme.hairline }]}>
         <View style={[styles.handle, { backgroundColor: theme.textSecondary }]} />
         <View style={styles.content}>
-          {actions.map((action, i) => (
+          {actions.map((action) => (
             <Pressable
-              key={i}
+              accessibilityRole="button"
+              android_ripple={{ color: theme.backgroundSelected }}
+              key={action.label}
               onPress={() => {
                 if (action.destructive) {
                   hapticDestructive();
@@ -34,16 +41,16 @@ export function MessageActions({ visible, onClose, actions }: Props) {
                 onClose();
                 action.onPress();
               }}
-              style={[styles.row, { minHeight: 52 }]}>
+              style={styles.row}>
               {action.icon && (
                 <PlatformIcon
-                  color={action.destructive ? '#b91c1c' : theme.textSecondary}
+                  color={action.destructive ? theme.danger : theme.textSecondary}
                   name={action.icon}
                   size={22}
                 />
               )}
               <ThemedText
-                style={{ color: action.destructive ? '#b91c1c' : theme.text }}
+                style={{ color: action.destructive ? theme.danger : theme.text }}
                 type="smallBold">
                 {action.label}
               </ThemedText>
@@ -57,10 +64,19 @@ export function MessageActions({ visible, onClose, actions }: Props) {
 }
 
 const styles = StyleSheet.create({
-  scrim: { backgroundColor: 'rgba(0,0,0,0.35)', flex: 1 },
+  content: { gap: 0 },
+  handle: { alignSelf: 'center', borderRadius: Radius.small, height: 4, marginBottom: Spacing.two, opacity: 0.5, width: 36 },
+  row: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.three,
+    minHeight: TouchTarget + Spacing.one,
+    paddingVertical: Spacing.two,
+  },
+  scrim: { flex: 1 },
   sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: Radius.xlarge,
+    borderTopRightRadius: Radius.xlarge,
     borderTopWidth: StyleSheet.hairlineWidth,
     bottom: 0,
     left: 0,
@@ -69,7 +85,4 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
   },
-  handle: { alignSelf: 'center', borderRadius: 2, height: 4, marginBottom: Spacing.two, opacity: 0.5, width: 36 },
-  content: { gap: 0 },
-  row: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, paddingVertical: Spacing.two },
 });

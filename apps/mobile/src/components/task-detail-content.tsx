@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { Doc } from '../../../../convex/_generated/dataModel';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
@@ -10,16 +11,19 @@ import type {
   MobileTaskAssignee,
   MobileTaskDetail,
   MobileTaskListItem,
+  TaskEditField,
 } from '@/components/task-detail-types';
-import { TaskAction } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticMedium } from '@/lib/haptics';
 import {
   taskActivityLabel,
+  taskDueDisplay,
   taskLabelColor,
   taskPriorityLabel,
+  taskReferenceBlockedReason,
+  taskReferenceLabel,
 } from '@/lib/task-presentation';
 
 export function TaskDetailsTab({
@@ -28,8 +32,8 @@ export function TaskDetailsTab({
   completedSubtasks,
   detail,
   onAddSubtask,
-  onArchive,
-  onFollow,
+  onEditField,
+  onOpenReference,
   onSubtaskChange,
   onToggleSubtask,
   readOnly,
@@ -41,8 +45,8 @@ export function TaskDetailsTab({
   completedSubtasks: number;
   detail: MobileTaskDetail;
   onAddSubtask: () => void;
-  onArchive: () => void;
-  onFollow: () => void;
+  onEditField: (field: TaskEditField) => void;
+  onOpenReference: (reference: Doc<'taskReferences'>) => void;
   onSubtaskChange: (value: string) => void;
   onToggleSubtask: (item: MobileTaskListItem) => void;
   readOnly: boolean;
@@ -50,24 +54,46 @@ export function TaskDetailsTab({
   subtasks: MobileTaskListItem[];
 }) {
   const theme = useTheme();
+  const due = taskDueDisplay(detail.task.dueDate, undefined, detail.state?.category);
   return (
     <>
       <Surface title="Overview">
-        <MetadataRow icon="person" label="Assignee" value={assigneeName} />
-        <MetadataRow icon="calendar" label="Due date" value={detail.task.dueDate ?? 'No due date'} />
-        <MetadataRow icon="view-column" label="Board" value={detail.board?.name ?? 'Archived board'} />
-        <MetadataRow icon="flag" label="Priority" value={taskPriorityLabel(detail.task.priority)} />
+        <MetadataRow
+          icon="person"
+          label="Assignee"
+          onPress={readOnly ? undefined : () => onEditField('assignee')}
+          value={assigneeName}
+        />
+        <MetadataRow
+          icon="calendar"
+          label="Due date"
+          onPress={readOnly ? undefined : () => onEditField('dueDate')}
+          tone={due?.overdue ? 'danger' : undefined}
+          value={due?.label ?? 'No due date'}
+        />
+        <MetadataRow
+          icon="flag"
+          label="Priority"
+          onPress={readOnly ? undefined : () => onEditField('priority')}
+          value={taskPriorityLabel(detail.task.priority)}
+        />
+        <MetadataRow icon="view-board" label="Board" value={detail.board?.name ?? 'Archived board'} />
       </Surface>
 
       <TaskSection title="Description">
-        <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-          <ThemedText style={{ color: detail.task.description ? theme.text : theme.textSecondary }} type="small">
-            {detail.task.description || 'No description yet.'}
+        <Pressable
+          accessibilityHint={readOnly ? undefined : 'Opens the description editor'}
+          accessibilityRole={readOnly ? 'text' : 'button'}
+          disabled={readOnly}
+          onPress={() => onEditField('description')}
+          style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+          <ThemedText themeColor={detail.task.description ? 'text' : 'textSecondary'} type="small">
+            {detail.task.description || (readOnly ? 'No description.' : 'Add a description…')}
           </ThemedText>
-        </View>
+        </Pressable>
       </TaskSection>
 
-      {detail.labels.length ? (
+      {detail.labels.length || !readOnly ? (
         <TaskSection title="Labels">
           <View style={styles.chips}>
             {detail.labels.map((label) => (
@@ -76,6 +102,18 @@ export function TaskDetailsTab({
                 <ThemedText type="smallBold">{label.name}</ThemedText>
               </View>
             ))}
+            {!readOnly ? (
+              <Pressable
+                accessibilityLabel="Edit labels"
+                accessibilityRole="button"
+                onPress={() => onEditField('labels')}
+                style={[styles.label, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+                <PlatformIcon color={theme.textSecondary} name="tag" size={15} />
+                <ThemedText themeColor="textSecondary" type="smallBold">
+                  {detail.labels.length ? 'Edit' : 'Add labels'}
+                </ThemedText>
+              </Pressable>
+            ) : null}
           </View>
         </TaskSection>
       ) : null}
@@ -110,13 +148,13 @@ export function TaskDetailsTab({
                     }]} type="small">
                       {item.task.title}
                     </ThemedText>
-                    <ThemedText style={{ color: theme.textSecondary }} type="code">{item.state?.name ?? 'Unknown'}</ThemedText>
+                    <ThemedText themeColor="textSecondary" type="caption">{item.state?.name ?? 'Unknown'}</ThemedText>
                   </Pressable>
                 );
               })}
             </View>
           </>
-        ) : <ThemedText style={{ color: theme.textSecondary }} type="small">No checklist items yet.</ThemedText>}
+        ) : <ThemedText themeColor="textSecondary" type="small">No checklist items yet.</ThemedText>}
         {!readOnly && !detail.task.parentTaskId ? (
           <View style={styles.addSubtask}>
             <TextInput
@@ -148,40 +186,59 @@ export function TaskDetailsTab({
 
       <TaskSection title="Linked context">
         {detail.references.length ? detail.references.map((reference) => (
-          <View key={reference._id} style={[styles.evidence, {
-            backgroundColor: theme.backgroundElement,
-            borderColor: theme.hairline,
-          }]}>
-            <View style={styles.evidenceHeader}>
-              <PlatformIcon color={theme.accent} name="link" size={17} />
-              <ThemedText type="smallBold">
-                {reference.type === 'message' ? 'Conversation message' : reference.type.replaceAll('_', ' ')}
-              </ThemedText>
-            </View>
-            <ThemedText style={{ color: theme.textSecondary }} type="small">
-              {reference.quote ?? (reference.availability === 'redacted'
-                ? 'This evidence was redacted.'
-                : 'This evidence is no longer available.')}
-            </ThemedText>
-          </View>
+          <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
         )) : (
           <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-            <ThemedText style={{ color: theme.textSecondary }} type="small">No linked conversation or evidence.</ThemedText>
+            <ThemedText themeColor="textSecondary" type="small">No linked conversation or evidence.</ThemedText>
           </View>
         )}
       </TaskSection>
+    </>
+  );
+}
 
-      {detail.capabilities.canComment || detail.capabilities.canArchive ? (
-        <View style={styles.actions}>
-          {detail.capabilities.canComment ? (
-            <TaskAction label={detail.following ? 'Unfollow task' : 'Follow task'} onPress={onFollow} />
-          ) : null}
-          {detail.capabilities.canArchive ? (
-            <TaskAction label={detail.task.archivedAt ? 'Restore task' : 'Archive task'} onPress={onArchive} />
-          ) : null}
+/**
+ * Evidence is the reason a task exists, so an available reference opens the
+ * message that produced it. A blocked one says why and stays inert.
+ */
+function ReferenceRow({
+  onOpen,
+  reference,
+}: {
+  onOpen: (reference: Doc<'taskReferences'>) => void;
+  reference: Doc<'taskReferences'>;
+}) {
+  const theme = useTheme();
+  const blocked = taskReferenceBlockedReason(reference.availability, Boolean(reference.groupId));
+  return (
+    <Pressable
+      accessibilityHint={blocked ?? 'Opens the linked conversation'}
+      accessibilityRole={blocked ? 'text' : 'link'}
+      accessibilityState={{ disabled: Boolean(blocked) }}
+      disabled={Boolean(blocked)}
+      onPress={() => onOpen(reference)}
+      style={({ pressed }) => [styles.evidence, {
+        backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
+        borderColor: theme.hairline,
+      }]}>
+      <View style={styles.evidenceHeader}>
+        <PlatformIcon
+          color={blocked ? theme.textTertiary : theme.accent}
+          name={blocked ? 'shield-lock-outline' : 'link'}
+          size={17}
+        />
+        <ThemedText style={styles.evidenceTitle} type="smallBold">
+          {taskReferenceLabel(reference.type)}
+        </ThemedText>
+        {blocked ? null : <PlatformIcon color={theme.textSecondary} name="chevron-right" size={18} />}
+      </View>
+      {reference.quote ? (
+        <View style={[styles.quote, { borderLeftColor: theme.accent }]}>
+          <ThemedText numberOfLines={3} type="small">{reference.quote}</ThemedText>
         </View>
       ) : null}
-    </>
+      {blocked ? <ThemedText themeColor="textSecondary" type="caption">{blocked}</ThemedText> : null}
+    </Pressable>
   );
 }
 
@@ -205,7 +262,7 @@ export function TaskDiscussionTab({
             <View style={[styles.commentBubble, { backgroundColor: theme.backgroundElement }]}>
               <View style={styles.commentMeta}>
                 <ThemedText type="smallBold">{author}</ThemedText>
-                <ThemedText style={{ color: theme.textSecondary }} type="code">{formatTimestamp(item.createdAt)}</ThemedText>
+                <ThemedText themeColor="textSecondary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
               </View>
               <ThemedText type="small">{item.body}</ThemedText>
             </View>
@@ -228,10 +285,10 @@ export function TaskActivityTab({ detail }: { detail: MobileTaskDetail }) {
           </View>
           <View style={styles.timelineBody}>
             <ThemedText type="smallBold">{taskActivityLabel(item.action as TaskActivityAction)}</ThemedText>
-            <ThemedText style={{ color: theme.textSecondary }} type="code">{formatTimestamp(item.createdAt)}</ThemedText>
+            <ThemedText themeColor="textSecondary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
           </View>
         </View>
-      )) : <ThemedText style={{ color: theme.textSecondary }} type="small">No activity recorded yet.</ThemedText>}
+      )) : <ThemedText themeColor="textSecondary" type="small">No activity recorded yet.</ThemedText>}
     </TaskSection>
   );
 }
@@ -291,7 +348,7 @@ export function TaskCommentComposer({
                   backgroundColor: selected ? theme.accentSoft : theme.backgroundElement,
                   borderColor: selected ? theme.accent : theme.hairline,
                 }]}>
-                <ThemedText style={{ color: selected ? theme.accent : theme.textSecondary }} type="code">
+                <ThemedText style={{ color: selected ? theme.accentStrong : theme.textSecondary }} type="label">
                   @{item.user.displayName}
                 </ThemedText>
               </Pressable>
@@ -318,7 +375,7 @@ export function TaskCommentComposer({
             onSend();
           }}
           style={[styles.sendButton, { backgroundColor: theme.accent, opacity: canSend ? 1 : 0.45 }]}>
-          <PlatformIcon color="#1b1917" name="arrow-up" size={19} />
+          <PlatformIcon color={Colors.light.text} name="arrow-up" size={19} />
         </Pressable>
       </View>
     </View>
@@ -343,34 +400,54 @@ function TaskSection({
   title: string;
   trailing?: string;
 }) {
-  const theme = useTheme();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeading}>
         <ThemedText type="subtitle">{title}</ThemedText>
-        {trailing ? <ThemedText style={{ color: theme.textSecondary }} type="code">{trailing}</ThemedText> : null}
+        {trailing ? <ThemedText themeColor="textSecondary" type="captionBold">{trailing}</ThemedText> : null}
       </View>
       {children}
     </View>
   );
 }
 
+/** A field is edited where it is read: the row itself opens its own picker. */
 function MetadataRow({
   icon,
   label,
+  onPress,
+  tone,
   value,
 }: {
   icon: React.ComponentProps<typeof PlatformIcon>['name'];
   label: string;
+  onPress?: () => void;
+  tone?: 'danger';
   value: string;
 }) {
   const theme = useTheme();
   return (
-    <View style={[styles.metadataRow, { borderBottomColor: theme.hairline }]}>
+    <Pressable
+      accessibilityHint={onPress ? `Changes the ${label.toLowerCase()}` : undefined}
+      accessibilityLabel={`${label}: ${value}`}
+      accessibilityRole={onPress ? 'button' : 'text'}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => [styles.metadataRow, {
+        backgroundColor: pressed ? theme.backgroundSelected : 'transparent',
+        borderBottomColor: theme.hairline,
+      }]}>
       <PlatformIcon color={theme.textSecondary} name={icon} size={18} />
-      <ThemedText style={[styles.metadataLabel, { color: theme.textSecondary }]} type="small">{label}</ThemedText>
-      <ThemedText numberOfLines={1} style={styles.metadataValue} type="smallBold">{value}</ThemedText>
-    </View>
+      <ThemedText style={styles.metadataLabel} themeColor="textSecondary" type="small">{label}</ThemedText>
+      <ThemedText
+        numberOfLines={1}
+        style={styles.metadataValue}
+        themeColor={tone === 'danger' ? 'danger' : 'text'}
+        type="smallBold">
+        {value}
+      </ThemedText>
+      {onPress ? <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} /> : null}
+    </Pressable>
   );
 }
 
@@ -385,35 +462,37 @@ function formatTimestamp(value: number) {
 
 const styles = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  addButton: { alignItems: 'center', borderRadius: 10, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  addButton: { alignItems: 'center', borderRadius: Radius.medium, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   addSubtask: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   checkLabel: { flex: 1 },
   checkRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  checklist: { borderRadius: 12, overflow: 'hidden' },
+  checklist: { borderRadius: Radius.large, overflow: 'hidden' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   comment: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.two },
-  commentBubble: { borderRadius: 12, borderTopLeftRadius: 4, flex: 1, gap: Spacing.one, padding: Spacing.three },
+  commentBubble: { borderRadius: Radius.large, borderTopLeftRadius: 4, flex: 1, gap: Spacing.one, padding: Spacing.three },
   commentMeta: { alignItems: 'baseline', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
   composer: { borderTopWidth: StyleSheet.hairlineWidth, gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
-  composerInput: { borderRadius: 20, flex: 1, fontSize: 14, lineHeight: 20, maxHeight: 112, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Platform.OS === 'ios' ? 11 : 8 },
+  composerInput: { borderRadius: Radius.xlarge, flex: 1, fontSize: 14, lineHeight: 20, maxHeight: 112, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Platform.OS === 'ios' ? 11 : 8 },
   composerRow: { alignItems: 'flex-end', flexDirection: 'row', gap: Spacing.two },
-  description: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, minHeight: 72, padding: Spacing.three },
-  evidence: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, padding: Spacing.three },
+  description: { borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, minHeight: 72, padding: Spacing.three },
+  evidence: { borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, padding: Spacing.three },
   evidenceHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  inlineInput: { borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, flex: 1, fontSize: 14, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  label: { alignItems: 'center', borderRadius: 999, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  evidenceTitle: { flex: 1 },
+  inlineInput: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, fontSize: 14, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  label: { alignItems: 'center', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   labelDot: { borderRadius: 4, height: 8, width: 8 },
   metadataLabel: { flex: 1 },
   metadataRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   metadataValue: { maxWidth: '48%' },
-  mentionChip: { borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
+  mentionChip: { borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   mentionRow: { gap: Spacing.two },
-  progressTrack: { borderRadius: 3, height: 6, overflow: 'hidden' },
-  progressValue: { borderRadius: 3, height: 6 },
+  progressTrack: { borderRadius: Radius.small, height: 6, overflow: 'hidden' },
+  progressValue: { borderRadius: Radius.small, height: 6 },
+  quote: { borderLeftWidth: 3, paddingLeft: Spacing.three },
   section: { gap: Spacing.two },
   sectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   sendButton: { alignItems: 'center', borderRadius: TouchTarget / 2, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  surface: { borderRadius: 12, overflow: 'hidden' },
+  surface: { borderRadius: Radius.large, overflow: 'hidden' },
   timelineBody: { flex: 1, gap: 2, paddingBottom: Spacing.four },
   timelineDot: { borderRadius: 5, height: 10, marginTop: 5, width: 10 },
   timelineLine: { flex: 1, marginBottom: -5, marginTop: Spacing.one, width: 2 },

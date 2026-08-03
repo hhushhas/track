@@ -22,6 +22,7 @@ import {
   archivedTaskViews,
   createUniqueTaskPublicKey,
   getDefaultWorkflowState,
+  rankBetween,
   rankForIndex,
   taskView,
 } from './lib/taskData'
@@ -97,6 +98,27 @@ async function validateReference(
     : undefined
   if (channelThreadId && !threadsEnabled()) throw new Error('task_reference_invalid')
   return { source, channelThreadId }
+}
+
+/**
+ * A parent task may only enter a terminal state once the actor has confirmed
+ * that its open subtasks are being closed with it.
+ */
+async function assertOpenSubtasksConfirmed(
+  ctx: MutationCtx,
+  task: Doc<'tasks'>,
+  confirmed: boolean | undefined,
+) {
+  if (confirmed || task.parentTaskId) return
+  const subtasks = await ctx.db.query('tasks')
+    .withIndex('by_parent', (q) => q.eq('parentTaskId', task._id)).collect()
+  for (const subtask of subtasks) {
+    if (subtask.archivedAt) continue
+    const state = await ctx.db.get(subtask.workflowStateId)
+    if (state && !isTerminalTaskState(state.category)) {
+      throw new Error('task_open_subtasks_confirmation_required')
+    }
+  }
 }
 
 async function addFollower(
@@ -598,14 +620,8 @@ export const update = mutation({
     if (args.workflowStateId && args.workflowStateId !== access.task.workflowStateId) {
       const state = await ctx.db.get(args.workflowStateId)
       if (!state || state.boardId !== access.task.boardId || state.archivedAt) throw new Error('task_destination_invalid')
-      if (isTerminalTaskState(state.category) && !access.task.parentTaskId) {
-        const subtasks = await ctx.db.query('tasks').withIndex('by_parent', (q) => q.eq('parentTaskId', access.task._id)).collect()
-        const open = []
-        for (const subtask of subtasks) {
-          const subtaskState = await ctx.db.get(subtask.workflowStateId)
-          if (subtaskState && !isTerminalTaskState(subtaskState.category) && !subtask.archivedAt) open.push(subtask)
-        }
-        if (open.length && !args.confirmOpenSubtasks) throw new Error('task_open_subtasks_confirmation_required')
+      if (isTerminalTaskState(state.category)) {
+        await assertOpenSubtasksConfirmed(ctx, access.task, args.confirmOpenSubtasks)
       }
       patch.workflowStateId = state._id
       patch.terminalAt = isTerminalTaskState(state.category) ? access.task.terminalAt ?? Date.now() : undefined
@@ -639,6 +655,111 @@ export const update = mutation({
     })
     await rescheduleTaskReminders(ctx, updated)
     return updated.revision
+  },
+})
+
+function taskNeighbour(siblings: Array<Doc<'tasks'>>, taskId: Id<'tasks'> | undefined) {
+  if (!taskId) return undefined
+  const neighbour = siblings.find((task) => task._id === taskId)
+  if (!neighbour) throw new Error('task_destination_invalid')
+  return neighbour
+}
+
+/** Rewrites a column into evenly spaced ranks and returns the moved task's rank. */
+async function reindexTaskColumn(
+  ctx: MutationCtx,
+  input: { index: number; moved: Doc<'tasks'>; now: number; siblings: Array<Doc<'tasks'>> },
+) {
+  const ordered = [...input.siblings]
+  ordered.splice(input.index, 0, input.moved)
+  for (const [position, task] of ordered.entries()) {
+    const rank = rankForIndex(position)
+    if (task._id !== input.moved._id && task.rank !== rank) {
+      await ctx.db.patch(task._id, { rank, updatedAt: input.now })
+    }
+  }
+  return rankForIndex(input.index)
+}
+
+/**
+ * Repositions a task inside its own board: into another workflow state and/or
+ * between two neighbours. `afterTaskId` is the sibling the card lands below and
+ * `beforeTaskId` the sibling it lands above; omitting both appends to the
+ * column. Authorization matches `update` rather than `move`, because dragging a
+ * card within one board is an edit, not a board transfer.
+ */
+export const moveTask = mutation({
+  args: {
+    taskId: v.id('tasks'),
+    workflowStateId: v.id('taskWorkflowStates'),
+    beforeTaskId: v.optional(v.id('tasks')),
+    afterTaskId: v.optional(v.id('tasks')),
+    expectedRevision: v.number(),
+    confirmOpenSubtasks: v.optional(v.boolean()),
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    if (!access.taskCapabilities.canEdit) throw new Error('task_edit_forbidden')
+    if (access.task.revision !== args.expectedRevision) {
+      throw new Error(`task_conflict:${access.task.revision}`)
+    }
+    const state = await ctx.db.get(args.workflowStateId)
+    if (!state || state.boardId !== access.task.boardId || state.archivedAt) {
+      throw new Error('task_destination_invalid')
+    }
+    const stateChanged = state._id !== access.task.workflowStateId
+    if (stateChanged && isTerminalTaskState(state.category)) {
+      await assertOpenSubtasksConfirmed(ctx, access.task, args.confirmOpenSubtasks)
+    }
+    const siblings = (await ctx.db.query('tasks')
+      .withIndex('by_board_state_rank', (q) =>
+        q.eq('boardId', access.task.boardId).eq('workflowStateId', state._id),
+      ).collect())
+      .filter((task) => task._id !== access.task._id && !task.archivedAt)
+    const below = taskNeighbour(siblings, args.beforeTaskId)
+    // Naming no neighbour means "append", so the card lands after the last sibling.
+    const above = taskNeighbour(siblings, args.afterTaskId)
+      ?? (below ? undefined : siblings[siblings.length - 1])
+    const now = Date.now()
+    const rank = rankBetween(above?.rank, below?.rank) ?? await reindexTaskColumn(ctx, {
+      index: below ? siblings.indexOf(below) : above ? siblings.indexOf(above) + 1 : siblings.length,
+      moved: access.task,
+      now,
+      siblings,
+    })
+    await ctx.db.patch(access.task._id, {
+      workflowStateId: state._id,
+      rank,
+      ...(stateChanged
+        ? { terminalAt: isTerminalTaskState(state.category) ? access.task.terminalAt ?? now : undefined }
+        : {}),
+      revision: access.task.revision + 1,
+      updatedAt: now,
+    })
+    const updated = await ctx.db.get(access.task._id)
+    if (!updated) throw new Error('task_access_changed')
+    // A rank change inside one state is routine and stays out of the activity feed.
+    if (stateChanged) {
+      await appendTaskActivity(ctx, {
+        task: updated,
+        action: 'state_changed',
+        actorProjectMemberId: access.projectMember._id,
+        actingCompanyId: access.actingCompanyId,
+        before: access.task.workflowStateId,
+        after: state._id,
+      })
+      await notifyTaskFollowers(ctx, {
+        task: updated,
+        actorProjectMemberId: access.projectMember._id,
+        eventType: 'task_changed',
+        payload: { publicKey: updated.publicKey },
+        idempotencyKey: `changed:${updated._id}:${updated.revision}`,
+      })
+      await rescheduleTaskReminders(ctx, updated)
+    }
+    return { rank: updated.rank, revision: updated.revision, workflowStateId: updated.workflowStateId }
   },
 })
 

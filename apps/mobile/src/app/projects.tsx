@@ -1,4 +1,4 @@
-import { FlatList, Linking, Platform, Pressable, RefreshControl, StyleSheet, View, Alert } from 'react-native';
+import { FlatList, Linking, Platform, Pressable, StyleSheet, View, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
@@ -10,12 +10,12 @@ import { useCompany } from '@/contexts/company-context';
 import { useThemeOverride } from '@/contexts/theme-override-context';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { PlatformIcon } from '@/components/platform-icon';
-import { SkeletonRow } from '@/components/skeleton-row';
+import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { EmptyState } from '@/components/empty-state';
 import { OptionsSheet, SheetInput, SheetSection, SheetRow } from '@/components/options-sheet';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { projectChannelsHref } from '@/lib/company-navigation';
@@ -39,7 +39,6 @@ export default function ProjectsScreen() {
   const [projectClientLabel, setProjectClientLabel] = useState('');
   const [creating, setCreating] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
 
   const createProject = useMutation(api.projects.create);
   const ensureStarter = useMutation(api.projects.ensureStarter);
@@ -47,11 +46,6 @@ export default function ProjectsScreen() {
 
   const projects = useQuery(api.mobile.listProjects, trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip');
   const projectItems = (projects ?? []) as MobileProject[];
-
-  function onRefresh() {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }
 
   function openTools() {
     hapticLight();
@@ -108,7 +102,7 @@ export default function ProjectsScreen() {
         archived: item.membership.status === 'archived',
         companyId: actingCompanyId,
         membershipId: item.membership._id,
-      } : null));
+      } : null) as never);
     }
   }
 
@@ -185,15 +179,17 @@ export default function ProjectsScreen() {
         }}
       />
 
-      {actingCompanyId ? <View style={[styles.contextBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Representing {actingCompany?.company?.displayName}</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Project actions use this Company identity.</ThemedText></View> : null}
+      {actingCompanyId ? (
+        <View style={[styles.contextBanner, { backgroundColor: theme.backgroundElement }]}>
+          <ThemedText type="title">Representing {actingCompany?.company?.displayName}</ThemedText>
+          <ThemedText themeColor="textSecondary" type="caption">
+            Project actions use this Company identity.
+          </ThemedText>
+        </View>
+      ) : null}
 
       {projects === undefined ? (
-        <View style={styles.list}>
-          <SkeletonRow />
-          <SkeletonRow />
-          <SkeletonRow />
-          <SkeletonRow />
-        </View>
+        <SkeletonList label="Loading projects" />
       ) : (
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
@@ -216,9 +212,6 @@ export default function ProjectsScreen() {
                 </ThemedText>
               </Pressable> : null}
             </View>
-          }
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} colors={[theme.accent]} />
           }
         />
       )}
@@ -268,52 +261,59 @@ export default function ProjectsScreen() {
 function ProjectRow({ item, onPress }: { item: MobileProject; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable
-      android_ripple={{ color: theme.backgroundSelected }}
-      hitSlop={4}
-      onPress={() => { hapticLight(); onPress(); }}
-      style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
-      <ColoredAvatar label={item.project.name} seed={item.project._id} shape="rounded" size={44} />
-      <View style={styles.rowBody}>
-        <ThemedText type="smallBold">{item.project.name}</ThemedText>
-        <ThemedText style={{ color: theme.textSecondary }} type="code">
-          {item.membership.companyDisplayNameSnapshot ? `${item.membership.companyDisplayNameSnapshot} · ` : ''}{item.membership.role} · {item.groupCount} {item.groupCount === 1 ? 'Channel' : 'Channels'}{item.membership.status === 'archived' ? ' · archive' : ''}
-        </ThemedText>
-      </View>
-      {item.unreadCount > 0 ? (
-        <View style={[styles.badge, { backgroundColor: theme.accent }]}>
-          <ThemedText style={styles.badgeText}>
-            {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+    // Android merges a ripple and a background colour into one layered drawable
+    // whose repaint never reaches the view, so a themed colour set on the
+    // pressable itself keeps the old theme until a touch rebuilds it. The fill
+    // lives on a plain view; the pressable stays transparent and hosts only the
+    // ripple.
+    <View style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
+      <Pressable
+        android_ripple={{ color: theme.backgroundSelected }}
+        hitSlop={4}
+        onPress={() => { hapticLight(); onPress(); }}
+        style={styles.rowPressable}>
+        <ColoredAvatar label={item.project.name} seed={item.project._id} shape="rounded" size={44} />
+        <View style={styles.rowBody}>
+          <ThemedText numberOfLines={1} type="title">{item.project.name}</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
+            {item.membership.companyDisplayNameSnapshot ? `${item.membership.companyDisplayNameSnapshot} · ` : ''}{item.membership.role} · {item.groupCount} {item.groupCount === 1 ? 'Channel' : 'Channels'}{item.membership.status === 'archived' ? ' · archive' : ''}
           </ThemedText>
         </View>
-      ) : (
-        <PlatformIcon color={theme.hairline} name="chevron-right" size={18} />
-      )}
-    </Pressable>
+        {item.unreadCount > 0 ? (
+          <View
+            accessibilityLabel={`${item.unreadCount} unread`}
+            style={[styles.badge, { backgroundColor: theme.accent }]}>
+            <ThemedText style={styles.badgeText} type="captionBold">
+              {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+            </ThemedText>
+          </View>
+        ) : (
+          <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
+        )}
+      </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   badge: {
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: Radius.pill,
     minWidth: 22,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
+  // The accent is the same yellow in both themes, so the badge ink is fixed
+  // to the light-theme stone that clears AA against it (9.18:1).
   badgeText: {
-    color: '#1b1917',
-    fontFamily: 'ui-monospace',
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 16,
+    color: Colors.light.text,
   },
   contextBanner: {
     gap: Spacing.one,
     marginHorizontal: Spacing.three,
     marginTop: Spacing.two,
     padding: Spacing.three,
-    borderRadius: 10,
+    borderRadius: Radius.large,
   },
   createInputs: {
     gap: Spacing.three,
@@ -340,25 +340,27 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: Radius.medium,
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: TouchTarget,
     paddingHorizontal: Spacing.four,
   },
   row: {
-    alignItems: 'center',
-    borderRadius: 10,
-    flexDirection: 'row',
-    gap: Spacing.three,
-    minHeight: 64,
+    borderRadius: Radius.large,
     overflow: 'hidden',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
   },
   rowBody: {
     flex: 1,
     gap: 2,
     minWidth: 0,
+  },
+  rowPressable: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.three,
+    minHeight: 64,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
   },
   screen: {
     flex: 1,

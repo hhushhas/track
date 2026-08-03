@@ -9,10 +9,12 @@ import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { SkeletonList } from '@/components/skeleton-row';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
+import { idempotencyKey } from '@/lib/idempotency';
 import { useReleaseConfig } from '@/lib/release-config';
 import { threadConversationHref } from '@/lib/thread-navigation';
 
@@ -125,8 +127,10 @@ export default function ThreadsScreen() {
     if (!trackUserId || !pid || !gid || !name.trim()) return;
     setSaving(true);
     setError(null);
-    createKey.current ??= crypto.randomUUID();
     try {
+      // Generated inside the guard: a throw here used to strand the button on
+      // "Starting…" with the rejection swallowed by the caller's `void`.
+      createKey.current ??= idempotencyKey();
       const threadId = await createThread({
         projectId: pid,
         groupId: gid,
@@ -140,7 +144,9 @@ export default function ThreadsScreen() {
       createKey.current = null;
       router.replace(threadConversationHref(pid, gid, threadId, context) as never);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save");
+      setError(caught instanceof Error
+        ? caught.message.split('\n')[0].replaceAll('_', ' ').trim()
+        : "Couldn't save");
     } finally {
       setSaving(false);
     }
@@ -160,49 +166,68 @@ export default function ThreadsScreen() {
             accessibilityState={{ selected: status === value }}
             key={value}
             onPress={() => { hapticLight(); setStatus(value); }}
-            style={[styles.tab, status === value && { borderBottomColor: theme.accent }]}>
-            <ThemedText type="smallBold">{value === 'active' ? 'Active' : 'Archived'}</ThemedText>
+            style={[styles.tab, { borderBottomColor: status === value ? theme.accent : 'transparent' }]}>
+            <ThemedText type="title">{value === 'active' ? 'Active' : 'Archived'}</ThemedText>
           </Pressable>
         ))}
       </View>
       {sourceId ? <View style={[styles.sourceNotice, { backgroundColor: theme.backgroundElement }]}><ThemedText type="small">Starting from the selected Channel message.</ThemedText></View> : null}
       <TextInput
         accessibilityLabel="Search threads and replies"
+        cursorColor={theme.accent}
         onChangeText={setSearchQuery}
         placeholder="Search threads and replies"
-        placeholderTextColor={theme.textSecondary}
+        placeholderTextColor={theme.textTertiary}
+        selectionColor={theme.accent}
+        selectionHandleColor={theme.accent}
         style={[styles.search, { borderColor: theme.hairline, color: theme.text }]}
         value={searchQuery}
       />
-      {error ? <ThemedText accessibilityLiveRegion="polite" style={styles.error} type="small">{error}. Retry keeps the same request.</ThemedText> : null}
+      {error ? <ThemedText accessibilityLiveRegion="polite" style={[styles.error, { color: theme.danger }]} type="small">{error}. Retry keeps the same request.</ThemedText> : null}
       <FlatList
         contentContainerStyle={styles.list}
         data={rows}
         keyExtractor={(item) => item.key}
         ListEmptyComponent={(searchActive ? searchResults : threads) === undefined
-          ? <ThemedText style={{ color: theme.textSecondary }}>{searchActive ? 'Searching…' : 'Loading threads…'}</ThemedText>
+          ? <SkeletonList count={3} label={searchActive ? 'Searching' : 'Loading threads'} />
           : <EmptyState body={searchActive ? `No thread results for “${searchTerm}”.` : `No ${status} threads in this Channel.`} icon="forum-outline" title={searchActive ? 'No results' : 'No threads'} />}
         renderItem={({ item }) => (
-          <Pressable
-            accessibilityHint={item.unread ? 'Unread followed thread' : undefined}
-            onPress={() => pid && item.groupId && item.threadId && router.push(threadConversationHref(pid, item.groupId, item.threadId, context, item.messageId) as never)}
-            style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
-            <View style={styles.rowCopy}>
-              <ThemedText type="smallBold">{item.title}</ThemedText>
-              <ThemedText numberOfLines={2} style={{ color: theme.textSecondary }} type="small">{item.subtitle}</ThemedText>
-            </View>
-            {item.unread ? <ThemedText style={{ color: theme.accent }} type="code">UNREAD</ThemedText> : <PlatformIcon color={theme.textSecondary} name="chevron-right" size={18} />}
-          </Pressable>
+          // The themed fill sits on a plain view: Android folds a ripple and a
+          // background colour into one layered drawable whose repaint is lost,
+          // so a colour set on the pressable itself survives a theme change.
+          <View style={[styles.row, { backgroundColor: theme.backgroundElement }]}>
+            <Pressable
+              accessibilityHint={item.unread ? 'Unread followed thread' : undefined}
+              android_ripple={{ color: theme.backgroundSelected }}
+              onPress={() => pid && item.groupId && item.threadId && router.push(threadConversationHref(pid, item.groupId, item.threadId, context, item.messageId) as never)}
+              style={styles.rowPressable}>
+              <View style={styles.rowCopy}>
+                <ThemedText numberOfLines={1} type="title">{item.title}</ThemedText>
+                <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{item.subtitle}</ThemedText>
+              </View>
+              {item.unread ? (
+                <View style={styles.unread}>
+                  <PlatformIcon color={theme.accent} name="circle-outline" size={13} />
+                  <ThemedText style={{ color: theme.accentStrong }} type="captionBold">Unread</ThemedText>
+                </View>
+              ) : (
+                <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
+              )}
+            </Pressable>
+          </View>
         )}
       />
       {!readOnly && status === 'active' && !searchActive ? (
         <View style={[styles.create, { borderTopColor: theme.hairline }]}>
           <TextInput
             accessibilityLabel="Thread name"
+            cursorColor={theme.accent}
             maxLength={100}
             onChangeText={setName}
             placeholder="Thread name"
-            placeholderTextColor={theme.textSecondary}
+            placeholderTextColor={theme.textTertiary}
+            selectionColor={theme.accent}
+            selectionHandleColor={theme.accent}
             style={[styles.input, { borderColor: theme.hairline, color: theme.text }]}
             value={name}
           />
@@ -211,7 +236,7 @@ export default function ThreadsScreen() {
             disabled={saving || !name.trim()}
             onPress={() => void submit()}
             style={[styles.createButton, { backgroundColor: theme.accent, opacity: saving || !name.trim() ? 0.5 : 1 }]}>
-            <ThemedText style={{ color: '#1b1917' }} type="smallBold">{saving ? 'Starting…' : 'Start thread'}</ThemedText>
+            <ThemedText style={styles.createButtonText} type="title">{saving ? 'Starting…' : 'Start thread'}</ThemedText>
           </Pressable>
         </View>
       ) : null}
@@ -221,15 +246,19 @@ export default function ThreadsScreen() {
 
 const styles = StyleSheet.create({
   create: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, padding: Spacing.three },
-  createButton: { alignItems: 'center', borderRadius: 9, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
-  error: { color: '#b91c1c', paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
-  input: { borderRadius: 9, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  createButton: { alignItems: 'center', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
+  // Fixed light-theme stone: the accent is the same yellow in both themes.
+  createButtonText: { color: Colors.light.text },
+  error: { paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
+  input: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   list: { flexGrow: 1, gap: Spacing.two, padding: Spacing.three },
-  row: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', minHeight: 64, padding: Spacing.three },
-  rowCopy: { flex: 1, gap: 3 },
-  search: { borderRadius: 9, borderWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing.three, marginTop: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  row: { borderRadius: Radius.large, overflow: 'hidden' },
+  rowCopy: { flex: 1, gap: 3, minWidth: 0 },
+  rowPressable: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 64, padding: Spacing.three },
+  search: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing.three, marginTop: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   screen: { flex: 1 },
-  sourceNotice: { margin: Spacing.three, marginBottom: 0, padding: Spacing.three, borderRadius: 10 },
+  sourceNotice: { margin: Spacing.three, marginBottom: 0, padding: Spacing.three, borderRadius: Radius.large },
   tab: { alignItems: 'center', borderBottomWidth: 2, flex: 1, minHeight: TouchTarget, justifyContent: 'center' },
   tabs: { borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
+  unread: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
 });
