@@ -78,6 +78,20 @@ pnpm convex:dev
 Keep `pnpm convex:dev` running. In another terminal:
 
 ```bash
+pnpm exec convex env set SITE_URL http://localhost:3000 --deployment dev
+pnpm exec convex env set BETTER_AUTH_URL http://localhost:3000 --deployment dev
+pnpm exec convex env set DEV_AUTH_BYPASS 1 --deployment dev
+```
+
+These variables are for the development deployment only. The first two keep
+email sign-in redirects on the local web app, and the last enables the local
+development auth helpers. If the demo sign-in button is enabled, its
+`VITE_DEV_AUTH_BYPASS` values belong in `.env.local` and should use a
+development-only password.
+
+Then start the web app:
+
+```bash
 pnpm --filter @track/web dev
 ```
 
