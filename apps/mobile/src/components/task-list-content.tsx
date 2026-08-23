@@ -1,44 +1,28 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
-import {
-  TaskAction,
-  TaskCard,
-  TaskCardSkeletons,
-  TaskStatusPill,
-} from '@/components/task-ui';
+import { TaskBoard, type BoardColumnView, type TaskMoveInput } from '@/components/task-board';
+import type {
+  MobileBoardView,
+  MobileSuggestionView,
+  MobileTaskView,
+} from '@/components/task-detail-types';
+import { TaskAction, TaskCard, TaskCardSkeletons } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { shortTaskKey } from '@/lib/task-presentation';
 
-export type MobileTaskView = {
-  task: Doc<'tasks'>;
-  state: Doc<'taskWorkflowStates'> | null;
-  assignee: Doc<'projectMembers'> | null;
-  references: Array<Doc<'taskReferences'>>;
-};
-
-export type MobileBoardView = {
-  board: Doc<'taskBoards'>;
-  states: Array<Doc<'taskWorkflowStates'>>;
-};
-
-export type MobileSuggestionView = {
-  suggestion: Doc<'taskSuggestions'>;
-  references: Array<Doc<'taskSuggestionReferences'>>;
-  canDismiss: boolean;
-  possibleDuplicateTask: { _id: Id<'tasks'>; publicKey: string; title: string } | null;
-  proposedAssignee: { user: { displayName: string }; company: Doc<'companies'> | null } | null;
-};
+export type { MobileBoardView, MobileSuggestionView, MobileTaskView };
 
 export function TaskCollection({
   assigneeName,
-  counts,
-  grouped,
+  columns,
   onCreate,
+  onMove,
   onOpen,
+  onStatusPress,
   onViewAll,
   readOnly,
   selectedBoard,
@@ -46,24 +30,24 @@ export function TaskCollection({
   tasks,
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
-  counts: Record<string, number>;
-  grouped: Array<{ stateId: string; tasks: MobileTaskView[] }>;
+  columns: BoardColumnView[];
   onCreate: () => void;
+  onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
+  onStatusPress: (item: MobileTaskView) => void;
   onViewAll: () => void;
   readOnly: boolean;
   selectedBoard?: MobileBoardView;
   tab: 'board' | 'my' | 'all';
   tasks?: MobileTaskView[];
 }) {
-  const theme = useTheme();
   if (tasks === undefined) return <TaskCardSkeletons count={4} />;
   if (!selectedBoard && tab === 'board') {
     return (
       <TaskEmptyState
         body="Create the first task to initialize this Project board."
         buttonLabel={readOnly ? undefined : 'Create task'}
-        icon="view-column"
+        icon="view-board"
         onPress={onCreate}
         title="No board yet"
       />
@@ -83,61 +67,36 @@ export function TaskCollection({
     );
   }
 
-  if (tab !== 'board') {
+  if (tab === 'board') {
     return (
-      <View style={styles.list}>
-        {tasks.map((item) => (
-          <TaskCard
-            assignee={assigneeName(item)}
-            category={item.state?.category}
-            dueDate={item.task.dueDate}
-            key={item.task._id}
-            linkedContext={item.references[0] ? 'Linked conversation' : undefined}
-            onPress={() => onOpen(item)}
-            priority={item.task.priority}
-            publicKey={item.task.publicKey}
-            stateName={item.state?.name ?? 'Unknown'}
-            title={item.task.title}
-          />
-        ))}
-      </View>
+      <TaskBoard
+        assigneeName={assigneeName}
+        columns={columns}
+        onMove={onMove}
+        onOpen={onOpen}
+        readOnly={readOnly}
+      />
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.board} horizontal showsHorizontalScrollIndicator={false}>
-      {grouped.map((group) => {
-        const state = selectedBoard?.states.find((item) => item._id === group.stateId);
-        return (
-          <View key={group.stateId} style={[styles.column, { backgroundColor: theme.background }]}>
-            <View style={styles.columnHeading}>
-              <TaskStatusPill category={state?.category} label={state?.name ?? 'Unknown'} />
-              <ThemedText style={{ color: theme.textSecondary }} type="code">{counts[group.stateId] ?? 0}</ThemedText>
-            </View>
-            {group.tasks.map((item) => (
-              <TaskCard
-                assignee={assigneeName(item)}
-                category={item.state?.category}
-                compact
-                dueDate={item.task.dueDate}
-                key={item.task._id}
-                linkedContext={item.references[0] ? 'Linked conversation' : undefined}
-                onPress={() => onOpen(item)}
-                priority={item.task.priority}
-                publicKey={item.task.publicKey}
-                stateName={item.state?.name ?? 'Unknown'}
-                title={item.task.title}
-              />
-            ))}
-            {!group.tasks.length ? (
-              <View style={[styles.columnEmpty, { borderColor: theme.hairline }]}>
-                <ThemedText style={{ color: theme.textSecondary }} type="small">No tasks</ThemedText>
-              </View>
-            ) : null}
-          </View>
-        );
-      })}
-    </ScrollView>
+    <View style={styles.list}>
+      {tasks.map((item) => (
+        <TaskCard
+          assignee={assigneeName(item)}
+          category={item.state?.category}
+          dueDate={item.task.dueDate}
+          evidence={item.references.length > 0}
+          key={item.task._id}
+          onPress={() => onOpen(item)}
+          onStatusPress={readOnly ? undefined : () => onStatusPress(item)}
+          priority={item.task.priority}
+          publicKey={item.task.publicKey}
+          stateName={item.state?.name ?? 'Unknown'}
+          title={item.task.title}
+        />
+      ))}
+    </View>
   );
 }
 
@@ -158,54 +117,95 @@ export function SuggestionInbox({
 }) {
   const theme = useTheme();
   if (readOnly) {
-    return <EmptyState icon="shield-lock-outline" title="No archived Inbox" body="Suggestions are active-work decisions and are not available in an exit archive." />;
+    return (
+      <EmptyState
+        body="Suggestions are active-work decisions and are not available in an exit archive."
+        icon="shield-lock-outline"
+        title="No archived Inbox"
+      />
+    );
   }
   if (suggestions === undefined) return <TaskCardSkeletons count={3} />;
   if (!suggestions.length) {
-    return <EmptyState icon="inbox" title="Inbox is clear" body="Grounded suggestions from accessible conversation will appear here." />;
+    return (
+      <EmptyState
+        body="Grounded suggestions from accessible conversation will appear here."
+        icon="inbox"
+        title="Inbox is clear"
+      />
+    );
   }
 
   return (
     <View style={styles.list}>
       {suggestions.map((row) => (
-        <View key={row.suggestion._id} style={[styles.suggestion, {
-          backgroundColor: theme.backgroundElement,
-          borderColor: theme.hairline,
-        }]}>
-          <View style={styles.cardEyebrow}>
-            <View style={[styles.confidence, { backgroundColor: theme.accentSoft }]}>
-              <ThemedText type="code">{Math.round(row.suggestion.confidence * 100)}% confidence</ThemedText>
-            </View>
-            <PlatformIcon color={theme.textSecondary} name="forum-outline" size={18} />
+        <View
+          key={row.suggestion._id}
+          style={[styles.suggestion, {
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.hairline,
+          }]}>
+          <View style={styles.eyebrow}>
+            <PlatformIcon color={theme.textSecondary} name="forum-outline" size={16} />
+            <ThemedText themeColor="textSecondary" type="caption">From conversation</ThemedText>
+            <View style={styles.spacer} />
+            <ConfidenceMeter value={row.suggestion.confidence} />
           </View>
           <ThemedText type="subtitle">{row.suggestion.proposedTitle}</ThemedText>
-          {row.suggestion.proposedDescription ? <ThemedText type="small">{row.suggestion.proposedDescription}</ThemedText> : null}
+          {row.suggestion.proposedDescription ? (
+            <ThemedText numberOfLines={3} themeColor="textSecondary" type="small">
+              {row.suggestion.proposedDescription}
+            </ThemedText>
+          ) : null}
+          {row.references.map((reference) => (
+            <View
+              key={reference._id}
+              style={[styles.quote, { backgroundColor: theme.accentSoft, borderLeftColor: theme.accent }]}>
+              <ThemedText numberOfLines={3} type="small">
+                {reference.quote ?? 'Reference unavailable'}
+              </ThemedText>
+            </View>
+          ))}
           {row.proposedAssignee ? (
-            <ThemedText style={{ color: theme.textSecondary }} type="small">
+            <ThemedText themeColor="textSecondary" type="caption">
               Proposed for {row.proposedAssignee.user.displayName}
               {row.proposedAssignee.company ? ` · ${row.proposedAssignee.company.displayName}` : ''}
             </ThemedText>
           ) : null}
-          {row.references.map((reference) => (
-            <View key={reference._id} style={[styles.quote, { borderLeftColor: theme.accent }]}>
-              <ThemedText numberOfLines={3} style={{ color: theme.textSecondary }} type="small">
-                “{reference.quote ?? 'Reference unavailable'}”
+          {row.possibleDuplicateTask ? (
+            <View style={[styles.duplicate, { backgroundColor: theme.backgroundSelected }]}>
+              <PlatformIcon color={theme.textSecondary} name="content-copy" size={16} />
+              <ThemedText numberOfLines={2} type="caption">
+                Possible duplicate of {shortTaskKey(row.possibleDuplicateTask.publicKey)} · {row.possibleDuplicateTask.title}
               </ThemedText>
             </View>
-          ))}
-          {row.possibleDuplicateTask ? (
-            <ThemedText type="smallBold">
-              Possible duplicate: {row.possibleDuplicateTask.publicKey} · {row.possibleDuplicateTask.title}
-            </ThemedText>
           ) : null}
           <View style={styles.actions}>
-            <TaskAction label={row.possibleDuplicateTask ? 'Create separately' : 'Accept'} onPress={() => onAccept(row)} primary />
+            <TaskAction
+              label={row.possibleDuplicateTask ? 'Create separately' : 'Accept'}
+              onPress={() => onAccept(row)}
+              primary
+            />
             {row.possibleDuplicateTask ? <TaskAction label="Add reference" onPress={() => onLink(row)} /> : null}
             {row.canDismiss ? <TaskAction label="Dismiss" onPress={() => onDismiss(row)} /> : null}
             <TaskAction label="Hide" onPress={() => onHide(row)} />
           </View>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** Confidence reads as a filled track, not a number people must interpret alone. */
+function ConfidenceMeter({ value }: { value: number }) {
+  const theme = useTheme();
+  const percent = Math.round(Math.min(Math.max(value, 0), 1) * 100);
+  return (
+    <View accessibilityLabel={`${percent} percent confidence`} style={styles.meter}>
+      <View style={[styles.meterTrack, { backgroundColor: theme.backgroundSelected }]}>
+        <View style={[styles.meterFill, { backgroundColor: theme.accent, width: `${percent}%` }]} />
+      </View>
+      <ThemedText themeColor="textSecondary" type="captionBold">{percent}%</ThemedText>
     </View>
   );
 }
@@ -233,14 +233,31 @@ function TaskEmptyState({
 
 const styles = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  board: { alignItems: 'flex-start', gap: Spacing.three, paddingRight: Spacing.three },
-  cardEyebrow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  column: { gap: Spacing.three, width: 286 },
-  columnEmpty: { alignItems: 'center', borderRadius: 12, borderStyle: 'dashed', borderWidth: 1, justifyContent: 'center', minHeight: 112 },
-  columnHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  confidence: { borderRadius: 999, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  duplicate: {
+    alignItems: 'center',
+    borderRadius: Radius.medium,
+    flexDirection: 'row',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
   empty: { alignSelf: 'center', gap: Spacing.three, maxWidth: 360, paddingTop: Spacing.six, width: '100%' },
+  eyebrow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   list: { gap: Spacing.three },
-  quote: { borderLeftWidth: 3, paddingLeft: Spacing.three },
-  suggestion: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three, padding: Spacing.four },
+  meter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
+  meterFill: { height: '100%' },
+  meterTrack: { borderRadius: Radius.pill, height: 4, overflow: 'hidden', width: 44 },
+  quote: {
+    borderLeftWidth: 3,
+    borderRadius: Radius.small,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  spacer: { flex: 1 },
+  suggestion: {
+    borderRadius: Radius.large,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.three,
+    padding: Spacing.four,
+  },
 });

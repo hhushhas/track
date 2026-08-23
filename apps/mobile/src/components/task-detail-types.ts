@@ -19,6 +19,15 @@ export type MobileTaskDetail = {
   };
 };
 
+export type TaskEditField =
+  | 'assignee'
+  | 'description'
+  | 'dueDate'
+  | 'labels'
+  | 'more'
+  | 'priority'
+  | 'status';
+
 export type MobileTaskBoard = {
   board: Doc<'taskBoards'>;
   states: Array<Doc<'taskWorkflowStates'>>;
@@ -33,4 +42,24 @@ export type MobileTaskAssignee = {
 export type MobileTaskListItem = {
   task: Doc<'tasks'>;
   state: Doc<'taskWorkflowStates'> | null;
+};
+
+export type MobileTaskView = {
+  task: Doc<'tasks'>;
+  state: Doc<'taskWorkflowStates'> | null;
+  assignee: Doc<'projectMembers'> | null;
+  references: Array<Doc<'taskReferences'>>;
+};
+
+export type MobileBoardView = {
+  board: Doc<'taskBoards'>;
+  states: Array<Doc<'taskWorkflowStates'>>;
+};
+
+export type MobileSuggestionView = {
+  suggestion: Doc<'taskSuggestions'>;
+  references: Array<Doc<'taskSuggestionReferences'>>;
+  canDismiss: boolean;
+  possibleDuplicateTask: { _id: Id<'tasks'>; publicKey: string; title: string } | null;
+  proposedAssignee: { user: { displayName: string }; company: Doc<'companies'> | null } | null;
 };

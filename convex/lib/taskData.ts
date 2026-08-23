@@ -35,6 +35,56 @@ export function rankForIndex(index: number) {
   return (index + 1).toString(36).padStart(8, '0')
 }
 
+const rankDigits = '0123456789abcdefghijklmnopqrstuvwxyz'
+const rankBase = 36n
+const rankBaseLength = 8
+const rankMaxLength = 16
+
+function rankValue(rank: string, length: number) {
+  let value = 0n
+  for (let index = 0; index < length; index += 1) {
+    const digit = index < rank.length ? rankDigits.indexOf(rank[index]) : 0
+    if (digit < 0) return null
+    value = value * rankBase + BigInt(digit)
+  }
+  return value
+}
+
+function rankString(value: bigint, length: number) {
+  let remaining = value
+  let rank = ''
+  for (let index = 0; index < length; index += 1) {
+    rank = rankDigits[Number(remaining % rankBase)] + rank
+    remaining /= rankBase
+  }
+  return rank
+}
+
+/**
+ * Allocates an opaque rank strictly between two neighbouring ranks, keeping the
+ * zero-padded base36 space `rankForIndex` produces. Ranks compare
+ * lexicographically, so a rank is read as a base36 fraction and the midpoint is
+ * widened by one digit until a gap opens. Returns `null` when no gap remains,
+ * which asks the caller to reindex the column instead.
+ */
+export function rankBetween(above: string | undefined, below: string | undefined) {
+  if (!below) {
+    const length = Math.max(above?.length ?? 0, rankBaseLength)
+    const value = rankValue(above ?? '', length)
+    if (value === null) return null
+    const next = value + 1n
+    return next < rankBase ** BigInt(length) ? rankString(next, length) : null
+  }
+  const start = Math.max(above?.length ?? 0, below.length, rankBaseLength)
+  for (let length = start; length <= rankMaxLength; length += 1) {
+    const low = rankValue(above ?? '', length)
+    const high = rankValue(below, length)
+    if (low === null || high === null || high <= low) return null
+    if (high - low >= 2n) return rankString((low + high) / 2n, length)
+  }
+  return null
+}
+
 export async function appendTaskActivity(
   ctx: MutationCtx,
   input: {

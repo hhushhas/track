@@ -1,4 +1,32 @@
-import type { TaskActivityAction, TaskPriority, TaskStateCategory } from '@track/shared/tasks';
+import type {
+  TaskActivityAction,
+  TaskPriority,
+  TaskReferenceAvailability,
+  TaskReferenceType,
+  TaskStateCategory,
+} from '@track/shared/tasks';
+
+const referenceLabels: Record<TaskReferenceType, string> = {
+  assistant_answer: 'Assistant answer',
+  attachment: 'Attachment',
+  memory_excerpt: 'Imported memory',
+  message: 'Conversation message',
+};
+
+export function taskReferenceLabel(type: string) {
+  return referenceLabels[type as TaskReferenceType] ?? type.replaceAll('_', ' ');
+}
+
+/** Explains why a reference cannot be opened, or returns null when it can. */
+export function taskReferenceBlockedReason(
+  availability: TaskReferenceAvailability,
+  hasDestination: boolean,
+) {
+  if (availability === 'redacted') return 'Redacted — this evidence was removed from the conversation.';
+  if (availability === 'unavailable') return 'Unavailable — the source conversation is out of your access.';
+  if (!hasDestination) return 'This evidence has no conversation to open.';
+  return null;
+}
 
 export function taskPriorityLabel(priority: TaskPriority) {
   if (priority === 'none') return 'No priority';
@@ -42,9 +70,58 @@ export function taskDueLabel(
 }
 
 export function formatTaskDate(value: string) {
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value;
+  const parsed = parseTaskDate(value);
+  if (!parsed) return value;
   return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+/** Renders a stored date as a weekday-anchored day, such as “Fri, 7 Aug”. */
+export function formatTaskDateLong(value: string) {
+  const parsed = parseTaskDate(value);
+  if (!parsed) return value;
+  return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'short' });
+}
+
+export function parseTaskDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Whole days from `today` to `dueDate`; negative when the date has passed. */
+export function taskDueDays(dueDate: string, today = localTaskDate()) {
+  const due = parseTaskDate(dueDate);
+  const start = parseTaskDate(today);
+  if (!due || !start) return null;
+  return Math.round((due.getTime() - start.getTime()) / 86_400_000);
+}
+
+export function taskDateFromOffset(days: number, from = new Date()) {
+  const target = new Date(from);
+  target.setDate(target.getDate() + days);
+  return localTaskDate(target);
+}
+
+/**
+ * The human reading of a due date. Stored dates stay `YYYY-MM-DD`; people see
+ * “Today”, “Tomorrow”, “Fri, 7 Aug”, or how far a task has slipped.
+ */
+export function taskDueDisplay(
+  dueDate: string | undefined | null,
+  today = localTaskDate(),
+  category?: TaskStateCategory,
+) {
+  if (!dueDate) return null;
+  const days = taskDueDays(dueDate, today);
+  if (days === null) return { label: dueDate, overdue: false };
+  const terminal = category === 'completed' || category === 'canceled';
+  if (days < 0 && !terminal) {
+    const elapsed = Math.abs(days);
+    return { label: `Overdue · ${elapsed} day${elapsed === 1 ? '' : 's'}`, overdue: true };
+  }
+  if (days === 0) return { label: 'Today', overdue: false };
+  if (days === 1) return { label: 'Tomorrow', overdue: false };
+  if (days === -1) return { label: 'Yesterday', overdue: false };
+  return { label: formatTaskDateLong(dueDate), overdue: false };
 }
 
 export function taskLabelColor(token: string, fallback: string) {
@@ -77,4 +154,16 @@ const activityLabels: Record<TaskActivityAction, string> = {
 
 export function taskActivityLabel(action: TaskActivityAction) {
   return activityLabels[action] ?? action.replaceAll('_', ' ');
+}
+
+/**
+ * "T-AYWHR69F" → "T-AYW…". Full identifiers are noise in a list; the detail
+ * screen offers the whole key through its copy affordance.
+ */
+export function shortTaskKey(publicKey: string) {
+  const separator = publicKey.indexOf('-');
+  const code = separator === -1 ? publicKey : publicKey.slice(separator + 1);
+  if (code.length <= 3) return publicKey;
+  const prefix = separator === -1 ? '' : publicKey.slice(0, separator + 1);
+  return `${prefix}${code.slice(0, 3)}…`;
 }

@@ -88,7 +88,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
         await Notifications.setNotificationChannelAsync('track-default', {
           importance: Notifications.AndroidImportance.HIGH,
           name: 'Track notifications',
-          sound: 'default',
+          // Omitted sound = system default; a string names a bundled custom file.
           vibrationPattern: [0, 180, 80, 180],
         });
         await Notifications.setNotificationChannelAsync('track-silent', {
