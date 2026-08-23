@@ -1,0 +1,14 @@
+appId: ai.q9labs.track
+---
+- hideKeyboard
+- swipe:
+    start: 50%,90%
+    end: 50%,55%
+    duration: 500
+- extendedWaitUntil:
+    visible: Submit project creation
+    timeout: 30000
+- tapOn: Submit project creation
+- extendedWaitUntil:
+    visible: Push Verification 033850
+    timeout: 60000

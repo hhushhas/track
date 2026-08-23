@@ -1,0 +1,28 @@
+appId: ai.q9labs.track
+---
+- extendedWaitUntil:
+    visible: Projects
+    timeout: 30000
+- runFlow:
+    when:
+      visible: Open debugger to view warnings.
+    commands:
+      - tapOn:
+          point: 92%,92%
+- tapOn: Create project
+- tapOn: Project name
+- inputText: Push Verification 033850
+- tapOn: Client label
+- inputText: Native QA
+- hideKeyboard
+- swipe:
+    start: 50%,88%
+    end: 50%,50%
+    duration: 500
+- extendedWaitUntil:
+    visible: Submit project creation
+    timeout: 30000
+- tapOn: Submit project creation
+- extendedWaitUntil:
+    visible: Push Verification 033850
+    timeout: 60000

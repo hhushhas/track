@@ -1,0 +1,4 @@
+appId: ai.q9labs.track
+---
+- launchApp
+- pressKey: HOME

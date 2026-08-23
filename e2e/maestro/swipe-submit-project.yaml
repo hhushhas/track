@@ -1,0 +1,13 @@
+appId: ai.q9labs.track
+---
+- swipe:
+    start: 50%,84%
+    end: 50%,55%
+    duration: 600
+- extendedWaitUntil:
+    visible: Submit project creation
+    timeout: 30000
+- tapOn: Submit project creation
+- extendedWaitUntil:
+    visible: Push Verification 033850
+    timeout: 60000

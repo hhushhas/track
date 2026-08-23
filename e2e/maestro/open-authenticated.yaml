@@ -1,0 +1,6 @@
+appId: ai.q9labs.track
+---
+- tapOn: Open
+- extendedWaitUntil:
+    visible: Projects
+    timeout: 120000

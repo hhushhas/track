@@ -1,0 +1,9 @@
+appId: ai.q9labs.track
+---
+- tapOn: Create project
+- tapOn:
+    point: 50%,75%
+- inputText: Push Verification 033850
+- tapOn:
+    point: 50%,83%
+- inputText: Native QA
