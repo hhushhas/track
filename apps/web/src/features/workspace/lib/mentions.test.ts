@@ -25,7 +25,7 @@ const groups = [
 ] as Parameters<typeof buildWorkspaceMentionOptions>[1]
 
 describe('workspace mentions', () => {
-  it('builds assistant, group, and member mention options while hiding group handle collisions', () => {
+  it('applies mention handle collisions and selection grouping', () => {
     const options = buildWorkspaceMentionOptions(members, groups)
 
     expect(options.map((option) => [option.kind, option.handle])).toEqual([
@@ -34,13 +34,8 @@ describe('workspace mentions', () => {
       ['member', 'hasan-shoaib'],
       ['member', 'client-lead'],
     ])
-  })
-
-  it('builds the group handle lookup with the same collision rules', () => {
     expect(Array.from(buildMentionGroups(members, groups).keys())).toEqual(['general'])
-  })
 
-  it('filters mention options and groups them for display', () => {
     const filtered = filterMentionOptions(buildWorkspaceMentionOptions(members, groups), 'lead')
 
     expect(filtered.map((option) => [option.kind, option.handle])).toEqual([
@@ -54,7 +49,7 @@ describe('workspace mentions', () => {
     ])
   })
 
-  it('builds empty and single-participant copy from Channel members while excluding the current user', () => {
+  it('builds the composer placeholder from Channel members', () => {
     expect(buildComposerPlaceholder({
       activeChannelMembers: members.slice(0, 1),
       activeGroupName: 'General',
@@ -67,9 +62,6 @@ describe('workspace mentions', () => {
     })).toBe(
       'Write to Client in General or ask @track...',
     )
-  })
-
-  it('builds multiple-participant copy only from the supplied Channel member set', () => {
     const additionalMembers = [
       {
         membership: { groupId: 'group-1' },

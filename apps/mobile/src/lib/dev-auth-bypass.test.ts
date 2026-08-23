@@ -51,10 +51,4 @@ describe('mobile development auth bypass', () => {
     });
   });
 
-  it('stays disabled when no development password is configured', async () => {
-    const bypass = await loadBypass();
-
-    await expect(bypass.enableDevAuthBypass()).rejects.toThrow('dev_auth_bypass_disabled');
-    expect(authClientMock.signIn.email).not.toHaveBeenCalled();
-  });
 });

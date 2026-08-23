@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 describe('shouldNotifyForIncomingMessage', () => {
-  it('does not notify the sender about their own message', () => {
+  it('applies sender and mention notification policy', () => {
     expect(
       shouldNotifyForIncomingMessage({
         authorId: 'u1',
@@ -18,9 +18,16 @@ describe('shouldNotifyForIncomingMessage', () => {
         mentions: ['u1'],
       }),
     ).toBe(false)
-  })
 
-  it('respects mention-only mode', () => {
+    expect(
+      shouldNotifyForIncomingMessage({
+        authorId: 'u2',
+        currentUserId: 'u1',
+        globalMode: 'all',
+        groupMode: 'inherit',
+        mentions: [],
+      }),
+    ).toBe(true)
     expect(
       shouldNotifyForIncomingMessage({
         authorId: 'u2',

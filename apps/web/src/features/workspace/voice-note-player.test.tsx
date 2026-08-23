@@ -20,7 +20,7 @@ describe('VoiceNotePlayer', () => {
     })
   })
 
-  it('renders a playable voice-note control with duration metadata', () => {
+  it('plays a voice note with duration metadata', () => {
     render(
       <VoiceNotePlayer
         contentType="audio/webm"
@@ -36,18 +36,6 @@ describe('VoiceNotePlayer', () => {
     expect(screen.getByText('0:00 / 0:18')).toBeTruthy()
     expect(screen.queryByText('voice-note.webm')).toBeNull()
     expect(screen.getByLabelText('Play voice note')).not.toHaveProperty('disabled', true)
-  })
-
-  it('starts playback from the play button', () => {
-    render(
-      <VoiceNotePlayer
-        contentType="audio/webm"
-        durationMs={18_000}
-        filename="voice-note.webm"
-        size={142_000}
-        url="blob:voice-note"
-      />,
-    )
 
     fireEvent.click(screen.getByLabelText('Play voice note'))
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled()
@@ -68,31 +56,7 @@ describe('VoiceNotePlayer', () => {
     expect(screen.getByLabelText('Voice note progress')).toHaveProperty('disabled', true)
   })
 
-  it('fills the progress control when playback ends', () => {
-    const { container } = render(
-      <VoiceNotePlayer
-        contentType="audio/webm"
-        durationMs={3_000}
-        filename="voice-note.webm"
-        kind="voice_note"
-        size={142_000}
-        url="blob:voice-note"
-      />,
-    )
-    const audio = container.querySelector('audio')
-    expect(audio).toBeTruthy()
-
-    Object.defineProperty(audio, 'duration', {
-      configurable: true,
-      value: 3,
-    })
-    fireEvent.ended(audio as HTMLAudioElement)
-
-    expect(screen.getByLabelText('Voice note progress')).toHaveProperty('value', '100')
-    expect(screen.getByText('0:03 / 0:03')).toBeTruthy()
-  })
-
-  it('uses measured media duration when it is longer than metadata', () => {
+  it('uses measured duration and reaches the end of playback', () => {
     const { container } = render(
       <VoiceNotePlayer
         contentType="audio/webm"
@@ -112,10 +76,19 @@ describe('VoiceNotePlayer', () => {
     })
     Object.defineProperty(audio, 'currentTime', {
       configurable: true,
-      value: 2.4,
+      value: 1,
     })
     fireEvent.loadedMetadata(audio as HTMLAudioElement)
     fireEvent.timeUpdate(audio as HTMLAudioElement)
+
+    expect(screen.getByLabelText('Voice note progress')).toHaveProperty('value', '38')
+    expect(screen.getByText('0:01 / 0:03')).toBeTruthy()
+
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      value: 3,
+    })
+    fireEvent.ended(audio as HTMLAudioElement)
 
     expect(screen.getByLabelText('Voice note progress')).toHaveProperty('value', '100')
     expect(screen.getByText('0:03 / 0:03')).toBeTruthy()

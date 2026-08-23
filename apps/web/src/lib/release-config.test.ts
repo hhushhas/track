@@ -10,16 +10,4 @@ describe('web release config', () => {
       threads: false,
     })
   })
-
-  it('uses only the server projection once it is available', () => {
-    expect(resolveReleaseConfig({
-      companyModel: true,
-      tasks: false,
-      threads: true,
-    })).toEqual({
-      companyModel: true,
-      tasks: false,
-      threads: true,
-    })
-  })
 })

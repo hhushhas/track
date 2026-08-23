@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-23
+
+### Changed
+
+- Focused the automated test portfolio on authorization, scope isolation,
+  durable state transitions, privacy boundaries, and hard transformations while
+  removing duplicate, implementation-shaped, and static presentation checks.
+
 ## 2026-07-30
 
 ### Added

@@ -22,35 +22,12 @@ describe('groups.listMembers', () => {
       'Active legacy member',
       'Channel owner',
     ])
-  })
-
-  it('excludes members of another Channel', async () => {
-    const t = convexTest(schema, modules)
-    const fixture = await seedChannel(t)
-
-    const members = await t.withIdentity({ subject: 'channel-owner' }).query(
-      api.groups.listMembers,
-      { groupId: fixture.groupId, userId: fixture.ownerId },
-    )
-
     expect(members.flatMap((item) => item.user ? [item.user.displayName] : []))
       .not.toContain('Other Channel member')
-  })
-
-  it('keeps the Channel access boundary when a Project member is not a Channel member', async () => {
-    const t = convexTest(schema, modules)
-    const fixture = await seedChannel(t)
-
     await expect(t.withIdentity({ subject: 'project-only-member' }).query(
       api.groups.listMembers,
       { groupId: fixture.groupId, userId: fixture.projectOnlyMemberId },
     )).rejects.toThrow('not_group_member')
-  })
-
-  it('keeps status-less legacy Channels visible while revoking inactive membership', async () => {
-    const t = convexTest(schema, modules)
-    const fixture = await seedChannel(t)
-
     const visible = await t.withIdentity({ subject: 'channel-owner' }).query(
       api.groups.listVisible,
       { projectId: fixture.projectId, userId: fixture.ownerId },

@@ -6,6 +6,9 @@ describe('workspace identity helpers', () => {
   it('normalizes display names into mention handles', () => {
     expect(getMentionHandle('@Hasan Shoaib')).toBe('hasan-shoaib')
     expect(getMentionHandle(' Client.Owner+Ops ')).toBe('client.owner-ops')
+    expect(getInitials('')).toBe('T')
+    expect(getInitials('Track')).toBe('TR')
+    expect(getInitials('Hasan Shoaib')).toBe('HS')
   })
 
   it('detects the active mention at the current cursor only', () => {
@@ -15,11 +18,5 @@ describe('workspace identity helpers', () => {
       query: 'track',
     })
     expect(getActiveMention('hello @track and team', 21)).toBeNull()
-  })
-
-  it('keeps fallback initials compact', () => {
-    expect(getInitials('')).toBe('T')
-    expect(getInitials('Track')).toBe('TR')
-    expect(getInitials('Hasan Shoaib')).toBe('HS')
   })
 })

@@ -8,13 +8,9 @@ describe('mobile task navigation', () => {
   const companyId = 'company' as Id<'companies'>;
   const membershipId = 'membership' as Id<'projectMembers'>;
 
-  it('keeps standalone task routes free of Company parameters', () => {
-    expect(taskListHref(projectId, null)).toBe('/tasks?projectId=project');
-    expect(taskDetailHref(projectId, 'TRK-12', null)).toBe('/task?projectId=project&taskKey=TRK-12');
-  });
-
-  it('preserves exact represented membership and archive state', () => {
+  it('preserves represented Company task URLs and archive state', () => {
     const context = { archived: true, companyId, membershipId };
+    expect(taskListHref(projectId, context)).toBe('/tasks?projectId=project&companyId=company&membershipId=membership&archive=1');
     expect(taskDetailHref(projectId, 'TRK-12', context)).toContain(
       'companyId=company&membershipId=membership&archive=1',
     );

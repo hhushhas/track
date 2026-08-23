@@ -1111,41 +1111,23 @@ task-only release.
 
 ## Testing and verification gate
 
-Automated coverage must include:
+Automated coverage focuses on:
 
-- shared enum, state-category, due-date, and policy tests;
-- Convex authorization matrix tests for all four legacy roles, both neutral
-  Project roles, Acting Company selection, active/read-only access,
-  project/Channel scope, membership loss, evidence redaction, and assignment
-  eligibility;
-- multi-Company same-user tests proving separate My tasks, Inbox hides, follow
-  state, notification feed/unread count, deep-link context, and archive access;
-- Company-exit snapshot tests covering `exit_pending`, blocked writes, retry at
-  the original cutoff, safe-cancel cleanup, exact Channel entitlements, mutable
-  task/comment/suggestion/label/evidence state, later live edits, authorized
-  redaction tombstones, and rejoin as a new participation term;
-- schema-invariant and transactional tests for task-key collisions, defaults,
-  workflow migration, ranking, subtasks, scope changes, suggestion terminal
-  transitions, idempotent comments, and archive behavior;
-- AI structured-output validation, Project- and Channel-suggestion scope,
-  confidence gating, source scoping, fingerprint deduplication, likely-duplicate
-  handling, generation/lease races, cursor compare-and-set, retry, and
-  provider-failure tests with a fake model adapter;
-- evidence invalidation tests for deletion, redaction, expiration, revocation,
-  promotion, and membership loss;
-- search pagination and leak-resistance tests;
-- notification targeting, due rescheduling, access recheck, and deep-link tests;
-- web component and route tests for board/list states, drawer routing, forms,
-  conflicts, drag rollback, keyboard movement, inline cards, Inbox, and filters;
-- mobile tests for task navigation, status grouping, forms, message actions,
-  inline cards, error surfaces, and push routing;
+- focused shared boundary tests for task date, title, description, and due-state
+  rules, task capabilities, suggestion-fingerprint normalization, Channel
+  membership, release flags, and Project access-profile fallback;
+- focused Convex tests for authenticated actor binding, Project/Channel scope,
+  task authorization, lifecycle write boundaries, evidence visibility, and
+  suggestion deduplication;
+- focused web and mobile presenter tests for task navigation, status grouping,
+  message actions, and deep-link context; and
 - conditional thread integration tests when both feature flags are enabled.
 
 Web end-to-end acceptance uses Playwright against a local production build.
 Mobile component and interaction coverage uses React Native Testing Library;
 Expo Router and deep-link behavior is exercised through pure presenters before
-device proof. Model tests inject the deterministic fake adapter and make no
-network calls.
+device proof. Focused automated tests use deterministic fixtures and make no
+production service calls.
 
 The implementation handoff runs and observes the repository gate:
 

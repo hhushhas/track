@@ -23,18 +23,10 @@ function member({
 }
 
 describe('getActiveChannelMembers', () => {
-  it('excludes Project members who are not in the active Channel', () => {
-    const members = [
-      member({ groupId: channelA, name: 'Amina' }),
-      member({ groupId: channelB, name: 'Project-only member' }),
-    ]
-
-    expect(getActiveChannelMembers(channelA, members).map((item) => item.user.displayName)).toEqual(['Amina'])
-  })
-
-  it('keeps the authoritative Channel response while excluding missing users', () => {
+  it('filters Project members to the active Channel and available users', () => {
     const members = [
       member({ groupId: channelA, name: 'Legacy member' }),
+      member({ groupId: channelB, name: 'Project-only member' }),
       member({ groupId: channelA, name: 'Explicit active member', status: 'active' }),
       member({ groupId: channelA, name: 'Missing user', user: false }),
     ]

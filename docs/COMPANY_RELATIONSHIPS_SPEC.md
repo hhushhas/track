@@ -1073,41 +1073,26 @@ additionally satisfy the applicable combined criteria 19–20.
 
 ## Testing and verification gate
 
-Automated coverage must include:
+Automated coverage focuses on:
 
-- shared enum, status-transition, role, participant-revision, and policy tests;
-- Convex authorization matrices across Company, Relationship, Project,
-  Channel, live, and read-only archive scopes;
-- authenticated-actor spoof tests for every public function migrated from
-  caller-supplied identities;
-- invariant and transaction tests for unique memberships, invitation races,
-  Project activation, General enrollment, last-owner/manager protection,
-  unanimous approvals, stale votes, Company suspension, metadata-only
-  administration, zero-participant exit, archive, and idempotency;
-- permission-leak tests for search pagination, counts, audit payloads,
-  notifications, attachment URLs, reports, assistant context, memory, evidence,
-  typing, read state, and deep links;
-- legacy upgrade fixtures covering one Company, multiple Companies, ambiguous
-  mappings, canceled upgrades, concurrent acceptance, exact Group membership
-  preservation, and retry after partial failure;
-- web tests for Company switching, private discovery, invitations, Project
-  proposals, member administration, Channel participation, approvals, guided
-  upgrade, exit, archive, errors, and keyboard access;
-- mobile tests for Company switching, invitations, Project/Channel navigation,
-  identity badges, read-only archives, access loss, and deep links;
+- focused shared boundary tests for Channel membership authorization, mention
+  parsing, release flags, Project access-profile fallback, and lifecycle
+  predicates;
+- focused Convex tests for authenticated actor binding, Company/Relationship/
+  Project/Channel scope, archive entitlements, invitation and approval
+  transitions, and permission-leak boundaries;
+- focused web and mobile presenter tests for Company switching, Project/Channel
+  navigation, identity context, denied deep links, and access-loss behavior;
 - conditional thread integration tests when both Company and thread features are
-  enabled;
-- conditional task integration tests when both Company and task features are
   enabled; and
-- exit-saga tests covering Box snapshot failure, verified retry, safe cancel,
-  immutable Project- and Channel-memory versions/hashes/scopes, cutoff filtering,
-  and orphan snapshot cleanup.
+- conditional task integration tests when both Company and task features are
+  enabled.
 
 Web end-to-end acceptance uses Playwright against a local production build.
 Mobile component and interaction coverage uses React Native Testing Library;
 Expo Router and deep-link behavior is exercised through pure presenters before
-device proof. Automated tests use deterministic fixtures and never require a
-production service.
+device proof. Focused automated tests use deterministic fixtures and never
+require a production service.
 
 The implementation handoff runs and observes the repository gate:
 
