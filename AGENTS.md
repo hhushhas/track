@@ -75,7 +75,6 @@ failure or report the exact blocker.
 - Keep Convex schema and generated API declarations aligned with backend code.
 - Regenerate the TanStack route tree when routes change.
 - Update current documentation when product behavior or architecture changes.
-- Put future product work in `docs/ROADMAP.md`; do not describe it as shipped.
 - Do not deploy or access production systems without explicit approval.
 - Do not commit secrets, local environment files, generated build output, or
   scratchpad session logs.

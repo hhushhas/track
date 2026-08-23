@@ -74,11 +74,9 @@ offline, denied, conflict, and read-only states without relying on color.
 
 ## Product language
 
-Use the canonical nouns in [PRODUCT.md](./PRODUCT.md). Describe `@track` as an
-assistant grounded in accessible references. Do not describe AI answers as
-durable work items. Task, board, and thread presentation follows the approved
-[task](./TASK_MANAGEMENT_SPEC.md), [thread](./THREADS_SPEC.md), and
-[UI refresh](./UI_REFRESH_SPEC.md) contracts when their server-authoritative
-flags expose those surfaces. Task management and Channel threads are implemented
-and production-enabled alongside Company collaboration. All three capabilities
-remain independently disableable through their server-authoritative controls.
+Use the canonical product nouns: Company, Project, Channel, thread, task,
+board, and reference. Describe `@track` as an assistant grounded in accessible
+references. Do not describe AI answers as durable work items. Task management
+and Channel threads are implemented and production-enabled alongside Company
+collaboration, and all three remain independently disableable through their
+server-authoritative controls.
