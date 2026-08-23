@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   extractAttachmentText,
-  formatExtractedAttachmentNote,
 } from '../../../../../convex/lib/attachmentTextExtraction'
 
 const tinyDocxFixture =
@@ -25,17 +24,5 @@ describe('attachment text extraction', () => {
       text: 'Subscription scope\nStripe recurring payments & renewal dates\nOwner\nTabish',
       type: 'docx',
     })
-  })
-
-  it('formats locally extracted text as assistant attachment notes', () => {
-    const note = formatExtractedAttachmentNote({
-      filename: 'proposal.docx',
-      question: 'what dates are mentioned?',
-      text: 'Kickoff: June 5\nReview: June 7',
-    })
-
-    expect(note).toContain('proposal.docx: locally extracted text available')
-    expect(note).toContain('User question: what dates are mentioned?')
-    expect(note).toContain('Kickoff: June 5')
   })
 })

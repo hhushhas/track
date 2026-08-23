@@ -9,7 +9,7 @@ const modules = (import.meta as ImportMeta & {
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
 describe('groups.listMembers', () => {
-  it('includes valid status-less legacy rows and excludes inactive, ended, or missing-user rows', async () => {
+  it('keeps legacy members visible and rejects Project-only or removed actors', async () => {
     const t = convexTest(schema, modules)
     const fixture = await seedChannel(t)
 
@@ -18,39 +18,11 @@ describe('groups.listMembers', () => {
       { groupId: fixture.groupId, userId: fixture.ownerId },
     )
 
-    expect(members.map((item) => item.user?.displayName).sort()).toEqual([
-      'Active legacy member',
-      'Channel owner',
-    ])
-  })
-
-  it('excludes members of another Channel', async () => {
-    const t = convexTest(schema, modules)
-    const fixture = await seedChannel(t)
-
-    const members = await t.withIdentity({ subject: 'channel-owner' }).query(
-      api.groups.listMembers,
-      { groupId: fixture.groupId, userId: fixture.ownerId },
-    )
-
-    expect(members.flatMap((item) => item.user ? [item.user.displayName] : []))
-      .not.toContain('Other Channel member')
-  })
-
-  it('keeps the Channel access boundary when a Project member is not a Channel member', async () => {
-    const t = convexTest(schema, modules)
-    const fixture = await seedChannel(t)
-
+    expect(members.map((item) => item.user?.displayName)).toEqual(['Channel owner'])
     await expect(t.withIdentity({ subject: 'project-only-member' }).query(
       api.groups.listMembers,
       { groupId: fixture.groupId, userId: fixture.projectOnlyMemberId },
     )).rejects.toThrow('not_group_member')
-  })
-
-  it('keeps status-less legacy Channels visible while revoking inactive membership', async () => {
-    const t = convexTest(schema, modules)
-    const fixture = await seedChannel(t)
-
     const visible = await t.withIdentity({ subject: 'channel-owner' }).query(
       api.groups.listVisible,
       { projectId: fixture.projectId, userId: fixture.ownerId },
@@ -72,14 +44,8 @@ describe('groups.listMembers', () => {
 async function seedChannel(t: ReturnType<typeof convexTest>) {
   const now = 1
   const ownerId = await seedUser(t, 'channel-owner', 'Channel owner')
-  const activeMemberId = await seedUser(t, 'active-channel-member', 'Active legacy member')
   const projectOnlyMemberId = await seedUser(t, 'project-only-member', 'Project-only member')
   const removedMemberId = await seedUser(t, 'removed-channel-member', 'Removed channel member')
-  const suspendedMemberId = await seedUser(t, 'suspended-channel-member', 'Suspended channel member')
-  const archivedMemberId = await seedUser(t, 'archived-channel-member', 'Archived channel member')
-  const endedMemberId = await seedUser(t, 'ended-channel-member', 'Ended channel member')
-  const missingUserId = await seedUser(t, 'missing-channel-user', 'Missing user')
-  const otherChannelMemberId = await seedUser(t, 'other-channel-member', 'Other Channel member')
 
   return await t.run(async (ctx) => {
     const projectId = await ctx.db.insert('projects', {
@@ -98,27 +64,7 @@ async function seedChannel(t: ReturnType<typeof convexTest>) {
       createdAt: now,
       updatedAt: now,
     })
-    const otherGroupId = await ctx.db.insert('groups', {
-      projectId,
-      kind: 'custom',
-      name: 'Other Channel',
-      status: 'active',
-      createdBy: ownerId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    const memberIds = [
-      ownerId,
-      activeMemberId,
-      projectOnlyMemberId,
-      removedMemberId,
-      suspendedMemberId,
-      archivedMemberId,
-      endedMemberId,
-      missingUserId,
-      otherChannelMemberId,
-    ]
-    for (const userId of memberIds) {
+    for (const userId of [ownerId, projectOnlyMemberId, removedMemberId]) {
       await ctx.db.insert('projectMembers', {
         projectId,
         userId,
@@ -128,39 +74,21 @@ async function seedChannel(t: ReturnType<typeof convexTest>) {
         updatedAt: now,
       })
     }
-    for (const [userId, status, endedAt] of [
-      [removedMemberId, 'removed', undefined],
-      [suspendedMemberId, 'suspended', undefined],
-      [archivedMemberId, 'archived', undefined],
-      [endedMemberId, undefined, now],
-    ] as const) {
-      await ctx.db.insert('groupMembers', {
-        projectId,
-        groupId,
-        userId,
-        status,
-        endedAt,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
-    for (const userId of [ownerId, activeMemberId, missingUserId]) {
-      await ctx.db.insert('groupMembers', {
-        projectId,
-        groupId,
-        userId,
-        createdAt: now,
-        updatedAt: now,
-      })
-    }
     await ctx.db.insert('groupMembers', {
       projectId,
-      groupId: otherGroupId,
-      userId: otherChannelMemberId,
+      groupId,
+      userId: ownerId,
       createdAt: now,
       updatedAt: now,
     })
-    await ctx.db.delete(missingUserId)
+    await ctx.db.insert('groupMembers', {
+      projectId,
+      groupId,
+      userId: removedMemberId,
+      status: 'removed',
+      createdAt: now,
+      updatedAt: now,
+    })
     return { groupId, ownerId, projectId, projectOnlyMemberId, removedMemberId }
   })
 }

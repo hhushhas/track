@@ -1,0 +1,7 @@
+appId: com.apple.Preferences
+---
+- swipe:
+    start: 50%,80%
+    end: 50%,30%
+    duration: 500
+- tapOn: Notifications

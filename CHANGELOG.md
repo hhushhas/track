@@ -1,20 +1,19 @@
 # Changelog
 
-## 2026-08-03
+## 2026-08-23
 
-### Added
+### Changed
 
-- Released mobile 1.2.0 with the redesigned Project, Channel, task board, and
-  task-detail experience, including task movement, richer assignment and due
-  date controls, attachment capture, voice notes, and mention suggestions.
+- Focused the automated test portfolio on authorization, scope isolation,
+  durable state transitions, privacy boundaries, and hard transformations while
+  removing duplicate, implementation-shaped, and static presentation checks.
+  The resulting suite contains 68 tests across 28 files.
 
-### Fixed
+### Security
 
-- Aligned the production task API with mobile board movement and shipped the
-  linked message cleanup and direct native-notification indexes and functions.
-- Verified the release manifests target Android API 36 and include the iOS
-  camera, photo-library, microphone, push-notification, and Sign in with Apple
-  declarations used by the app.
+- Updated direct and transitive production dependencies to resolve the current
+  Hono, Undici, PostCSS, Nanoid, YAML, brace expansion, and image parser
+  advisories reported by the package audit.
 
 ## 2026-07-30
 

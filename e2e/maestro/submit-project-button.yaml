@@ -1,0 +1,14 @@
+appId: ai.q9labs.track
+---
+- runFlow:
+    when:
+      visible: Open debugger to view warnings.
+    commands:
+      - tapOn:
+          point: 92%,92%
+- tapOn:
+    text: Create Project
+    index: 1
+- extendedWaitUntil:
+    visible: Push Verification 033850
+    timeout: 60000

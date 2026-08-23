@@ -11,16 +11,13 @@ const modules = (import.meta as ImportMeta & {
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
 describe('memory import metadata', () => {
-  it('preserves bounded Channel import evidence for task extraction', () => {
+  it('preserves bounded Channel evidence and records import lifecycle audit state', async () => {
     const source = `Pasted text:\nShip the default-off release.\n\n${'evidence '.repeat(1_200)}`
     const summary = buildChannelImportSummary(source)
 
     expect(summary).toContain('Ship the default-off release.')
     expect(summary).toHaveLength(8_000)
     expect(summary.endsWith('...')).toBe(true)
-  })
-
-  it('records import lifecycle status and audit events', async () => {
     const t = convexTest(schema, modules)
     const now = Date.now()
     const { actorId, groupId, projectId } = await seedProjectMembership(t, now)

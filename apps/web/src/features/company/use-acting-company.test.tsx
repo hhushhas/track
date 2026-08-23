@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { renderHook } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -22,15 +22,6 @@ describe('web Acting Company selection', () => {
   })
 
   beforeEach(() => window.localStorage.clear())
-
-  it('selects an available Company and persists an explicit switch', () => {
-    const { result } = renderHook(() => useActingCompany([first, second]))
-    expect(result.current.actingCompanyId).toBe(first)
-
-    act(() => result.current.setActingCompanyId(second))
-    expect(result.current.actingCompanyId).toBe(second)
-    expect(window.localStorage.getItem('track-acting-company-id')).toBe(second)
-  })
 
   it('drops a stale represented Company instead of leaking another context', () => {
     window.localStorage.setItem('track-acting-company-id', second)

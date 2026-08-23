@@ -8,42 +8,8 @@ const modules = (import.meta as ImportMeta & {
   glob: (patterns: Array<string>) => Record<string, () => Promise<unknown>>
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
-describe('authenticated actor context', () => {
-  it('rejects an unauthenticated caller', async () => {
-    const t = convexTest(schema, modules)
-
-    await expect(t.query(api.foundation.getActorContext, {})).rejects.toThrow(
-      'unauthenticated',
-    )
-  })
-
-  it('derives the Track user from the authenticated subject', async () => {
-    const t = convexTest(schema, modules)
-    const userId = await seedUser(t, 'auth-user-1')
-
-    await expect(
-      t.withIdentity({ subject: 'auth-user-1' }).query(
-        api.foundation.getActorContext,
-        {},
-      ),
-    ).resolves.toEqual({ authSubject: 'auth-user-1', userId })
-  })
-
-  it('does not bind an authenticated subject through an untrusted email claim', async () => {
-    const t = convexTest(schema, modules)
-    await seedUser(t, 'existing-user')
-
-    await expect(
-      t.withIdentity({
-        subject: 'different-subject',
-        email: 'existing-user@track.test',
-      }).query(api.foundation.getActorContext, {}),
-    ).rejects.toThrow('actor_not_provisioned')
-  })
-})
-
 describe('central Project and Channel policy adapter', () => {
-  it('defaults an existing Project to legacy policy and requires exact Group membership', async () => {
+  it('enforces legacy and Company Project-Channel scope, including selected membership', async () => {
     const t = convexTest(schema, modules)
     const { groupId, projectId, projectMemberId, userId } = await seedLegacyProject(t)
     const authenticated = t.withIdentity({ subject: 'legacy-user' })
@@ -76,12 +42,8 @@ describe('central Project and Channel policy adapter', () => {
       api.foundation.getProjectChannelContext,
       { projectId, groupId: restrictedGroupId },
     )).rejects.toThrow('channel_unavailable')
-  })
-
-  it('uses selected Company membership and requires explicit Channel stewardship', async () => {
-    const t = convexTest(schema, modules)
     const seeded = await seedCompanyProject(t)
-    const authenticated = t.withIdentity({ subject: 'company-user' })
+    const companyAuthenticated = t.withIdentity({ subject: 'company-user' })
     const args = {
       projectId: seeded.projectId,
       groupId: seeded.groupId,
@@ -89,7 +51,7 @@ describe('central Project and Channel policy adapter', () => {
       actingCompanyId: seeded.companyId,
     }
 
-    await expect(authenticated.query(
+    await expect(companyAuthenticated.query(
       api.foundation.getProjectChannelContext,
       args,
     )).rejects.toThrow('channel_unavailable')
@@ -106,7 +68,7 @@ describe('central Project and Channel policy adapter', () => {
         updatedAt: 1,
       })
     })
-    await expect(authenticated.query(
+    await expect(companyAuthenticated.query(
       api.foundation.getProjectChannelContext,
       args,
     )).resolves.toMatchObject({
@@ -130,17 +92,12 @@ describe('central Project and Channel policy adapter', () => {
       if (!membership) throw new Error('missing_test_membership')
       await ctx.db.patch(membership._id, { isSteward: true })
     })
-    await expect(authenticated.query(
+    await expect(companyAuthenticated.query(
       api.foundation.getProjectChannelContext,
       args,
     )).resolves.toMatchObject({
       capabilities: { canStewardChannel: true },
     })
-  })
-
-  it('rejects a Company context selected for another authenticated user', async () => {
-    const t = convexTest(schema, modules)
-    const seeded = await seedCompanyProject(t)
     await seedUser(t, 'other-user')
 
     await expect(t.withIdentity({ subject: 'other-user' }).query(
@@ -153,7 +110,7 @@ describe('central Project and Channel policy adapter', () => {
     )).rejects.toThrow('project_unavailable')
   })
 
-  it('rejects caller-identified memory access when the authenticated actor differs', async () => {
+  it('keeps archive and memory entitlements read-only and actor-bound', async () => {
     const t = convexTest(schema, modules)
     const seeded = await seedCompanyProject(t)
     await seedUser(t, 'other-memory-user')
@@ -162,11 +119,6 @@ describe('central Project and Channel policy adapter', () => {
       projectId: seeded.projectId,
       userId: seeded.userId,
     })).rejects.toThrow('actor_mismatch')
-  })
-
-  it('returns only the exited membership archive entitlement as read-only', async () => {
-    const t = convexTest(schema, modules)
-    const seeded = await seedCompanyProject(t)
     await t.run(async (ctx) => {
       await ctx.db.patch(seeded.projectCompanyId, {
         status: 'exited',

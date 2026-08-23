@@ -1,0 +1,9 @@
+appId: ai.q9labs.track
+---
+- longPressOn:
+    point: 50%,75%
+- extendedWaitUntil:
+    visible: Select All
+    timeout: 10000
+- tapOn: Select All
+- inputText: Push Verification 033850

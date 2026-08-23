@@ -1,0 +1,10 @@
+appId: ai.q9labs.track
+---
+- runFlow:
+    when:
+      visible: Open
+    commands:
+      - tapOn: Open
+- extendedWaitUntil:
+    visible: Dev bypass
+    timeout: 120000

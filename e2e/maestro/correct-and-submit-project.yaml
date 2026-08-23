@@ -1,0 +1,22 @@
+appId: ai.q9labs.track
+---
+- tapOn:
+    point: 50%,75%
+- eraseText: 100
+- inputText: Push Verification 033850
+- pressKey: Enter
+- tapOn:
+    point: 50%,83%
+- inputText: Native QA
+- pressKey: Enter
+- swipe:
+    start: 50%,84%
+    end: 50%,58%
+    duration: 600
+- extendedWaitUntil:
+    visible: Submit project creation
+    timeout: 30000
+- tapOn: Submit project creation
+- extendedWaitUntil:
+    visible: Push Verification 033850
+    timeout: 60000

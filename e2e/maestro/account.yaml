@@ -1,0 +1,5 @@
+appId: ai.q9labs.track
+---
+- tapOn: Back
+- tapOn:
+    text: "Account and settings"

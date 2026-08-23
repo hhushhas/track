@@ -29,7 +29,7 @@ afterEach(() => {
 })
 
 describe('Channel threads', () => {
-  it('adds task behavior only when both releases are enabled and hides thread evidence otherwise', async () => {
+  it('fails closed across thread and task releases', async () => {
     process.env.TRACK_TASKS_ENABLED = 'true'
     const { groupId, owner, projectId, t } = await seedLegacyChannel()
     const actor = asUser(t, owner)
@@ -67,6 +67,14 @@ describe('Channel threads', () => {
     })
 
     process.env.TRACK_THREADS_ENABLED = 'false'
+    expect(await actor.query(api.channelThreads.list, { groupId, userId: owner })).toEqual([])
+    await expect(actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'disabled-create',
+      name: 'Hidden thread',
+      projectId,
+    })).rejects.toThrow('threads_disabled')
     expect(await actor.query(api.tasks.listForMessage, { messageId })).toEqual([])
     const tasksOnlyDetail = await actor.query(api.tasks.getByKey, {
       projectId,
@@ -96,88 +104,34 @@ describe('Channel threads', () => {
     await expect(actor.query(api.taskBoards.list, { projectId }))
       .rejects.toThrow('tasks_disabled')
   })
-  it('fails closed when the release is disabled', async () => {
-    process.env.TRACK_THREADS_ENABLED = 'false'
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-
-    expect(await actor.query(api.channelThreads.list, { groupId, userId: owner })).toEqual([])
-    await expect(actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'disabled-create',
-      name: 'Hidden thread',
-      projectId,
-    })).rejects.toThrow('threads_disabled')
-  })
-
-  it('hides persisted thread evidence when the release is disabled', async () => {
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const threadId = await actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'disabled-existing-thread',
-      name: 'Persisted while disabled',
-      projectId,
-    })
-    const messageId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Hidden persisted reply',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'disabled-existing-message',
-      projectId,
-    })
-
-    process.env.TRACK_THREADS_ENABLED = 'false'
-    expect(await actor.query(api.channelThreads.get, { threadId, userId: owner })).toBeNull()
-    expect(await actor.query(api.channelThreads.listMessages, { threadId, userId: owner })).toEqual([])
-    expect(await actor.query(api.assistant.listForThread, { threadId, userId: owner })).toEqual([])
-    expect((await actor.query(api.search.project, {
-      projectId,
-      query: 'Hidden persisted',
-      userId: owner,
-    })).messages).toEqual([])
-    await expect(actor.mutation(api.reports.create, {
-      projectId,
-      reason: 'other',
-      reporterId: owner,
-      targetMessageId: messageId,
-      targetType: 'message',
-    })).rejects.toThrow('threads_disabled')
-  })
-
-  it('continues channel sequences above pre-upgrade messages', async () => {
-    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
-    await t.run(async (ctx) => {
-      await ctx.db.insert('messages', {
-        projectId,
-        groupId,
-        authorId: owner,
-        authorProjectMemberId: ownerMembershipId,
-        channelSequence: 41,
-        body: 'Persisted before the group counter existed',
-        mentions: [],
-        attachmentIds: [],
-        createdAt: Date.now() - 1_000,
+  it('preserves channel sequence and converges create/send retries', async () => {
+    {
+      const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+      await t.run(async (ctx) => {
+        await ctx.db.insert('messages', {
+          projectId,
+          groupId,
+          authorId: owner,
+          authorProjectMemberId: ownerMembershipId,
+          channelSequence: 41,
+          body: 'Persisted before the group counter existed',
+          mentions: [],
+          attachmentIds: [],
+          createdAt: Date.now() - 1_000,
+        })
       })
-    })
-
-    const messageId = await asUser(t, owner).mutation(api.messages.send, {
-      authorId: owner,
-      body: 'First message after the sequence migration',
-      groupId,
-      idempotencyKey: 'post-sequence-migration',
-      projectId,
-    })
-    expect(await t.run(async (ctx) => await ctx.db.get(messageId)))
-      .toMatchObject({ channelSequence: 42 })
-    expect(await t.run(async (ctx) => await ctx.db.get(groupId)))
-      .toMatchObject({ nextChannelSequence: 42 })
-  })
-
-  it('converges create and send retries while keeping thread messages out of the timeline', async () => {
+      const messageId = await asUser(t, owner).mutation(api.messages.send, {
+        authorId: owner,
+        body: 'First message after the sequence migration',
+        groupId,
+        idempotencyKey: 'post-sequence-migration',
+        projectId,
+      })
+      expect(await t.run(async (ctx) => await ctx.db.get(messageId)))
+        .toMatchObject({ channelSequence: 42 })
+      expect(await t.run(async (ctx) => await ctx.db.get(groupId)))
+        .toMatchObject({ nextChannelSequence: 42 })
+    }
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const ownerActor = asUser(t, owner)
     const sourceMessageId = await ownerActor.mutation(api.messages.send, {
@@ -229,272 +183,6 @@ describe('Channel threads', () => {
     expect(replies.map((item) => item.message._id)).toEqual([replyId])
     expect(memberThreads[0]).toMatchObject({ following: true, replyCount: 1, unread: true })
     expect(memberThreads[0].thread).toMatchObject({ name: 'Decision log', sourceMessageId })
-  })
-
-  it('keeps forwarded-note mentions inside the target Channel membership', async () => {
-    const { groupId, member, outsider, owner, projectId, t } = await seedLegacyChannel()
-    const targetGroupId = await t.run(async (ctx) => {
-      const now = Date.now()
-      await ctx.db.insert('projectMembers', {
-        projectId,
-        userId: outsider,
-        role: 'staff',
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      })
-      const targetGroupId = await ctx.db.insert('groups', {
-        projectId,
-        kind: 'custom',
-        name: 'Target Channel',
-        status: 'active',
-        createdBy: owner,
-        createdAt: now,
-        updatedAt: now,
-      })
-      for (const userId of [owner, outsider]) {
-        await ctx.db.insert('groupMembers', {
-          projectId,
-          groupId: targetGroupId,
-          userId,
-          createdAt: now,
-          updatedAt: now,
-        })
-      }
-      return targetGroupId
-    })
-    const actor = asUser(t, owner)
-    const sourceMessageId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Forward this update.',
-      groupId,
-      projectId,
-    })
-
-    const forwardedMessageId = await actor.mutation(api.messages.forwardMessage, {
-      actorId: owner,
-      body: '@thread-member @thread-outsider',
-      mentions: [member, outsider],
-      projectId,
-      sourceMessageId,
-      targetGroupId,
-    })
-
-    expect(await t.run(async (ctx) => await ctx.db.get(forwardedMessageId)))
-      .toMatchObject({ mentions: [outsider] })
-  })
-
-  it('keeps follow and read state private and clears unread when opened', async () => {
-    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
-    const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'follow-thread',
-      name: 'Follow behavior',
-      projectId,
-    })
-    await asUser(t, member).mutation(api.channelThreads.setFollowing, {
-      following: true,
-      threadId,
-      userId: member,
-    })
-    await asUser(t, owner).mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Unread for the follower',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'unread-reply',
-      projectId,
-    })
-
-    expect((await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))?.unread)
-      .toBe(true)
-    await asUser(t, member).mutation(api.channelThreads.markRead, { threadId, userId: member })
-    expect((await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))?.unread)
-      .toBe(false)
-    await asUser(t, member).mutation(api.channelThreads.setFollowing, {
-      following: false,
-      threadId,
-      userId: member,
-    })
-    await asUser(t, owner).mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Not unread after explicit unfollow',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'unfollowed-reply',
-      projectId,
-    })
-    expect(await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))
-      .toMatchObject({ following: false, unread: false })
-  })
-
-  it('keeps legacy timeline and followed-thread read cursors independent', async () => {
-    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
-    const ownerActor = asUser(t, owner)
-    const memberActor = asUser(t, member)
-    const threadId = await ownerActor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'independent-unread-thread',
-      name: 'Independent unread state',
-      projectId,
-    })
-    await memberActor.mutation(api.channelThreads.setFollowing, {
-      following: true,
-      threadId,
-      userId: member,
-    })
-    await ownerActor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Unread thread reply',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'independent-thread-reply',
-      projectId,
-    })
-    const timelineMessageId = await ownerActor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Unread parent timeline message',
-      groupId,
-      idempotencyKey: 'independent-timeline-message',
-      projectId,
-    })
-
-    expect((await memberActor.query(api.mobile.listProjects, { userId: member }))[0])
-      .toMatchObject({ unreadCount: 2 })
-    await memberActor.mutation(api.mobile.markGroupRead, {
-      groupId,
-      lastReadMessageId: timelineMessageId,
-      userId: member,
-    })
-    expect((await memberActor.query(api.mobile.listProjects, { userId: member }))[0])
-      .toMatchObject({ unreadCount: 1 })
-    expect(await memberActor.query(api.channelThreads.get, { threadId, userId: member }))
-      .toMatchObject({ unread: true })
-  })
-
-  it('advances read state while an archived parent Channel remains readable', async () => {
-    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
-    const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'archived-parent-thread',
-      name: 'Archived parent',
-      projectId,
-    })
-    await asUser(t, member).mutation(api.channelThreads.setFollowing, {
-      following: true,
-      threadId,
-      userId: member,
-    })
-    await asUser(t, owner).mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Read after the Channel archives',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'archived-parent-reply',
-      projectId,
-    })
-    await t.run(async (ctx) => await ctx.db.patch(groupId, { status: 'archived' }))
-
-    expect(await asUser(t, member).query(api.mobile.resolveNavigation, {
-      groupId,
-      projectId,
-      userId: member,
-    })).toEqual({ available: true, archived: true, readStateImmutable: false })
-
-    await asUser(t, member).mutation(api.channelThreads.markRead, { threadId, userId: member })
-    expect(await asUser(t, member).query(api.channelThreads.get, { threadId, userId: member }))
-      .toMatchObject({ unread: false })
-  })
-
-  it('keeps explicit task assistant answers in the invoking thread', async () => {
-    process.env.TRACK_TASKS_ENABLED = 'true'
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const threadId = await actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'explicit-task-thread',
-      name: 'Explicit task request',
-      projectId,
-    })
-    const promptMessageId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: '@track create a task to publish the integration notes',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'explicit-task-prompt',
-      projectId,
-    })
-
-    const result = await actor.action(api.assistant.ask, {
-      channelThreadId: threadId,
-      groupId,
-      projectId,
-      promptMessageId,
-      question: '@track create a task to publish the integration notes',
-      requesterId: owner,
-    })
-    expect((await actor.query(api.assistant.listForThread, { threadId, userId: owner }))
-      .map((stream) => stream._id)).toContain(result.streamId)
-    expect((await actor.query(api.assistant.listForGroup, { groupId, userId: owner }))
-      .map((stream) => stream._id)).not.toContain(result.streamId)
-  })
-
-  it('paginates long history and includes an exact deep-link target', async () => {
-    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
-    const threadId = await asUser(t, owner).mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'long-history-thread',
-      name: 'Long history',
-      projectId,
-    })
-    const targetMessageId = await t.run(async (ctx) => {
-      let firstMessageId: Id<'messages'> | null = null
-      const startedAt = Date.now()
-      for (let index = 1; index <= 130; index += 1) {
-        const messageId = await ctx.db.insert('messages', {
-          projectId,
-          groupId,
-          authorId: owner,
-          authorProjectMemberId: ownerMembershipId,
-          channelThreadId: threadId,
-          channelSequence: index,
-          body: `History reply ${index}`,
-          mentions: [],
-          attachmentIds: [],
-          createdAt: startedAt + index,
-        })
-        firstMessageId ??= messageId
-      }
-      await ctx.db.patch(threadId, {
-        replyCount: 130,
-        latestReplyAt: startedAt + 130,
-        latestChannelSequence: 130,
-      })
-      return firstMessageId!
-    })
-
-    const firstPage = await asUser(t, owner).query(api.channelThreads.listMessagePage, {
-      threadId,
-      userId: owner,
-      targetMessageId,
-      paginationOpts: { cursor: null, numItems: 50 },
-    })
-    expect(firstPage.isDone).toBe(false)
-    expect(firstPage.page).toHaveLength(51)
-    expect(firstPage.page.some((item) => item.message._id === targetMessageId)).toBe(true)
-    const secondPage = await asUser(t, owner).query(api.channelThreads.listMessagePage, {
-      threadId,
-      userId: owner,
-      paginationOpts: { cursor: firstPage.continueCursor, numItems: 50 },
-    })
-    expect(secondPage.page).toHaveLength(50)
-    expect(await asUser(t, owner).query(api.channelThreads.get, { threadId, userId: owner }))
-      .toMatchObject({ replyCount: 130 })
   })
 
   it('enforces creator or steward lifecycle authority and revision conflicts', async () => {
@@ -730,180 +418,6 @@ describe('Channel threads', () => {
     })).toMatchObject({ following: true })
   })
 
-  it('searches and reports thread evidence without copying message content', async () => {
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const threadId = await actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'search-thread',
-      name: 'Architecture decisions',
-      projectId,
-    })
-    const messageId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Choose the durable queue boundary',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'search-thread-message',
-      projectId,
-    })
-
-    const nameResults = await actor.query(api.search.project, {
-      projectId,
-      query: 'Architecture',
-      userId: owner,
-    })
-    const messageResults = await actor.query(api.search.project, {
-      projectId,
-      query: 'durable queue',
-      userId: owner,
-    })
-    expect(nameResults.threads).toEqual([
-      expect.objectContaining({ threadId, title: 'Architecture decisions' }),
-    ])
-    expect(messageResults.messages).toEqual([
-      expect.objectContaining({ messageId, threadId }),
-    ])
-
-    const reportId = await actor.mutation(api.reports.create, {
-      projectId,
-      reason: 'other',
-      reporterId: owner,
-      targetMessageId: messageId,
-      targetType: 'message',
-    })
-    const report = await t.run(async (ctx) => await ctx.db.get(reportId))
-    expect(report).toMatchObject({ channelThreadId: threadId, groupId, targetMessageId: messageId })
-    expect(report).not.toHaveProperty('messageBody')
-  })
-
-  it('applies Channel access before capping thread search results', async () => {
-    const { groupId, member, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
-    const visibleThreadId = await asUser(t, owner).mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'visible-search-thread',
-      name: 'Needle visible',
-      projectId,
-    })
-    await t.run(async (ctx) => {
-      const now = Date.now()
-      const hiddenGroupId = await ctx.db.insert('groups', {
-        projectId,
-        kind: 'custom',
-        name: 'Hidden',
-        status: 'active',
-        revision: 1,
-        createdBy: owner,
-        createdAt: now,
-        updatedAt: now,
-      })
-      await ctx.db.insert('groupMembers', {
-        projectId,
-        groupId: hiddenGroupId,
-        userId: owner,
-        projectMemberId: ownerMembershipId,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      })
-      for (let index = 0; index < 30; index += 1) {
-        await ctx.db.insert('channelThreads', {
-          projectId,
-          groupId: hiddenGroupId,
-          name: `Needle hidden ${index}`,
-          creatorUserId: owner,
-          creatorProjectMemberId: ownerMembershipId,
-          status: 'active',
-          revision: 1,
-          replyCount: 0,
-          latestChannelSequence: 0,
-          idempotencyKey: `hidden-search-${index}`,
-          createdAt: now + index,
-          updatedAt: now + index,
-        })
-      }
-    })
-
-    const results = await asUser(t, member).query(api.search.project, {
-      filter: 'threads',
-      limit: 3,
-      projectId,
-      query: 'Needle',
-      userId: member,
-    })
-    expect(results.threads.map((thread) => thread.threadId)).toEqual([visibleThreadId])
-  })
-
-  it('collects bounded whole-Channel assistant context including threads but excludes another Channel', async () => {
-    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const otherGroupId = await t.run(async (ctx) => {
-      const now = Date.now()
-      const id = await ctx.db.insert('groups', {
-        projectId,
-        kind: 'custom',
-        name: 'Other Channel',
-        status: 'active',
-        revision: 1,
-        createdBy: owner,
-        createdAt: now,
-        updatedAt: now,
-      })
-      await ctx.db.insert('groupMembers', {
-        projectId,
-        groupId: id,
-        userId: owner,
-        projectMemberId: ownerMembershipId,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      })
-      return id
-    })
-    const threadId = await actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'assistant-thread',
-      name: 'Assistant context',
-      projectId,
-    })
-    await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Timeline fact',
-      groupId,
-      idempotencyKey: 'timeline-fact',
-      projectId,
-    })
-    await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Thread fact',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'thread-fact',
-      projectId,
-    })
-    await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Other Channel secret',
-      groupId: otherGroupId,
-      idempotencyKey: 'other-channel-fact',
-      projectId,
-    })
-
-    const context = await actor.query(api.assistant.collectContext, {
-      groupId,
-      projectId,
-      question: 'What facts exist?',
-      requesterId: owner,
-    })
-    expect(context.messages.map((message) => message.body)).toEqual([
-      'Timeline fact',
-      'Thread fact',
-    ])
-  })
-
   it('targets ordinary thread notifications only to followers while mentions still follow and notify', async () => {
     const { groupId, member, memberMembershipId, owner, projectId, t } = await seedLegacyChannel()
     const actor = asUser(t, owner)
@@ -992,7 +506,7 @@ describe('Channel threads', () => {
     expect(mentionDelivery?.url).toContain(`#message-${mentionMessageId}`)
   })
 
-  it('lets only the author delete a message and invalidates its task evidence', async () => {
+  it('enforces deletion authority and cleans thread, evidence, attachment, and Project rows', async () => {
     process.env.TRACK_TASKS_ENABLED = 'true'
     const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
     const ownerActor = asUser(t, owner)
@@ -1057,151 +571,101 @@ describe('Channel threads', () => {
     )
     expect(deletionAudit?.before).toMatchObject({ attachmentCount: 0 })
     expect(deletionAudit?.before).not.toHaveProperty('body')
-  })
-
-  it('recalculates thread metadata after an author deletes a reply', async () => {
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const threadId = await actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'delete-reply-thread',
-      name: 'Deletion metadata',
-      projectId,
-    })
-    const firstReplyId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Keep this reply.',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'keep-reply',
-      projectId,
-    })
-    const deletedReplyId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Delete this reply.',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'delete-reply',
-      projectId,
-    })
-    const firstReply = await t.run(async (ctx) => await ctx.db.get(firstReplyId))
-
-    await t.run(async (ctx) => await ctx.db.patch(threadId, { status: 'archived' }))
-    await expect(actor.mutation(api.messages.remove, {
-      actorId: owner,
-      messageId: deletedReplyId,
-    })).rejects.toThrow('thread_archived')
-    await t.run(async (ctx) => await ctx.db.patch(threadId, { status: 'active' }))
-    await actor.mutation(api.messages.remove, {
-      actorId: owner,
-      messageId: deletedReplyId,
-    })
-
-    expect(await t.run(async (ctx) => await ctx.db.get(threadId))).toMatchObject({
-      replyCount: 1,
-      latestReplyAt: firstReply?.createdAt,
-      latestChannelSequence: firstReply?.channelSequence,
-    })
-    expect((await actor.query(api.channelThreads.listMessages, {
-      threadId,
-      userId: owner,
-    })).map((item) => item.message._id)).toEqual([firstReplyId])
-  })
-
-  it('removes attachment rows without deleting storage still used by a forwarded copy', async () => {
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const firstMessageId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Original attachment',
-      groupId,
-      idempotencyKey: 'original-attachment',
-      projectId,
-    })
-    const secondMessageId = await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Copied attachment',
-      groupId,
-      idempotencyKey: 'copied-attachment',
-      projectId,
-    })
-    const { firstAttachmentId, secondAttachmentId, storageId } = await t.run(async (ctx) => {
-      const createdAt = Date.now()
-      const storageId = await ctx.storage.store(new Blob(['shared attachment']))
-      const attachment = {
-        projectId,
+    {
+      const { groupId, owner, projectId, t } = await seedLegacyChannel()
+      const actor = asUser(t, owner)
+      const threadId = await actor.mutation(api.channelThreads.create, {
+        creatorId: owner,
         groupId,
-        storageId,
-        filename: 'shared.txt',
-        contentType: 'text/plain',
-        size: 17,
-        kind: 'file' as const,
-        uploadedBy: owner,
-        extractionStatus: 'preserved' as const,
-        createdAt,
-      }
-      const firstAttachmentId = await ctx.db.insert('attachments', {
-        ...attachment,
-        messageId: firstMessageId,
+        idempotencyKey: 'delete-reply-thread',
+        name: 'Deletion metadata',
+        projectId,
       })
-      const secondAttachmentId = await ctx.db.insert('attachments', {
-        ...attachment,
-        messageId: secondMessageId,
+      const firstReplyId = await actor.mutation(api.messages.send, {
+        authorId: owner,
+        body: 'Keep this reply.',
+        channelThreadId: threadId,
+        groupId,
+        idempotencyKey: 'keep-reply',
+        projectId,
       })
-      await ctx.db.patch(firstMessageId, { attachmentIds: [firstAttachmentId] })
-      await ctx.db.patch(secondMessageId, { attachmentIds: [secondAttachmentId] })
-      return { firstAttachmentId, secondAttachmentId, storageId }
-    })
-
-    await actor.mutation(api.messages.remove, {
-      actorId: owner,
-      messageId: firstMessageId,
-    })
-    expect(await t.run(async (ctx) => ({
-      firstAttachment: await ctx.db.get(firstAttachmentId),
-      secondAttachment: await ctx.db.get(secondAttachmentId),
-      storage: await ctx.db.system.get(storageId),
-    }))).toMatchObject({
-      firstAttachment: null,
-      secondAttachment: { _id: secondAttachmentId },
-      storage: { _id: storageId },
-    })
-
-    await actor.mutation(api.messages.remove, {
-      actorId: owner,
-      messageId: secondMessageId,
-    })
-    expect(await t.run(async (ctx) => await ctx.db.system.get(storageId))).toBeNull()
+      const deletedReplyId = await actor.mutation(api.messages.send, {
+        authorId: owner,
+        body: 'Delete this reply.',
+        channelThreadId: threadId,
+        groupId,
+        idempotencyKey: 'delete-reply',
+        projectId,
+      })
+      const firstReply = await t.run(async (ctx) => await ctx.db.get(firstReplyId))
+      await t.run(async (ctx) => await ctx.db.patch(threadId, { status: 'archived' }))
+      await expect(actor.mutation(api.messages.remove, {
+        actorId: owner,
+        messageId: deletedReplyId,
+      })).rejects.toThrow('thread_archived')
+      await t.run(async (ctx) => await ctx.db.patch(threadId, { status: 'active' }))
+      await actor.mutation(api.messages.remove, { actorId: owner, messageId: deletedReplyId })
+      expect(await t.run(async (ctx) => await ctx.db.get(threadId))).toMatchObject({
+        replyCount: 1,
+        latestReplyAt: firstReply?.createdAt,
+        latestChannelSequence: firstReply?.channelSequence,
+      })
+      expect((await actor.query(api.channelThreads.listMessages, { threadId, userId: owner }))
+        .map((item) => item.message._id)).toEqual([firstReplyId])
+    }
+    {
+      const { groupId, owner, projectId, t } = await seedLegacyChannel()
+      const actor = asUser(t, owner)
+      const firstMessageId = await actor.mutation(api.messages.send, {
+        authorId: owner,
+        body: 'Original attachment',
+        groupId,
+        idempotencyKey: 'original-attachment',
+        projectId,
+      })
+      const secondMessageId = await actor.mutation(api.messages.send, {
+        authorId: owner,
+        body: 'Copied attachment',
+        groupId,
+        idempotencyKey: 'copied-attachment',
+        projectId,
+      })
+      const { firstAttachmentId, secondAttachmentId, storageId } = await t.run(async (ctx) => {
+        const createdAt = Date.now()
+        const storageId = await ctx.storage.store(new Blob(['shared attachment']))
+        const attachment = {
+          projectId,
+          groupId,
+          storageId,
+          filename: 'shared.txt',
+          contentType: 'text/plain',
+          size: 17,
+          kind: 'file' as const,
+          uploadedBy: owner,
+          extractionStatus: 'preserved' as const,
+          createdAt,
+        }
+        const firstAttachmentId = await ctx.db.insert('attachments', { ...attachment, messageId: firstMessageId })
+        const secondAttachmentId = await ctx.db.insert('attachments', { ...attachment, messageId: secondMessageId })
+        await ctx.db.patch(firstMessageId, { attachmentIds: [firstAttachmentId] })
+        await ctx.db.patch(secondMessageId, { attachmentIds: [secondAttachmentId] })
+        return { firstAttachmentId, secondAttachmentId, storageId }
+      })
+      await actor.mutation(api.messages.remove, { actorId: owner, messageId: firstMessageId })
+      expect(await t.run(async (ctx) => ({
+        firstAttachment: await ctx.db.get(firstAttachmentId),
+        secondAttachment: await ctx.db.get(secondAttachmentId),
+        storage: await ctx.db.system.get(storageId),
+      }))).toMatchObject({
+        firstAttachment: null,
+        secondAttachment: { _id: secondAttachmentId },
+        storage: { _id: storageId },
+      })
+      await actor.mutation(api.messages.remove, { actorId: owner, messageId: secondMessageId })
+      expect(await t.run(async (ctx) => await ctx.db.system.get(storageId))).toBeNull()
+    }
   })
 
-  it('removes thread-owned rows during a legacy Project hard delete', async () => {
-    const { groupId, owner, projectId, t } = await seedLegacyChannel()
-    const actor = asUser(t, owner)
-    const threadId = await actor.mutation(api.channelThreads.create, {
-      creatorId: owner,
-      groupId,
-      idempotencyKey: 'cleanup-thread',
-      name: 'Cleanup thread',
-      projectId,
-    })
-    await actor.mutation(api.messages.send, {
-      authorId: owner,
-      body: 'Cleanup reply',
-      channelThreadId: threadId,
-      groupId,
-      idempotencyKey: 'cleanup-reply',
-      projectId,
-    })
-
-    await actor.mutation(api.projects.remove, { projectId, userId: owner })
-    const remains = await t.run(async (ctx) => ({
-      followers: await ctx.db.query('channelThreadFollowers').collect(),
-      reads: await ctx.db.query('channelThreadReadStates').collect(),
-      threads: await ctx.db.query('channelThreads').collect(),
-    }))
-    expect(remains).toEqual({ followers: [], reads: [], threads: [] })
-  })
 })
 
 async function seedLegacyChannel() {

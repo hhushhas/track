@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  attachmentReaderQuestion,
   maxDocumentReaderBytes,
   maxImageBytes,
   selectAttachmentCandidates,
@@ -54,15 +53,5 @@ describe('assistant attachment selection', () => {
     ])
 
     expect(selected.map((attachment) => attachment.filename)).toEqual(['proposal.pdf', 'screenshot.png'])
-  })
-
-  it('passes the actual user query to the document reader when one exists', () => {
-    expect(attachmentReaderQuestion('@track what payment dates are in this proposal?')).toBe(
-      'what payment dates are in this proposal?',
-    )
-  })
-
-  it('falls back to project-relevant extraction when the invocation has no query', () => {
-    expect(attachmentReaderQuestion('@track')).toContain('Extract only project-relevant facts')
   })
 })

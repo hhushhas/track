@@ -16,32 +16,30 @@ import { useRouter } from 'expo-router';
 
 import { authClient } from '@/lib/auth-client';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
-import { requiresTwoFactor, validateEmailSignIn } from '@/lib/email-auth';
+import { requiresTwoFactor, validateEmailSignIn, validateEmailSignUp } from '@/lib/email-auth';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { PlatformIcon } from '@/components/platform-icon';
+import { SignInHero } from '@/components/sign-in-hero';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { useThemeOverride } from '@/contexts/theme-override-context';
 import { useTheme } from '@/hooks/use-theme';
 
 import googleMarkImage from '@/assets/images/google-g.png';
-import trackMarkImage from '@/assets/images/track-mark.png';
-import trackMarkReversedImage from '@/assets/images/track-mark-reversed.png';
 
 export default function SignInScreen() {
   const theme = useTheme();
-  const { theme: themeName } = useThemeOverride();
   const router = useRouter();
   const devAuthBypass = useDevAuthBypass();
   const session = authClient.useSession();
   const [busy, setBusy] = useState(false);
   const [emailMode, setEmailMode] = useState(false);
+  const [emailIntent, setEmailIntent] = useState<'signIn' | 'signUp'>('signIn');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const markSource = themeName === 'dark' ? trackMarkReversedImage : trackMarkImage;
   const signedIn = Boolean(session.data);
 
   // A session that arrives while this screen is up — a restore that finished
@@ -109,6 +107,40 @@ export default function SignInScreen() {
     }
   }
 
+  async function signUpWithEmail() {
+    const input = validateEmailSignUp(name, email, password);
+    if (!input.ok) {
+      setError(input.error);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    hapticMedium();
+    try {
+      const result = await authClient.signUp.email({
+        email: input.email,
+        name: input.name,
+        password,
+        callbackURL: '/',
+      });
+      if (result.error) {
+        throw new Error(result.error.message ?? 'Could not create the account.');
+      }
+      await waitForSessionReady(session.refetch);
+      router.replace('/');
+    } catch (e) {
+      hapticLight();
+      setError(e instanceof Error ? e.message : 'Could not create the account.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submitEmail() {
+    void (emailIntent === 'signUp' ? signUpWithEmail() : signInWithEmail());
+  }
+
   async function signInWithDevBypass() {
     setBusy(true);
     setError(null);
@@ -136,21 +168,7 @@ export default function SignInScreen() {
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
           >
-            {/* Brand lockup */}
-            <View style={styles.brand}>
-              <View style={[styles.markRing, { borderColor: theme.hairline }]}>
-                <Image accessibilityIgnoresInvertColors resizeMode="contain" source={markSource} style={styles.mark} />
-              </View>
-              <View style={styles.brandText}>
-                <ThemedText style={[styles.brandLabel, { color: theme.textSecondary }]} type="captionBold">
-                  Q9 Labs
-                </ThemedText>
-                <ThemedText style={styles.brandName}>Track</ThemedText>
-                <ThemedText style={[styles.brandTagline, { color: theme.textSecondary }]} type="small">
-                  Project communication that keeps teams aligned
-                </ThemedText>
-              </View>
-            </View>
+            <SignInHero />
 
             {/* Auth panel */}
             <View style={styles.panel}>
@@ -198,6 +216,28 @@ export default function SignInScreen() {
 
               {emailMode ? (
                 <View style={styles.emailFields}>
+                  {emailIntent === 'signUp' ? (
+                    <TextInput
+                      accessibilityLabel="Full name"
+                      autoCapitalize="words"
+                      autoComplete="name"
+                      editable={!busy}
+                      onChangeText={setName}
+                      placeholder="Full name"
+                      placeholderTextColor={theme.textSecondary}
+                      returnKeyType="next"
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: theme.backgroundElement,
+                          borderColor: theme.hairline,
+                          color: theme.text,
+                        },
+                      ]}
+                      textContentType="name"
+                      value={name}
+                    />
+                  ) : null}
                   <TextInput
                     accessibilityLabel="Email address"
                     autoCapitalize="none"
@@ -222,10 +262,10 @@ export default function SignInScreen() {
                   <TextInput
                     accessibilityLabel="Password"
                     autoCapitalize="none"
-                    autoComplete="current-password"
+                    autoComplete={emailIntent === 'signUp' ? 'new-password' : 'current-password'}
                     editable={!busy}
                     onChangeText={setPassword}
-                    onSubmitEditing={() => void signInWithEmail()}
+                    onSubmitEditing={submitEmail}
                     placeholder="Password"
                     placeholderTextColor={theme.textSecondary}
                     returnKeyType="done"
@@ -238,32 +278,51 @@ export default function SignInScreen() {
                         color: theme.text,
                       },
                     ]}
-                    textContentType="password"
+                    textContentType={emailIntent === 'signUp' ? 'newPassword' : 'password'}
                     value={password}
                   />
                   <Pressable
                     android_ripple={{ color: theme.background }}
                     disabled={busy}
-                    onPress={() => void signInWithEmail()}
+                    onPress={submitEmail}
                     style={[styles.authButton, { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 }]}
                   >
                     <PlatformIcon color={theme.background} name="email-outline" size={20} />
-                    <ThemedText style={[styles.authLabel, { color: theme.background }]}>Sign in with email</ThemedText>
+                    <ThemedText style={[styles.authLabel, { color: theme.background }]}>
+                      {emailIntent === 'signUp' ? 'Create account' : 'Sign in with email'}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    disabled={busy}
+                    hitSlop={8}
+                    onPress={() => {
+                      hapticLight();
+                      setError(null);
+                      setEmailIntent(emailIntent === 'signUp' ? 'signIn' : 'signUp');
+                    }}
+                    style={styles.emailLink}
+                  >
+                    <ThemedText style={{ color: theme.textSecondary }} type="small">
+                      {emailIntent === 'signUp'
+                        ? 'Already have an account? Sign in'
+                        : 'New to Track? Create an account'}
+                    </ThemedText>
                   </Pressable>
                 </View>
               ) : (
                 <Pressable
-                  android_ripple={{ color: theme.hairline }}
                   disabled={busy}
+                  hitSlop={8}
                   onPress={() => {
                     hapticLight();
                     setError(null);
                     setEmailMode(true);
                   }}
-                  style={[styles.authButton, { backgroundColor: theme.backgroundElement }]}
+                  style={styles.emailLink}
                 >
-                  <PlatformIcon color={theme.text} name="email-outline" size={20} />
-                  <ThemedText style={[styles.authLabel, { color: theme.text }]}>Continue with email</ThemedText>
+                  <ThemedText style={{ color: theme.textSecondary }} type="smallBold">
+                    Continue with email
+                  </ThemedText>
                 </Pressable>
               )}
 
@@ -281,29 +340,34 @@ export default function SignInScreen() {
               ) : null}
             </View>
 
-            {/* Footer links */}
-            <View style={styles.footer}>
-              {(['Privacy', 'Terms', 'Support'] as const).map((item, i) => (
-                <View key={item} style={styles.footerItem}>
-                  {i > 0 ? <View style={[styles.footerDot, { backgroundColor: theme.hairline }]} /> : null}
-                  <Pressable
-                    hitSlop={8}
-                    onPress={() => {
-                      hapticLight();
-                      void Linking.openURL(
-                        item === 'Support'
-                          ? 'mailto:q9labs.ai@gmail.com'
-                          : `https://track.q9labs.ai/${item.toLowerCase()}`,
-                      );
-                    }}
-                  >
-                    <ThemedText style={{ color: theme.textSecondary }} type="small">
-                      {item}
-                    </ThemedText>
-                  </Pressable>
-                </View>
-              ))}
-            </View>
+            {/* Legal */}
+            <ThemedText style={[styles.legal, { color: theme.textTertiary }]} type="caption">
+              By continuing, you agree to our{' '}
+              <ThemedText
+                accessibilityRole="link"
+                onPress={() => {
+                  hapticLight();
+                  void Linking.openURL('https://track.q9labs.ai/terms');
+                }}
+                style={[styles.legalLink, { color: theme.textSecondary }]}
+                type="caption"
+              >
+                Terms
+              </ThemedText>{' '}
+              and{' '}
+              <ThemedText
+                accessibilityRole="link"
+                onPress={() => {
+                  hapticLight();
+                  void Linking.openURL('https://track.q9labs.ai/privacy');
+                }}
+                style={[styles.legalLink, { color: theme.textSecondary }]}
+                type="caption"
+              >
+                Privacy Policy
+              </ThemedText>
+              .
+            </ThemedText>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -375,11 +439,11 @@ function isAppleCancel(error: unknown) {
 const styles = StyleSheet.create({
   authButton: {
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: 14,
     flexDirection: 'row',
     gap: Spacing.three,
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 50,
     overflow: 'hidden',
     paddingHorizontal: Spacing.four,
   },
@@ -393,29 +457,8 @@ const styles = StyleSheet.create({
   },
   authIcon: { height: 20, width: 20 },
   authLabel: { fontSize: 15, fontWeight: '600', letterSpacing: 0 },
-  brand: {
-    alignItems: 'center',
-    flex: 1,
-    gap: Spacing.four,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.five,
-  },
   content: {
     flexGrow: 1,
-  },
-  brandLabel: { letterSpacing: 1 },
-  brandName: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    lineHeight: 32,
-  },
-  brandTagline: {
-    textAlign: 'center',
-  },
-  brandText: {
-    alignItems: 'center',
-    gap: Spacing.two,
   },
   devBypass: {
     alignItems: 'center',
@@ -430,34 +473,17 @@ const styles = StyleSheet.create({
   emailFields: {
     gap: Spacing.three,
   },
-  footer: {
+  emailLink: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: Spacing.three,
-    justifyContent: 'center',
-    paddingVertical: Spacing.four,
+    paddingVertical: Spacing.three,
   },
-  footerDot: {
-    borderRadius: 2,
-    height: 3,
-    width: 3,
+  legal: {
+    paddingBottom: Spacing.four,
+    paddingHorizontal: Spacing.six,
+    textAlign: 'center',
   },
-  footerItem: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: Spacing.three,
-  },
-  mark: {
-    height: 64,
-    width: 64,
-  },
-  markRing: {
-    alignItems: 'center',
-    borderRadius: 24,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 96,
-    justifyContent: 'center',
-    width: 96,
+  legalLink: {
+    textDecorationLine: 'underline',
   },
   input: {
     borderRadius: 12,

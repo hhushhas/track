@@ -18,43 +18,6 @@ default through independent server-authoritative controls. An exact `false`
 environment override disables any one capability without changing the others.
 Clients keep gated surfaces hidden until that server projection is available.
 
-The [target product contract](./docs/PRODUCT.md) also defines dependable mobile
-push. Its implemented architecture, product behavior, and release-proof boundary
-are maintained in the mobile push specification and runbook.
-
-## Repository
-
-```text
-apps/web/          TanStack Start web app and PWA
-apps/mobile/       Expo Router native app
-packages/shared/   Shared domain rules and theme primitives
-convex/            Schema, authorization, functions, jobs, AI, and tests
-docs/              Maintained product and engineering context
-assets/brand/svg/  Final brand masters
-```
-
-Read [AGENTS.md](./AGENTS.md) before changing the repository. The maintained documentation is:
-
-- [Product](./docs/PRODUCT.md): target philosophy, product model, and access
-  invariants.
-- [Architecture](./docs/ARCHITECTURE.md): current stack, boundaries, and data
-  flow.
-- [Design](./docs/DESIGN.md): interface, tokens, interaction states, and
-  accessibility.
-- [Roadmap](./docs/ROADMAP.md): approved target behavior that has not shipped.
-- [Channel threads specification](./docs/THREADS_SPEC.md): implemented
-  thread, unread, lifecycle, AI-context, and integration contract.
-- [Task management specification](./docs/TASK_MANAGEMENT_SPEC.md): implemented
-  task, board, AI, access, and delivery contract.
-- [Company relationships specification](./docs/COMPANY_RELATIONSHIPS_SPEC.md):
-  implemented Company, Relationship, shared-Project, Channel,
-  access, exit, and migration contract.
-- [Mobile push notification specification](./docs/MOBILE_PUSH_NOTIFICATIONS_SPEC.md):
-  implemented installation, delivery, privacy, settings, and verification
-  contract.
-- [Mobile push notification runbook](./docs/MOBILE_PUSH_NOTIFICATIONS_RUNBOOK.md):
-  environment setup, delivery operations, diagnostics, and release proof.
-
 ## Requirements
 
 - Node.js 24 or newer.
@@ -76,6 +39,20 @@ pnpm convex:dev
 ```
 
 Keep `pnpm convex:dev` running. In another terminal:
+
+```bash
+pnpm exec convex env set SITE_URL http://localhost:3000 --deployment dev
+pnpm exec convex env set BETTER_AUTH_URL http://localhost:3000 --deployment dev
+pnpm exec convex env set DEV_AUTH_BYPASS 1 --deployment dev
+```
+
+These variables are for the development deployment only. The first two keep
+email sign-in redirects on the local web app, and the last enables the local
+development auth helpers. If the demo sign-in button is enabled, its
+`VITE_DEV_AUTH_BYPASS` values belong in `.env.local` and should use a
+development-only password.
+
+Then start the web app:
 
 ```bash
 pnpm --filter @track/web dev

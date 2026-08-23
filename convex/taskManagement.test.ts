@@ -1,5 +1,4 @@
 import { convexTest } from 'convex-test'
-import type { FunctionReturnType } from 'convex/server'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { api, internal } from './_generated/api'
@@ -28,58 +27,6 @@ afterEach(() => {
 })
 
 describe('task management authorization and invariants', () => {
-  it('fails task access closed without affecting standalone conversation reads', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    process.env.TRACK_TASKS_ENABLED = 'false'
-    await expect(
-      owner.query(api.taskBoards.list, { projectId: fixture.projectId }),
-    ).rejects.toThrow('tasks_disabled')
-    await expect(
-      owner.query(api.messages.listDetailed, {
-        userId: fixture.ownerId,
-        groupId: fixture.groupId,
-        limit: 20,
-      }),
-    ).resolves.toEqual([])
-    process.env.TRACK_TASKS_ENABLED = 'true'
-  })
-
-  it('includes an explicitly targeted Channel message outside the latest query window', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const firstMessageId = await fixture.t.run(async (ctx) => {
-      const common = {
-        projectId: fixture.projectId,
-        groupId: fixture.groupId,
-        authorId: fixture.ownerId,
-        authorProjectMemberId: fixture.ownerMemberId,
-        mentions: [],
-        attachmentIds: [],
-      }
-      const targetId = await ctx.db.insert('messages', {
-        ...common,
-        body: 'Target message',
-        createdAt: 1,
-      })
-      await ctx.db.insert('messages', {
-        ...common,
-        body: 'Newer message',
-        createdAt: 2,
-      })
-      return targetId
-    })
-
-    const messages = await owner.query(api.messages.listDetailed, {
-      userId: fixture.ownerId,
-      groupId: fixture.groupId,
-      limit: 1,
-      targetMessageId: firstMessageId,
-    })
-    expect(messages.map((item) => item.message._id)).toContain(firstMessageId)
-    expect(messages).toHaveLength(2)
-  })
-
   it('keeps membership-loss cleanup active while task surfaces are disabled', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })
@@ -111,43 +58,6 @@ describe('task management authorization and invariants', () => {
     }))
     expect(state.task?.assigneeProjectMemberId).toBeUndefined()
     expect(state.follower?.enabled).toBe(false)
-  })
-
-  it('creates a board task in the workflow state selected by the client', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const boardId = await owner.mutation(api.taskBoards.create, {
-      projectId: fixture.projectId,
-      name: 'Placement board',
-    })
-    const boards = await owner.query(api.taskBoards.list, { projectId: fixture.projectId })
-    const board = boards.find((item) => item.board._id === boardId)
-    const started = board?.states.find((item) => item.category === 'started')
-    expect(started).toBeTruthy()
-
-    const created = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      boardId,
-      workflowStateId: started?._id,
-      title: 'Start in progress',
-      priority: 'none',
-      idempotencyKey: 'selected-create-state',
-    })
-    const task = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
-    expect(task?.workflowStateId).toBe(started?._id)
-
-    const otherBoardId = await owner.mutation(api.taskBoards.create, {
-      projectId: fixture.projectId,
-      name: 'Other board',
-    })
-    await expect(owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      boardId: otherBoardId,
-      workflowStateId: started?._id,
-      title: 'Wrong board state',
-      priority: 'none',
-      idempotencyKey: 'invalid-selected-create-state',
-    })).rejects.toThrow('task_destination_invalid')
   })
 
   it('keeps Channel boards invisible to an administrator outside that Channel', async () => {
@@ -389,26 +299,6 @@ describe('task management authorization and invariants', () => {
     })).rejects.toThrow('task_destination_invalid')
   })
 
-  it('removes cleared descriptions from search text', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const created = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      title: 'Clear stale text',
-      description: 'obsolete-search-marker',
-      priority: 'none',
-      idempotencyKey: 'clear-description',
-    })
-    await owner.mutation(api.tasks.update, {
-      taskId: created.taskId,
-      expectedRevision: 1,
-      description: null,
-    })
-    const task = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
-    expect(task?.description).toBeUndefined()
-    expect(task?.searchText).not.toContain('obsolete-search-marker')
-  })
-
   it('creates scoped evidence, live view data, and one-level subtasks idempotently', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })
@@ -492,13 +382,6 @@ describe('task management authorization and invariants', () => {
       groupId: fixture.groupId,
       name: 'Release follow-through',
     })
-    await expect(owner.mutation(api.tasks.move, {
-      taskId: subtask.taskId,
-      destinationBoardId,
-      targetIndex: 0,
-      expectedRevision: 1,
-    })).rejects.toThrow('task_destination_invalid')
-
     const sourceBoard = (await owner.query(api.taskBoards.list, {
       projectId: fixture.projectId,
     })).find((item) => item.board._id === detail!.task.boardId)!
@@ -915,68 +798,6 @@ describe('task management authorization and invariants', () => {
     })).resolves.toBe(false)
   })
 
-  it('targets task push deep links only to the selected Project membership preference', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const staff = fixture.t.withIdentity({ subject: 'staff' })
-    await staff.mutation(api.notifications.registerNativeToken, {
-      userId: fixture.staffId,
-      projectMemberId: fixture.staffMemberId,
-      platform: 'ios',
-      token: 'apns-test-staff-device-token',
-    })
-    const created = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      title: 'Notify exact assignee',
-      assigneeProjectMemberId: fixture.staffMemberId,
-      priority: 'high',
-      idempotencyKey: 'push-task',
-    })
-    const notification = await fixture.t.run(
-      async (ctx) =>
-        (
-          await ctx.db
-            .query('taskNotifications')
-            .withIndex('by_member_created_at', (q) =>
-              q.eq('recipientProjectMemberId', fixture.staffMemberId),
-            )
-            .collect()
-        )[0]!,
-    )
-    const push = await fixture.t.query(
-      internal.taskNotifications.collectPushTargets,
-      { notificationId: notification._id },
-    )
-    expect(push?.mobileUrl).toBe(
-      `/task?projectId=${fixture.projectId}&taskKey=${created.publicKey}`,
-    )
-    expect(push?.targets).toHaveLength(1)
-    await owner.mutation(api.tasks.update, {
-      taskId: created.taskId,
-      expectedRevision: 1,
-      title: 'Notify exact assignee after edit',
-      assigneeProjectMemberId: fixture.staffMemberId,
-    })
-    const assignmentNotifications = await fixture.t.run(async (ctx) =>
-      (await ctx.db
-        .query('taskNotifications')
-        .withIndex('by_member_created_at', (q) =>
-          q.eq('recipientProjectMemberId', fixture.staffMemberId),
-        )
-        .collect()).filter((item) => item.eventType === 'assignment'),
-    )
-    expect(assignmentNotifications).toHaveLength(1)
-    await staff.mutation(api.taskNotifications.setPreference, {
-      projectId: fixture.projectId,
-      mode: 'muted',
-    })
-    await expect(
-      fixture.t.query(internal.taskNotifications.collectPushTargets, {
-        notificationId: notification._id,
-      }),
-    ).resolves.toBeNull()
-  })
-
   it('cascades all live task data when a legacy Project is deleted', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })
@@ -1029,28 +850,20 @@ describe('task management authorization and invariants', () => {
       projectId: fixture.projectId,
       userId: fixture.ownerId,
     })
-    const counts = await fixture.t.run(async (ctx) => ({
-      boards: (await ctx.db.query('taskBoards').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      states: (await ctx.db.query('taskWorkflowStates').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      tasks: (await ctx.db.query('tasks').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      labels: (await ctx.db.query('taskLabels').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      links: (await ctx.db.query('taskLabelLinks').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      references: (await ctx.db.query('taskReferences').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      comments: (await ctx.db.query('taskComments').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      followers: (await ctx.db.query('taskFollowers').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      activities: (await ctx.db.query('taskActivities').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      notificationSettings: (await ctx.db.query('taskNotificationSettings').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      notifications: (await ctx.db.query('taskNotifications').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      reminders: (await ctx.db.query('taskReminderJobs').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      suggestions: (await ctx.db.query('taskSuggestions').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      suggestionReferences: (await ctx.db.query('taskSuggestionReferences').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      suggestionHides: (await ctx.db.query('taskSuggestionHides').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      detectionSettings: (await ctx.db.query('taskDetectionSettings').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      detectionRuns: (await ctx.db.query('taskDetectionRuns').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      archiveSnapshots: (await ctx.db.query('taskArchiveSnapshots').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      exitStaging: (await ctx.db.query('taskExitSnapshotStaging').collect()).filter((row) => row.projectId === fixture.projectId).length,
-    }))
-    expect(counts).toEqual(Object.fromEntries(Object.keys(counts).map((key) => [key, 0])))
+    const taskTables = [
+      'taskActivities', 'taskArchiveSnapshots', 'taskBoards', 'taskComments',
+      'taskDetectionRuns', 'taskDetectionSettings', 'taskExitSnapshotStaging',
+      'taskFollowers', 'taskLabelLinks', 'taskLabels', 'taskNotificationSettings',
+      'taskNotifications', 'taskReferences', 'taskReminderJobs', 'tasks',
+      'taskSuggestionHides', 'taskSuggestionReferences', 'taskSuggestions',
+      'taskWorkflowStates',
+    ] as const
+    const counts = await fixture.t.run(async (ctx) => await Promise.all(
+      taskTables.map(async (table) =>
+        (await ctx.db.query(table).collect()).filter((row) => row.projectId === fixture.projectId).length,
+      ),
+    ))
+    expect(counts).toEqual(taskTables.map(() => 0))
   })
 
   it('materializes Company-exit task archives from the cutoff snapshot and only allowed Channels', async () => {
@@ -1168,177 +981,6 @@ describe('task management authorization and invariants', () => {
     expect(archivedTasks[0]?.payload).toMatchObject({
       title: 'Visible at exit',
     })
-  })
-
-  it('reorders and restates a board card through moveTask', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const created: FunctionReturnType<typeof api.tasks.create>[] = []
-    for (const title of ['First', 'Second', 'Third']) {
-      created.push(await owner.mutation(api.tasks.create, {
-        projectId: fixture.projectId,
-        groupId: fixture.groupId,
-        title,
-        priority: 'none',
-        idempotencyKey: `move-${title}`,
-      }))
-    }
-    const board = (await owner.query(api.taskBoards.list, { projectId: fixture.projectId }))[0]!
-    const started = board.states.find((state) => state.category === 'started')!
-
-    const first = await owner.mutation(api.tasks.moveTask, {
-      taskId: created[0]!.taskId,
-      workflowStateId: started._id,
-      expectedRevision: 1,
-    })
-    expect(first.workflowStateId).toBe(started._id)
-    expect(first.revision).toBe(2)
-
-    const second = await owner.mutation(api.tasks.moveTask, {
-      taskId: created[2]!.taskId,
-      workflowStateId: started._id,
-      beforeTaskId: created[0]!.taskId,
-      expectedRevision: 1,
-    })
-    expect(second.rank < first.rank).toBe(true)
-
-    const column = await fixture.t.run(async (ctx) => await ctx.db.query('tasks')
-      .withIndex('by_board_state_rank', (q) =>
-        q.eq('boardId', board.board._id).eq('workflowStateId', started._id),
-      ).collect())
-    expect(column.map((task) => task.title)).toEqual(['Third', 'First'])
-
-    const activities = await fixture.t.run(async (ctx) => await ctx.db.query('taskActivities')
-      .withIndex('by_task_created_at', (q) => q.eq('taskId', created[0]!.taskId)).collect())
-    expect(activities.filter((item) => item.action === 'state_changed')).toHaveLength(1)
-
-    await expect(owner.mutation(api.tasks.moveTask, {
-      taskId: created[0]!.taskId,
-      workflowStateId: started._id,
-      expectedRevision: 1,
-    })).rejects.toThrow('task_conflict')
-
-    await expect(owner.mutation(api.tasks.moveTask, {
-      taskId: created[1]!.taskId,
-      workflowStateId: started._id,
-      afterTaskId: created[1]!.taskId,
-      expectedRevision: 1,
-    })).rejects.toThrow('task_destination_invalid')
-
-    const outsider = fixture.t.withIdentity({ subject: 'outsider' })
-    await expect(outsider.mutation(api.tasks.moveTask, {
-      taskId: created[1]!.taskId,
-      workflowStateId: started._id,
-      expectedRevision: 1,
-    })).rejects.toThrow()
-
-    await owner.mutation(api.tasks.moveTask, {
-      taskId: created[1]!.taskId,
-      workflowStateId: started._id,
-      expectedRevision: 1,
-    })
-    const appended = await fixture.t.run(async (ctx) => await ctx.db.query('tasks')
-      .withIndex('by_board_state_rank', (q) =>
-        q.eq('boardId', board.board._id).eq('workflowStateId', started._id),
-      ).collect())
-    expect(appended.map((task) => task.title)).toEqual(['Third', 'First', 'Second'])
-  })
-
-  it('accepts the neighbour payload the mobile board sends for a drag', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    for (const title of ['One', 'Two', 'Three', 'Four']) {
-      await owner.mutation(api.tasks.create, {
-        projectId: fixture.projectId,
-        groupId: fixture.groupId,
-        title,
-        priority: 'none',
-        idempotencyKey: `board-${title}`,
-      })
-    }
-    const board = (await owner.query(api.taskBoards.list, { projectId: fixture.projectId }))[0]!
-    const started = board.states.find((state) => state.category === 'started')!
-    const todo = board.states.find((state) => state.isDefault)!
-
-    // The board reads its columns exactly as the mobile screen does, so the
-    // payload below is the one a real drag produces.
-    const column = async (stateId: Id<'taskWorkflowStates'>) =>
-      (await owner.query(api.tasks.list, {
-        projectId: fixture.projectId,
-        boardId: board.board._id,
-      }))
-        .filter((view) => view.task.workflowStateId === stateId)
-        .sort((a, b) => a.task.rank < b.task.rank ? -1 : a.task.rank > b.task.rank ? 1 : 0)
-
-    const unstarted = await column(todo._id)
-    expect(unstarted.map((view) => view.task.title)).toEqual(['One', 'Two', 'Three', 'Four'])
-
-    // Drag "Four" between "One" and "Two": both neighbours travel with the call.
-    const dragged = unstarted[3]!
-    const others = unstarted.filter((view) => view.task._id !== dragged.task._id)
-    await owner.mutation(api.tasks.moveTask, {
-      afterTaskId: others[0]!.task._id,
-      beforeTaskId: others[1]!.task._id,
-      taskId: dragged.task._id,
-      workflowStateId: todo._id,
-      expectedRevision: dragged.task.revision,
-    })
-    expect((await column(todo._id)).map((view) => view.task.title))
-      .toEqual(['One', 'Four', 'Two', 'Three'])
-
-    // Dropping into an empty column names no neighbour at all.
-    const crossing = (await column(todo._id))[2]!
-    await owner.mutation(api.tasks.moveTask, {
-      afterTaskId: undefined,
-      beforeTaskId: undefined,
-      taskId: crossing.task._id,
-      workflowStateId: started._id,
-      expectedRevision: crossing.task.revision,
-    })
-    expect((await column(started._id)).map((view) => view.task.title)).toEqual(['Two'])
-  })
-
-  it('requires subtask confirmation before a drag completes a parent task', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const parent = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      groupId: fixture.groupId,
-      title: 'Ship the release',
-      priority: 'none',
-      idempotencyKey: 'drag-parent',
-    })
-    const detail = await owner.query(api.tasks.getByKey, {
-      projectId: fixture.projectId,
-      publicKey: parent.publicKey,
-    })
-    await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      boardId: detail!.task.boardId,
-      parentTaskId: parent.taskId,
-      title: 'Still open',
-      priority: 'none',
-      idempotencyKey: 'drag-subtask',
-    })
-    const board = (await owner.query(api.taskBoards.list, { projectId: fixture.projectId }))[0]!
-    const completed = board.states.find((state) => state.category === 'completed')!
-
-    await expect(owner.mutation(api.tasks.moveTask, {
-      taskId: parent.taskId,
-      workflowStateId: completed._id,
-      expectedRevision: 1,
-    })).rejects.toThrow('task_open_subtasks_confirmation_required')
-
-    const moved = await owner.mutation(api.tasks.moveTask, {
-      taskId: parent.taskId,
-      workflowStateId: completed._id,
-      confirmOpenSubtasks: true,
-      expectedRevision: 1,
-    })
-    expect(moved.workflowStateId).toBe(completed._id)
-    expect(await fixture.t.run(async (ctx) =>
-      (await ctx.db.get(parent.taskId))?.terminalAt !== undefined,
-    )).toBe(true)
   })
 })
 

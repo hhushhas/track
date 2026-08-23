@@ -1,0 +1,20 @@
+appId: ai.q9labs.track
+---
+- tapOn: Dev bypass
+- runFlow:
+    when:
+      visible: Continue
+    commands:
+      - tapOn: Continue
+- extendedWaitUntil:
+    visible: Projects
+    timeout: 60000
+- tapOn: Create project
+- tapOn: Project name
+- inputText: Push Verification 033850
+- tapOn: Client label
+- inputText: Native QA
+- tapOn: Submit project creation
+- extendedWaitUntil:
+    visible: Push Verification 033850
+    timeout: 60000

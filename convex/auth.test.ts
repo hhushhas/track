@@ -33,34 +33,25 @@ afterEach(() => {
 })
 
 describe('development auth bypass', () => {
-  it('defaults off for unauthenticated callers', async () => {
+  it('keeps the bypass disabled unless explicitly configured for loopback development', async () => {
     const t = convexTest(schema, modules)
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',
     )
-  })
-
-  it('requires an explicitly configured loopback development site', async () => {
     process.env.DEV_AUTH_BYPASS = '1'
-    const t = convexTest(schema, modules)
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',
     )
-  })
-
-  it('stays disabled outside a loopback development site', async () => {
-    process.env.DEV_AUTH_BYPASS = '1'
     process.env.SITE_URL = 'https://track.q9labs.ai'
-    const t = convexTest(schema, modules)
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',
     )
   })
 
-  it('provisions and resolves the demo actor from its authenticated identity', async () => {
+  it('binds the demo identity and never substitutes it for another authenticated user', async () => {
     process.env.DEV_AUTH_BYPASS = '1'
     process.env.SITE_URL = 'http://localhost:3000'
     const t = convexTest(schema, modules)
@@ -83,12 +74,6 @@ describe('development auth bypass', () => {
     await expect(t.query(api.auth.getUser, { userId })).rejects.toThrow(
       'unauthenticated',
     )
-  })
-
-  it('never replaces a real authenticated identity with the demo actor', async () => {
-    process.env.DEV_AUTH_BYPASS = '1'
-    process.env.SITE_URL = 'http://localhost:3000'
-    const t = convexTest(schema, modules)
     const demoUserId = await t.withIdentity({
       subject: 'demo-auth-user',
       email: 'developer@track.local',
@@ -103,18 +88,12 @@ describe('development auth bypass', () => {
       createdAt: 1,
       updatedAt: 1,
     }))
-    const authenticated = t.withIdentity({ subject: 'real-user' })
+    const realAuthenticated = t.withIdentity({ subject: 'real-user' })
 
-    await expect(authenticated.query(api.auth.getUser, { userId: realUserId }))
+    await expect(realAuthenticated.query(api.auth.getUser, { userId: realUserId }))
       .resolves.toMatchObject({ _id: realUserId })
-    await expect(authenticated.query(api.auth.getUser, { userId: demoUserId }))
+    await expect(realAuthenticated.query(api.auth.getUser, { userId: demoUserId }))
       .rejects.toThrow('actor_mismatch')
-  })
-
-  it('rejects an authenticated non-demo identity', async () => {
-    process.env.DEV_AUTH_BYPASS = '1'
-    process.env.SITE_URL = 'http://localhost:3000'
-    const t = convexTest(schema, modules)
 
     await expect(t.withIdentity({
       subject: 'other-user',
