@@ -2,7 +2,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { APICallError, generateText } from "ai";
 import type { ModelMessage } from "ai";
 
-const modelName = process.env.AI_MODEL ?? "moonshotai/kimi-k2.6";
+const modelName = process.env.AI_MODEL ?? "openai/gpt-5.6-luna";
 const documentReaderModelName =
 	process.env.AI_DOCUMENT_READER_MODEL ?? "google/gemini-3.1-flash-lite";
 const openRouterAppUrl = process.env.OPENROUTER_APP_URL ?? process.env.SITE_URL ?? "https://track.q9labs.ai";
@@ -67,6 +67,7 @@ async function generateOpenRouterText(prompt: string) {
 		body: JSON.stringify({
 			messages: [{ role: "user", content: prompt }],
 			model: modelName,
+			reasoning: { effort: "high" },
 		}),
 	});
 	const rawBody = await response.text();
@@ -110,6 +111,11 @@ export async function generateTrackText(prompt: string | ModelMessage[]) {
 		const { text } = await generateText({
 			model: openrouter.chat(modelName),
 			messages: prompt,
+			providerOptions: {
+				openrouter: {
+					reasoning: { effort: "high" },
+				},
+			},
 		});
 		return { model: modelName, text };
 	} catch (error) {
@@ -164,6 +170,11 @@ export async function generateTrackDocumentNotes(input: {
 					],
 				},
 			],
+			providerOptions: {
+				openrouter: {
+					reasoning: { effort: "high" },
+				},
+			},
 		});
 
 		return { model: documentReaderModelName, text: compactModelText(text) };
