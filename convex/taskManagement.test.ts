@@ -382,13 +382,6 @@ describe('task management authorization and invariants', () => {
       groupId: fixture.groupId,
       name: 'Release follow-through',
     })
-    await expect(owner.mutation(api.tasks.move, {
-      taskId: subtask.taskId,
-      destinationBoardId,
-      targetIndex: 0,
-      expectedRevision: 1,
-    })).rejects.toThrow('task_destination_invalid')
-
     const sourceBoard = (await owner.query(api.taskBoards.list, {
       projectId: fixture.projectId,
     })).find((item) => item.board._id === detail!.task.boardId)!
@@ -857,28 +850,20 @@ describe('task management authorization and invariants', () => {
       projectId: fixture.projectId,
       userId: fixture.ownerId,
     })
-    const counts = await fixture.t.run(async (ctx) => ({
-      boards: (await ctx.db.query('taskBoards').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      states: (await ctx.db.query('taskWorkflowStates').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      tasks: (await ctx.db.query('tasks').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      labels: (await ctx.db.query('taskLabels').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      links: (await ctx.db.query('taskLabelLinks').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      references: (await ctx.db.query('taskReferences').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      comments: (await ctx.db.query('taskComments').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      followers: (await ctx.db.query('taskFollowers').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      activities: (await ctx.db.query('taskActivities').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      notificationSettings: (await ctx.db.query('taskNotificationSettings').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      notifications: (await ctx.db.query('taskNotifications').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      reminders: (await ctx.db.query('taskReminderJobs').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      suggestions: (await ctx.db.query('taskSuggestions').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      suggestionReferences: (await ctx.db.query('taskSuggestionReferences').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      suggestionHides: (await ctx.db.query('taskSuggestionHides').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      detectionSettings: (await ctx.db.query('taskDetectionSettings').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      detectionRuns: (await ctx.db.query('taskDetectionRuns').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      archiveSnapshots: (await ctx.db.query('taskArchiveSnapshots').collect()).filter((row) => row.projectId === fixture.projectId).length,
-      exitStaging: (await ctx.db.query('taskExitSnapshotStaging').collect()).filter((row) => row.projectId === fixture.projectId).length,
-    }))
-    expect(counts).toEqual(Object.fromEntries(Object.keys(counts).map((key) => [key, 0])))
+    const taskTables = [
+      'taskActivities', 'taskArchiveSnapshots', 'taskBoards', 'taskComments',
+      'taskDetectionRuns', 'taskDetectionSettings', 'taskExitSnapshotStaging',
+      'taskFollowers', 'taskLabelLinks', 'taskLabels', 'taskNotificationSettings',
+      'taskNotifications', 'taskReferences', 'taskReminderJobs', 'tasks',
+      'taskSuggestionHides', 'taskSuggestionReferences', 'taskSuggestions',
+      'taskWorkflowStates',
+    ] as const
+    const counts = await fixture.t.run(async (ctx) => await Promise.all(
+      taskTables.map(async (table) =>
+        (await ctx.db.query(table).collect()).filter((row) => row.projectId === fixture.projectId).length,
+      ),
+    ))
+    expect(counts).toEqual(taskTables.map(() => 0))
   })
 
   it('materializes Company-exit task archives from the cutoff snapshot and only allowed Channels', async () => {

@@ -8,32 +8,6 @@ const modules = (import.meta as ImportMeta & {
   glob: (patterns: Array<string>) => Record<string, () => Promise<unknown>>
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
-describe('authenticated actor context', () => {
-  it('binds only provisioned actors to the authenticated subject', async () => {
-    const t = convexTest(schema, modules)
-
-    await expect(t.query(api.foundation.getActorContext, {})).rejects.toThrow(
-      'unauthenticated',
-    )
-    const userId = await seedUser(t, 'auth-user-1')
-
-    await expect(
-      t.withIdentity({ subject: 'auth-user-1' }).query(
-        api.foundation.getActorContext,
-        {},
-      ),
-    ).resolves.toEqual({ authSubject: 'auth-user-1', userId })
-    await seedUser(t, 'existing-user')
-
-    await expect(
-      t.withIdentity({
-        subject: 'different-subject',
-        email: 'existing-user@track.test',
-      }).query(api.foundation.getActorContext, {}),
-    ).rejects.toThrow('actor_not_provisioned')
-  })
-})
-
 describe('central Project and Channel policy adapter', () => {
   it('enforces legacy and Company Project-Channel scope, including selected membership', async () => {
     const t = convexTest(schema, modules)

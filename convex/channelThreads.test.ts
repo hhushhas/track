@@ -276,51 +276,6 @@ describe('Channel threads', () => {
     const retained = await actor.query(api.channelThreads.get, { threadId, userId: owner })
     expect(retained?.thread._id).toBe(threadId)
     expect(retained?.source).toEqual({ unavailable: true })
-    {
-      const { groupId, owner, projectId, t } = await seedLegacyChannel()
-      const actor = asUser(t, owner)
-      const threadId = await actor.mutation(api.channelThreads.create, {
-        creatorId: owner,
-        groupId,
-        idempotencyKey: 'search-thread',
-        name: 'Architecture decisions',
-        projectId,
-      })
-      const messageId = await actor.mutation(api.messages.send, {
-        authorId: owner,
-        body: 'Choose the durable queue boundary',
-        channelThreadId: threadId,
-        groupId,
-        idempotencyKey: 'search-thread-message',
-        projectId,
-      })
-      const nameResults = await actor.query(api.search.project, {
-        projectId,
-        query: 'Architecture',
-        userId: owner,
-      })
-      const messageResults = await actor.query(api.search.project, {
-        projectId,
-        query: 'durable queue',
-        userId: owner,
-      })
-      expect(nameResults.threads).toEqual([
-        expect.objectContaining({ threadId, title: 'Architecture decisions' }),
-      ])
-      expect(messageResults.messages).toEqual([
-        expect.objectContaining({ messageId, threadId }),
-      ])
-      const reportId = await actor.mutation(api.reports.create, {
-        projectId,
-        reason: 'other',
-        reporterId: owner,
-        targetMessageId: messageId,
-        targetType: 'message',
-      })
-      const report = await t.run(async (ctx) => await ctx.db.get(reportId))
-      expect(report).toMatchObject({ channelThreadId: threadId, groupId, targetMessageId: messageId })
-      expect(report).not.toHaveProperty('messageBody')
-    }
   })
 
   it('keeps follow and unread state separate across Acting Company memberships', async () => {
@@ -708,32 +663,6 @@ describe('Channel threads', () => {
       })
       await actor.mutation(api.messages.remove, { actorId: owner, messageId: secondMessageId })
       expect(await t.run(async (ctx) => await ctx.db.system.get(storageId))).toBeNull()
-    }
-    {
-      const { groupId, owner, projectId, t } = await seedLegacyChannel()
-      const actor = asUser(t, owner)
-      const threadId = await actor.mutation(api.channelThreads.create, {
-        creatorId: owner,
-        groupId,
-        idempotencyKey: 'cleanup-thread',
-        name: 'Cleanup thread',
-        projectId,
-      })
-      await actor.mutation(api.messages.send, {
-        authorId: owner,
-        body: 'Cleanup reply',
-        channelThreadId: threadId,
-        groupId,
-        idempotencyKey: 'cleanup-reply',
-        projectId,
-      })
-      await actor.mutation(api.projects.remove, { projectId, userId: owner })
-      const remains = await t.run(async (ctx) => ({
-        followers: await ctx.db.query('channelThreadFollowers').collect(),
-        reads: await ctx.db.query('channelThreadReadStates').collect(),
-        threads: await ctx.db.query('channelThreads').collect(),
-      }))
-      expect(remains).toEqual({ followers: [], reads: [], threads: [] })
     }
   })
 

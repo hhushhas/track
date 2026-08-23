@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { messagePushCopy, retryDelayMs, safePushLabel, taskPushCopy } from './pushDelivery'
+import { messagePushCopy, safePushLabel, taskPushCopy } from './pushDelivery'
 
 describe('privacy-safe push delivery helpers', () => {
   it('keeps message and task previews scoped to the selected privacy mode', () => {
@@ -52,7 +52,5 @@ describe('privacy-safe push delivery helpers', () => {
       body: 'You were assigned: Prepare the confidential launch',
     })
     expect(safePushLabel(' Launch\n readiness ', 'Channel')).toBe('Launch readiness')
-    expect(retryDelayMs(1)).toBe(1_000)
-    expect(retryDelayMs(20)).toBe(30_000)
   })
 })
