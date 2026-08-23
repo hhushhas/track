@@ -7,6 +7,7 @@
 - Focused the automated test portfolio on authorization, scope isolation,
   durable state transitions, privacy boundaries, and hard transformations while
   removing duplicate, implementation-shaped, and static presentation checks.
+  The resulting suite contains 76 tests across 30 files.
 
 ### Security
 
