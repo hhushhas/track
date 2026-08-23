@@ -24,3 +24,14 @@ retained in the source inventory.
 | [2026-W34](2026-W34.md) | Aug 17–23 | 1 | Test suite reduced 338 → 68 |
 
 Weeks with no entry had no session logs.
+
+## Local credential storage
+
+The source files removed by this cleanup are stored as documents in the `dev`
+1Password vault. Retrieve them by title with `op item get "<title>" --vault dev`:
+
+- `Track Google Play submit service account (2026-08-23)`
+- `Track APNs foreground data payload (2026-08-23)`
+- `Track APNs foreground payload (2026-08-23)`
+
+Do not copy these values into the repository, a digest, or an agent transcript.
