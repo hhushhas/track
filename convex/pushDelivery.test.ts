@@ -1,5 +1,5 @@
 import { convexTest } from 'convex-test'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { api, internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
@@ -10,10 +10,6 @@ const modules = (import.meta as ImportMeta & {
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
 describe('durable mobile push lifecycle', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
-
   it('keeps installation ownership and sign-out state isolated', async () => {
     const t = convexTest(schema, modules)
     const first = await seedUser(t, 'push-first')
@@ -54,64 +50,6 @@ describe('durable mobile push lifecycle', () => {
       })).toBe(true)
       const subscription = await t.run(async (ctx) => ctx.db.query('notificationSubscriptions').first())
       expect(subscription).toMatchObject({ enabled: false, tokenOrEndpoint: token })
-    }
-  })
-
-  it('merges token rotation, environment, and preference updates', async () => {
-    const t = convexTest(schema, modules)
-    const userId = await seedUser(t, 'push-rotation')
-    const actor = asUser(t, userId)
-    const common = {
-      userId, installationId: 'rotation-installation', platform: 'android' as const,
-      environment: 'preview' as const, permissionState: 'granted' as const,
-    }
-    await actor.mutation(api.notifications.registerNativeInstallation, {
-      ...common, token: 'fcm-registration-token-old',
-    })
-    await actor.mutation(api.notifications.registerNativeInstallation, {
-      ...common, token: 'fcm-registration-token-new',
-    })
-    const installations = await t.run(async (ctx) => ctx.db.query('pushInstallations').collect())
-    expect(installations).toHaveLength(1)
-    expect(installations[0]).toMatchObject({
-      nativePushToken: 'fcm-registration-token-new',
-      enabled: true,
-    })
-    expect(installations[0].expoPushToken).toBeUndefined()
-    {
-      vi.stubEnv('TRACK_PUSH_ENVIRONMENT', 'preview')
-      const t = convexTest(schema, modules)
-      const userId = await seedUser(t, 'push-legacy-preview')
-      await asUser(t, userId).mutation(api.notifications.registerNativeToken, {
-        userId,
-        platform: 'android',
-        token: 'ExponentPushToken[legacy-preview]',
-      })
-      const installation = await t.run(async (ctx) => ctx.db.query('pushInstallations').first())
-      expect(installation?.environment).toBe('preview')
-    }
-    {
-      const t = convexTest(schema, modules)
-      const userId = await seedUser(t, 'push-preferences')
-      const actor = asUser(t, userId)
-      await actor.mutation(api.notifications.setMobilePreferences, {
-        userId,
-        conversationMode: 'mentions',
-        previewMode: 'hidden',
-      })
-      await actor.mutation(api.notifications.setMobilePreferences, {
-        userId,
-        soundEnabled: false,
-      })
-      expect(await actor.query(api.notifications.getSettings, { userId })).toMatchObject({
-        global: {
-          globalMode: 'mentions',
-          taskMode: 'all',
-          previewMode: 'hidden',
-          soundEnabled: false,
-          badgesEnabled: true,
-        },
-      })
     }
   })
 

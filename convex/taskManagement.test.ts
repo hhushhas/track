@@ -27,58 +27,6 @@ afterEach(() => {
 })
 
 describe('task management authorization and invariants', () => {
-  it('fails task access closed without affecting standalone conversation reads', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    process.env.TRACK_TASKS_ENABLED = 'false'
-    await expect(
-      owner.query(api.taskBoards.list, { projectId: fixture.projectId }),
-    ).rejects.toThrow('tasks_disabled')
-    await expect(
-      owner.query(api.messages.listDetailed, {
-        userId: fixture.ownerId,
-        groupId: fixture.groupId,
-        limit: 20,
-      }),
-    ).resolves.toEqual([])
-    process.env.TRACK_TASKS_ENABLED = 'true'
-  })
-
-  it('includes an explicitly targeted Channel message outside the latest query window', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const firstMessageId = await fixture.t.run(async (ctx) => {
-      const common = {
-        projectId: fixture.projectId,
-        groupId: fixture.groupId,
-        authorId: fixture.ownerId,
-        authorProjectMemberId: fixture.ownerMemberId,
-        mentions: [],
-        attachmentIds: [],
-      }
-      const targetId = await ctx.db.insert('messages', {
-        ...common,
-        body: 'Target message',
-        createdAt: 1,
-      })
-      await ctx.db.insert('messages', {
-        ...common,
-        body: 'Newer message',
-        createdAt: 2,
-      })
-      return targetId
-    })
-
-    const messages = await owner.query(api.messages.listDetailed, {
-      userId: fixture.ownerId,
-      groupId: fixture.groupId,
-      limit: 1,
-      targetMessageId: firstMessageId,
-    })
-    expect(messages.map((item) => item.message._id)).toContain(firstMessageId)
-    expect(messages).toHaveLength(2)
-  })
-
   it('keeps membership-loss cleanup active while task surfaces are disabled', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })

@@ -5,7 +5,7 @@ import { hasUsableStoredAuthSession } from './auth-storage-core';
 const now = Date.parse('2026-05-23T12:00:00.000Z');
 
 describe('hasUsableStoredAuthSession', () => {
-  it('accepts an unexpired native session cookie', () => {
+  it('accepts an unexpired native cookie or cached session', () => {
     expect(hasUsableStoredAuthSession({
       cookie: JSON.stringify({
         'better-auth.session_token': {
@@ -15,9 +15,7 @@ describe('hasUsableStoredAuthSession', () => {
       }),
       sessionCache: null,
     }, now)).toBe(true);
-  });
 
-  it('accepts an unexpired cached session', () => {
     expect(hasUsableStoredAuthSession({
       cookie: null,
       sessionCache: JSON.stringify({
