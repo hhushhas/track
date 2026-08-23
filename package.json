@@ -47,7 +47,7 @@
     "better-auth": "1.6.25",
     "fflate": "0.8.2",
     "firebase-admin": "14.2.0",
-    "hono": "4.12.29",
+    "hono": "4.12.34",
     "jose": "6.2.5",
     "react": "19.2.7",
     "web-push": "^3.6.7"

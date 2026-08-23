@@ -8,6 +8,12 @@
   durable state transitions, privacy boundaries, and hard transformations while
   removing duplicate, implementation-shaped, and static presentation checks.
 
+### Security
+
+- Updated direct and transitive production dependencies to resolve the current
+  Hono, Undici, PostCSS, Nanoid, YAML, brace expansion, and image parser
+  advisories reported by the package audit.
+
 ## 2026-07-30
 
 ### Added
