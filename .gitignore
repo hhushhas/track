@@ -43,8 +43,5 @@ SCR-*.png
 # Riptide artifacts (cloud-synced)
 .humanlayer/tasks/
 
-# Condensed session-log digests (local history)
-history/
-
 # Local codebase index cache (regenerable)
 .codebase-memory/
