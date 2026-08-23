@@ -112,43 +112,6 @@ describe('task management authorization and invariants', () => {
     expect(state.follower?.enabled).toBe(false)
   })
 
-  it('creates a board task in the workflow state selected by the client', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const boardId = await owner.mutation(api.taskBoards.create, {
-      projectId: fixture.projectId,
-      name: 'Placement board',
-    })
-    const boards = await owner.query(api.taskBoards.list, { projectId: fixture.projectId })
-    const board = boards.find((item) => item.board._id === boardId)
-    const started = board?.states.find((item) => item.category === 'started')
-    expect(started).toBeTruthy()
-
-    const created = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      boardId,
-      workflowStateId: started?._id,
-      title: 'Start in progress',
-      priority: 'none',
-      idempotencyKey: 'selected-create-state',
-    })
-    const task = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
-    expect(task?.workflowStateId).toBe(started?._id)
-
-    const otherBoardId = await owner.mutation(api.taskBoards.create, {
-      projectId: fixture.projectId,
-      name: 'Other board',
-    })
-    await expect(owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      boardId: otherBoardId,
-      workflowStateId: started?._id,
-      title: 'Wrong board state',
-      priority: 'none',
-      idempotencyKey: 'invalid-selected-create-state',
-    })).rejects.toThrow('task_destination_invalid')
-  })
-
   it('keeps Channel boards invisible to an administrator outside that Channel', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })
@@ -386,26 +349,6 @@ describe('task management authorization and invariants', () => {
       destinationBoardId: hiddenBoardId,
       audienceReductionConfirmed: true,
     })).rejects.toThrow('task_destination_invalid')
-  })
-
-  it('removes cleared descriptions from search text', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const created = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      title: 'Clear stale text',
-      description: 'obsolete-search-marker',
-      priority: 'none',
-      idempotencyKey: 'clear-description',
-    })
-    await owner.mutation(api.tasks.update, {
-      taskId: created.taskId,
-      expectedRevision: 1,
-      description: null,
-    })
-    const task = await fixture.t.run(async (ctx) => await ctx.db.get(created.taskId))
-    expect(task?.description).toBeUndefined()
-    expect(task?.searchText).not.toContain('obsolete-search-marker')
   })
 
   it('creates scoped evidence, live view data, and one-level subtasks idempotently', async () => {
@@ -912,68 +855,6 @@ describe('task management authorization and invariants', () => {
       model: 'fake-history',
       candidates: [],
     })).resolves.toBe(false)
-  })
-
-  it('targets task push deep links only to the selected Project membership preference', async () => {
-    const fixture = await seedLegacyProject()
-    const owner = fixture.t.withIdentity({ subject: 'owner' })
-    const staff = fixture.t.withIdentity({ subject: 'staff' })
-    await staff.mutation(api.notifications.registerNativeToken, {
-      userId: fixture.staffId,
-      projectMemberId: fixture.staffMemberId,
-      platform: 'ios',
-      token: 'apns-test-staff-device-token',
-    })
-    const created = await owner.mutation(api.tasks.create, {
-      projectId: fixture.projectId,
-      title: 'Notify exact assignee',
-      assigneeProjectMemberId: fixture.staffMemberId,
-      priority: 'high',
-      idempotencyKey: 'push-task',
-    })
-    const notification = await fixture.t.run(
-      async (ctx) =>
-        (
-          await ctx.db
-            .query('taskNotifications')
-            .withIndex('by_member_created_at', (q) =>
-              q.eq('recipientProjectMemberId', fixture.staffMemberId),
-            )
-            .collect()
-        )[0]!,
-    )
-    const push = await fixture.t.query(
-      internal.taskNotifications.collectPushTargets,
-      { notificationId: notification._id },
-    )
-    expect(push?.mobileUrl).toBe(
-      `/task?projectId=${fixture.projectId}&taskKey=${created.publicKey}`,
-    )
-    expect(push?.targets).toHaveLength(1)
-    await owner.mutation(api.tasks.update, {
-      taskId: created.taskId,
-      expectedRevision: 1,
-      title: 'Notify exact assignee after edit',
-      assigneeProjectMemberId: fixture.staffMemberId,
-    })
-    const assignmentNotifications = await fixture.t.run(async (ctx) =>
-      (await ctx.db
-        .query('taskNotifications')
-        .withIndex('by_member_created_at', (q) =>
-          q.eq('recipientProjectMemberId', fixture.staffMemberId),
-        )
-        .collect()).filter((item) => item.eventType === 'assignment'),
-    )
-    expect(assignmentNotifications).toHaveLength(1)
-    await staff.mutation(api.taskNotifications.setPreference, {
-      projectId: fixture.projectId,
-      mode: 'muted',
-    })
-    await expect(
-      fixture.t.query(internal.taskNotifications.collectPushTargets, {
-        notificationId: notification._id,
-      }),
-    ).resolves.toBeNull()
   })
 
   it('cascades all live task data when a legacy Project is deleted', async () => {

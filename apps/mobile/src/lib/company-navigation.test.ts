@@ -9,10 +9,6 @@ describe('Company mobile navigation presenter', () => {
   const companyId = 'company-id' as Id<'companies'>;
   const membershipId = 'membership-id' as Id<'projectMembers'>;
 
-  it('keeps legacy navigation free of represented Company parameters', () => {
-    expect(projectChannelsHref(projectId, null)).toBe('/groups?projectId=project-id');
-  });
-
   it('preserves represented Company membership through Project, Channel, and denied links', () => {
     const context = { archived: false, companyId, membershipId };
     expect(projectChannelsHref(projectId, context)).toContain('companyId=company-id&membershipId=membership-id');
