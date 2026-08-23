@@ -9,7 +9,9 @@ build/
 .eas/
 .wrangler/
 .convex/
-scratchpad/
+scratchpad/*
+!scratchpad/history/
+!scratchpad/history/**
 
 # Operator-specific deployment and release configuration
 convex.prod.env
