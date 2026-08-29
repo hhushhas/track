@@ -5,6 +5,7 @@ import { companyCoreTables } from './schema/companyCoreTables'
 import { companyProjectTables } from './schema/companyProjectTables'
 import { taskAutomationTables } from './schema/taskAutomationTables'
 import { taskCoreTables } from './schema/taskCoreTables'
+import { showcaseTables } from './schema/showcaseTables'
 import {
   channelStatus,
   companyProjectRole,
@@ -156,6 +157,7 @@ export default defineSchema({
   ...companyProjectTables,
   ...taskCoreTables,
   ...taskAutomationTables,
+  ...showcaseTables,
 
   users: defineTable({
     googleSubject: v.string(),

@@ -199,6 +199,7 @@ export const taskCoreTables = {
     .index('by_member_read', ['recipientProjectMemberId', 'readAt'])
     .index('by_member_created_at', ['recipientProjectMemberId', 'createdAt'])
     .index('by_member_idempotency', ['recipientProjectMemberId', 'idempotencyKey'])
+    .index('by_task', ['taskId'])
     .index('by_project', ['projectId']),
 
   taskReminderJobs: defineTable({
