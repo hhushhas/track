@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "product": "Q9 Track",
+  "android": {
+    "package_name": "ai.q9labs.track",
+    "signing_status": "missing-production-upload-keystore",
+    "signing_item": null,
+    "reason": "No production Android upload keystore is present on either allowed machine or in the release vault.",
+    "firebase_item_id": "ctj5bqenervqe3zj7kopq2jlve",
+    "firebase_sha256": "dea7d353226332c2358666bf3c279a94f53d811f6e6cbadbe2f2bfb39d3f4314"
+  },
+  "apple": {
+    "bundle_id": "ai.q9labs.track",
+    "signing_status": "missing-app-specific-profile",
+    "team_id": "5K9635LZ6F",
+    "certificate_sha256": "97:B9:31:DA:10:8D:7E:DE:A6:FC:88:32:85:A6:7A:E9:71:3B:28:49:27:AB:9A:BC:5A:71:BA:9D:91:8B:69:98",
+    "p12_item_id": "jw7juoemfup6yh5lbjaklpn7va",
+    "p12_password_item_id": "ndofbbyh5laduewwm2pfltq37y",
+    "profile_item_id": null,
+    "reason": "The shared Apple distribution certificate is available, but no Track App Store provisioning profile is present on either allowed machine or in the release vault."
+  }
+}
