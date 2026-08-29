@@ -24,7 +24,8 @@
     "test": "turbo test && vitest run --dir convex --environment node",
     "convex:dev": "convex dev",
     "convex:deploy:dev": "convex deploy",
-    "convex:deploy:prod": "convex deploy --env-file convex.prod.env"
+    "convex:deploy:prod": "convex deploy --env-file convex.prod.env",
+    "seed:dataset": "node scripts/seed-dataset.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",
