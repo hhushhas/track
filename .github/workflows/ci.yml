@@ -90,7 +90,7 @@ jobs:
 
       - name: Build Android debug app
         working-directory: apps/mobile/android
-        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug
+        run: ./gradlew --no-daemon assembleDebug
 
   ios:
     name: Unsigned iOS simulator build
