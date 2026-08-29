@@ -73,9 +73,27 @@ describe('Track showcase adapter', () => {
     expect(firstVerification.assetCount).toBe(61)
     const nativeState = await t.run(async (ctx) => ({
       ownerMemberships: await ctx.db.query('companyMembers').withIndex('by_user_status', (q) => q.eq('userId', ownerUserId).eq('status', 'active')).collect(),
+      projectMemberships: await ctx.db.query('projectMembers').collect(),
       channels: await ctx.db.query('groups').collect(),
     }))
     expect(nativeState.ownerMemberships.some((membership) => membership.role === 'owner')).toBe(true)
+    const presenterProjectKeys = new Set(manifest.targetedPacks.map((pack: { projectKey: string }) => pack.projectKey))
+    const presenterMembershipKeys = manifest.records.memberships
+      .filter((membership: { permission: string; projectKey: string }) => membership.permission === 'manage' && presenterProjectKeys.has(membership.projectKey))
+      .map((membership: { externalKey: string }) => membership.externalKey)
+    const presenterMembershipRecords = await t.run(async (ctx) => await ctx.db
+      .query('showcaseDatasetRecords')
+      .withIndex('by_dataset_organization_type', (q) => q.eq('datasetId', identity.datasetId).eq('organizationId', organization.organizationId).eq('recordType', 'memberships'))
+      .collect())
+    const presenterMembershipIds = new Set(presenterMembershipRecords
+      .filter((record) => presenterMembershipKeys.includes(record.externalKey))
+      .map((record) => record.recordId))
+    const presenterMemberships = nativeState.projectMemberships.filter((membership) =>
+      presenterMembershipIds.has(String(membership._id)),
+    )
+    expect(presenterMemberships).toHaveLength(5)
+    expect(presenterMemberships.every((membership) => membership.userId === ownerUserId)).toBe(true)
+    expect(presenterMembershipIds.size).toBe(5)
     expect(nativeState.channels.every((channel) => channel.nextChannelSequence === undefined)).toBe(true)
 
     await t.mutation(anyApi.showcaseDataset.begin, { ...identity, organizationId: organization.organizationId, ownerUserId })
