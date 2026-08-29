@@ -8,6 +8,18 @@ import { appendTaskActivity, rankForIndex } from './lib/taskData'
 const DATASET_ID = 'showcase-v1'
 const DATASET_VERSION = '1.0.0'
 const PRODUCT = 'track'
+
+const presenterProjectByUser = new Map([
+  ['track-user-person-layan-kawthar-khoury', 'track-project-agency-campaign'],
+  ['track-user-person-zaina-walid-alami', 'track-project-construction-coordination'],
+  ['track-user-person-sami-ghassan-karam', 'track-project-software-delivery'],
+  ['track-user-person-maha-saad-habib', 'track-project-exhibition-planning'],
+  ['track-user-person-adel-aref-rifai', 'track-project-cross-functional-operations'],
+])
+
+function usesPresenterIdentity(userKey: string, projectKey: string) {
+  return presenterProjectByUser.get(userKey) === projectKey
+}
 const ORGANIZATION_EXTERNAL_KEY = 'track-showcase-connected-delivery'
 const MANIFEST_HASH = 'sha256:3e3b8abf1f5f564536d4fdb6a1242795cddfa6deaf94b53c97644066f49ae3f9'
 const ASSET_MANIFEST_HASH = 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae'
@@ -262,6 +274,16 @@ async function ownerUserId(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>) {
 
 async function userForKey(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>, externalKey: string) {
   return await requireRegistryId(ctx, dataset.organizationId, externalKey, 'users', 'users')
+}
+
+async function userForProjectKey(
+  ctx: ReadCtx,
+  dataset: Doc<'showcaseDatasets'>,
+  userKey: string,
+  projectKey: string,
+) {
+  if (usesPresenterIdentity(userKey, projectKey)) return await ownerUserId(ctx, dataset)
+  return await userForKey(ctx, dataset, userKey)
 }
 
 async function projectForKey(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>, externalKey: string) {
@@ -606,11 +628,13 @@ async function applyMembership(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
   if (existing) return existing.recordId
-  const projectId = await projectForKey(ctx, dataset, requiredString(record, 'projectKey'))
-  const userId = await userForKey(ctx, dataset, requiredString(record, 'userKey'))
+  const projectKey = requiredString(record, 'projectKey')
+  const userKey = requiredString(record, 'userKey')
+  const projectId = await projectForKey(ctx, dataset, projectKey)
+  const userId = await userForProjectKey(ctx, dataset, userKey, projectKey)
   const companyId = await companyForKey(ctx, dataset, requiredString(record, 'companyKey'))
   const company = await ctx.db.get(companyId)
-  const userRecord = await registryRecord(ctx, dataset.organizationId, requiredString(record, 'userKey'))
+  const userRecord = await registryRecord(ctx, dataset.organizationId, userKey)
   if (!company || !userRecord) throw new Error('membership parent is missing')
   const user = await ctx.db.get(userId)
   if (!user) throw new Error('membership user is missing')
@@ -720,9 +744,11 @@ async function applyMessage(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
   if (existing) return existing.recordId
-  const projectId = await projectForKey(ctx, dataset, requiredString(record, 'projectKey'))
+  const projectKey = requiredString(record, 'projectKey')
+  const projectId = await projectForKey(ctx, dataset, projectKey)
   const groupId = await channelForKey(ctx, dataset, requiredString(record, 'channelKey'))
-  const userId = await userForKey(ctx, dataset, requiredString(record, 'authorKey'))
+  const authorKey = requiredString(record, 'authorKey')
+  const userId = await userForProjectKey(ctx, dataset, authorKey, projectKey)
   const member = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
     q.eq('projectId', projectId).eq('userId', userId),
   ).unique()
@@ -759,7 +785,8 @@ async function applyTask(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
   if (existing) return existing.recordId
-  const projectId = await projectForKey(ctx, dataset, requiredString(record, 'projectKey'))
+  const projectKey = requiredString(record, 'projectKey')
+  const projectId = await projectForKey(ctx, dataset, projectKey)
   const sourceMessageId = await messageForKey(ctx, dataset, requiredString(record, 'sourceMessageKey'))
   const sourceMessage = await ctx.db.get(sourceMessageId)
   if (!sourceMessage || sourceMessage.projectId !== projectId) throw new Error('task source message scope mismatch')
@@ -767,7 +794,7 @@ async function applyTask(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record
   if (!creator) throw new Error('task source message has no project membership')
   const creatorMember = await ctx.db.get(creator)
   if (!creatorMember || !creatorMember.companyId) throw new Error('task creator membership is missing')
-  const assigneeId = await userForKey(ctx, dataset, requiredString(record, 'assigneeKey'))
+  const assigneeId = await userForProjectKey(ctx, dataset, requiredString(record, 'assigneeKey'), projectKey)
   const assignee = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
     q.eq('projectId', projectId).eq('userId', assigneeId),
   ).unique()
@@ -1410,7 +1437,7 @@ async function deleteNativeRegistryRecord(ctx: WriteCtx, record: RegistryRecord)
     if (!id) throw new Error(`invalid asset registry id ${record.externalKey}`)
     const asset = await ctx.db.get(id)
     if (asset) {
-      await ctx.storage.delete(asset.storageId).catch(() => undefined)
+      await ctx.storage.delete(asset.storageId)
       await ctx.db.delete(id)
     }
     return
@@ -1421,7 +1448,6 @@ async function deleteNativeRegistryRecord(ctx: WriteCtx, record: RegistryRecord)
     if (!id) throw new Error(`invalid attachment id ${record.externalKey}`)
     const attachment = await ctx.db.get(id)
     if (attachment) {
-      await ctx.storage.delete(attachment.storageId).catch(() => undefined)
       await ctx.db.delete(id)
     }
     return

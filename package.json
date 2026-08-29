@@ -21,7 +21,7 @@
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "test": "turbo test && vitest run --dir convex --environment node",
+    "test": "turbo test && vitest run --dir convex --environment node && node --test scripts/showcase/track-manifest.test.mjs",
     "convex:dev": "convex dev",
     "convex:deploy:dev": "convex deploy",
     "convex:deploy:prod": "convex deploy --env-file convex.prod.env",
