@@ -332,7 +332,7 @@ async function main() {
       organizationId: resolved.organizationId,
       confirmOrganizationId: options['confirm-organization'],
     })
-    const removalOrder = ['attachments', 'suggestions', 'tasks', 'messages', 'channels', 'memberships', 'taskWorkflowStates', 'taskBoards', 'projectCompanies', 'projects', 'companyMembers', 'companies', 'users', 'showcaseDatasetAssets', 'organization']
+    const removalOrder = ['attachments', 'suggestions', 'tasks', 'messages', 'channels', 'generalChannels', 'memberships', 'taskWorkflowStates', 'taskBoards', 'projectCompanies', 'projects', 'companyMembers', 'companies', 'users', 'showcaseDatasetAssets', 'organization']
     for (const recordType of removalOrder) {
       while (true) {
         const result = runConvex(options, 'showcaseDataset:removeBatch', {

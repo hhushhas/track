@@ -75,6 +75,9 @@ describe('Track showcase adapter', () => {
       ownerMemberships: await ctx.db.query('companyMembers').withIndex('by_user_status', (q) => q.eq('userId', ownerUserId).eq('status', 'active')).collect(),
       projectMemberships: await ctx.db.query('projectMembers').collect(),
       channels: await ctx.db.query('groups').collect(),
+      groupMemberships: await ctx.db.query('groupMembers').collect(),
+      projects: await ctx.db.query('projects').collect(),
+      projectCompanies: await ctx.db.query('projectCompanies').collect(),
     }))
     expect(nativeState.ownerMemberships.some((membership) => membership.role === 'owner')).toBe(true)
     const presenterProjectKeys = new Set(manifest.targetedPacks.map((pack: { projectKey: string }) => pack.projectKey))
@@ -95,12 +98,49 @@ describe('Track showcase adapter', () => {
     expect(presenterMemberships.every((membership) => membership.userId === ownerUserId)).toBe(true)
     expect(presenterMembershipIds.size).toBe(5)
     expect(nativeState.channels.every((channel) => channel.nextChannelSequence === undefined)).toBe(true)
+    const generalChannels = nativeState.channels.filter((channel) => channel.kind === 'general')
+    expect(generalChannels).toHaveLength(identity.counts.projects)
+    expect(generalChannels.every((channel) => channel.name === 'General')).toBe(true)
+    expect(nativeState.projectMemberships.every((membership) => nativeState.groupMemberships.some(
+      (groupMembership) => groupMembership.projectMemberId === membership._id &&
+        generalChannels.some((channel) => channel._id === groupMembership.groupId),
+    ))).toBe(true)
+    expect(nativeState.projects.every((project) => {
+      const companyCount = nativeState.projectCompanies.filter((company) => company.projectId === project._id).length
+      return companyCount > 1 ? project.origin === 'shared' : project.origin === 'single_company'
+    })).toBe(true)
 
     await t.mutation(anyApi.showcaseDataset.begin, { ...identity, organizationId: organization.organizationId, ownerUserId })
     await applyGraphRecords(t, organization.organizationId)
     const retryVerification = await verifyGraph(t, organization.organizationId)
     expect(retryVerification.ok).toBe(true)
     expect(retryVerification.counts).toEqual(firstVerification.counts)
+
+    const unregisteredMessageId = await t.run(async (ctx) => {
+      const channel = await ctx.db.query('groups').first()
+      if (!channel) throw new Error('test channel is missing')
+      const membership = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', channel.projectId)).first()
+      if (!membership) throw new Error('test membership is missing')
+      return await ctx.db.insert('messages', {
+        projectId: channel.projectId,
+        groupId: channel._id,
+        authorId: membership.userId,
+        authorProjectMemberId: membership._id,
+        actingCompanyId: membership.companyId,
+        body: 'Presenter-created content must block showcase removal.',
+        mentions: [],
+        attachmentIds: [],
+        createdAt: Date.now(),
+      })
+    })
+    await expect(t.mutation(anyApi.showcaseDataset.beginRemove, {
+      datasetId: identity.datasetId,
+      organizationKey: identity.organizationKey,
+      organizationId: organization.organizationId,
+      confirmOrganizationId: organization.organizationId,
+    })).rejects.toThrow('unregistered message')
+    expect((await t.run(async (ctx) => await ctx.db.query('showcaseDatasets').first()))?.status).toBe('applied')
+    await t.run(async (ctx) => await ctx.db.delete(unregisteredMessageId))
 
     await t.mutation(anyApi.showcaseDataset.beginRemove, {
       datasetId: identity.datasetId,
@@ -113,7 +153,7 @@ describe('Track showcase adapter', () => {
       organizationId: organization.organizationId,
       ownerUserId,
     })).rejects.toThrow('cannot be reapplied')
-    const removalOrder = ['attachments', 'suggestions', 'tasks', 'messages', 'channels', 'memberships', 'taskWorkflowStates', 'taskBoards', 'projectCompanies', 'projects', 'companyMembers', 'companies', 'users', 'showcaseDatasetAssets', 'organization']
+    const removalOrder = ['attachments', 'suggestions', 'tasks', 'messages', 'channels', 'generalChannels', 'memberships', 'taskWorkflowStates', 'taskBoards', 'projectCompanies', 'projects', 'companyMembers', 'companies', 'users', 'showcaseDatasetAssets', 'organization']
     for (const recordType of removalOrder) {
       while (true) {
         const result = await t.mutation(anyApi.showcaseDataset.removeBatch, {
