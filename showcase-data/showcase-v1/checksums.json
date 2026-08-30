@@ -1,0 +1,14 @@
+{
+  "datasetId": "showcase-v1",
+  "datasetVersion": "1.0.0",
+  "algorithm": "sha256",
+  "product": "track",
+  "manifest": {
+    "path": "showcase-data/showcase-v1/track.json",
+      "contentHash": "sha256:57533c0fc038a0ef188dac037710143ff7d9f0964bc621752001a33b199bd0a9"
+  },
+  "assets": {
+    "path": "showcase-data/showcase-v1/track-assets.json",
+      "contentHash": "sha256:007e2402c550d61cdee49e0555b16a25f2f8094bdc01a3883272ebcee8479fdc"
+  }
+}

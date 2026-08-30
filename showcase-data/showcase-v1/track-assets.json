@@ -1,0 +1,2491 @@
+{
+  "datasetId": "showcase-v1",
+  "datasetVersion": "1.0.0",
+  "product": "track",
+  "anchorDate": "2026-08-29",
+  "counts": {
+    "total": 61,
+    "built": 61,
+    "pendingProductCapture": 0
+  },
+  "assets": [
+    {
+      "assetKey": "track/catalog/organization-scene",
+      "contentHash": "sha256:b1ded1cd77f53b543685e42584d3d9255ddd8c92cad7f4bb1e693ad69c399095",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "und",
+      "category": "organization-scene",
+      "title": "track fictional showcase organization",
+      "relationships": {
+        "organizationKey": "track-showcase-connected-delivery"
+      },
+      "source": {
+        "kind": "builtin-imagegen",
+        "path": "assets/scenes/track.png",
+        "generatedOn": "2026-08-29",
+        "license": "OpenAI generated asset for Q9 Labs showcase use"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/catalog/organization-scene.png",
+      "storageKey": "showcase-v1/track/b1ded1cd77f53b543685e42584d3d9255ddd8c92cad7f4bb1e693ad69c399095.png",
+      "fileSize": 1963415,
+      "dimensions": {
+        "width": 1536,
+        "height": 1024
+      },
+      "body": "Visual map of the fictional Track showcase organization and its connected project work."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign/evidence-01",
+      "contentHash": "sha256:0afc8f63e6a523e7781c47114be0b2aab0f9062389118fb12d61314ab2b6225e",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "voice-note",
+      "title": "Mosaic Campaign Launch evidence 1",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign",
+        "messageKey": "track-message-0001"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign/evidence-01.wav",
+      "storageKey": "showcase-v1/track/0afc8f63e6a523e7781c47114be0b2aab0f9062389118fb12d61314ab2b6225e.wav",
+      "fileSize": 395886,
+      "duration": 8.976,
+      "transcript": "Maha Rashed Tawfiq: Mosaic Campaign Launch: الهوية البصرية العربية is 62% complete. Layan Kawthar Khoury يتولى النسخة المعتمدة لمدة 30 ثانية؛ next check الأحد 09:30. Ref AGY-0100. Samar Eman Sabbagh: سأؤكد المسؤول والموعد التالي مع الفريق، ثم سأرفق الدليل بعد المراجعة. Fahad Malik Fakhri: سأرفق الدليل بعد المراجعة وأغلق التسليم.",
+      "speakers": [
+        "Maha Rashed Tawfiq",
+        "Samar Eman Sabbagh",
+        "Fahad Malik Fakhri"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 2.992,
+          "speaker": "Maha Rashed Tawfiq",
+          "text": "Maha Rashed Tawfiq: Mosaic Campaign Launch: الهوية البصرية العربية is 62% complete. Layan Kawthar Khoury يتولى النسخة المعتمدة لمدة 30 ثانية؛ next check الأحد 09:30. Ref AGY-0100."
+        },
+        {
+          "start": 2.992,
+          "end": 5.984,
+          "speaker": "Samar Eman Sabbagh",
+          "text": "Samar Eman Sabbagh: سأؤكد المسؤول والموعد التالي مع الفريق، ثم سأرفق الدليل بعد المراجعة."
+        },
+        {
+          "start": 5.984,
+          "end": 8.976,
+          "speaker": "Fahad Malik Fakhri",
+          "text": "Fahad Malik Fakhri: سأرفق الدليل بعد المراجعة وأغلق التسليم."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.9734,
+        0.2384,
+        0.4756,
+        0.2151,
+        0.5631,
+        0.3563,
+        0.5483,
+        0.5808,
+        0.485,
+        0.2057,
+        0.5517,
+        0.583,
+        0.5143,
+        0.5094,
+        0.5506,
+        0.2107,
+        0.1298,
+        0,
+        0,
+        0.0609,
+        0.4641,
+        0.5297,
+        0.3564,
+        0.5347,
+        0.2667,
+        0.4727,
+        0.211,
+        0.104,
+        0.5914,
+        0.6488,
+        0.5413,
+        0.1299,
+        0.3765,
+        0.3795,
+        0.4934,
+        0.2849,
+        0,
+        0.3425,
+        0.5117,
+        0.1932,
+        0.6707,
+        0.2384,
+        0.3954,
+        0.4032,
+        0.4578,
+        0.4216,
+        0.2344,
+        0,
+        0.4852,
+        0.1374,
+        0.462,
+        0.659,
+        0.3876,
+        0.2387,
+        0.4043,
+        0.4684,
+        0.3424,
+        0.5604,
+        0.4174,
+        0.1483,
+        0.0923,
+        0,
+        0
+      ],
+      "body": "Recorded status update discussion for Mosaic Campaign Launch: Mosaic Campaign Launch: الهوية البصرية العربية is 62% complete. Layan Kawthar Khoury يتولى النسخة المعتمدة لمدة 30 ثانية؛ next check الأحد 09:30. Ref AGY-0100."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign/evidence-02",
+      "contentHash": "sha256:0932b0b2f3d85be3245f3230625ab575b0d9d6ae7da176e462a7f92b3d024cab",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Mosaic Campaign Launch evidence 2",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign",
+        "messageKey": "track-message-0004"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign/evidence-02.png",
+      "storageKey": "showcase-v1/track/0932b0b2f3d85be3245f3230625ab575b0d9d6ae7da176e462a7f92b3d024cab.png",
+      "fileSize": 34197,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Mosaic Campaign Launch: اعتماد Mosaic Campaign Launch: وافق مدير العلامة التجارية على صفحة الحملة. يمكن لـنادين عارف الرفاعي إصدار سجل اعتمادات العميل. اعتماد AGY-0103."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign/evidence-03",
+      "contentHash": "sha256:3274e21ec4785f1c82e5a29d4804e18da709069460c02d858dbcae2f36c1d0f9",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Mosaic Campaign Launch evidence 3",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign",
+        "messageKey": "track-message-0007"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign/evidence-03.pdf",
+      "storageKey": "showcase-v1/track/3274e21ec4785f1c82e5a29d4804e18da709069460c02d858dbcae2f36c1d0f9.pdf",
+      "fileSize": 11199,
+      "pageCount": 1,
+      "body": "Source evidence for Mosaic Campaign Launch: تحديث Mosaic Campaign Launch: اعتمد شريك الإنتاج حالة خطة حجز الوسائط عند 67%. يسير جدول توزيع الميزانية الإعلامية نحو موعد الاثنين 15:30. (AGY-0106)."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination/evidence-04",
+      "contentHash": "sha256:54825c87bdacdd473c946188c697bf9f3c74c2359e0ff8561b53fb91a0a2a1a3",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Wadi Residences Handover evidence 4",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination",
+        "messageKey": "track-message-0050"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination/evidence-04.jpeg",
+      "storageKey": "showcase-v1/track/54825c87bdacdd473c946188c697bf9f3c74c2359e0ff8561b53fb91a0a2a1a3.jpeg",
+      "fileSize": 56021,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Wadi Residences Handover: Decision CON-0149 for Wadi Residences Handover: اعتماد حزمة شهادات التسليم بعد مراجعة مقاول الأعمال الكهروميكانيكية. كشف إقفال ملاحظات الاستشاري is now the baseline."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination/evidence-05",
+      "contentHash": "sha256:6d7ed15afce2d01b2b928197b15e42e030f94c02330aa5c3124ee5b9e6ba9ae5",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Wadi Residences Handover evidence 5",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination",
+        "messageKey": "track-message-0053"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination/evidence-05.png",
+      "storageKey": "showcase-v1/track/6d7ed15afce2d01b2b928197b15e42e030f94c02330aa5c3124ee5b9e6ba9ae5.png",
+      "fileSize": 32638,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Wadi Residences Handover: Faisal Sahar Masri uploaded مجموعة صور الفحص إلى Wadi Residences Handover. It now proves the current state of عينة الواجهة الحجرية; CON-0152."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination/evidence-06",
+      "contentHash": "sha256:fba607ce6cc5e32baf6bb8dddbd1c041a8905f845fc20ef8500471a533b7d63f",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Wadi Residences Handover evidence 6",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination",
+        "messageKey": "track-message-0056"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination/evidence-06.pdf",
+      "storageKey": "showcase-v1/track/fba607ce6cc5e32baf6bb8dddbd1c041a8905f845fc20ef8500471a533b7d63f.pdf",
+      "fileSize": 11044,
+      "pageCount": 1,
+      "body": "Source evidence for Wadi Residences Handover: نبقي هذا الخيط مرتبطًا بالبند نفسه: Faisal Sahar Masri uploaded مجموعة صور الفحص إلى Wadi Residences Handover. It now proves the current state of عينة الواجهة الحجرية; CON-0152. سأضيف فحص الموعد بعد رد المسؤول."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery/evidence-07",
+      "contentHash": "sha256:080d7b160883dfec92fb6ea5b86cfbc80f72c1d212091bd3f46533b025f3dd99",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "voice-note",
+      "title": "Atlas Mobile Release evidence 7",
+      "relationships": {
+        "projectKey": "track-project-software-delivery",
+        "messageKey": "track-message-0099"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery/evidence-07.wav",
+      "storageKey": "showcase-v1/track/080d7b160883dfec92fb6ea5b86cfbc80f72c1d212091bd3f46533b025f3dd99.wav",
+      "fileSize": 383802,
+      "duration": 8.702,
+      "transcript": "Salma Adnan Hamdan: The next step follows this same work item: Arabic onboarding is blocked: the retry event is missing from analytics. Amina Dalia Jaber split out the production monitoring dashboard so unaffected work can continue before Tuesday 13:30. Ref SWE-0192. The receiving team will confirm acceptance at the checkpoint. Fahad Malik Fakhri: سأؤكد المسؤول والموعد التالي مع الفريق، ثم سأرفق الدليل بعد المراجعة. Omar Tala Nassar: سأرفق الدليل بعد المراجعة وأغلق التسليم.",
+      "speakers": [
+        "Salma Adnan Hamdan",
+        "Fahad Malik Fakhri",
+        "Omar Tala Nassar"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 2.901,
+          "speaker": "Salma Adnan Hamdan",
+          "text": "Salma Adnan Hamdan: The next step follows this same work item: Arabic onboarding is blocked: the retry event is missing from analytics. Amina Dalia Jaber split out the production monitoring dashboard so unaffected work can continue before Tuesday 13:30. Ref SWE-0192. The receiving team will confirm acceptance at the checkpoint."
+        },
+        {
+          "start": 2.901,
+          "end": 5.801,
+          "speaker": "Fahad Malik Fakhri",
+          "text": "Fahad Malik Fakhri: سأؤكد المسؤول والموعد التالي مع الفريق، ثم سأرفق الدليل بعد المراجعة."
+        },
+        {
+          "start": 5.801,
+          "end": 8.702,
+          "speaker": "Omar Tala Nassar",
+          "text": "Omar Tala Nassar: سأرفق الدليل بعد المراجعة وأغلق التسليم."
+        }
+      ],
+      "waveform": [
+        0.9215,
+        0.9995,
+        0.2384,
+        0.4756,
+        0.2561,
+        0.3729,
+        0.5635,
+        0.5833,
+        0.3773,
+        0.5173,
+        0.4577,
+        0.3422,
+        0.3931,
+        0.3943,
+        0.3896,
+        0.2396,
+        0.0921,
+        0,
+        0,
+        0.1788,
+        0.5298,
+        0.5249,
+        0.3547,
+        0.5322,
+        0.4438,
+        0.4802,
+        0.1414,
+        0.2826,
+        0.6455,
+        0.6352,
+        0.5439,
+        0.1296,
+        0.378,
+        0.3769,
+        0.4869,
+        0.3612,
+        0.1738,
+        0.0618,
+        0.5116,
+        0.3119,
+        0.6686,
+        0.4071,
+        0.3916,
+        0.3986,
+        0.4458,
+        0.4595,
+        0.2345,
+        0.1892,
+        0.3098,
+        0.484,
+        0.2139,
+        0.4643,
+        0.6655,
+        0.1067,
+        0.4011,
+        0.3472,
+        0.4664,
+        0.2501,
+        0.5563,
+        0.3708,
+        0.1457,
+        0.0838,
+        0,
+        0
+      ],
+      "body": "Recorded delay discussion for Atlas Mobile Release: The next step follows this same work item: Arabic onboarding is blocked: the retry event is missing from analytics. Amina Dalia Jaber split out the production monitoring dashboard so unaffected work can continue before Tuesday 13:30. Ref SWE-0192. The receiving team will confirm acceptance at the checkpoint."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery/evidence-08",
+      "contentHash": "sha256:a4f26e5e74ce0066e45e6dd4b80f5a8c6ed44b5842f2daaaff8bd6d9899c6c0d",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Atlas Mobile Release evidence 8",
+      "relationships": {
+        "projectKey": "track-project-software-delivery",
+        "messageKey": "track-message-0102"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery/evidence-08.png",
+      "storageKey": "showcase-v1/track/a4f26e5e74ce0066e45e6dd4b80f5a8c6ed44b5842f2daaaff8bd6d9899c6c0d.png",
+      "fileSize": 33663,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Atlas Mobile Release: تسليم SWE-0201 في Atlas Mobile Release: نقل دانا جنى الشامي مسؤولية مسار إعادة محاولة الدفع إلى شريك المدفوعات مع تسجيل الشاشة المعرّب. فحص الاستلام الاثنين 14:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery/evidence-09",
+      "contentHash": "sha256:455c7d962db4f7d6fde4ba17bb246f1a09a260b8aaacdf774d4e2e0f7f5c6d58",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Atlas Mobile Release evidence 9",
+      "relationships": {
+        "projectKey": "track-project-software-delivery",
+        "messageKey": "track-message-0105"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery/evidence-09.pdf",
+      "storageKey": "showcase-v1/track/455c7d962db4f7d6fde4ba17bb246f1a09a260b8aaacdf774d4e2e0f7f5c6d58.pdf",
+      "fileSize": 11237,
+      "pageCount": 1,
+      "body": "Source evidence for Atlas Mobile Release: Atlas Mobile Release risk SWE-0204: طلب النشر في متجر التطبيقات متأخر يوم واحد لأن استجابة بيئة الاختبار تتأخر بشكل متقطع. Sami Ghassan Karam owns the recovery plan."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning/evidence-10",
+      "contentHash": "sha256:45873a8da06bb0f56f9c8cfa58c040367f685f7700d82743b30382d972d31425",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Future Commerce Pavilion evidence 10",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning",
+        "messageKey": "track-message-0148"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning/evidence-10.jpeg",
+      "storageKey": "showcase-v1/track/45873a8da06bb0f56f9c8cfa58c040367f685f7700d82743b30382d972d31425.jpeg",
+      "fileSize": 56277,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Future Commerce Pavilion: Approved EVT-0247: وافق غرفة التحكم الأمني على شبكة العروض الحية. Release جدول تشغيل العرض النهائي before الثلاثاء 12:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning/evidence-11",
+      "contentHash": "sha256:ba78c94aa169a5aaefff5f2cba480b89aa26dc7c91e03ebc0692fd85878cda19",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Future Commerce Pavilion evidence 11",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning",
+        "messageKey": "track-message-0151"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning/evidence-11.png",
+      "storageKey": "showcase-v1/track/ba78c94aa169a5aaefff5f2cba480b89aa26dc7c91e03ebc0692fd85878cda19.png",
+      "fileSize": 30574,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Future Commerce Pavilion: تحديث Future Commerce Pavilion: اعتمد مدير الإنتاج حالة خطة تعليق تجهيزات الجناح عند 76%. يسير جدول وصول العارضين نحو موعد الأحد 15:30. (EVT-0250)."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning/evidence-12",
+      "contentHash": "sha256:9ae96ef9e91bbecdbd32a2a0264845dbfd8772eb1e0092f09dbc279afdb7af50",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Future Commerce Pavilion evidence 12",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning",
+        "messageKey": "track-message-0154"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning/evidence-12.pdf",
+      "storageKey": "showcase-v1/track/9ae96ef9e91bbecdbd32a2a0264845dbfd8772eb1e0092f09dbc279afdb7af50.pdf",
+      "fileSize": 11244,
+      "pageCount": 1,
+      "body": "Source evidence for Future Commerce Pavilion: Approved EVT-0253: وافق فريق تشغيل الموقع على بروفة المتحدثين. Release حزمة اللوحات الثنائية before الأربعاء 10:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations/evidence-13",
+      "contentHash": "sha256:f01fe0d154139bc3d9cc530d79eb7ee1e277181b274746375f1a56a346a3e84f",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "voice-note",
+      "title": "Quarter-End Readiness evidence 13",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations",
+        "messageKey": "track-message-0197"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations/evidence-13.wav",
+      "storageKey": "showcase-v1/track/f01fe0d154139bc3d9cc530d79eb7ee1e277181b274746375f1a56a346a3e84f.wav",
+      "fileSize": 385360,
+      "duration": 8.737,
+      "transcript": "بدر حسناء سالم: أرفق هادي عدنان حمدان ملف عمل المطابقة في Quarter-End Readiness. يثبت الملف الحالة الحالية لـمطابقة حسابات الموردين. دليل OPS-0296. عمر تالا نصار: سأؤكد المسؤول وموعد المراجعة التالي مع الفريق. أمينة داليا جابر: سأرفق الدليل بعد المراجعة وأغلق التسليم.",
+      "speakers": [
+        "بدر حسناء سالم",
+        "عمر تالا نصار",
+        "أمينة داليا جابر"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 2.912,
+          "speaker": "بدر حسناء سالم",
+          "text": "بدر حسناء سالم: أرفق هادي عدنان حمدان ملف عمل المطابقة في Quarter-End Readiness. يثبت الملف الحالة الحالية لـمطابقة حسابات الموردين. دليل OPS-0296."
+        },
+        {
+          "start": 2.912,
+          "end": 5.825,
+          "speaker": "عمر تالا نصار",
+          "text": "عمر تالا نصار: سأؤكد المسؤول وموعد المراجعة التالي مع الفريق."
+        },
+        {
+          "start": 5.825,
+          "end": 8.737,
+          "speaker": "أمينة داليا جابر",
+          "text": "أمينة داليا جابر: سأرفق الدليل بعد المراجعة وأغلق التسليم."
+        }
+      ],
+      "waveform": [
+        0.9215,
+        0.9995,
+        0.2384,
+        0.4756,
+        0.2561,
+        0.3729,
+        0.5623,
+        0.2103,
+        0.6533,
+        0.366,
+        0.7375,
+        0.5984,
+        0.3182,
+        0.5911,
+        0.527,
+        0.4977,
+        0.102,
+        0,
+        0,
+        0.0648,
+        0.5229,
+        0.5317,
+        0.3548,
+        0.5403,
+        0.3203,
+        0.4749,
+        0.2083,
+        0.1035,
+        0.5652,
+        0.6555,
+        0.5461,
+        0.3642,
+        0.2349,
+        0.3771,
+        0.4975,
+        0.3896,
+        0.1838,
+        0.0612,
+        0.5139,
+        0.3859,
+        0.663,
+        0.4872,
+        0.3998,
+        0.3947,
+        0.4427,
+        0.4602,
+        0.2446,
+        0.1897,
+        0.216,
+        0.4796,
+        0.0828,
+        0.4567,
+        0.6619,
+        0.1067,
+        0.3403,
+        0.4025,
+        0.4749,
+        0.2508,
+        0.5595,
+        0.3604,
+        0.1453,
+        0.0847,
+        0,
+        0
+      ],
+      "body": "Recorded evidence discussion for Quarter-End Readiness: أرفق هادي عدنان حمدان ملف عمل المطابقة في Quarter-End Readiness. يثبت الملف الحالة الحالية لـمطابقة حسابات الموردين. دليل OPS-0296."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations/evidence-14",
+      "contentHash": "sha256:8b3638f6d2ccfdb742a1daa1cd414f0a6131ff052b5bedfbabd90149759e5d14",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Quarter-End Readiness evidence 14",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations",
+        "messageKey": "track-message-0200"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations/evidence-14.png",
+      "storageKey": "showcase-v1/track/8b3638f6d2ccfdb742a1daa1cd414f0a6131ff052b5bedfbabd90149759e5d14.png",
+      "fileSize": 32323,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Quarter-End Readiness: Recorded in #finance: keep service-desk backlog, reject the alternate route, and publish the signed close checklist. Majed Rania Mansour owns the decision log (OPS-0299)."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations/evidence-15",
+      "contentHash": "sha256:b769aedc860a1804b07188f07da1fd06b728130ff43474eac95fa586aded8356",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Quarter-End Readiness evidence 15",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations",
+        "messageKey": "track-message-0163"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations/evidence-15.pdf",
+      "storageKey": "showcase-v1/track/b769aedc860a1804b07188f07da1fd06b728130ff43474eac95fa586aded8356.pdf",
+      "fileSize": 11367,
+      "pageCount": 1,
+      "body": "Source evidence for Quarter-End Readiness: Quarter-End Readiness: مراجعة ضوابط الرواتب is 86% complete. Fahad Mona Mahfouz يتولى ملحق مجلس الإدارة النهائي؛ next check الثلاثاء 11:30. Ref OPS-0262."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-saffron-media/evidence-16",
+      "contentHash": "sha256:756983a3fe26e13059299c3683bfc4a7ac110df81244955300997e451b8154bd",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Saffron Media Operations Sprint evidence 16",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-saffron-media",
+        "messageKey": "track-message-0206"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-saffron-media/evidence-16.jpeg",
+      "storageKey": "showcase-v1/track/756983a3fe26e13059299c3683bfc4a7ac110df81244955300997e451b8154bd.jpeg",
+      "fileSize": 61197,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Saffron Media Operations Sprint: Decision AGY-0305 for Saffron Media Operations Sprint: اعتماد الهوية البصرية العربية بعد مراجعة الفريق القانوني للعميل. النسخة المعتمدة لمدة 30 ثانية is now the baseline."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-saffron-media/evidence-17",
+      "contentHash": "sha256:cd816603ac5a3d13508bc046849fb77cc60b41b6cf99fb5dbc8c1a28874d681d",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Saffron Media Operations Sprint evidence 17",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-saffron-media",
+        "messageKey": "track-message-0209"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-saffron-media/evidence-17.png",
+      "storageKey": "showcase-v1/track/cd816603ac5a3d13508bc046849fb77cc60b41b6cf99fb5dbc8c1a28874d681d.png",
+      "fileSize": 37170,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Saffron Media Operations Sprint: Saffron Media Operations Sprint: the client review recording is now the audit source for the client approval register. Review the marked items before Wednesday 09:30; AGY-0308."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-saffron-media/evidence-18",
+      "contentHash": "sha256:a120625f205c1a7acdc4923dbf163c27156e5bb009475a9e6e3f0b57d7981ce7",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Saffron Media Operations Sprint evidence 18",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-saffron-media",
+        "messageKey": "track-message-0212"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-saffron-media/evidence-18.pdf",
+      "storageKey": "showcase-v1/track/a120625f205c1a7acdc4923dbf163c27156e5bb009475a9e6e3f0b57d7981ce7.pdf",
+      "fileSize": 11638,
+      "pageCount": 1,
+      "body": "Source evidence for Saffron Media Operations Sprint: Amina Eman Sabbagh confirmed media booking plan as the approved direction. The media allocation sheet now moves through #decisions; decision record AGY-0311."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-madar-logistics/evidence-19",
+      "contentHash": "sha256:3ea7518b2468f21c64b036f20a99a64ddeae51db79a12594a3663ec5267b0efe",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "voice-note",
+      "title": "Madar Logistics Planning Cycle evidence 19",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-madar-logistics",
+        "messageKey": "track-message-0255"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-madar-logistics/evidence-19.wav",
+      "storageKey": "showcase-v1/track/3ea7518b2468f21c64b036f20a99a64ddeae51db79a12594a3663ec5267b0efe.wav",
+      "fileSize": 419396,
+      "duration": 9.509,
+      "transcript": "ماجد نورة غانم: Madar Logistics Planning Cycle: تأخر حزمة شهادات التسليم 3 أيام. السبب: الحجر البديل يختلف عن اللون المعتمد. يراجع مقاول الأعمال الكهروميكانيكية التسلسل المعدّل. (CON-0354). أمينة داليا جابر: سأؤكد المسؤول وموعد المراجعة التالي مع الفريق. ليان لينا الشريف: سأرفق الدليل بعد المراجعة وأغلق التسليم.",
+      "speakers": [
+        "ماجد نورة غانم",
+        "أمينة داليا جابر",
+        "ليان لينا الشريف"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.17,
+          "speaker": "ماجد نورة غانم",
+          "text": "ماجد نورة غانم: Madar Logistics Planning Cycle: تأخر حزمة شهادات التسليم 3 أيام. السبب: الحجر البديل يختلف عن اللون المعتمد. يراجع مقاول الأعمال الكهروميكانيكية التسلسل المعدّل. (CON-0354)."
+        },
+        {
+          "start": 3.17,
+          "end": 6.339,
+          "speaker": "أمينة داليا جابر",
+          "text": "أمينة داليا جابر: سأؤكد المسؤول وموعد المراجعة التالي مع الفريق."
+        },
+        {
+          "start": 6.339,
+          "end": 9.509,
+          "speaker": "ليان لينا الشريف",
+          "text": "ليان لينا الشريف: سأرفق الدليل بعد المراجعة وأغلق التسليم."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.9073,
+        0.2384,
+        0.4756,
+        0.0678,
+        0.564,
+        0.5929,
+        0.5523,
+        0.5779,
+        0.525,
+        0.6434,
+        0.2862,
+        0.4842,
+        0.1206,
+        0.7021,
+        0.4859,
+        0.2667,
+        0.5859,
+        0.3838,
+        0.4229,
+        0.3458,
+        0,
+        0,
+        0.3165,
+        0.5287,
+        0.3547,
+        0.5284,
+        0.2687,
+        0.4736,
+        0.1438,
+        0.2994,
+        0.651,
+        0.5797,
+        0.5403,
+        0.102,
+        0.3788,
+        0.4872,
+        0.421,
+        0.1923,
+        0.0619,
+        0.5227,
+        0.3851,
+        0.6693,
+        0.3653,
+        0.3926,
+        0.3963,
+        0.4616,
+        0.4208,
+        0.2359,
+        0,
+        0.4785,
+        0.1376,
+        0.4709,
+        0.6647,
+        0.1067,
+        0.4045,
+        0.259,
+        0.4747,
+        0.5582,
+        0.5026,
+        0.2547,
+        0.1138,
+        0,
+        0
+      ],
+      "body": "Recorded delay discussion for Madar Logistics Planning Cycle: Madar Logistics Planning Cycle: تأخر حزمة شهادات التسليم 3 أيام. السبب: الحجر البديل يختلف عن اللون المعتمد. يراجع مقاول الأعمال الكهروميكانيكية التسلسل المعدّل. (CON-0354)."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-madar-logistics/evidence-20",
+      "contentHash": "sha256:bc3ac0193be564261818d8896b2e2141b0785f4ee8fe8c91035684eeeb0dbee5",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Madar Logistics Planning Cycle evidence 20",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-madar-logistics",
+        "messageKey": "track-message-0258"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-madar-logistics/evidence-20.png",
+      "storageKey": "showcase-v1/track/bc3ac0193be564261818d8896b2e2141b0785f4ee8fe8c91035684eeeb0dbee5.png",
+      "fileSize": 36203,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Madar Logistics Planning Cycle: Madar Logistics Planning Cycle: يتولى ممثل العميل الآن عينة الواجهة الحجرية. رُبط مجموعة صور الفحص وسجل القرارات لمراجعة الثلاثاء 10:30. (CON-0357)."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-madar-logistics/evidence-21",
+      "contentHash": "sha256:729bd5b93c2164219e54733a05c537c181ba73dea11bbeacc549c5ed3d08e46e",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Madar Logistics Planning Cycle evidence 21",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-madar-logistics",
+        "messageKey": "track-message-0261"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-madar-logistics/evidence-21.pdf",
+      "storageKey": "showcase-v1/track/729bd5b93c2164219e54733a05c537c181ba73dea11bbeacc549c5ed3d08e46e.pdf",
+      "fileSize": 11533,
+      "pageCount": 1,
+      "body": "Source evidence for Madar Logistics Planning Cycle: قائمة ملاحظات المنطقة ج متعطل لأن أُلغي موعد الفحص الليلي. فصل ريما تالا نصار طلب الفحص المعدّل ليستمر العمل غير المتأثر قبل الأحد 13:30. مرجع CON-0360."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-cedar-systems/evidence-22",
+      "contentHash": "sha256:b67c04a821e22796e7776280e1abb5ce1e5e737a50f0544d5d9439bbf718e64b",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Cedar Systems Delivery Review evidence 22",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-cedar-systems",
+        "messageKey": "track-message-0304"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-cedar-systems/evidence-22.jpeg",
+      "storageKey": "showcase-v1/track/b67c04a821e22796e7776280e1abb5ce1e5e737a50f0544d5d9439bbf718e64b.jpeg",
+      "fileSize": 60123,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Cedar Systems Delivery Review: Approved SWE-0403: وافق مالك المنتج على مؤشر الجلسات الخالية من الأعطال. Release رد مراجعة المتجر before الأربعاء 16:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-cedar-systems/evidence-23",
+      "contentHash": "sha256:836a5cccaed6153ef1f9192741cdfb17671902c7f4b63574cf89880aa6dddd0b",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Cedar Systems Delivery Review evidence 23",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-cedar-systems",
+        "messageKey": "track-message-0307"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-cedar-systems/evidence-23.png",
+      "storageKey": "showcase-v1/track/836a5cccaed6153ef1f9192741cdfb17671902c7f4b63574cf89880aa6dddd0b.png",
+      "fileSize": 36908,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Cedar Systems Delivery Review: Cedar Systems Delivery Review: انتقل مسار إعادة محاولة الدفع إلى 95% بعد مراجعة شريك المدفوعات. يؤكد فيصل سميرة حداد الإجراء المتبقي في الاثنين 11:30. SWE-0406."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-cedar-systems/evidence-24",
+      "contentHash": "sha256:bbfd38d4a68ce05d2e888b4eda1bbd99e8d7cb658faa2d4c3c5eeb512d30b0d5",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Cedar Systems Delivery Review evidence 24",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-cedar-systems",
+        "messageKey": "track-message-0310"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-cedar-systems/evidence-24.pdf",
+      "storageKey": "showcase-v1/track/bbfd38d4a68ce05d2e888b4eda1bbd99e8d7cb658faa2d4c3c5eeb512d30b0d5.pdf",
+      "fileSize": 11533,
+      "pageCount": 1,
+      "body": "Source evidence for Cedar Systems Delivery Review: اجتاز طلب النشر في متجر التطبيقات مراجعة قائد هندسة تطبيقات الجوال. يمكن متابعة قائمة الإطلاق الموقّعة مع فحص تأكيدي في الخميس 14:30. (SWE-0409)."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-mosaic-works/evidence-25",
+      "contentHash": "sha256:83a97c7f4912e875d9481e4791ca30648957025b866c1101d15464f186b991cc",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "voice-note",
+      "title": "Mosaic Works Operations Sprint evidence 25",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-mosaic-works",
+        "messageKey": "track-message-0353"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-mosaic-works/evidence-25.wav",
+      "storageKey": "showcase-v1/track/83a97c7f4912e875d9481e4791ca30648957025b866c1101d15464f186b991cc.wav",
+      "fileSize": 427170,
+      "duration": 9.685,
+      "transcript": "Amal Abdullah Ansari: Mosaic Works Operations Sprint: the reconciled badge list is now the audit source for the final show-call sheet. Review the marked items before Tuesday 09:30; EVT-0452. Layan Lina Sharif: I will confirm the owner and next checkpoint with the team. Rima Samira Haddad: I will attach the evidence after the review and close the handoff.",
+      "speakers": [
+        "Amal Abdullah Ansari",
+        "Layan Lina Sharif",
+        "Rima Samira Haddad"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.228,
+          "speaker": "Amal Abdullah Ansari",
+          "text": "Amal Abdullah Ansari: Mosaic Works Operations Sprint: the reconciled badge list is now the audit source for the final show-call sheet. Review the marked items before Tuesday 09:30; EVT-0452."
+        },
+        {
+          "start": 3.228,
+          "end": 6.457,
+          "speaker": "Layan Lina Sharif",
+          "text": "Layan Lina Sharif: I will confirm the owner and next checkpoint with the team."
+        },
+        {
+          "start": 6.457,
+          "end": 9.685,
+          "speaker": "Rima Samira Haddad",
+          "text": "Rima Samira Haddad: I will attach the evidence after the review and close the handoff."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.9073,
+        0.2795,
+        0.4756,
+        0.0678,
+        0.5631,
+        0.5483,
+        0.5808,
+        0.485,
+        0.2059,
+        0.4468,
+        0.2348,
+        0.602,
+        0.3587,
+        0.555,
+        0.2969,
+        0.5844,
+        0.102,
+        0.5676,
+        0.52,
+        0.1487,
+        0.0385,
+        0,
+        0.0633,
+        0.528,
+        0.5284,
+        0.3596,
+        0.5668,
+        0.4743,
+        0.4315,
+        0.1187,
+        0.527,
+        0.6489,
+        0.5068,
+        0.3337,
+        0.4061,
+        0.4984,
+        0.4777,
+        0.2459,
+        0,
+        0.4811,
+        0.3671,
+        0.6639,
+        0.6178,
+        0.418,
+        0.3722,
+        0.4504,
+        0.4568,
+        0.248,
+        0.0608,
+        0.5091,
+        0.1381,
+        0.4875,
+        0.662,
+        0.1067,
+        0.3799,
+        0.3203,
+        0.4754,
+        0.5872,
+        0.5347,
+        0.2653,
+        0.1221,
+        0,
+        0
+      ],
+      "body": "Recorded evidence discussion for Mosaic Works Operations Sprint: Mosaic Works Operations Sprint: the reconciled badge list is now the audit source for the final show-call sheet. Review the marked items before Tuesday 09:30; EVT-0452."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-mosaic-works/evidence-26",
+      "contentHash": "sha256:b45787a1b239598faf2dd1e7b1a06258eae852c6bc99dbe02274b8687aa5458f",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Mosaic Works Operations Sprint evidence 26",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-mosaic-works",
+        "messageKey": "track-message-0356"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-mosaic-works/evidence-26.png",
+      "storageKey": "showcase-v1/track/b45787a1b239598faf2dd1e7b1a06258eae852c6bc99dbe02274b8687aa5458f.png",
+      "fileSize": 36890,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Mosaic Works Operations Sprint: أكد زينة وليد العلمي اعتماد خطة تعليق تجهيزات الجناح. ينتقل جدول وصول العارضين الآن عبر #decisions. سجل القرار EVT-0455."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-mosaic-works/evidence-27",
+      "contentHash": "sha256:d5fa69a0489c75d52f70edf82a21d8a134adc34bf113becc54612fcbf2f5a2bb",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Mosaic Works Operations Sprint evidence 27",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-mosaic-works",
+        "messageKey": "track-message-0359"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-mosaic-works/evidence-27.pdf",
+      "storageKey": "showcase-v1/track/d5fa69a0489c75d52f70edf82a21d8a134adc34bf113becc54612fcbf2f5a2bb.pdf",
+      "fileSize": 11494,
+      "pageCount": 1,
+      "body": "Source evidence for Mosaic Works Operations Sprint: استبدل فهد مالك فخري المسودة الخاصة بـبروفة المتحدثين بـتقرير اختبار ضغط الشبكة. المقارنة جاهزة لمراجعة الأربعاء 15:30 تحت EVT-0458."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-wadi-build-group/evidence-28",
+      "contentHash": "sha256:ceedf7efd12a50a73c6f4b9a161a4a9c2255fffbba76089a816dcd0de797d13a",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Wadi Build Group Planning Cycle evidence 28",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-wadi-build-group",
+        "messageKey": "track-message-0362"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-wadi-build-group/evidence-28.jpeg",
+      "storageKey": "showcase-v1/track/ceedf7efd12a50a73c6f4b9a161a4a9c2255fffbba76089a816dcd0de797d13a.jpeg",
+      "fileSize": 59275,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Wadi Build Group Planning Cycle: Decision OPS-0461 for Wadi Build Group Planning Cycle: proceed with supplier reconciliation and treat the payroll exception report as the baseline. The executive office will reconfirm at Monday 10:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-wadi-build-group/evidence-29",
+      "contentHash": "sha256:e4bbb19a0933eac4f6c0f8521e7086795d4d664218500566df2c907875bca673",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Wadi Build Group Planning Cycle evidence 29",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-wadi-build-group",
+        "messageKey": "track-message-0365"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-wadi-build-group/evidence-29.png",
+      "storageKey": "showcase-v1/track/e4bbb19a0933eac4f6c0f8521e7086795d4d664218500566df2c907875bca673.png",
+      "fileSize": 39918,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Wadi Build Group Planning Cycle: أرفق طارق لينا الشريف مقارنة مصادر المؤشرات في Wadi Build Group Planning Cycle. يثبت الملف الحالة الحالية لـقائمة طلبات مكتب الخدمة. دليل OPS-0464."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-wadi-build-group/evidence-30",
+      "contentHash": "sha256:c8951882827b58b6f0fe351bac8dbbaed80c172bcf8f8a98dc66e5a7210ced2a",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Wadi Build Group Planning Cycle evidence 30",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-wadi-build-group",
+        "messageKey": "track-message-0368"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-wadi-build-group/evidence-30.pdf",
+      "storageKey": "showcase-v1/track/c8951882827b58b6f0fe351bac8dbbaed80c172bcf8f8a98dc66e5a7210ced2a.pdf",
+      "fileSize": 11808,
+      "pageCount": 1,
+      "body": "Source evidence for Wadi Build Group Planning Cycle: سُجل في #decisions: الإبقاء على مراجعة ضوابط الرواتب ورفض المسار البديل ونشر ملحق مجلس الإدارة النهائي. يتولى أمينة داليا جابر سجل القرار (OPS-0467)."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-atlas-product-studio/evidence-31",
+      "contentHash": "sha256:50e06b29df1a8fb6ad53a9473af4009ef35c35722fece4d9442f5410c1d4b6ba",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "voice-note",
+      "title": "Atlas Product Studio Delivery Review evidence 31",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-atlas-product-studio",
+        "messageKey": "track-message-0411"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-atlas-product-studio/evidence-31.wav",
+      "storageKey": "showcase-v1/track/50e06b29df1a8fb6ad53a9473af4009ef35c35722fece4d9442f5410c1d4b6ba.wav",
+      "fileSize": 441200,
+      "duration": 10.004,
+      "transcript": "Lama Ghassan Karam: Atlas Product Studio Delivery Review risk AGY-0510: the client changed the launch sequence, moving Arabic key visual by 3 days. Layan Lina Sharif will return with a recovery plan at Sunday 11:30. Rima Samira Haddad: I will confirm the owner and next checkpoint with the team. Adel Aref Rifai: I will attach the evidence after the review and close the handoff.",
+      "speakers": [
+        "Lama Ghassan Karam",
+        "Rima Samira Haddad",
+        "Adel Aref Rifai"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.335,
+          "speaker": "Lama Ghassan Karam",
+          "text": "Lama Ghassan Karam: Atlas Product Studio Delivery Review risk AGY-0510: the client changed the launch sequence, moving Arabic key visual by 3 days. Layan Lina Sharif will return with a recovery plan at Sunday 11:30."
+        },
+        {
+          "start": 3.335,
+          "end": 6.669,
+          "speaker": "Rima Samira Haddad",
+          "text": "Rima Samira Haddad: I will confirm the owner and next checkpoint with the team."
+        },
+        {
+          "start": 6.669,
+          "end": 10.004,
+          "speaker": "Adel Aref Rifai",
+          "text": "Adel Aref Rifai: I will attach the evidence after the review and close the handoff."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.8937,
+        0.4756,
+        0.4669,
+        0.0684,
+        0.5635,
+        0.5833,
+        0.5173,
+        0.3968,
+        0.6075,
+        0.5918,
+        0.3662,
+        0.102,
+        0.4831,
+        0.3948,
+        0.4414,
+        0.4773,
+        0.6233,
+        0.3767,
+        0.3726,
+        0.1956,
+        0.4059,
+        0.3018,
+        0,
+        0,
+        0.3122,
+        0.5307,
+        0.3545,
+        0.5298,
+        0.372,
+        0.4788,
+        0.1412,
+        0.5565,
+        0.6481,
+        0.3294,
+        0.5499,
+        0.3565,
+        0.3804,
+        0.4944,
+        0.2803,
+        0,
+        0.5084,
+        0.4021,
+        0.6742,
+        0.4019,
+        0.3974,
+        0.3954,
+        0.4584,
+        0.3266,
+        0.2032,
+        0.4829,
+        0.4765,
+        0.4652,
+        0.6605,
+        0.5154,
+        0.2439,
+        0.404,
+        0.4624,
+        0.3506,
+        0.5521,
+        0.261,
+        0.124,
+        0,
+        0
+      ],
+      "body": "Recorded delay discussion for Atlas Product Studio Delivery Review: Atlas Product Studio Delivery Review risk AGY-0510: the client changed the launch sequence, moving Arabic key visual by 3 days. Layan Lina Sharif will return with a recovery plan at Sunday 11:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-atlas-product-studio/evidence-32",
+      "contentHash": "sha256:a94862572474565255f8a7f41269165404f62b458e2ad2294ffb159a37bca7d4",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Atlas Product Studio Delivery Review evidence 32",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-atlas-product-studio",
+        "messageKey": "track-message-0414"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-atlas-product-studio/evidence-32.png",
+      "storageKey": "showcase-v1/track/a94862572474565255f8a7f41269165404f62b458e2ad2294ffb159a37bca7d4.png",
+      "fileSize": 39610,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Atlas Product Studio Delivery Review: Handoff AGY-0513 in #delivery: نقل Nadine Bilal Bahri مسؤولية صفحة الحملة مع سجل اعتمادات العميل. Next checkpoint الأربعاء 14:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-atlas-product-studio/evidence-33",
+      "contentHash": "sha256:c390041806388b0fb3d7a88480202a05ef424e32cc5c4bc4d734182aeb557915",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Atlas Product Studio Delivery Review evidence 33",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-atlas-product-studio",
+        "messageKey": "track-message-0417"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-atlas-product-studio/evidence-33.pdf",
+      "storageKey": "showcase-v1/track/c390041806388b0fb3d7a88480202a05ef424e32cc5c4bc4d734182aeb557915.pdf",
+      "fileSize": 11540,
+      "pageCount": 1,
+      "body": "Source evidence for Atlas Product Studio Delivery Review: Delay in #delivery: media booking plan cannot close because the final usage rights are incomplete. The media allocation sheet is held until Monday 09:30; AGY-0516."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-north-hall-events/evidence-34",
+      "contentHash": "sha256:c2cdad269463ea946db66ac260ff639e0322a7cbad2fa79e32cac5fda986690e",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "North Hall Events Operations Sprint evidence 34",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-north-hall-events",
+        "messageKey": "track-message-0460"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-north-hall-events/evidence-34.jpeg",
+      "storageKey": "showcase-v1/track/c2cdad269463ea946db66ac260ff639e0322a7cbad2fa79e32cac5fda986690e.jpeg",
+      "fileSize": 60218,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for North Hall Events Operations Sprint: Approved CON-0559: وافق مقاول الأعمال الكهروميكانيكية على حزمة شهادات التسليم. Release كشف إقفال ملاحظات الاستشاري before الخميس 12:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-north-hall-events/evidence-35",
+      "contentHash": "sha256:3e2fb8f873197ad7b997737f127d5ff631e8c6e38bddf51988b1d12e61a16e36",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "North Hall Events Operations Sprint evidence 35",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-north-hall-events",
+        "messageKey": "track-message-0463"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-north-hall-events/evidence-35.png",
+      "storageKey": "showcase-v1/track/3e2fb8f873197ad7b997737f127d5ff631e8c6e38bddf51988b1d12e61a16e36.png",
+      "fileSize": 37535,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for North Hall Events Operations Sprint: North Hall Events Operations Sprint: عينة الواجهة الحجرية is 77% complete. Faisal Saleh Zahran يتولى تقرير التشغيل التجريبي؛ next check الثلاثاء 15:30. Ref CON-0562."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-north-hall-events/evidence-36",
+      "contentHash": "sha256:10601ff717f7f618b10bfd8f6f0d8e866905bb845a4a22b6375c83de04a5bf7b",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "North Hall Events Operations Sprint evidence 36",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-north-hall-events",
+        "messageKey": "track-message-0466"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-north-hall-events/evidence-36.pdf",
+      "storageKey": "showcase-v1/track/10601ff717f7f618b10bfd8f6f0d8e866905bb845a4a22b6375c83de04a5bf7b.pdf",
+      "fileSize": 11390,
+      "pageCount": 1,
+      "body": "Source evidence for North Hall Events Operations Sprint: Approved CON-0565: وافق مسؤول السلامة على قائمة ملاحظات المنطقة ج. Release طلب الفحص المعدّل before الأحد 10:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-juniper-operations/evidence-37",
+      "contentHash": "sha256:124740b3d2eda302bbd4440e3ad6b2dcd3a4a99691aed0e21a0ddb0f97843bdf",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "voice-note",
+      "title": "Juniper Operations Planning Cycle evidence 37",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-juniper-operations",
+        "messageKey": "track-message-0509"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-juniper-operations/evidence-37.wav",
+      "storageKey": "showcase-v1/track/124740b3d2eda302bbd4440e3ad6b2dcd3a4a99691aed0e21a0ddb0f97843bdf.wav",
+      "fileSize": 427036,
+      "duration": 9.682,
+      "transcript": "Reem Nabil Sultan: Alya Saleh Zahran uploaded فيديو مقارنة الواجهة العربية إلى Juniper Operations Planning Cycle. It now proves the current state of مؤشر الجلسات الخالية من الأعطال; SWE-0608. Adel Aref Rifai: سأؤكد المسؤول والموعد التالي مع الفريق، ثم سأرفق الدليل بعد المراجعة. Khalid Karim Darwish: سأرفق الدليل بعد المراجعة وأغلق التسليم.",
+      "speakers": [
+        "Reem Nabil Sultan",
+        "Adel Aref Rifai",
+        "Khalid Karim Darwish"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.227,
+          "speaker": "Reem Nabil Sultan",
+          "text": "Reem Nabil Sultan: Alya Saleh Zahran uploaded فيديو مقارنة الواجهة العربية إلى Juniper Operations Planning Cycle. It now proves the current state of مؤشر الجلسات الخالية من الأعطال; SWE-0608."
+        },
+        {
+          "start": 3.227,
+          "end": 6.455,
+          "speaker": "Adel Aref Rifai",
+          "text": "Adel Aref Rifai: سأؤكد المسؤول والموعد التالي مع الفريق، ثم سأرفق الدليل بعد المراجعة."
+        },
+        {
+          "start": 6.455,
+          "end": 9.682,
+          "speaker": "Khalid Karim Darwish",
+          "text": "Khalid Karim Darwish: سأرفق الدليل بعد المراجعة وأغلق التسليم."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.9073,
+        0.2795,
+        0.4756,
+        0.0678,
+        0.5656,
+        0.4946,
+        0.4615,
+        0.3677,
+        0.5603,
+        0.3423,
+        0.5493,
+        0.2969,
+        0.5455,
+        0.1206,
+        0.704,
+        0.4978,
+        0.2649,
+        0.5557,
+        0.3583,
+        0.415,
+        0.2511,
+        0,
+        0.0573,
+        0.4633,
+        0.5304,
+        0.3565,
+        0.5774,
+        0.4773,
+        0.4479,
+        0.1393,
+        0.5253,
+        0.6573,
+        0.439,
+        0.5171,
+        0.2498,
+        0.3989,
+        0.5023,
+        0.3235,
+        0,
+        0.4763,
+        0.363,
+        0.6696,
+        0.5919,
+        0.4147,
+        0.3709,
+        0.4511,
+        0.4599,
+        0.251,
+        0,
+        0.519,
+        0.1374,
+        0.4913,
+        0.6549,
+        0.1067,
+        0.3992,
+        0.3427,
+        0.4755,
+        0.5099,
+        0.5638,
+        0.2588,
+        0.1229,
+        0,
+        0
+      ],
+      "body": "Recorded evidence discussion for Juniper Operations Planning Cycle: Alya Saleh Zahran uploaded فيديو مقارنة الواجهة العربية إلى Juniper Operations Planning Cycle. It now proves the current state of مؤشر الجلسات الخالية من الأعطال; SWE-0608."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-juniper-operations/evidence-38",
+      "contentHash": "sha256:3471e1e604b63d29c7782d2953435f1c6869397b8f6a91d61f5ed5ad9d9c6426",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Juniper Operations Planning Cycle evidence 38",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-juniper-operations",
+        "messageKey": "track-message-0512"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-juniper-operations/evidence-38.png",
+      "storageKey": "showcase-v1/track/3471e1e604b63d29c7782d2953435f1c6869397b8f6a91d61f5ed5ad9d9c6426.png",
+      "fileSize": 39413,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Juniper Operations Planning Cycle: Recorded in #decisions: keep payment retry flow, reject the alternate route, and publish the localized screen recording. Dana Karim Darwish owns the decision log (SWE-0611)."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-juniper-operations/evidence-39",
+      "contentHash": "sha256:9fdff363672d3c55c9691d40893949e007b1c9e49e16b5d5f7c2d12939b96924",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Juniper Operations Planning Cycle evidence 39",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-juniper-operations",
+        "messageKey": "track-message-0515"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-juniper-operations/evidence-39.pdf",
+      "storageKey": "showcase-v1/track/9fdff363672d3c55c9691d40893949e007b1c9e49e16b5d5f7c2d12939b96924.pdf",
+      "fileSize": 11654,
+      "pageCount": 1,
+      "body": "Source evidence for Juniper Operations Planning Cycle: New evidence in #decisions: the crash report export reconciles App Store submission with the mobile engineering lead comments. Ref SWE-0614."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-saffron-media/evidence-40",
+      "contentHash": "sha256:e6750fe3d0376c3546a2384f008dacd45df4da7c55e750471aab90ec7c23a900",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Saffron Media Delivery Review evidence 40",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-saffron-media",
+        "messageKey": "track-message-0558"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-saffron-media/evidence-40.jpeg",
+      "storageKey": "showcase-v1/track/e6750fe3d0376c3546a2384f008dacd45df4da7c55e750471aab90ec7c23a900.jpeg",
+      "fileSize": 58107,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Saffron Media Delivery Review: تسليم EVT-0657 في Saffron Media Delivery Review: نقل نور جنى الشامي مسؤولية شبكة العروض الحية إلى غرفة التحكم الأمني مع جدول تشغيل العرض النهائي. فحص الاستلام الثلاثاء 14:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-saffron-media/evidence-41",
+      "contentHash": "sha256:ec6d55921f7b8dfb39c9283c3361ea7a6620c67670614cfa54e4e822b65be3b1",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Saffron Media Delivery Review evidence 41",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-saffron-media",
+        "messageKey": "track-message-0521"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-saffron-media/evidence-41.png",
+      "storageKey": "showcase-v1/track/ec6d55921f7b8dfb39c9283c3361ea7a6620c67670614cfa54e4e822b65be3b1.png",
+      "fileSize": 34256,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Saffron Media Delivery Review: Lama Hasna Salem uploaded صور تركيب اللوحات إلى Saffron Media Delivery Review. It now proves the current state of خطة تعليق تجهيزات الجناح; EVT-0620."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-saffron-media/evidence-42",
+      "contentHash": "sha256:df6d2a39674fad9b5f170036a3f34bfc83697659721b20ca0de940a0cfbd7274",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Saffron Media Delivery Review evidence 42",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-saffron-media",
+        "messageKey": "track-message-0524"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-saffron-media/evidence-42.pdf",
+      "storageKey": "showcase-v1/track/df6d2a39674fad9b5f170036a3f34bfc83697659721b20ca0de940a0cfbd7274.pdf",
+      "fileSize": 11923,
+      "pageCount": 1,
+      "body": "Source evidence for Saffron Media Delivery Review: أكد مريم عبدالله الأنصاري اعتماد بروفة المتحدثين. ينتقل حزمة اللوحات الثنائية الآن عبر #decisions. سجل القرار EVT-0623."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-madar-logistics/evidence-43",
+      "contentHash": "sha256:68b438e23049f04b53b80ab6020b339d9521ecb20f9fb57b856ecc53334b40a6",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "voice-note",
+      "title": "Madar Logistics Operations Sprint evidence 43",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-madar-logistics",
+        "messageKey": "track-message-0567"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-madar-logistics/evidence-43.wav",
+      "storageKey": "showcase-v1/track/68b438e23049f04b53b80ab6020b339d9521ecb20f9fb57b856ecc53334b40a6.wav",
+      "fileSize": 432924,
+      "duration": 9.816,
+      "transcript": "Zaina Yasmin Hakim: Madar Logistics Operations Sprint: supplier reconciliation slipped 3 days. Root cause: high-priority tickets have no recovery owner. The executive office is reviewing the revised sequence (OPS-0666). Khalid Karim Darwish: I will confirm the owner and next checkpoint with the team. Alya Saleh Zahran: I will attach the evidence after the review and close the handoff.",
+      "speakers": [
+        "Zaina Yasmin Hakim",
+        "Khalid Karim Darwish",
+        "Alya Saleh Zahran"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.272,
+          "speaker": "Zaina Yasmin Hakim",
+          "text": "Zaina Yasmin Hakim: Madar Logistics Operations Sprint: supplier reconciliation slipped 3 days. Root cause: high-priority tickets have no recovery owner. The executive office is reviewing the revised sequence (OPS-0666)."
+        },
+        {
+          "start": 3.272,
+          "end": 6.544,
+          "speaker": "Khalid Karim Darwish",
+          "text": "Khalid Karim Darwish: I will confirm the owner and next checkpoint with the team."
+        },
+        {
+          "start": 6.544,
+          "end": 9.816,
+          "speaker": "Alya Saleh Zahran",
+          "text": "Alya Saleh Zahran: I will attach the evidence after the review and close the handoff."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.9073,
+        0.3802,
+        0.4756,
+        0.0684,
+        0.564,
+        0.5929,
+        0.5779,
+        0.4854,
+        0.525,
+        0.6434,
+        0.4842,
+        0.2384,
+        0.5941,
+        0.3683,
+        0.5525,
+        0.4525,
+        0.5434,
+        0.1028,
+        0.5386,
+        0.4836,
+        0.1308,
+        0,
+        0,
+        0.1786,
+        0.5303,
+        0.4532,
+        0.4606,
+        0.5256,
+        0.4781,
+        0.3968,
+        0.1045,
+        0.6443,
+        0.6344,
+        0.5421,
+        0.1162,
+        0.3795,
+        0.4912,
+        0.4256,
+        0.1836,
+        0.0682,
+        0.5129,
+        0.2084,
+        0.6758,
+        0.2384,
+        0.3892,
+        0.437,
+        0.4608,
+        0.2357,
+        0.1666,
+        0.4807,
+        0.3084,
+        0.4752,
+        0.6614,
+        0.3802,
+        0.3347,
+        0.4022,
+        0.4726,
+        0.5021,
+        0.5488,
+        0.263,
+        0.1228,
+        0,
+        0
+      ],
+      "body": "Recorded delay discussion for Madar Logistics Operations Sprint: Madar Logistics Operations Sprint: supplier reconciliation slipped 3 days. Root cause: high-priority tickets have no recovery owner. The executive office is reviewing the revised sequence (OPS-0666)."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-madar-logistics/evidence-44",
+      "contentHash": "sha256:daf6146b89eb6f799f4eabdd94fd9970f86fc21175ab860edff3b484bcf40648",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Madar Logistics Operations Sprint evidence 44",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-madar-logistics",
+        "messageKey": "track-message-0570"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-madar-logistics/evidence-44.png",
+      "storageKey": "showcase-v1/track/daf6146b89eb6f799f4eabdd94fd9970f86fc21175ab860edff3b484bcf40648.png",
+      "fileSize": 37387,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Madar Logistics Operations Sprint: Handoff OPS-0669 in #delivery: نقل Zaina Yousef Qassem مسؤولية قائمة طلبات مكتب الخدمة مع قائمة الإقفال الموقّعة. Next checkpoint الخميس 10:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-madar-logistics/evidence-45",
+      "contentHash": "sha256:fd87d09cdbe0a61171aa1e81f8fdb5568bcca81fe88b6ab3896e2115b37ab8d5",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Madar Logistics Operations Sprint evidence 45",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-madar-logistics",
+        "messageKey": "track-message-0573"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-madar-logistics/evidence-45.pdf",
+      "storageKey": "showcase-v1/track/fd87d09cdbe0a61171aa1e81f8fdb5568bcca81fe88b6ab3896e2115b37ab8d5.pdf",
+      "fileSize": 11501,
+      "pageCount": 1,
+      "body": "Source evidence for Madar Logistics Operations Sprint: مراجعة ضوابط الرواتب متعطل لأن قيدان محاسبيان بلا مستندات داعمة. فصل فهد نبيل سلطان ملحق مجلس الإدارة النهائي ليستمر العمل غير المتأثر قبل الثلاثاء 13:30. مرجع OPS-0672."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-cedar-systems/evidence-46",
+      "contentHash": "sha256:c07811b576a391588fe624e653b01c5283a7963db539f7660a0890a075b41f76",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Cedar Systems Planning Cycle evidence 46",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-cedar-systems",
+        "messageKey": "track-message-0616"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-cedar-systems/evidence-46.jpeg",
+      "storageKey": "showcase-v1/track/c07811b576a391588fe624e653b01c5283a7963db539f7660a0890a075b41f76.jpeg",
+      "fileSize": 59100,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Cedar Systems Planning Cycle: راجعت بند العمل نفسه: Cedar Systems Planning Cycle: قائمة إطلاق العميل is 91% complete. Sara Karim Darwish يتولى دليل الاستجابة ليوم الإطلاق؛ next check الثلاثاء 13:30. Ref AGY-0712. سأؤكد المسؤول في موعد المراجعة التالي."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-cedar-systems/evidence-47",
+      "contentHash": "sha256:c46658bd443e6d1161527e6317f2a937a0d7358ad8b450901640d89c86fc23a5",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Cedar Systems Planning Cycle evidence 47",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-cedar-systems",
+        "messageKey": "track-message-0619"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-cedar-systems/evidence-47.png",
+      "storageKey": "showcase-v1/track/c46658bd443e6d1161527e6317f2a937a0d7358ad8b450901640d89c86fc23a5.png",
+      "fileSize": 35604,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Cedar Systems Planning Cycle: يبقى التسليم مرتبطًا ببند العمل نفسه: Cedar Systems Planning Cycle: قائمة إطلاق العميل is 91% complete. Sara Karim Darwish يتولى دليل الاستجابة ليوم الإطلاق؛ next check الثلاثاء 13:30. Ref AGY-0712. سأرفق المستند الداعم قبل الإغلاق."
+    },
+    {
+      "assetKey": "track/projects/track-project-agency-campaign-cedar-systems/evidence-48",
+      "contentHash": "sha256:1ee487c559182e83e9595c0240c409a54f51571f7b5f4a0ce1567bf751d3732a",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Cedar Systems Planning Cycle evidence 48",
+      "relationships": {
+        "projectKey": "track-project-agency-campaign-cedar-systems",
+        "messageKey": "track-message-0622"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-agency-campaign-cedar-systems/evidence-48.pdf",
+      "storageKey": "showcase-v1/track/1ee487c559182e83e9595c0240c409a54f51571f7b5f4a0ce1567bf751d3732a.pdf",
+      "fileSize": 11483,
+      "pageCount": 1,
+      "body": "Source evidence for Cedar Systems Planning Cycle: Approved AGY-0721: وافق شريك الإنتاج على خطة حجز الوسائط. Release جدول توزيع الميزانية الإعلامية before الاثنين 14:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-mosaic-works/evidence-49",
+      "contentHash": "sha256:5e0943bfac7e55aa42298ab17fc5d4820983302e149c57bb439b9480e706a60f",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "voice-note",
+      "title": "Mosaic Works Delivery Review evidence 49",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-mosaic-works",
+        "messageKey": "track-message-0665"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-mosaic-works/evidence-49.wav",
+      "storageKey": "showcase-v1/track/5e0943bfac7e55aa42298ab17fc5d4820983302e149c57bb439b9480e706a60f.wav",
+      "fileSize": 414780,
+      "duration": 9.404,
+      "transcript": "حمزة إيمان الصباغ: Mosaic Works Delivery Review: أصبح جدول مقارنة المواد مصدر التدقيق لـكشف إقفال ملاحظات الاستشاري. راجع البنود المحددة قبل الخميس 09:30. CON-0764. عليا صالح زهران: سأؤكد المسؤول وموعد المراجعة التالي مع الفريق. هند أنس الحريري: سأرفق الدليل بعد المراجعة وأغلق التسليم.",
+      "speakers": [
+        "حمزة إيمان الصباغ",
+        "عليا صالح زهران",
+        "هند أنس الحريري"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.135,
+          "speaker": "حمزة إيمان الصباغ",
+          "text": "حمزة إيمان الصباغ: Mosaic Works Delivery Review: أصبح جدول مقارنة المواد مصدر التدقيق لـكشف إقفال ملاحظات الاستشاري. راجع البنود المحددة قبل الخميس 09:30. CON-0764."
+        },
+        {
+          "start": 3.135,
+          "end": 6.269,
+          "speaker": "عليا صالح زهران",
+          "text": "عليا صالح زهران: سأؤكد المسؤول وموعد المراجعة التالي مع الفريق."
+        },
+        {
+          "start": 6.269,
+          "end": 9.404,
+          "speaker": "هند أنس الحريري",
+          "text": "هند أنس الحريري: سأرفق الدليل بعد المراجعة وأغلق التسليم."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.9734,
+        0.2384,
+        0.4756,
+        0.0678,
+        0.5631,
+        0.5483,
+        0.5808,
+        0.4986,
+        0.2704,
+        0.4468,
+        0.4054,
+        0.2384,
+        0.5927,
+        0.5978,
+        0.3694,
+        0.3777,
+        0.1716,
+        0.4181,
+        0.3429,
+        0.1831,
+        0,
+        0.0684,
+        0.4652,
+        0.5303,
+        0.3541,
+        0.5326,
+        0.4807,
+        0.4651,
+        0.1398,
+        0.5716,
+        0.6473,
+        0.4033,
+        0.5415,
+        0.102,
+        0.3779,
+        0.4874,
+        0.3914,
+        0.1804,
+        0.1026,
+        0.5184,
+        0.1949,
+        0.6673,
+        0.2384,
+        0.3934,
+        0.3978,
+        0.4622,
+        0.3212,
+        0.201,
+        0.1031,
+        0.4824,
+        0.2144,
+        0.5001,
+        0.671,
+        0.1067,
+        0.3997,
+        0.3597,
+        0.4726,
+        0.5616,
+        0.4585,
+        0.2596,
+        0.1134,
+        0,
+        0
+      ],
+      "body": "Recorded evidence discussion for Mosaic Works Delivery Review: Mosaic Works Delivery Review: أصبح جدول مقارنة المواد مصدر التدقيق لـكشف إقفال ملاحظات الاستشاري. راجع البنود المحددة قبل الخميس 09:30. CON-0764."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-mosaic-works/evidence-50",
+      "contentHash": "sha256:e8872cb8ab9161496778f17c405d7621568b2f490f5c95d54b57c4f14c214f95",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Mosaic Works Delivery Review evidence 50",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-mosaic-works",
+        "messageKey": "track-message-0668"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-mosaic-works/evidence-50.png",
+      "storageKey": "showcase-v1/track/e8872cb8ab9161496778f17c405d7621568b2f490f5c95d54b57c4f14c214f95.png",
+      "fileSize": 36938,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Mosaic Works Delivery Review: Majed Noura Ghanem confirmed stone facade sample as the approved direction. The commissioning report now moves through #decisions; decision record CON-0767."
+    },
+    {
+      "assetKey": "track/projects/track-project-construction-coordination-mosaic-works/evidence-51",
+      "contentHash": "sha256:a93cfc339b9231ef0005c1917fb7ce563ddd809faab2769c1f354e1aa111c86f",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Mosaic Works Delivery Review evidence 51",
+      "relationships": {
+        "projectKey": "track-project-construction-coordination-mosaic-works",
+        "messageKey": "track-message-0671"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-construction-coordination-mosaic-works/evidence-51.pdf",
+      "storageKey": "showcase-v1/track/a93cfc339b9231ef0005c1917fb7ce563ddd809faab2769c1f354e1aa111c86f.pdf",
+      "fileSize": 11575,
+      "pageCount": 1,
+      "body": "Source evidence for Mosaic Works Delivery Review: Sami Ghassan Karam uploaded ملاحظات جولة التسليم إلى Mosaic Works Delivery Review. It now proves the current state of قائمة ملاحظات المنطقة ج; CON-0770."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-wadi-build-group/evidence-52",
+      "contentHash": "sha256:a2fd2268771c28b41237c59fc1feafed9fb185c8408595e09d34761d89f8d1d5",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Wadi Build Group Operations Sprint evidence 52",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-wadi-build-group",
+        "messageKey": "track-message-0714"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-wadi-build-group/evidence-52.jpeg",
+      "storageKey": "showcase-v1/track/a2fd2268771c28b41237c59fc1feafed9fb185c8408595e09d34761d89f8d1d5.jpeg",
+      "fileSize": 60444,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Wadi Build Group Operations Sprint: Wadi Build Group Operations Sprint: the product owner now owns crash-free session target. The RTL comparison video and the decision trail are linked for the Wednesday 10:30 review (SWE-0813)."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-wadi-build-group/evidence-53",
+      "contentHash": "sha256:a021766794fe2d9b4f94fab53fdfb3415e7bb3369d890f69edc1e1038652d0f4",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Wadi Build Group Operations Sprint evidence 53",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-wadi-build-group",
+        "messageKey": "track-message-0717"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-wadi-build-group/evidence-53.png",
+      "storageKey": "showcase-v1/track/a021766794fe2d9b4f94fab53fdfb3415e7bb3369d890f69edc1e1038652d0f4.png",
+      "fileSize": 39288,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Wadi Build Group Operations Sprint: مسار إعادة محاولة الدفع متعطل لأن لم يعتمد فريق الدعم نص التراجع. فصل لمى غسان كرم تسجيل الشاشة المعرّب ليستمر العمل غير المتأثر قبل الاثنين 13:30. مرجع SWE-0816."
+    },
+    {
+      "assetKey": "track/projects/track-project-software-delivery-wadi-build-group/evidence-54",
+      "contentHash": "sha256:67fe7a92709a6407751b621e23b87bb097c54ce81992f0caa8ee4da23b94e599",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "Wadi Build Group Operations Sprint evidence 54",
+      "relationships": {
+        "projectKey": "track-project-software-delivery-wadi-build-group",
+        "messageKey": "track-message-0720"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-software-delivery-wadi-build-group/evidence-54.pdf",
+      "storageKey": "showcase-v1/track/67fe7a92709a6407751b621e23b87bb097c54ce81992f0caa8ee4da23b94e599.pdf",
+      "fileSize": 11477,
+      "pageCount": 1,
+      "body": "Source evidence for Wadi Build Group Operations Sprint: Handoff SWE-0819 in #delivery: نقل Mariam Yousef Qassem مسؤولية طلب النشر في متجر التطبيقات مع قائمة الإطلاق الموقّعة. Next checkpoint الخميس 16:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-atlas-product-studio/evidence-55",
+      "contentHash": "sha256:34bd437356256c53743625329fc7f1bab68a429977f7787ced2f7d5bfbae7a01",
+      "mimeType": "audio/wav",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "voice-note",
+      "title": "Atlas Product Studio Planning Cycle evidence 55",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-atlas-product-studio",
+        "messageKey": "track-message-0723"
+      },
+      "source": {
+        "kind": "offline-synthetic-voice",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-atlas-product-studio/evidence-55.wav",
+      "storageKey": "showcase-v1/track/34bd437356256c53743625329fc7f1bab68a429977f7787ced2f7d5bfbae7a01.wav",
+      "fileSize": 440746,
+      "duration": 9.993,
+      "transcript": "Tariq Malik Fakhri: Atlas Product Studio Planning Cycle risk EVT-0822: the loading-bay window overlaps another exhibitor, moving live-demo network by 3 days. Samar Fadi Bakri will return with a recovery plan at Tuesday 11:30. Hind Anas Hariri: I will confirm the owner and next checkpoint with the team. Noor Jana Shami: I will attach the evidence after the review and close the handoff.",
+      "speakers": [
+        "Tariq Malik Fakhri",
+        "Hind Anas Hariri",
+        "Noor Jana Shami"
+      ],
+      "captions": [
+        {
+          "start": 0,
+          "end": 3.331,
+          "speaker": "Tariq Malik Fakhri",
+          "text": "Tariq Malik Fakhri: Atlas Product Studio Planning Cycle risk EVT-0822: the loading-bay window overlaps another exhibitor, moving live-demo network by 3 days. Samar Fadi Bakri will return with a recovery plan at Tuesday 11:30."
+        },
+        {
+          "start": 3.331,
+          "end": 6.662,
+          "speaker": "Hind Anas Hariri",
+          "text": "Hind Anas Hariri: I will confirm the owner and next checkpoint with the team."
+        },
+        {
+          "start": 6.662,
+          "end": 9.993,
+          "speaker": "Noor Jana Shami",
+          "text": "Noor Jana Shami: I will attach the evidence after the review and close the handoff."
+        }
+      ],
+      "waveform": [
+        0.9995,
+        0.8937,
+        0.4677,
+        0.4756,
+        0.0684,
+        0.5635,
+        0.5833,
+        0.5173,
+        0.3968,
+        0.6075,
+        0.5918,
+        0.3662,
+        0.102,
+        0.4831,
+        0.3947,
+        0.4415,
+        0.6912,
+        0.5383,
+        0.398,
+        0.5483,
+        0.4153,
+        0.4074,
+        0.2513,
+        0,
+        0.0572,
+        0.4648,
+        0.5301,
+        0.3617,
+        0.564,
+        0.4778,
+        0.4346,
+        0.1013,
+        0.5277,
+        0.6467,
+        0.4946,
+        0.1305,
+        0.4008,
+        0.5041,
+        0.4402,
+        0.1873,
+        0,
+        0.4806,
+        0.3642,
+        0.6702,
+        0.4065,
+        0.4128,
+        0.3758,
+        0.4607,
+        0.3751,
+        0.1888,
+        0.4556,
+        0.5132,
+        0.5092,
+        0.6671,
+        0.5219,
+        0.2635,
+        0.378,
+        0.4695,
+        0.407,
+        0.5826,
+        0.2947,
+        0.1237,
+        0,
+        0
+      ],
+      "body": "Recorded delay discussion for Atlas Product Studio Planning Cycle: Atlas Product Studio Planning Cycle risk EVT-0822: the loading-bay window overlaps another exhibitor, moving live-demo network by 3 days. Samar Fadi Bakri will return with a recovery plan at Tuesday 11:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-atlas-product-studio/evidence-56",
+      "contentHash": "sha256:dc20f4c655f4f84366b185d758befe4ab3341ab977875cb7819ee5bdfe20ba46",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "Atlas Product Studio Planning Cycle evidence 56",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-atlas-product-studio",
+        "messageKey": "track-message-0726"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-atlas-product-studio/evidence-56.png",
+      "storageKey": "showcase-v1/track/dc20f4c655f4f84366b185d758befe4ab3341ab977875cb7819ee5bdfe20ba46.png",
+      "fileSize": 38526,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for Atlas Product Studio Planning Cycle: تسليم EVT-0825 في Atlas Product Studio Planning Cycle: نقل زينة ياسمين حكيم مسؤولية خطة تعليق تجهيزات الجناح إلى مدير الإنتاج مع جدول وصول العارضين. فحص الاستلام الأحد 14:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-exhibition-planning-atlas-product-studio/evidence-57",
+      "contentHash": "sha256:c810ae9b1b998f26b578905154668dd5e6e9b04f0194c0b2e4c18c0c9ead6807",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "Atlas Product Studio Planning Cycle evidence 57",
+      "relationships": {
+        "projectKey": "track-project-exhibition-planning-atlas-product-studio",
+        "messageKey": "track-message-0729"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-exhibition-planning-atlas-product-studio/evidence-57.pdf",
+      "storageKey": "showcase-v1/track/c810ae9b1b998f26b578905154668dd5e6e9b04f0194c0b2e4c18c0c9ead6807.pdf",
+      "fileSize": 11518,
+      "pageCount": 1,
+      "body": "Source evidence for Atlas Product Studio Planning Cycle: Delay in #delivery: speaker rehearsal cannot close because two badge records have incomplete passport names. The bilingual signage pack is held until Wednesday 09:30; EVT-0828."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-north-hall-events/evidence-58",
+      "contentHash": "sha256:5bf1b0ac46d104993753c5c205c62f6b282508bee8b061084f06801191980b52",
+      "mimeType": "image/jpeg",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-en",
+      "category": "project-evidence",
+      "title": "North Hall Events Delivery Review evidence 58",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-north-hall-events",
+        "messageKey": "track-message-0772"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-north-hall-events/evidence-58.jpeg",
+      "storageKey": "showcase-v1/track/5bf1b0ac46d104993753c5c205c62f6b282508bee8b061084f06801191980b52.jpeg",
+      "fileSize": 59610,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for North Hall Events Delivery Review: Approved OPS-0871: وافق المكتب التنفيذي على مطابقة حسابات الموردين. Release تقرير استثناءات الرواتب before الاثنين 12:30."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-north-hall-events/evidence-59",
+      "contentHash": "sha256:94dca5133eb685b8902171d300dcf4655ff85aff6051cd5ab14cf729a617b132",
+      "mimeType": "image/png",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "en-US",
+      "category": "project-evidence",
+      "title": "North Hall Events Delivery Review evidence 59",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-north-hall-events",
+        "messageKey": "track-message-0775"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-north-hall-events/evidence-59.png",
+      "storageKey": "showcase-v1/track/94dca5133eb685b8902171d300dcf4655ff85aff6051cd5ab14cf729a617b132.png",
+      "fileSize": 37509,
+      "dimensions": {
+        "width": 1200,
+        "height": 800
+      },
+      "body": "Source evidence for North Hall Events Delivery Review: North Hall Events Delivery Review status: the procurement lead accepted service-desk backlog at 78%. The signed close checklist stays on track for Thursday 15:30 (OPS-0874)."
+    },
+    {
+      "assetKey": "track/projects/track-project-cross-functional-operations-north-hall-events/evidence-60",
+      "contentHash": "sha256:dcafdb793478bfee005ecea39593a239802d9d24e24fb2af4a71daec78f7cbc0",
+      "mimeType": "application/pdf",
+      "datasetId": "showcase-v1",
+      "product": "track",
+      "locale": "ar-SA",
+      "category": "project-evidence",
+      "title": "North Hall Events Delivery Review evidence 60",
+      "relationships": {
+        "projectKey": "track-project-cross-functional-operations-north-hall-events",
+        "messageKey": "track-message-0778"
+      },
+      "source": {
+        "kind": "offline-template",
+        "license": "Q9 Labs synthetic fixture"
+      },
+      "status": "built",
+      "localPath": "build/assets/track/projects/track-project-cross-functional-operations-north-hall-events/evidence-60.pdf",
+      "storageKey": "showcase-v1/track/dcafdb793478bfee005ecea39593a239802d9d24e24fb2af4a71daec78f7cbc0.pdf",
+      "fileSize": 11664,
+      "pageCount": 1,
+      "body": "Source evidence for North Hall Events Delivery Review: نُشر الاعتماد OPS-0877 في #team-room: قُبل مراجعة ضوابط الرواتب بلا شروط. يجب إصدار ملحق مجلس الإدارة النهائي قبل الثلاثاء 10:30."
+    }
+  ]
+}

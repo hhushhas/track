@@ -1,12 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-
-import { WorkspacePage } from '#/features/workspace/pages/WorkspacePage'
+import { Outlet, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/workspace/projects/$projectId/groups/$groupId')({
-  component: GroupRoute,
+  component: GroupRouteLayout,
 })
 
-function GroupRoute() {
-  const { groupId, projectId } = Route.useParams()
-  return <WorkspacePage groupId={groupId} projectId={projectId} view="group" />
+export function GroupRouteLayout() {
+  return <Outlet />
 }

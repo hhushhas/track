@@ -106,6 +106,7 @@ CI runs the same gate after a frozen install. The mobile `build` script records 
 
 - Copy `wrangler.example.toml` to ignored `wrangler.toml` for Cloudflare variables.
 - Copy `convex.prod.env.example` to ignored `convex.prod.env` for the production deployment selector.
+- Deploy the exact web targets with `pnpm deploy:web production` or `pnpm deploy:web hosted-dev`. The guard builds with the selected public Convex URL, checks the emitted client bundle, and keeps existing Cloudflare variables and routes.
 - Keep credentials in `.env.local`, `.credentials/`, EAS, Convex, Cloudflare, or another provider secret store.
 - Never commit deployment identifiers, credentials, personal data, working logs, crash reports, or store-submission material.
 - Report security vulnerabilities through GitHub private vulnerability reporting.
