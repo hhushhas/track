@@ -3,12 +3,11 @@ import { CornerUpRight, ExternalLink, Paperclip, X } from 'lucide-react'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Card } from '#/components/ui/card'
-import { AttachmentTypeIcon, formatFileSize } from './attachment-ui'
 import { AvatarNameTooltip } from './avatar-tooltip'
 import { getGroupAvatar } from './group-avatar'
 import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
-import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
+import { MessageAttachmentList } from './message-attachment-list'
 import { MessageInlineTasks } from '#/features/tasks/ConversationTaskActions'
 import { threadHref } from '#/features/threads/thread-navigation'
 
@@ -187,78 +186,7 @@ export function MessageRow({
             <span>{item.channelThread.replyCount} {item.channelThread.replyCount === 1 ? 'reply' : 'replies'}</span>
           </a>
         ) : null}
-        {item.attachments.length > 0 ? (
-          <div className="track-attachment-list">
-            {item.attachments.map(({ attachment, url }) => {
-              const isImage = attachment.contentType.startsWith('image/')
-              if (isAudioAttachment(attachment)) {
-                return (
-                  <VoiceNotePlayer
-                    contentType={attachment.contentType}
-                    durationMs={attachment.durationMs}
-                    filename={attachment.filename}
-                    kind={attachment.kind}
-                    key={attachment._id}
-                    size={attachment.size}
-                    url={url}
-                  />
-                )
-              }
-              const content = isImage ? (
-                <>
-                  {url ? (
-                    <img alt={attachment.filename} src={url} />
-                  ) : (
-                    <span className="track-attachment-file-icon">
-                      <AttachmentTypeIcon
-                        contentType={attachment.contentType}
-                        filename={attachment.filename}
-                        size={16}
-                      />
-                    </span>
-                  )}
-                  <span>
-                    <strong>{attachment.filename}</strong>
-                    <small>{formatFileSize(attachment.size)}</small>
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="track-attachment-file-icon">
-                    <AttachmentTypeIcon
-                      contentType={attachment.contentType}
-                      filename={attachment.filename}
-                      size={16}
-                    />
-                  </span>
-                  <span>
-                    <strong>{attachment.filename}</strong>
-                    <small>{formatFileSize(attachment.size)}</small>
-                  </span>
-                </>
-              )
-
-              return url ? (
-                <a
-                  className={isImage ? 'track-attachment-card image' : 'track-attachment-card file'}
-                  href={url}
-                  key={attachment._id}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  {content}
-                </a>
-              ) : (
-                <span
-                  className={isImage ? 'track-attachment-card image' : 'track-attachment-card file'}
-                  key={attachment._id}
-                >
-                  {content}
-                </span>
-              )
-            })}
-          </div>
-        ) : null}
+        <MessageAttachmentList attachments={item.attachments} />
         <MessageInlineTasks message={item.message} />
       </Card>
     </article>

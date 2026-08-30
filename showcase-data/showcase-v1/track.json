@@ -13093,8 +13093,8 @@
           "track-message-0007"
         ],
         "suggestedTaskKey": "track-task-006",
-        "disposition": "rejected",
-        "explanation": "SUG-006 rejected: the handoff message proposed a Mosaic Campaign Launch task, but the adjacent status message did not justify creating another action."
+        "disposition": "pending",
+        "explanation": "SUG-006 pending: the handoff message proposes a Mosaic Campaign Launch task, and the adjacent status message gives the presenter enough context to review before deciding."
       },
       {
         "externalKey": "track-suggestion-07",
@@ -13165,8 +13165,8 @@
           "track-message-0053"
         ],
         "suggestedTaskKey": "track-task-012",
-        "disposition": "rejected",
-        "explanation": "SUG-012 rejected: the approval message proposed a Wadi Residences Handover task, but the adjacent evidence message did not justify creating another action."
+        "disposition": "pending",
+        "explanation": "SUG-012 pending: the approval message proposes a Wadi Residences Handover task, and the adjacent evidence message gives the presenter enough context to review before deciding."
       },
       {
         "externalKey": "track-suggestion-13",
@@ -13237,8 +13237,8 @@
           "track-message-0099"
         ],
         "suggestedTaskKey": "track-task-018",
-        "disposition": "rejected",
-        "explanation": "SUG-018 rejected: the decision message proposed a Atlas Mobile Release task, but the adjacent delay message did not justify creating another action."
+        "disposition": "pending",
+        "explanation": "SUG-018 pending: the decision message proposes an Atlas Mobile Release task, and the adjacent delay message gives the presenter enough context to review before deciding."
       },
       {
         "externalKey": "track-suggestion-19",
@@ -13309,8 +13309,8 @@
           "track-message-0153"
         ],
         "suggestedTaskKey": "track-task-032",
-        "disposition": "rejected",
-        "explanation": "SUG-024 rejected: the decision message proposed a Future Commerce Pavilion task, but the adjacent delay message did not justify creating another action."
+        "disposition": "pending",
+        "explanation": "SUG-024 pending: the decision message proposes a Future Commerce Pavilion task, and the adjacent delay message gives the presenter enough context to review before deciding."
       },
       {
         "externalKey": "track-suggestion-25",
@@ -13381,8 +13381,8 @@
           "track-message-0199"
         ],
         "suggestedTaskKey": "track-task-038",
-        "disposition": "rejected",
-        "explanation": "SUG-030 rejected: the handoff message proposed a Quarter-End Readiness task, but the adjacent status message did not justify creating another action."
+        "disposition": "pending",
+        "explanation": "SUG-030 pending: the handoff message proposes a Quarter-End Readiness task, and the adjacent status message gives the presenter enough context to review before deciding."
       }
     ],
     "attachments": [
