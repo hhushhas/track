@@ -15,7 +15,7 @@ test('Track showcase-v1 validates its frozen manifest and assets', () => {
   assert.deepEqual(Object.fromEntries(Object.entries(validation.manifest.records).map(([key, value]) => [key, value.length])), EXPECTED_COUNTS)
   assert.equal(validation.assetManifest.assets.length, 61)
   assert.equal(validation.checkedAssets.length, 61)
-  assert.equal(validation.manifestHash, 'sha256:3e3b8abf1f5f564536d4fdb6a1242795cddfa6deaf94b53c97644066f49ae3f9')
+  assert.equal(validation.manifestHash, 'sha256:75cc1e6012dacc1c9dc9ed74670829dc6ece214b7c88fe2a69ea5d7c84263b8b')
   assert.equal(validation.assetManifestHash, 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae')
 })
 

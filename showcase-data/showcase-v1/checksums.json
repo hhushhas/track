@@ -5,7 +5,7 @@
   "product": "track",
   "manifest": {
     "path": "showcase-data/showcase-v1/track.json",
-    "contentHash": "sha256:3e3b8abf1f5f564536d4fdb6a1242795cddfa6deaf94b53c97644066f49ae3f9"
+    "contentHash": "sha256:75cc1e6012dacc1c9dc9ed74670829dc6ece214b7c88fe2a69ea5d7c84263b8b"
   },
   "assets": {
     "path": "showcase-data/showcase-v1/track-assets.json",
