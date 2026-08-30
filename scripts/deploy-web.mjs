@@ -157,7 +157,7 @@ function deployWeb(target, { dryRun }) {
     '--message',
     `${target.worker}-${gitRevision()}`,
   ]
-  for (const [name, value] of workerVariables(target)) args.push('--var', `${name}=${value}`)
+  for (const [name, value] of workerVariables(target)) args.push('--var', `${name}:${value}`)
   if (dryRun) args.push('--dry-run')
   run(packageManager.command, args, { cwd: repositoryRoot })
 }
