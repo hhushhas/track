@@ -89,6 +89,7 @@ const removalTypeValidator = v.union(
   v.literal('projectCompanies'),
   v.literal('taskBoards'),
   v.literal('taskWorkflowStates'),
+  v.literal('generalChannels'),
   v.literal('showcaseDatasetAssets'),
 )
 
@@ -604,6 +605,23 @@ async function applyProject(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
     recordId: String(projectId),
     owned: true,
   })
+  const generalChannelId = await ctx.db.insert('groups', {
+    projectId,
+    kind: 'general',
+    name: 'General',
+    status: 'active',
+    revision: 1,
+    createdBy: ownerUser,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await registerRecord(ctx, {
+    dataset,
+    recordType: 'generalChannels',
+    externalKey: `__support:generalChannel:${externalKey}`,
+    recordId: String(generalChannelId),
+    owned: true,
+  })
   const projectCompanyId = await ctx.db.insert('projectCompanies', {
     projectId,
     companyId,
@@ -671,6 +689,14 @@ async function applyMembership(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
       recordId: String(projectCompanyId),
       owned: true,
     })
+    const project = await ctx.db.get(projectId)
+    if (!project) throw new Error('project parent is missing')
+    await ctx.db.patch(projectId, {
+      origin: 'shared',
+      participantRevision: (project.participantRevision ?? 1) + 1,
+      revision: (project.revision ?? 1) + 1,
+      updatedAt: now,
+    })
     projectCompany = await ctx.db.get(projectCompanyId)
   }
   if (!projectCompany) throw new Error('project company parent is missing')
@@ -696,6 +722,22 @@ async function applyMembership(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
     externalKey,
     recordId: String(projectMemberId),
     owned: true,
+  })
+  const generalChannel = (await ctx.db
+    .query('groups')
+    .withIndex('by_project', (q) => q.eq('projectId', projectId))
+    .collect())
+    .find((group) => group.kind === 'general')
+  if (!generalChannel) throw new Error('general channel parent is missing')
+  await ctx.db.insert('groupMembers', {
+    projectId,
+    groupId: generalChannel._id,
+    userId,
+    projectMemberId,
+    status: 'active',
+    isSteward: projectRole(requiredString(record, 'permission')) === 'manager',
+    createdAt: now,
+    updatedAt: now,
   })
   return String(projectMemberId)
 }
@@ -1321,6 +1363,10 @@ async function relationshipErrors(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>
     if (!company) errors.push(`${projectRecord.externalKey} has no owned proposing company`)
     const terms = await ctx.db.query('projectCompanies').withIndex('by_project_status', (q) => q.eq('projectId', project._id).eq('status', 'active')).collect()
     if (terms.length === 0) errors.push(`${projectRecord.externalKey} has no active project company`)
+    if (terms.length > 1 && project.origin !== 'shared') errors.push(`${projectRecord.externalKey} is not classified as shared`)
+    const generalChannels = (await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect())
+      .filter((group) => group.kind === 'general')
+    if (generalChannels.length !== 1) errors.push(`${projectRecord.externalKey} must have one General channel`)
     for (const term of terms) {
       if (!records.some((record) => record.recordType === 'projectCompanies' && record.recordId === String(term._id))) {
         errors.push(`${projectRecord.externalKey} has an unowned project company`)
@@ -1403,10 +1449,63 @@ export const beginRemove = internalMutation({
     if (args.organizationId !== args.confirmOrganizationId) throw new Error('removal organization confirmation mismatch')
     const dataset = await requireDataset(ctx, args.organizationId, args.organizationKey)
     if (dataset.status === 'removed') return { organizationId: dataset.organizationId, status: 'removed' as const }
+    await assertNoUnregisteredProjectData(ctx, dataset)
     await ctx.db.patch(dataset._id, { status: 'removing', updatedAt: Date.now() })
     return { organizationId: dataset.organizationId, status: 'removing' as const }
   },
 })
+
+async function assertNoUnregisteredProjectData(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>) {
+  const records = await ctx.db
+    .query('showcaseDatasetRecords')
+    .withIndex('by_dataset_organization', (q) =>
+      q.eq('datasetId', DATASET_ID).eq('organizationId', dataset.organizationId),
+    )
+    .collect()
+  const registeredIds = (...recordTypes: string[]) => new Set(
+    records
+      .filter((record) => recordTypes.includes(record.recordType))
+      .map((record) => record.recordId),
+  )
+  const registeredGroups = registeredIds('channels', 'generalChannels')
+  const registeredMemberships = registeredIds('memberships')
+  const registeredProjectCompanies = registeredIds('projectCompanies')
+  const registeredMessages = registeredIds('messages')
+  const registeredTasks = registeredIds('tasks')
+  const registeredAttachments = registeredIds('attachments')
+  const projectIds = records
+    .filter((record) => record.recordType === 'projects')
+    .map((record) => ctx.db.normalizeId('projects', record.recordId))
+    .filter((id): id is Id<'projects'> => id !== null)
+
+  for (const projectId of projectIds) {
+    const groups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
+    const unregisteredGroup = groups.find((group) => !registeredGroups.has(String(group._id)))
+    if (unregisteredGroup) throw new Error(`refusing removal with unregistered channel ${unregisteredGroup._id}`)
+
+    const memberships = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
+    const unregisteredMembership = memberships.find((membership) => !registeredMemberships.has(String(membership._id)))
+    if (unregisteredMembership) throw new Error(`refusing removal with unregistered project membership ${unregisteredMembership._id}`)
+
+    const projectCompanies = await ctx.db.query('projectCompanies').withIndex('by_project_status', (q) => q.eq('projectId', projectId)).collect()
+    const unregisteredProjectCompany = projectCompanies.find((company) => !registeredProjectCompanies.has(String(company._id)))
+    if (unregisteredProjectCompany) throw new Error(`refusing removal with unregistered project company ${unregisteredProjectCompany._id}`)
+
+    const messages = await ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect()
+    const unregisteredMessage = messages.find((message) => !registeredMessages.has(String(message._id)))
+    if (unregisteredMessage) throw new Error(`refusing removal with unregistered message ${unregisteredMessage._id}`)
+
+    const tasks = await ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect()
+    const unregisteredTask = tasks.find((task) => !registeredTasks.has(String(task._id)))
+    if (unregisteredTask) throw new Error(`refusing removal with unregistered task ${unregisteredTask._id}`)
+
+    for (const group of groups) {
+      const attachments = await ctx.db.query('attachments').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect()
+      const unregisteredAttachment = attachments.find((attachment) => !registeredAttachments.has(String(attachment._id)))
+      if (unregisteredAttachment) throw new Error(`refusing removal with unregistered attachment ${unregisteredAttachment._id}`)
+    }
+  }
+}
 
 async function deleteTaskDependentRows(ctx: WriteCtx, taskId: Id<'tasks'>) {
   const [references, followers, activities, labels, notifications, reminders] = await Promise.all([
@@ -1472,7 +1571,7 @@ async function deleteNativeRegistryRecord(ctx: WriteCtx, record: RegistryRecord)
     if (await ctx.db.get(id)) await ctx.db.delete(id)
     return
   }
-  if (record.recordType === 'channels') {
+  if (record.recordType === 'channels' || record.recordType === 'generalChannels') {
     const id = ctx.db.normalizeId('groups', record.recordId)
     if (!id) throw new Error(`invalid channel id ${record.externalKey}`)
     const members = await ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', id)).collect()
