@@ -197,6 +197,20 @@ async function requireDataset(
   return dataset
 }
 
+async function requireRemovingDataset(ctx: ReadCtx, organizationKey: string, organizationId: string) {
+  const dataset = await datasetByKey(ctx, organizationKey)
+  if (
+    !dataset ||
+    dataset.product !== PRODUCT ||
+    dataset.datasetVersion !== DATASET_VERSION ||
+    dataset.status !== 'removing'
+  ) {
+    throw new Error('showcase dataset removal is not active for Track showcase-v1')
+  }
+  if (dataset.organizationId !== organizationId) throw new Error('removal organization confirmation mismatch')
+  return dataset
+}
+
 async function registryRecord(
   ctx: ReadCtx,
   organizationId: string,
@@ -1647,7 +1661,7 @@ export const removeBatch = internalMutation({
   },
   handler: async (ctx, args) => {
     if (args.organizationId !== args.confirmOrganizationId) throw new Error('removal organization confirmation mismatch')
-    const dataset = await requireDataset(ctx, args.organizationId, args.organizationKey, 'removing')
+    const dataset = await requireRemovingDataset(ctx, args.organizationKey, args.organizationId)
     if (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 50) throw new Error('removal batch limit must be between 1 and 50')
     const records = await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization_type', (q) =>
       q.eq('datasetId', DATASET_ID).eq('organizationId', dataset.organizationId).eq('recordType', args.recordType),
@@ -1665,7 +1679,7 @@ export const finishRemove = internalMutation({
   args: { ...commonArgs, confirmOrganizationId: v.string() },
   handler: async (ctx, args) => {
     if (args.organizationId !== args.confirmOrganizationId) throw new Error('removal organization confirmation mismatch')
-    const dataset = await requireDataset(ctx, args.organizationId, args.organizationKey, 'removing')
+    const dataset = await requireRemovingDataset(ctx, args.organizationKey, args.organizationId)
     const records = await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization', (q) => q.eq('datasetId', DATASET_ID).eq('organizationId', dataset.organizationId)).collect()
     if (records.length > 0) throw new Error(`showcase removal has ${records.length} registry records remaining`)
     const assets = await ctx.db.query('showcaseDatasetAssets').withIndex('by_organization', (q) => q.eq('organizationId', dataset.organizationId)).collect()

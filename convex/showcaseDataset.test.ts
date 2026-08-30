@@ -53,6 +53,86 @@ describe('Track showcase adapter', () => {
     expect((await t.run(async (ctx) => await ctx.db.query('showcaseDatasets').first()))?.status).toBe('planned')
   })
 
+  it('resumes removal from the trusted registry after the native organization marker is deleted', async () => {
+    const t = convexTest(schema, modules)
+    const ownerUserId = await seedOwner(t)
+    const organization = await t.mutation(anyApi.showcaseDataset.createOrganization, {
+      datasetId: identity.datasetId,
+      datasetVersion: identity.datasetVersion,
+      product: identity.product,
+      organizationKey: identity.organizationKey,
+      displayName: 'Removal Resume Test',
+      ownerUserId,
+      companyHandles: [],
+    })
+    await t.mutation(anyApi.showcaseDataset.begin, { ...identity, organizationId: organization.organizationId, ownerUserId })
+    const userId = await t.run(async (ctx) => await ctx.db.insert('users', {
+      googleSubject: 'track-removal-resume-user',
+      normalizedEmail: 'track-removal-resume@example.com',
+      email: 'track-removal-resume@example.com',
+      displayName: 'Removal Resume User',
+      profileDesignation: 'Member',
+      twoFactorEnabled: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }))
+    await t.run(async (ctx) => {
+      await ctx.db.insert('showcaseDatasetRecords', {
+        datasetId: identity.datasetId,
+        datasetVersion: identity.datasetVersion,
+        product: identity.product,
+        organizationKey: identity.organizationKey,
+        organizationId: organization.organizationId,
+        recordType: 'users',
+        externalKey: 'track-removal-resume-user',
+        recordId: String(userId),
+        owned: true,
+        createdAt: Date.now(),
+      })
+    })
+    await t.mutation(anyApi.showcaseDataset.beginRemove, {
+      datasetId: identity.datasetId,
+      organizationKey: identity.organizationKey,
+      organizationId: organization.organizationId,
+      confirmOrganizationId: organization.organizationId,
+    })
+    await t.run(async (ctx) => {
+      const marker = await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization_external', (q) =>
+        q.eq('datasetId', identity.datasetId)
+          .eq('organizationId', organization.organizationId)
+          .eq('externalKey', 'track-showcase-connected-delivery'),
+      ).unique()
+      if (!marker) throw new Error('test organization marker is missing')
+      await ctx.db.delete(marker._id)
+    })
+
+    const staleOrganizationId = `${organization.organizationId}-native-marker-deleted`
+    await expect(t.mutation(anyApi.showcaseDataset.removeBatch, {
+      datasetId: identity.datasetId,
+      organizationKey: identity.organizationKey,
+      organizationId: staleOrganizationId,
+      confirmOrganizationId: staleOrganizationId,
+      recordType: 'users',
+      limit: 50,
+    })).rejects.toThrow('removal organization confirmation mismatch')
+    const removedBatch = await t.mutation(anyApi.showcaseDataset.removeBatch, {
+      datasetId: identity.datasetId,
+      organizationKey: identity.organizationKey,
+      organizationId: organization.organizationId,
+      confirmOrganizationId: organization.organizationId,
+      recordType: 'users',
+      limit: 50,
+    })
+    expect(removedBatch).toEqual({ processed: 1, remaining: 0 })
+    const removed = await t.mutation(anyApi.showcaseDataset.finishRemove, {
+      datasetId: identity.datasetId,
+      organizationKey: identity.organizationKey,
+      organizationId: organization.organizationId,
+      confirmOrganizationId: organization.organizationId,
+    })
+    expect(removed.status).toBe('removed')
+  })
+
   it('applies, verifies, retries, and removes the frozen native graph', async () => {
     const t = convexTest(schema, modules)
     const ownerUserId = await seedOwner(t)
