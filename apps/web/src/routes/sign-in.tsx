@@ -1,19 +1,25 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvex } from 'convex/react'
 import { Eye, EyeOff, KeyRound, Lock, Mail, MessageSquareText, Search, ShieldCheck } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
+import TrackLoader from '#/components/TrackLoader'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
+import {
+  finishEmailAuthHandoff,
+  getAuthenticatedSignInDestination,
+  shouldFinishEmailAuthHandoff,
+} from '#/lib/auth-handoff'
+import type { AuthMode } from '#/lib/auth-handoff'
 import { enableDevAuthBypass, isDevAuthBypassAllowed } from '#/lib/dev-auth-bypass'
 import { authClient } from '../lib/auth-client'
 
 const pendingSetPasswordEmailKey = 'track-pending-set-password-email'
 const supportEmail = 'q9labs.ai@gmail.com'
 
-type AuthMode = 'continue' | 'confirm-new' | 'google-proof' | 'set-password'
 type SignInVariant = 'default' | 'conversation-a' | 'conversation-b'
 
 export const Route = createFileRoute('/sign-in')({ component: () => <SignInExperience variant="conversation-b" /> })
@@ -131,6 +137,12 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     if (typeof window === 'undefined') return ''
     return window.localStorage.getItem(pendingSetPasswordEmailKey) ?? ''
   }, [mode])
+  const authenticatedDestination = getAuthenticatedSignInDestination(Boolean(session.data), mode)
+
+  useEffect(() => {
+    if (!authenticatedDestination) return
+    void navigate({ replace: true, to: authenticatedDestination })
+  }, [authenticatedDestination, navigate])
 
   async function handleDevBypass() {
     setBusy(true)
@@ -221,7 +233,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           setMessage(getPasswordMessage(result.error))
           return
         }
-        await navigate({ to: '/workspace' })
+        finishEmailAuthHandoff()
         return
       }
 
@@ -248,6 +260,10 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
       })
       if (result.error) {
         setMessage('Email or password is incorrect.')
+        return
+      }
+      if (shouldFinishEmailAuthHandoff(result.data)) {
+        finishEmailAuthHandoff()
       }
     } catch (error) {
       setMessage(getPasswordMessage(error))
@@ -280,6 +296,14 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         : 'Continue with Email'
 
   const isConversationVariant = variant !== 'default'
+
+  if (session.isPending || authenticatedDestination) {
+    return (
+      <main className="track-auth-page">
+        <TrackLoader label="Checking your session" />
+      </main>
+    )
+  }
 
   return (
     <main className={isConversationVariant ? `track-auth-page track-auth-page-${variant}` : 'track-auth-page'}>
