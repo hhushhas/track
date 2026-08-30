@@ -30,6 +30,7 @@ import { Route as WorkspaceProjectsProjectIdIndexRouteImport } from './routes/wo
 import { Route as WorkspaceProjectsProjectIdTasksRouteImport } from './routes/workspace.projects.$projectId.tasks'
 import { Route as WorkspaceProjectsProjectIdSettingsRouteImport } from './routes/workspace.projects.$projectId.settings'
 import { Route as WorkspaceProjectsProjectIdGroupsGroupIdRouteImport } from './routes/workspace.projects.$projectId.groups.$groupId'
+import { Route as WorkspaceProjectsProjectIdGroupsGroupIdIndexRouteImport } from './routes/workspace.projects.$projectId.groups.$groupId.index'
 import { Route as WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRouteImport } from './routes/workspace.projects.$projectId.groups.$groupId.threads.$threadId'
 
 const WorkspaceRoute = WorkspaceRouteImport.update({
@@ -143,6 +144,12 @@ const WorkspaceProjectsProjectIdGroupsGroupIdRoute =
     path: '/groups/$groupId',
     getParentRoute: () => WorkspaceProjectsProjectIdRoute,
   } as any)
+const WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute =
+  WorkspaceProjectsProjectIdGroupsGroupIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => WorkspaceProjectsProjectIdGroupsGroupIdRoute,
+  } as any)
 const WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute =
   WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRouteImport.update({
     id: '/threads/$threadId',
@@ -172,6 +179,7 @@ export interface FileRoutesByFullPath {
   '/workspace/projects/$projectId/tasks': typeof WorkspaceProjectsProjectIdTasksRoute
   '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRouteWithChildren
+  '/workspace/projects/$projectId/groups/$groupId/': typeof WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId/threads/$threadId': typeof WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute
 }
 export interface FileRoutesByTo {
@@ -193,7 +201,7 @@ export interface FileRoutesByTo {
   '/workspace/projects/$projectId/settings': typeof WorkspaceProjectsProjectIdSettingsRoute
   '/workspace/projects/$projectId/tasks': typeof WorkspaceProjectsProjectIdTasksRoute
   '/workspace/projects/$projectId': typeof WorkspaceProjectsProjectIdIndexRoute
-  '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRouteWithChildren
+  '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId/threads/$threadId': typeof WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute
 }
 export interface FileRoutesById {
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/workspace/projects/$projectId/tasks': typeof WorkspaceProjectsProjectIdTasksRoute
   '/workspace/projects/$projectId/': typeof WorkspaceProjectsProjectIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId': typeof WorkspaceProjectsProjectIdGroupsGroupIdRouteWithChildren
+  '/workspace/projects/$projectId/groups/$groupId/': typeof WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute
   '/workspace/projects/$projectId/groups/$groupId/threads/$threadId': typeof WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute
 }
 export interface FileRouteTypes {
@@ -245,6 +254,7 @@ export interface FileRouteTypes {
     | '/workspace/projects/$projectId/tasks'
     | '/workspace/projects/$projectId/'
     | '/workspace/projects/$projectId/groups/$groupId'
+    | '/workspace/projects/$projectId/groups/$groupId/'
     | '/workspace/projects/$projectId/groups/$groupId/threads/$threadId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -291,6 +301,7 @@ export interface FileRouteTypes {
     | '/workspace/projects/$projectId/tasks'
     | '/workspace/projects/$projectId/'
     | '/workspace/projects/$projectId/groups/$groupId'
+    | '/workspace/projects/$projectId/groups/$groupId/'
     | '/workspace/projects/$projectId/groups/$groupId/threads/$threadId'
   fileRoutesById: FileRoutesById
 }
@@ -459,6 +470,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdRouteImport
       parentRoute: typeof WorkspaceProjectsProjectIdRoute
     }
+    '/workspace/projects/$projectId/groups/$groupId/': {
+      id: '/workspace/projects/$projectId/groups/$groupId/'
+      path: '/'
+      fullPath: '/workspace/projects/$projectId/groups/$groupId/'
+      preLoaderRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdIndexRouteImport
+      parentRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdRoute
+    }
     '/workspace/projects/$projectId/groups/$groupId/threads/$threadId': {
       id: '/workspace/projects/$projectId/groups/$groupId/threads/$threadId'
       path: '/threads/$threadId'
@@ -470,11 +488,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface WorkspaceProjectsProjectIdGroupsGroupIdRouteChildren {
+  WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute
   WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute: typeof WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute
 }
 
 const WorkspaceProjectsProjectIdGroupsGroupIdRouteChildren: WorkspaceProjectsProjectIdGroupsGroupIdRouteChildren =
   {
+    WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute:
+      WorkspaceProjectsProjectIdGroupsGroupIdIndexRoute,
     WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute:
       WorkspaceProjectsProjectIdGroupsGroupIdThreadsThreadIdRoute,
   }
