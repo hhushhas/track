@@ -21,7 +21,7 @@ function usesPresenterIdentity(userKey: string, projectKey: string) {
   return presenterProjectByUser.get(userKey) === projectKey
 }
 const ORGANIZATION_EXTERNAL_KEY = 'track-showcase-connected-delivery'
-const MANIFEST_HASH = 'sha256:3e3b8abf1f5f564536d4fdb6a1242795cddfa6deaf94b53c97644066f49ae3f9'
+const MANIFEST_HASH = 'sha256:75cc1e6012dacc1c9dc9ed74670829dc6ece214b7c88fe2a69ea5d7c84263b8b'
 const ASSET_MANIFEST_HASH = 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae'
 
 const expectedCounts = Object.freeze({
