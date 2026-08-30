@@ -24,10 +24,13 @@ const ENVIRONMENTS = Object.freeze({
     webBaseUrl: 'https://track.q9labs.ai',
   },
 })
+const HOSTED_DEV_PRESENTER_EMAIL = 'shasanshoaib+track-showcase@gmail.com'
+const HOSTED_DEV_ORGANIZATION_KEY = 'track-showcase-v1-oort-20260830-dev'
 
 const usage = `Usage:
   pnpm seed:dataset plan   --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key>
   pnpm seed:dataset apply  --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key> --repair-existing --confirm-production --asset-root <absolute-path>
+  pnpm seed:dataset reconcile --pack showcase-v1 --environment hosted-dev --organization-key <existing-key> --organization-id <id> --presenter-email <email>
   pnpm seed:dataset verify --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key> --organization-id <id> --asset-root <absolute-path>
   pnpm seed:dataset remove --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key> --confirm-organization <resolved-id>
 
@@ -60,7 +63,7 @@ function parseArgs(argv) {
 }
 
 function requireOptions(options) {
-  if (!new Set(['plan', 'apply', 'verify', 'remove']).has(options.mode)) throw new Error(`unknown mode ${options.mode ?? ''}`)
+  if (!new Set(['plan', 'apply', 'reconcile', 'verify', 'remove']).has(options.mode)) throw new Error(`unknown mode ${options.mode ?? ''}`)
   if (options.pack !== 'showcase-v1') throw new Error('--pack must be showcase-v1')
   if (!Object.hasOwn(ENVIRONMENTS, options.environment)) throw new Error('--environment must be explicit: local, hosted-dev, or production')
   if (typeof options['organization-key'] !== 'string' || options['organization-key'].trim() === '') throw new Error('--organization-key is required')
@@ -71,6 +74,12 @@ function requireOptions(options) {
   if (options.mode === 'apply' && options['repair-existing'] !== true && options['create-organization'] !== true) throw new Error('apply requires --repair-existing')
   if (options.mode === 'apply' && options['create-organization'] === true && options.environment !== 'local') throw new Error('--create-organization is allowed only for local tests')
   if (options.mode === 'apply' && options['create-organization'] === true && typeof options['owner-user-id'] !== 'string') throw new Error('local creation requires --owner-user-id <id>')
+  if (options.mode === 'reconcile') {
+    if (options.environment !== 'hosted-dev') throw new Error('reconcile is limited to hosted-dev')
+    if (options.organizationKey !== HOSTED_DEV_ORGANIZATION_KEY) throw new Error(`reconcile requires the hosted-dev organization key ${HOSTED_DEV_ORGANIZATION_KEY}`)
+    if (typeof options['organization-id'] !== 'string' || options['organization-id'].trim() === '') throw new Error('reconcile requires --organization-id <id>')
+    if (typeof options['presenter-email'] !== 'string' || options['presenter-email'].trim().toLowerCase() !== HOSTED_DEV_PRESENTER_EMAIL) throw new Error(`reconcile requires the hosted-dev presenter email ${HOSTED_DEV_PRESENTER_EMAIL}`)
+  }
   if (options.mode === 'remove' && typeof options['confirm-organization'] !== 'string') throw new Error('remove requires --confirm-organization <resolved-id>')
   if (['apply', 'verify'].includes(options.mode)) {
     if (typeof options['asset-root'] !== 'string') throw new Error(`${options.mode} requires --asset-root <absolute-path>`)
@@ -94,11 +103,14 @@ function convexTarget(options) {
 
 function runConvex(options, functionName, args) {
   const deployment = convexTarget(options)
-  const commandArgs = ['exec', 'convex', 'run']
+  const packageManager = process.env.npm_execpath
+    ? { command: process.execPath, prefix: [process.env.npm_execpath] }
+    : { command: 'corepack', prefix: ['pnpm'] }
+  const commandArgs = [...packageManager.prefix, 'exec', 'convex', 'run']
   commandArgs.push('--deployment', deployment)
   commandArgs.push('--typecheck', 'disable', '--codegen', 'disable')
   commandArgs.push(functionName, JSON.stringify(args))
-  const output = execFileSync('pnpm', commandArgs, {
+  const output = execFileSync(packageManager.command, commandArgs, {
     cwd: repositoryRoot,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -112,6 +124,17 @@ function runConvex(options, functionName, args) {
     if (starts.length === 0) throw new Error(`Convex ${functionName} returned no JSON: ${trimmed.slice(-500)}`)
     return JSON.parse(trimmed.slice(Math.min(...starts)))
   }
+}
+
+function reconcilePresenter(options) {
+  return runConvex(options, 'showcaseDataset:reconcilePresenter', {
+    datasetId: 'showcase-v1',
+    datasetVersion: '1.0.0',
+    product: 'track',
+    organizationKey: options.organizationKey,
+    organizationId: options['organization-id'],
+    presenterEmail: options['presenter-email'],
+  })
 }
 
 function printCounts(validation) {
@@ -323,6 +346,23 @@ async function main() {
         console.log(`Applied Track showcase-v1 to ${result.organizationId}`)
         for (const link of links) console.log(`  ${link.packKey}: ${link.entryLink}`)
       }
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), 1)
+    }
+    return
+  }
+  if (options.mode === 'reconcile') {
+    try {
+      const result = reconcilePresenter(options)
+      const report = {
+        mode: 'reconcile',
+        environment: options.environment,
+        deployment: convexTarget(options),
+        organizationKey: options.organizationKey,
+        ...result,
+      }
+      if (options.json) console.log(JSON.stringify(report))
+      else console.log(`Reconciled the hosted-dev Track presenter to owner ${result.targetUserId} for ${result.organizationId}.`)
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error), 1)
     }

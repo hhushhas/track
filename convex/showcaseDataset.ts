@@ -1,5 +1,7 @@
 import { v } from 'convex/values'
 
+import { bindTrackUserToAuth } from './auth'
+import { components } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, internalQuery } from './_generated/server'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -10,6 +12,8 @@ const DATASET_ID = 'showcase-v1'
 const DATASET_VERSION = '1.0.0'
 const PRODUCT = 'track'
 const OWNER_USER_EXTERNAL_KEY = 'track-user-person-layan-kawthar-khoury'
+const PRESENTER_EMAIL = 'shasanshoaib+track-showcase@gmail.com'
+const HOSTED_DEV_ORGANIZATION_KEY = 'track-showcase-v1-oort-20260830-dev'
 
 const presenterProjectByUser = new Map([
   ['track-user-person-layan-kawthar-khoury', 'track-project-agency-campaign'],
@@ -2043,6 +2047,64 @@ export const begin = internalMutation({
       owned: true,
     })
     return { organizationId: updated.organizationId, status: 'applying' as const }
+  },
+})
+
+export const reconcilePresenter = internalMutation({
+  args: {
+    ...commonArgs,
+    datasetVersion: v.literal(DATASET_VERSION),
+    product: v.literal(PRODUCT),
+    presenterEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (args.organizationKey !== HOSTED_DEV_ORGANIZATION_KEY) {
+      throw new Error('showcase presenter reconciliation is limited to Track hosted-dev')
+    }
+    if (args.presenterEmail.trim().toLowerCase() !== PRESENTER_EMAIL) {
+      throw new Error('showcase presenter email is not the hosted-dev presenter')
+    }
+    const dataset = await requireDataset(ctx, args.organizationId, args.organizationKey, 'applied')
+    if (dataset.datasetId !== DATASET_ID || dataset.datasetVersion !== args.datasetVersion) {
+      throw new Error('showcase dataset identity mismatch')
+    }
+    const ownerId = await ownerUserId(ctx, dataset)
+    const ownerRecord = await registryRecord(ctx, dataset.organizationId, OWNER_USER_EXTERNAL_KEY)
+    if (
+      !ownerRecord ||
+      ownerRecord.recordType !== 'users' ||
+      ownerRecord.owned ||
+      ownerRecord.recordId !== String(ownerId)
+    ) {
+      throw new Error('showcase owner registry binding is missing')
+    }
+
+    const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: 'user',
+      where: [{ field: 'email', value: PRESENTER_EMAIL }],
+      select: ['_id', 'email', 'name', 'twoFactorEnabled'],
+    })
+    if (!authUser?._id || typeof authUser._id !== 'string') {
+      throw new Error('showcase presenter Better Auth user is missing')
+    }
+
+    const binding = await bindTrackUserToAuth(
+      ctx,
+      ownerId,
+      {
+        _id: authUser._id,
+        email: typeof authUser.email === 'string' ? authUser.email : PRESENTER_EMAIL,
+        name: typeof authUser.name === 'string' ? authUser.name : undefined,
+        twoFactorEnabled: typeof authUser.twoFactorEnabled === 'boolean' ? authUser.twoFactorEnabled : undefined,
+      },
+      `showcase-detached:${DATASET_ID}:${dataset.organizationKey}`,
+    )
+
+    return {
+      ...binding,
+      organizationId: dataset.organizationId,
+      status: 'reconciled' as const,
+    }
   },
 })
 

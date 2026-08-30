@@ -7,7 +7,7 @@ import { twoFactor } from 'better-auth/plugins'
 import type { GenericDatabaseReader, GenericDatabaseWriter } from 'convex/server'
 
 import { components } from './_generated/api'
-import type { DataModel } from './_generated/dataModel'
+import type { DataModel, Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
@@ -31,6 +31,12 @@ export const authComponent = createClient<DataModel>(components.betterAuth)
 
 type ReadCtx = GenericCtx<DataModel> & { db: GenericDatabaseReader<DataModel> }
 type WriteCtx = GenericCtx<DataModel> & { db: GenericDatabaseWriter<DataModel> }
+type AuthUser = {
+  _id: string
+  email?: string | null
+  name?: string | null
+  twoFactorEnabled?: boolean | null
+}
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth({
@@ -151,12 +157,7 @@ async function findTrackUserByAuth(
 
 async function upsertTrackUserFromAuth(
   ctx: WriteCtx,
-  authUser: {
-    _id: string
-    email?: string | null
-    name?: string | null
-    twoFactorEnabled?: boolean | null
-  },
+  authUser: AuthUser,
 ) {
   const now = Date.now()
   const normalizedEmail = normalizeEmail(authUser.email ?? '')
@@ -189,6 +190,78 @@ async function upsertTrackUserFromAuth(
     createdAt: now,
     updatedAt: now,
   })
+}
+
+export async function bindTrackUserToAuth(
+  ctx: WriteCtx,
+  targetUserId: Id<'users'>,
+  authUser: AuthUser,
+  detachedGoogleSubjectPrefix: string,
+) {
+  const target = await ctx.db.get(targetUserId)
+  if (!target) throw new Error('track user does not exist')
+
+  const [authIdMatches, googleSubjectMatches] = await Promise.all([
+    ctx.db
+      .query('users')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUser._id))
+      .collect(),
+    ctx.db
+      .query('users')
+      .withIndex('by_google_subject', (q) => q.eq('googleSubject', authUser._id))
+      .collect(),
+  ])
+  const conflictingUsers = Array.from(
+    new Map(
+      [...authIdMatches, ...googleSubjectMatches]
+        .filter((user) => user._id !== target._id)
+        .map((user) => [user._id, user]),
+    ).values(),
+  )
+  const detachedUserIds: Array<Id<'users'>> = []
+  const now = Date.now()
+
+  for (const user of conflictingUsers) {
+    const patch: Partial<typeof user> = {
+      googleSubject: `${detachedGoogleSubjectPrefix}:${user._id}`,
+      updatedAt: now,
+    }
+    if (user.authUserId === authUser._id) patch.authUserId = undefined
+    await ctx.db.patch(user._id, patch)
+    detachedUserIds.push(user._id)
+  }
+
+  const targetEmail = authUser.email ?? target.email
+  const normalizedEmail = normalizeEmail(targetEmail)
+  const targetPatch: Partial<typeof target> = {
+    authUserId: authUser._id,
+    googleSubject: authUser._id,
+    normalizedEmail,
+    email: targetEmail,
+  }
+  if (!target.displayName.trim()) targetPatch.displayName = getAuthUserDisplayName(authUser)
+  if (typeof authUser.twoFactorEnabled === 'boolean') {
+    targetPatch.twoFactorEnabled = authUser.twoFactorEnabled
+  }
+
+  const targetChanged =
+    target.authUserId !== authUser._id ||
+    target.googleSubject !== authUser._id ||
+    target.normalizedEmail !== normalizedEmail ||
+    target.email !== targetEmail ||
+    (!target.displayName.trim()) ||
+    (typeof authUser.twoFactorEnabled === 'boolean' && target.twoFactorEnabled !== authUser.twoFactorEnabled)
+  if (targetChanged) {
+    targetPatch.updatedAt = now
+    await ctx.db.patch(target._id, targetPatch)
+  }
+
+  return {
+    authUserId: authUser._id,
+    detachedUserIds,
+    targetChanged,
+    targetUserId: target._id,
+  }
 }
 
 export const getEmailAuthHint = query({
