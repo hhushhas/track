@@ -112,6 +112,24 @@ function assertReferences(manifest, errors) {
   }
 }
 
+function assertSuggestionDispositions(manifest, errors) {
+  const suggestions = manifest.records.suggestions
+  const allowed = new Set(['accepted', 'corrected', 'rejected', 'pending'])
+  for (const [index, suggestion] of suggestions.entries()) {
+    if (!allowed.has(suggestion.disposition)) errors.push(`suggestions[${index}] has an unsupported disposition`)
+  }
+  for (const pack of manifest.targetedPacks ?? []) {
+    if (!suggestions.some((suggestion) => suggestion.projectKey === pack.projectKey && suggestion.disposition === 'pending')) {
+      errors.push(`${pack.projectKey} must have a pending suggestion for Inbox dogfood`)
+    }
+  }
+  for (const disposition of ['accepted', 'corrected', 'rejected']) {
+    if (!suggestions.some((suggestion) => suggestion.disposition === disposition)) {
+      errors.push(`Track must preserve ${disposition} suggestion history`)
+    }
+  }
+}
+
 function assetPath(assetRoot, asset) {
   const local = asset.localPath.replace(/^build\/assets\/track\//, '')
   const candidates = assetRoot
@@ -142,6 +160,7 @@ export function validateTrackPack({ assetRoot } = {}) {
   }
   if (manifest.targetedPacks?.length !== 5) errors.push('Track must define five targeted packs')
   assertReferences(manifest, errors)
+  assertSuggestionDispositions(manifest, errors)
   if (assetManifest.datasetId !== manifest.datasetId || assetManifest.datasetVersion !== manifest.datasetVersion || assetManifest.product !== manifest.product) errors.push('asset manifest identity does not match Track manifest')
   if (assetManifest.assets.length !== 61) errors.push('Track must define 61 assets')
   const assetKeys = new Set()

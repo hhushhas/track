@@ -15,8 +15,13 @@ test('Track showcase-v1 validates its frozen manifest and assets', () => {
   assert.deepEqual(Object.fromEntries(Object.entries(validation.manifest.records).map(([key, value]) => [key, value.length])), EXPECTED_COUNTS)
   assert.equal(validation.assetManifest.assets.length, 61)
   assert.equal(validation.checkedAssets.length, 61)
-  assert.equal(validation.manifestHash, 'sha256:75cc1e6012dacc1c9dc9ed74670829dc6ece214b7c88fe2a69ea5d7c84263b8b')
+  assert.equal(validation.manifestHash, 'sha256:a6789ca52fd9f347476ec48e0b3b147b0ead0ba449e3f3f90699249d9ac74af4')
   assert.equal(validation.assetManifestHash, 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae')
+  const dispositionCounts = validation.manifest.records.suggestions.reduce((counts, suggestion) => ({
+    ...counts,
+    [suggestion.disposition]: (counts[suggestion.disposition] ?? 0) + 1,
+  }), {})
+  assert.deepEqual(dispositionCounts, { accepted: 10, corrected: 10, pending: 5, rejected: 5 })
 })
 
 test('Track plan is deterministic and validates organization isolation', () => {

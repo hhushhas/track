@@ -20,7 +20,7 @@ const identity = {
   datasetVersion: '1.0.0',
   product: 'track',
   organizationKey: 'track-native-test',
-  manifestHash: 'sha256:75cc1e6012dacc1c9dc9ed74670829dc6ece214b7c88fe2a69ea5d7c84263b8b',
+  manifestHash: 'sha256:a6789ca52fd9f347476ec48e0b3b147b0ead0ba449e3f3f90699249d9ac74af4',
   assetManifestHash: 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae',
   counts: { organizations: 1, companies: 8, users: 80, projects: 20, memberships: 160, channels: 60, messages: 800, tasks: 160, suggestions: 30, attachments: 60 },
   assetCount: 61,
@@ -151,6 +151,42 @@ describe('Track showcase adapter', () => {
     expect(firstVerification.ok).toBe(true)
     expect(firstVerification.counts).toMatchObject({ organization: 1, companies: 8, users: 80, projects: 20, memberships: 160, channels: 60, messages: 800, tasks: 160, suggestions: 30, attachments: 60 })
     expect(firstVerification.assetCount).toBe(61)
+    const nativeShowcaseState = await t.run(async (ctx) => {
+      const [messages, attachments, suggestions] = await Promise.all([
+        ctx.db.query('messages').collect(),
+        ctx.db.query('attachments').collect(),
+        ctx.db.query('taskSuggestions').collect(),
+      ])
+      const messageIds = new Set(messages.map((message) => String(message._id)))
+      return {
+        attachmentCount: attachments.length,
+        linkedAttachmentCount: attachments.filter((attachment) =>
+          messageIds.has(String(attachment.messageId)) &&
+          messages.find((message) => message._id === attachment.messageId)?.attachmentIds.includes(attachment._id),
+        ).length,
+        suggestionStatuses: suggestions.reduce<Record<string, number>>((counts, suggestion) => ({
+          ...counts,
+          [suggestion.status]: (counts[suggestion.status] ?? 0) + 1,
+        }), {}),
+        pendingProjectCount: new Set(suggestions.filter((suggestion) => suggestion.status === 'pending').map((suggestion) => String(suggestion.projectId))).size,
+        pendingDecisionMetadataCount: suggestions.filter((suggestion) => suggestion.status === 'pending' && (
+          suggestion.decidedAt !== undefined ||
+          suggestion.decidedByProjectMemberId !== undefined ||
+          suggestion.decisionActingCompanyId !== undefined ||
+          suggestion.decisionIdempotencyKey !== undefined ||
+          suggestion.decidedTaskId !== undefined ||
+          suggestion.dismissalReason !== undefined ||
+          suggestion.duplicateOverride !== undefined
+        )).length,
+      }
+    })
+    expect(nativeShowcaseState).toEqual({
+      attachmentCount: 60,
+      linkedAttachmentCount: 60,
+      suggestionStatuses: { accepted: 20, dismissed: 5, pending: 5 },
+      pendingProjectCount: 5,
+      pendingDecisionMetadataCount: 0,
+    })
     const nativeState = await t.run(async (ctx) => ({
       ownerMemberships: await ctx.db.query('companyMembers').withIndex('by_user_status', (q) => q.eq('userId', ownerUserId).eq('status', 'active')).collect(),
       projectMemberships: await ctx.db.query('projectMembers').collect(),
@@ -190,11 +226,54 @@ describe('Track showcase adapter', () => {
       return companyCount > 1 ? project.origin === 'shared' : project.origin === 'single_company'
     })).toBe(true)
 
+    await t.run(async (ctx) => {
+      const messageRecord = await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization_external', (q) =>
+        q.eq('datasetId', identity.datasetId)
+          .eq('organizationId', organization.organizationId)
+          .eq('externalKey', 'track-message-0004'),
+      ).unique()
+      if (!messageRecord) throw new Error('target message registry record is missing')
+      const messageId = ctx.db.normalizeId('messages', messageRecord.recordId)
+      if (!messageId) throw new Error('target message registry id is invalid')
+      await ctx.db.patch(messageId, { attachmentIds: [] })
+      const suggestionRecord = await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization_external', (q) =>
+        q.eq('datasetId', identity.datasetId)
+          .eq('organizationId', organization.organizationId)
+          .eq('externalKey', 'track-suggestion-06'),
+      ).unique()
+      if (!suggestionRecord) throw new Error('target suggestion registry record is missing')
+      const suggestionId = ctx.db.normalizeId('taskSuggestions', suggestionRecord.recordId)
+      if (!suggestionId) throw new Error('target suggestion registry id is invalid')
+      await ctx.db.patch(suggestionId, {
+        status: 'dismissed',
+        dismissalReason: 'not_actionable',
+        decisionIdempotencyKey: 'legacy-showcase-decision',
+        decidedAt: Date.now(),
+      })
+    })
+    const brokenRelationVerification = await verifyGraph(t, organization.organizationId)
+    expect(brokenRelationVerification.ok).toBe(false)
+    expect(brokenRelationVerification.relationshipErrors).toContain('track-attachment-02 is not linked from its message')
     await t.mutation(anyApi.showcaseDataset.begin, { ...identity, organizationId: organization.organizationId, ownerUserId })
     await applyGraphRecords(t, organization.organizationId)
     const retryVerification = await verifyGraph(t, organization.organizationId)
-    expect(retryVerification.ok).toBe(true)
+    expect(retryVerification.ok, retryVerification.relationshipErrors.join('; ')).toBe(true)
     expect(retryVerification.counts).toEqual(firstVerification.counts)
+    const repairedSuggestion = await t.run(async (ctx) => {
+      const suggestionRecord = await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization_external', (q) =>
+        q.eq('datasetId', identity.datasetId)
+          .eq('organizationId', organization.organizationId)
+          .eq('externalKey', 'track-suggestion-06'),
+      ).unique()
+      if (!suggestionRecord) throw new Error('repaired suggestion registry record is missing')
+      const suggestionId = ctx.db.normalizeId('taskSuggestions', suggestionRecord.recordId)
+      if (!suggestionId) throw new Error('repaired suggestion registry id is invalid')
+      return await ctx.db.get(suggestionId)
+    })
+    expect(repairedSuggestion).toMatchObject({ status: 'pending' })
+    expect(repairedSuggestion?.dismissalReason).toBeUndefined()
+    expect(repairedSuggestion?.decisionIdempotencyKey).toBeUndefined()
+    expect(repairedSuggestion?.decidedAt).toBeUndefined()
 
     const unregisteredMessageId = await t.run(async (ctx) => {
       const channel = await ctx.db.query('groups').first()

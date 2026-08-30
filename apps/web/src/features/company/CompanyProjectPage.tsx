@@ -10,6 +10,7 @@ import { useReleaseConfig } from "#/lib/release-config";
 import { ChannelTaskPanel, CreateTaskFromMessage, MessageInlineTasks } from "#/features/tasks/ConversationTaskActions";
 import { ChannelThreadBrowser } from "#/features/threads/ChannelThreadBrowser";
 import { threadHref } from "#/features/threads/thread-navigation";
+import { MessageAttachmentList } from "#/features/workspace/message-attachment-list";
 
 type Props = {
   actingCompanyId: Id<"companies">;
@@ -405,6 +406,7 @@ export function CompanyProjectPage({
                     </time>
                   </div>
                   <p>{detail.message.body || "Attachment message"}</p>
+                  <MessageAttachmentList attachments={detail.attachments} />
                   {!readOnly &&
                   (detail.message.authorProjectMemberId
                     ? detail.message.authorProjectMemberId === projectMemberId

@@ -21,7 +21,7 @@ function usesPresenterIdentity(userKey: string, projectKey: string) {
   return presenterProjectByUser.get(userKey) === projectKey
 }
 const ORGANIZATION_EXTERNAL_KEY = 'track-showcase-connected-delivery'
-const MANIFEST_HASH = 'sha256:75cc1e6012dacc1c9dc9ed74670829dc6ece214b7c88fe2a69ea5d7c84263b8b'
+const MANIFEST_HASH = 'sha256:a6789ca52fd9f347476ec48e0b3b147b0ead0ba449e3f3f90699249d9ac74af4'
 const ASSET_MANIFEST_HASH = 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae'
 
 const expectedCounts = Object.freeze({
@@ -481,7 +481,6 @@ async function ensureTaskBoard(
 
 async function workflowStateFor(
   ctx: ReadCtx,
-  dataset: Doc<'showcaseDatasets'>,
   boardId: Id<'taskBoards'>,
   category: string,
 ) {
@@ -866,7 +865,7 @@ async function applyTask(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record
     creatorMember.companyId,
     group.name,
   )
-  const state = await workflowStateFor(ctx, dataset, boardId, taskStateCategory(requiredString(record, 'state')))
+  const state = await workflowStateFor(ctx, boardId, taskStateCategory(requiredString(record, 'state')))
   const stateTasks = await ctx.db.query('tasks').withIndex('by_board_state_rank', (q) =>
     q.eq('boardId', boardId).eq('workflowStateId', state._id),
   ).collect()
@@ -951,7 +950,6 @@ async function applyTask(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record
 async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const sourceKeys = arrayField(record, 'sourceMessageKeys').map((value) => {
     if (typeof value !== 'string') throw new Error('source message key must be a string')
     return value
@@ -972,7 +970,42 @@ async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
   if (!creatorMember) throw new Error('suggestion creator is missing')
   const disposition = requiredString(record, 'disposition')
   const accepted = disposition === 'accepted' || disposition === 'corrected'
+  const pending = disposition === 'pending'
+  if (!pending && !accepted && disposition !== 'rejected') throw new Error(`unsupported suggestion disposition ${disposition}`)
   const now = Date.now()
+  if (existing) {
+    const suggestionId = ctx.db.normalizeId('taskSuggestions', existing.recordId)
+    if (!suggestionId) throw new Error(`invalid suggestion registry id ${externalKey}`)
+    const suggestion = await ctx.db.get(suggestionId)
+    if (!suggestion) throw new Error(`registered suggestion is missing ${externalKey}`)
+    if (suggestion.projectId !== source.projectId || suggestion.groupId !== source.groupId) {
+      throw new Error(`registered suggestion scope mismatch ${externalKey}`)
+    }
+    await ctx.db.patch(suggestionId, {
+      proposedDescription: requiredString(record, 'explanation'),
+      proposedAssigneeProjectMemberId: task.assigneeProjectMemberId,
+      proposedPriority: task.priority,
+      proposedDueDate: task.dueDate,
+      status: pending ? 'pending' : accepted ? 'accepted' : 'dismissed',
+      confidence: disposition === 'corrected' ? 0.86 : 0.92,
+      groundingReason: requiredString(record, 'explanation'),
+      decidedByProjectMemberId: pending ? undefined : creator,
+      decisionActingCompanyId: pending ? undefined : creatorMember.companyId,
+      dismissalReason: pending || accepted ? undefined : 'not_actionable',
+      decidedTaskId: accepted ? taskId : undefined,
+      duplicateOverride: pending ? undefined : disposition === 'corrected',
+      decisionIdempotencyKey: pending ? undefined : `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
+      updatedAt: suggestion.updatedAt,
+      decidedAt: pending ? undefined : suggestion.decidedAt ?? suggestion.createdAt,
+    })
+    if (accepted && task.sourceSuggestionId && task.sourceSuggestionId !== suggestionId) {
+      throw new Error(`suggestion task is already linked to another suggestion ${externalKey}`)
+    }
+    if (accepted && task.sourceSuggestionId !== suggestionId) {
+      await ctx.db.patch(taskId, { sourceSuggestionId: suggestionId, updatedAt: now })
+    }
+    return existing.recordId
+  }
   const suggestionId = await ctx.db.insert('taskSuggestions', {
     projectId: source.projectId,
     groupId: source.groupId,
@@ -981,21 +1014,21 @@ async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
     proposedAssigneeProjectMemberId: task.assigneeProjectMemberId,
     proposedPriority: task.priority,
     proposedDueDate: task.dueDate,
-    status: accepted ? 'accepted' : 'dismissed',
+    status: pending ? 'pending' : accepted ? 'accepted' : 'dismissed',
     confidence: disposition === 'corrected' ? 0.86 : 0.92,
     groundingReason: requiredString(record, 'explanation'),
     fingerprint: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-    decidedByProjectMemberId: creator,
-    decisionActingCompanyId: creatorMember.companyId,
-    dismissalReason: accepted ? undefined : 'not_actionable',
+    decidedByProjectMemberId: pending ? undefined : creator,
+    decisionActingCompanyId: pending ? undefined : creatorMember.companyId,
+    dismissalReason: pending || accepted ? undefined : 'not_actionable',
     decidedTaskId: accepted ? taskId : undefined,
-    duplicateOverride: disposition === 'corrected',
-    decisionIdempotencyKey: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
+    duplicateOverride: pending ? undefined : disposition === 'corrected',
+    decisionIdempotencyKey: pending ? undefined : `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
     modelVersion: 'showcase-precomputed-v1',
     promptVersion: 'showcase-precomputed-v1',
     createdAt: now,
     updatedAt: now,
-    decidedAt: now,
+    decidedAt: pending ? undefined : now,
   })
   await registerRecord(ctx, {
     dataset,
@@ -1027,12 +1060,24 @@ async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
 
 async function applyAttachment(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
-  const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const projectId = await projectForKey(ctx, dataset, requiredString(record, 'projectKey'))
   const messageId = await messageForKey(ctx, dataset, requiredString(record, 'messageKey'))
   const message = await ctx.db.get(messageId)
   if (!message || message.projectId !== projectId) throw new Error('attachment message scope mismatch')
+  const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
+  if (existing) {
+    const existingId = ctx.db.normalizeId('attachments', existing.recordId)
+    if (!existingId) throw new Error(`invalid attachment registry id ${externalKey}`)
+    const attachment = await ctx.db.get(existingId)
+    if (!attachment) throw new Error(`registered attachment is missing ${externalKey}`)
+    if (attachment.messageId !== messageId || attachment.projectId !== projectId) {
+      throw new Error(`registered attachment scope mismatch ${externalKey}`)
+    }
+    if (!message.attachmentIds.includes(existingId)) {
+      await ctx.db.patch(messageId, { attachmentIds: [...message.attachmentIds, existingId] })
+    }
+    return existing.recordId
+  }
   const asset = await assetForKey(ctx, dataset, requiredString(record, 'assetKey'))
   const metadata = asset.metadata
   const duration = metadata && typeof metadata === 'object' && !Array.isArray(metadata) && typeof metadata.duration === 'number'
@@ -1044,6 +1089,7 @@ async function applyAttachment(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
     projectId,
     groupId: message.groupId,
     messageId,
+    channelThreadId: message.channelThreadId,
     storageId: asset.storageId,
     filename,
     contentType: asset.mimeType,
@@ -1083,6 +1129,8 @@ async function applyRecords(
     let recordId: string
     if (prior) {
       recordId = prior.recordId
+      if (recordType === 'suggestions') await applySuggestion(ctx, dataset, record)
+      if (recordType === 'attachments') await applyAttachment(ctx, dataset, record)
       skipped += 1
     } else {
       if (recordType === 'organizations') recordId = await applyOrganization(ctx, dataset, record)
@@ -1413,14 +1461,46 @@ async function relationshipErrors(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>
     const source = await ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', task._id)).collect()
     if (!source.some((reference) => reference.type === 'message' && reference.messageId)) errors.push(`${record.externalKey} has no message evidence`)
   }
+  const suggestionStatusCounts = { accepted: 0, dismissed: 0, pending: 0 }
+  const pendingSuggestionProjects = new Set<string>()
   for (const record of records.filter((candidate) => candidate.recordType === 'suggestions')) {
-    const suggestionId = ctx.db.normalizeId('taskSuggestions', record.recordId)
-    if (!suggestionId) {
-      errors.push(`invalid suggestion ${record.externalKey}`)
+    const suggestion = await requireDocument(record.externalKey, 'taskSuggestions')
+    if (!suggestion) continue
+    if (suggestion.status === 'accepted') suggestionStatusCounts.accepted += 1
+    else if (suggestion.status === 'dismissed') suggestionStatusCounts.dismissed += 1
+    else if (suggestion.status === 'pending') {
+      suggestionStatusCounts.pending += 1
+      pendingSuggestionProjects.add(String(suggestion.projectId))
+      if (
+        suggestion.decidedAt !== undefined ||
+        suggestion.decidedByProjectMemberId !== undefined ||
+        suggestion.decisionActingCompanyId !== undefined ||
+        suggestion.decisionIdempotencyKey !== undefined ||
+        suggestion.decidedTaskId !== undefined ||
+        suggestion.dismissalReason !== undefined ||
+        suggestion.duplicateOverride !== undefined
+      ) {
+        errors.push(`${record.externalKey} has decision metadata while pending`)
+      }
+    } else {
+      errors.push(`${record.externalKey} has unsupported status ${suggestion.status}`)
+    }
+    const references = await ctx.db.query('taskSuggestionReferences').withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestion._id)).collect()
+    if (references.length !== 2) errors.push(`${record.externalKey} must cite two messages`)
+  }
+  if (suggestionStatusCounts.accepted !== 20 || suggestionStatusCounts.dismissed !== 5 || suggestionStatusCounts.pending !== 5) {
+    errors.push(`suggestion status counts are ${JSON.stringify(suggestionStatusCounts)}`)
+  }
+  if (pendingSuggestionProjects.size !== 5) errors.push(`pending suggestions cover ${pendingSuggestionProjects.size} projects instead of 5`)
+  for (const record of records.filter((candidate) => candidate.recordType === 'attachments')) {
+    const attachment = await requireDocument(record.externalKey, 'attachments')
+    if (!attachment) continue
+    const message = await ctx.db.get(attachment.messageId)
+    if (!message || message.projectId !== attachment.projectId || message.groupId !== attachment.groupId) {
+      errors.push(`${record.externalKey} has incomplete message scope`)
       continue
     }
-    const references = await ctx.db.query('taskSuggestionReferences').withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestionId)).collect()
-    if (references.length !== 2) errors.push(`${record.externalKey} must cite two messages`)
+    if (!message.attachmentIds.includes(attachment._id)) errors.push(`${record.externalKey} is not linked from its message`)
   }
   return errors.slice(0, 50)
 }
