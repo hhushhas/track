@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   EXPECTED_COUNTS,
+  EXPECTED_RELATIONSHIP_COUNTS,
   RECORD_TYPE_ORDER,
   validateTrackPack,
 } from './showcase/track-manifest.mjs'
@@ -18,16 +19,19 @@ const ENVIRONMENTS = Object.freeze({
     deployment: 'enduring-impala-781',
     webBaseUrl: 'https://dev.track.q9labs.ai',
   },
-  production: { webBaseUrl: 'https://track.q9labs.ai' },
+  production: {
+    deployment: 'fleet-manatee-941',
+    webBaseUrl: 'https://track.q9labs.ai',
+  },
 })
 
 const usage = `Usage:
-  pnpm seed:dataset plan   --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <new-key>
-  pnpm seed:dataset apply  --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <new-key> --create-organization --confirm-production --owner-user-id <id> --asset-root <absolute-path>
-  pnpm seed:dataset verify --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <new-key> --organization-id <id> --asset-root <absolute-path>
-  pnpm seed:dataset remove --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <new-key> --confirm-organization <resolved-id>
+  pnpm seed:dataset plan   --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key>
+  pnpm seed:dataset apply  --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key> --repair-existing --confirm-production --asset-root <absolute-path>
+  pnpm seed:dataset verify --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key> --organization-id <id> --asset-root <absolute-path>
+  pnpm seed:dataset remove --pack showcase-v1 --environment <local|hosted-dev|production> --organization-key <existing-key> --confirm-organization <resolved-id>
 
-Production apply and remove require --confirm-production. Remove requires the exact resolved organization id.
+Apply repairs an already registered showcase organization. Only local tests may use --create-organization. Production apply and remove require --confirm-production. Remove requires the exact resolved organization id.
 `
 
 function fail(message, code = 2) {
@@ -43,7 +47,7 @@ function parseArgs(argv) {
     const token = rest[index]
     if (!token.startsWith('--')) throw new Error(`unexpected argument ${token}`)
     const key = token.slice(2)
-    if (['create-organization', 'confirm-production', 'json'].includes(key)) {
+    if (['create-organization', 'repair-existing', 'confirm-production', 'json'].includes(key)) {
       options[key] = true
       continue
     }
@@ -64,8 +68,9 @@ function requireOptions(options) {
   if (organizationKey === '*' || organizationKey.includes('*') || organizationKey.includes('?') || /^(all|unknown|null|undefined)$/i.test(organizationKey)) throw new Error('wildcard and sentinel organization keys are not allowed')
   if (!/^[a-z][a-z0-9-]{2,63}$/.test(organizationKey)) throw new Error('organization key must match ^[a-z][a-z0-9-]{2,63}$')
   if (options.environment === 'production' && ['apply', 'remove'].includes(options.mode) && options['confirm-production'] !== true) throw new Error(`production ${options.mode} requires --confirm-production`)
-  if (options.mode === 'apply' && options['create-organization'] !== true) throw new Error('apply requires --create-organization')
-  if (options.mode === 'apply' && typeof options['owner-user-id'] !== 'string') throw new Error('apply requires --owner-user-id <id>')
+  if (options.mode === 'apply' && options['repair-existing'] !== true && options['create-organization'] !== true) throw new Error('apply requires --repair-existing')
+  if (options.mode === 'apply' && options['create-organization'] === true && options.environment !== 'local') throw new Error('--create-organization is allowed only for local tests')
+  if (options.mode === 'apply' && options['create-organization'] === true && typeof options['owner-user-id'] !== 'string') throw new Error('local creation requires --owner-user-id <id>')
   if (options.mode === 'remove' && typeof options['confirm-organization'] !== 'string') throw new Error('remove requires --confirm-organization <resolved-id>')
   if (['apply', 'verify'].includes(options.mode)) {
     if (typeof options['asset-root'] !== 'string') throw new Error(`${options.mode} requires --asset-root <absolute-path>`)
@@ -77,7 +82,12 @@ function requireOptions(options) {
 
 function convexTarget(options) {
   const environment = ENVIRONMENTS[options.environment]
-  const deployment = options.deployment ?? process.env.CONVEX_DEPLOYMENT ?? environment.deployment
+  const deployment = environment.deployment
+    ? environment.deployment
+    : options.deployment ?? process.env.CONVEX_DEPLOYMENT
+  if (environment.deployment && options.deployment && options.deployment !== environment.deployment) {
+    throw new Error(`refusing non-canonical ${options.environment} deployment ${options.deployment}`)
+  }
   if (deployment) return deployment
   throw new Error('no explicit Convex target; pass --deployment or CONVEX_DEPLOYMENT')
 }
@@ -107,6 +117,7 @@ function runConvex(options, functionName, args) {
 function printCounts(validation) {
   console.log('Track showcase-v1 dataset')
   console.log(`  records: ${JSON.stringify(EXPECTED_COUNTS)}`)
+  console.log(`  native relationships: ${JSON.stringify(EXPECTED_RELATIONSHIP_COUNTS)}`)
   console.log(`  assets: ${validation.assetManifest.assets.length} (built=${validation.assetManifest.counts.built}, pending=${validation.assetManifest.counts.pendingProductCapture})`)
   console.log(`  manifest anchor: ${validation.manifest.anchorDate}`)
 }
@@ -181,6 +192,9 @@ async function applyPack(options, validation) {
   if (resolved.status === 'existing-customer') throw new Error(`refusing existing customer organization ${resolved.organizationId ?? ''}`)
   let organizationId = resolved.organizationId
   if (resolved.status === 'missing') {
+    if (options['create-organization'] !== true) {
+      throw new Error(`refusing to create a new showcase organization for ${options.environment}; the exact target must already be registered`)
+    }
     const created = runConvex(options, 'showcaseDataset:createOrganization', {
       datasetId: manifest.datasetId,
       datasetVersion: manifest.datasetVersion,
@@ -193,7 +207,7 @@ async function applyPack(options, validation) {
     organizationId = created.organizationId
   }
   if (typeof organizationId !== 'string' || organizationId.length === 0) throw new Error('Convex did not resolve a concrete organization id')
-  if (!options.json) console.log(`Resolved new showcase organization before mutation: ${organizationId}`)
+  if (!options.json) console.log(`Resolved existing Track showcase organization before repair: ${organizationId}`)
   runConvex(options, 'showcaseDataset:begin', {
     datasetId: manifest.datasetId,
     datasetVersion: manifest.datasetVersion,
@@ -204,7 +218,7 @@ async function applyPack(options, validation) {
     assetManifestHash: validation.assetManifestHash,
     counts: EXPECTED_COUNTS,
     assetCount: validation.assetManifest.assets.length,
-    ownerUserId: options['owner-user-id'],
+    ownerUserId: options['owner-user-id'] ?? resolved.ownerUserId ?? undefined,
   })
   const storageIds = await uploadAssets(options, validation, organizationId)
   for (let offset = 0; offset < validation.assetManifest.assets.length; offset += 10) {
@@ -238,13 +252,29 @@ async function applyPack(options, validation) {
       })
       if (ids[recordType]) ids[recordType].push(...(result.recordIds ?? []).map((entry) => entry.recordId))
     }
+    if (recordType === 'messages') {
+      runConvex(options, 'showcaseDataset:applyRelationships', {
+        datasetId: manifest.datasetId,
+        organizationKey: options.organizationKey,
+        organizationId,
+      })
+    }
   }
   runConvex(options, 'showcaseDataset:finalize', {
     datasetId: manifest.datasetId,
     organizationKey: options.organizationKey,
     organizationId,
   })
-  return { organizationId, ids }
+  const verification = runConvex(options, 'showcaseDataset:verify', {
+    datasetId: manifest.datasetId,
+    organizationKey: options.organizationKey,
+    organizationId,
+    manifestHash: validation.manifestHash,
+    assetManifestHash: validation.assetManifestHash,
+    assetCount: validation.assetManifest.assets.length,
+  })
+  if (!verification.ok) throw new Error(`post-repair verification failed: ${verification.relationshipErrors.join('; ')}`)
+  return { organizationId, ids, verification }
 }
 
 async function main() {
@@ -268,6 +298,8 @@ async function main() {
       environment: options.environment,
       organizationKey: options.organizationKey,
       counts: EXPECTED_COUNTS,
+      relationships: EXPECTED_RELATIONSHIP_COUNTS,
+      deployment: options.environment === 'local' ? null : convexTarget(options),
       assetCount: validation.assetManifest.assets.length,
       manifestHash: validation.manifestHash,
       assetManifestHash: validation.assetManifestHash,
@@ -285,7 +317,7 @@ async function main() {
       if (!options.json) printCounts(validation)
       const result = await applyPack(options, validation)
       const links = presenterLinks(options, validation.manifest, result.ids)
-      const report = { mode: 'apply', ...result, counts: EXPECTED_COUNTS, assetCount: validation.assetManifest.assets.length, manifestHash: validation.manifestHash, assetManifestHash: validation.assetManifestHash, links }
+      const report = { mode: 'apply', ...result, counts: EXPECTED_COUNTS, relationships: EXPECTED_RELATIONSHIP_COUNTS, deployment: convexTarget(options), assetCount: validation.assetManifest.assets.length, manifestHash: validation.manifestHash, assetManifestHash: validation.assetManifestHash, links }
       if (options.json) console.log(JSON.stringify(report))
       else {
         console.log(`Applied Track showcase-v1 to ${result.organizationId}`)
@@ -332,7 +364,7 @@ async function main() {
       organizationId: resolved.organizationId,
       confirmOrganizationId: options['confirm-organization'],
     })
-    const removalOrder = ['attachments', 'suggestions', 'tasks', 'messages', 'channels', 'generalChannels', 'memberships', 'taskWorkflowStates', 'taskBoards', 'projectCompanies', 'projects', 'companyMembers', 'companies', 'users', 'showcaseDatasetAssets', 'organization']
+    const removalOrder = ['attachments', 'suggestions', 'tasks', 'channelThreads', 'messages', 'channels', 'generalChannels', 'memberships', 'taskWorkflowStates', 'taskBoards', 'projectCompanies', 'projects', 'companyMembers', 'companies', 'users', 'showcaseDatasetAssets', 'organization']
     for (const recordType of removalOrder) {
       while (true) {
         const result = runConvex(options, 'showcaseDataset:removeBatch', {

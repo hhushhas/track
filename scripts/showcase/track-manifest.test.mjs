@@ -15,8 +15,11 @@ test('Track showcase-v1 validates its frozen manifest and assets', () => {
   assert.deepEqual(Object.fromEntries(Object.entries(validation.manifest.records).map(([key, value]) => [key, value.length])), EXPECTED_COUNTS)
   assert.equal(validation.assetManifest.assets.length, 61)
   assert.equal(validation.checkedAssets.length, 61)
-  assert.equal(validation.manifestHash, 'sha256:a6789ca52fd9f347476ec48e0b3b147b0ead0ba449e3f3f90699249d9ac74af4')
-  assert.equal(validation.assetManifestHash, 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae')
+  assert.equal(validation.manifestHash, 'sha256:57533c0fc038a0ef188dac037710143ff7d9f0964bc621752001a33b199bd0a9')
+  assert.equal(validation.assetManifestHash, 'sha256:007e2402c550d61cdee49e0555b16a25f2f8094bdc01a3883272ebcee8479fdc')
+  const rejectedAtlasSuggestion = validation.manifest.records.suggestions.find((suggestion) => suggestion.externalKey === 'track-suggestion-03')
+  assert.match(rejectedAtlasSuggestion?.explanation ?? '', /an Atlas Mobile Release task/)
+  assert.doesNotMatch(rejectedAtlasSuggestion?.explanation ?? '', /a Atlas Mobile Release task/)
   const dispositionCounts = validation.manifest.records.suggestions.reduce((counts, suggestion) => ({
     ...counts,
     [suggestion.disposition]: (counts[suggestion.disposition] ?? 0) + 1,
@@ -37,14 +40,25 @@ test('Track plan is deterministic and validates organization isolation', () => {
 })
 
 test('mutation modes fail closed before contacting Convex', () => {
-  const missingAssetRoot = spawnSync(process.execPath, [scriptPath, 'apply', '--pack', 'showcase-v1', '--environment', 'hosted-dev', '--organization-key', 'showcase-track-preflight-2026', '--create-organization', '--owner-user-id', 'invalid'], { cwd: repositoryRoot, encoding: 'utf8' })
+  const missingAssetRoot = spawnSync(process.execPath, [scriptPath, 'apply', '--pack', 'showcase-v1', '--environment', 'hosted-dev', '--organization-key', 'showcase-track-preflight-2026', '--repair-existing'], { cwd: repositoryRoot, encoding: 'utf8' })
   assert.equal(missingAssetRoot.status, 2)
   assert.match(missingAssetRoot.stderr, /--asset-root/)
   assert.doesNotMatch(missingAssetRoot.stderr, /Convex did not|Resolved new showcase organization/)
 
-  const productionConfirmation = spawnSync(process.execPath, [scriptPath, 'apply', '--pack', 'showcase-v1', '--environment', 'production', '--organization-key', 'showcase-track-preflight-2026', '--create-organization', '--owner-user-id', 'invalid', '--asset-root', assetRoot], { cwd: repositoryRoot, encoding: 'utf8' })
+  const productionConfirmation = spawnSync(process.execPath, [scriptPath, 'apply', '--pack', 'showcase-v1', '--environment', 'production', '--organization-key', 'showcase-track-preflight-2026', '--repair-existing', '--asset-root', assetRoot], { cwd: repositoryRoot, encoding: 'utf8' })
   assert.equal(productionConfirmation.status, 2)
   assert.match(productionConfirmation.stderr, /confirm-production/)
+})
+
+test('local planning stays offline', () => {
+  const result = spawnSync(process.execPath, [scriptPath, 'plan', '--pack', 'showcase-v1', '--environment', 'local', '--organization-key', 'showcase-track-plan-2026', '--json'], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CONVEX_DEPLOYMENT: undefined },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  const report = JSON.parse(result.stdout.trim().split('\n').at(-1))
+  assert.equal(report.deployment, null)
 })
 
 test('remove requires an exact organization confirmation', () => {

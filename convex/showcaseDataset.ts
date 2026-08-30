@@ -3,11 +3,13 @@ import { v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, internalQuery } from './_generated/server'
 import type { MutationCtx, QueryCtx } from './_generated/server'
+import { upsertThreadFollower } from './lib/channelThreadPolicy'
 import { appendTaskActivity, rankForIndex } from './lib/taskData'
 
 const DATASET_ID = 'showcase-v1'
 const DATASET_VERSION = '1.0.0'
 const PRODUCT = 'track'
+const OWNER_USER_EXTERNAL_KEY = 'track-user-person-layan-kawthar-khoury'
 
 const presenterProjectByUser = new Map([
   ['track-user-person-layan-kawthar-khoury', 'track-project-agency-campaign'],
@@ -21,8 +23,8 @@ function usesPresenterIdentity(userKey: string, projectKey: string) {
   return presenterProjectByUser.get(userKey) === projectKey
 }
 const ORGANIZATION_EXTERNAL_KEY = 'track-showcase-connected-delivery'
-const MANIFEST_HASH = 'sha256:a6789ca52fd9f347476ec48e0b3b147b0ead0ba449e3f3f90699249d9ac74af4'
-const ASSET_MANIFEST_HASH = 'sha256:998dc132963870223e798490630a33a140ba7cc6e9e950b37e10b9ccad48d7ae'
+const MANIFEST_HASH = 'sha256:57533c0fc038a0ef188dac037710143ff7d9f0964bc621752001a33b199bd0a9'
+const ASSET_MANIFEST_HASH = 'sha256:007e2402c550d61cdee49e0555b16a25f2f8094bdc01a3883272ebcee8479fdc'
 
 const expectedCounts = Object.freeze({
   organizations: 1,
@@ -36,6 +38,16 @@ const expectedCounts = Object.freeze({
   suggestions: 30,
   attachments: 60,
 })
+
+const relationshipCounts = Object.freeze({
+  channelThreads: 20,
+  threadReplies: 40,
+  mentionMessages: 200,
+})
+
+const DEFAULT_SCOPE_MESSAGE_COUNT = 6
+const THREAD_PARENT_LOCAL_INDEX = 12
+const THREAD_REPLY_LOCAL_INDICES = new Set([15, 18])
 
 function hasExpectedCounts(value: unknown) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
@@ -85,6 +97,7 @@ const removalTypeValidator = v.union(
   v.literal('tasks'),
   v.literal('suggestions'),
   v.literal('attachments'),
+  v.literal('channelThreads'),
   v.literal('companyMembers'),
   v.literal('projectCompanies'),
   v.literal('taskBoards'),
@@ -108,6 +121,7 @@ type NativeTable =
   | 'taskBoards'
   | 'taskWorkflowStates'
   | 'showcaseDatasetAssets'
+  | 'channelThreads'
 
 type ReadCtx = QueryCtx | MutationCtx
 type WriteCtx = MutationCtx
@@ -361,6 +375,300 @@ function taskPriority(index: number) {
     | 'none'
 }
 
+function messageNumber(externalKey: string) {
+  const number = Number(externalKey.replace('track-message-', ''))
+  if (!Number.isInteger(number) || number < 1 || number > expectedCounts.messages) {
+    throw new Error(`invalid Track message key ${externalKey}`)
+  }
+  return number
+}
+
+function messageLocalIndex(externalKey: string) {
+  return (messageNumber(externalKey) - 1) % 40
+}
+
+function isDefaultScopeMessage(externalKey: string) {
+  return messageLocalIndex(externalKey) < DEFAULT_SCOPE_MESSAGE_COUNT
+}
+
+function messageSequence(externalKey: string) {
+  const localIndex = messageLocalIndex(externalKey)
+  return localIndex < DEFAULT_SCOPE_MESSAGE_COUNT
+    ? localIndex + 1
+    : Math.floor(localIndex / 3) + 1
+}
+
+function threadKey(projectKey: string) {
+  return `__support:channelThread:${projectKey}`
+}
+
+function threadRole(externalKey: string) {
+  const localIndex = messageLocalIndex(externalKey)
+  if (localIndex === THREAD_PARENT_LOCAL_INDEX) return 'parent' as const
+  if (THREAD_REPLY_LOCAL_INDICES.has(localIndex)) return 'reply' as const
+  return null
+}
+
+function mentionHandle(displayName: string) {
+  return displayName.toLowerCase().replace(/[^a-z0-9._-]+/g, '')
+}
+
+function sourceNarrative(body: string) {
+  return body
+    .split('\n\n')[0]
+    .replace(/[.!?。؟]+$/u, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function mentionPrompt(locale: string | undefined, displayName: string) {
+  const handle = `@${mentionHandle(displayName)}`
+  if (locale === 'ar-SA') return `${handle}، هل يمكنك تأكيد التسليم التالي؟`
+  if (locale === 'ar-en') return `${handle}، please confirm the next handoff.`
+  return `${handle}, please confirm the next handoff.`
+}
+
+const englishThreadReplyTemplates: Array<{ first: (narrative: string) => string; second: (narrative: string) => string }> = [
+  {
+    first: (narrative) => `I reviewed the same work item: ${narrative}. I will confirm the owner at the next checkpoint.`,
+    second: (narrative) => `The handoff stays on the same work item: ${narrative}. I will attach the supporting artifact before closure.`,
+  },
+  {
+    first: (narrative) => `Keeping this thread on the same item: ${narrative}. I will post the due-date check after the owner responds.`,
+    second: (narrative) => `I am passing the same item to the receiving team: ${narrative}. The evidence will remain with the handoff record.`,
+  },
+  {
+    first: (narrative) => `The evidence still points to this work item: ${narrative}. I will link the next review outcome here.`,
+    second: (narrative) => `The next step follows this same work item: ${narrative}. The receiving team will confirm acceptance at the checkpoint.`,
+  },
+  {
+    first: (narrative) => `There is no scope change for this work item: ${narrative}. The owner will close the remaining action in this thread.`,
+    second: (narrative) => `I will close the follow-up on this same item: ${narrative}. The proof link will stay in this thread for review.`,
+  },
+  {
+    first: (narrative) => `Carrying forward the same update: ${narrative}. I will attach the review note before the next checkpoint.`,
+    second: (narrative) => `The receiving team is aligned on the same update: ${narrative}. I will report the completed handoff after verification.`,
+  },
+]
+
+const arabicThreadReplyTemplates: Array<{ first: (narrative: string) => string; second: (narrative: string) => string }> = [
+  {
+    first: (narrative) => `راجعت بند العمل نفسه: ${narrative}. سأؤكد المسؤول في موعد المراجعة التالي.`,
+    second: (narrative) => `يبقى التسليم مرتبطًا ببند العمل نفسه: ${narrative}. سأرفق المستند الداعم قبل الإغلاق.`,
+  },
+  {
+    first: (narrative) => `نبقي هذا الخيط مرتبطًا بالبند نفسه: ${narrative}. سأضيف فحص الموعد بعد رد المسؤول.`,
+    second: (narrative) => `سأمرر البند نفسه إلى الفريق المستلم: ${narrative}. وسأحفظ الدليل مع سجل التسليم.`,
+  },
+  {
+    first: (narrative) => `ما زال الدليل مرتبطًا ببند العمل نفسه: ${narrative}. سأربط نتيجة المراجعة التالية هنا.`,
+    second: (narrative) => `تتطابق الخطوة التالية مع هذا البند: ${narrative}. سيؤكد الفريق الاستلام في الموعد المحدد.`,
+  },
+  {
+    first: (narrative) => `لا يوجد تغيير في نطاق بند العمل: ${narrative}. سيغلق المسؤول الإجراء المتبقي في هذا الخيط.`,
+    second: (narrative) => `سأغلق المتابعة على البند نفسه: ${narrative}. وسيبقى رابط الإثبات في هذا الخيط.`,
+  },
+  {
+    first: (narrative) => `نواصل التحديث نفسه: ${narrative}. سأرفق ملاحظة المراجعة قبل نقطة التحقق التالية.`,
+    second: (narrative) => `الفريق المستلم متفق على التحديث نفسه: ${narrative}. سأبلغ عن اكتمال التسليم بعد التحقق.`,
+  },
+]
+
+function threadReplyBody(parentBody: string, projectOffset: number, replyIndex: number) {
+  const narrative = sourceNarrative(parentBody)
+  const templates = /[\u0600-\u06FF]/u.test(parentBody) ? arabicThreadReplyTemplates : englishThreadReplyTemplates
+  const template = templates[projectOffset % templates.length]
+  return replyIndex === 0 ? template.first(narrative) : template.second(narrative)
+}
+
+function isShowcaseOwned(record: RegistryRecord) {
+  if (!record.owned) throw new Error(`refusing to mutate non-showcase record ${record.externalKey}`)
+  return record
+}
+
+async function generalChannelForProject(
+  ctx: WriteCtx,
+  dataset: Doc<'showcaseDatasets'>,
+  projectKey: string,
+  projectId: Id<'projects'>,
+) {
+  const supportKey = `__support:generalChannel:${projectKey}`
+  const support = await registryRecord(ctx, dataset.organizationId, supportKey)
+  if (support) {
+    const id = ctx.db.normalizeId('groups', support.recordId)
+    if (!id) throw new Error(`invalid General channel registry id ${projectKey}`)
+    const channel = await ctx.db.get(id)
+    if (!channel || channel.projectId !== projectId || channel.kind !== 'general') {
+      throw new Error(`General channel scope mismatch ${projectKey}`)
+    }
+    return channel
+  }
+  const channels = (await ctx.db
+    .query('groups')
+    .withIndex('by_project', (q) => q.eq('projectId', projectId))
+    .collect())
+    .filter((channel) => channel.kind === 'general')
+  if (channels.length === 0) {
+    const creator = await ownerUserId(ctx, dataset)
+    const now = Date.now()
+    const generalId = await ctx.db.insert('groups', {
+      projectId,
+      kind: 'general',
+      name: 'General',
+      status: 'active',
+      revision: 1,
+      createdBy: creator,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await registerRecord(ctx, {
+      dataset,
+      recordType: 'generalChannels',
+      externalKey: supportKey,
+      recordId: String(generalId),
+      owned: true,
+    })
+    const general = await ctx.db.get(generalId)
+    if (!general) throw new Error(`General channel creation failed for ${projectKey}`)
+    return general
+  }
+  if (channels.length !== 1) throw new Error(`expected one General channel for ${projectKey}`)
+  await registerRecord(ctx, {
+    dataset,
+    recordType: 'generalChannels',
+    externalKey: supportKey,
+    recordId: String(channels[0]._id),
+    owned: false,
+  })
+  return channels[0]
+}
+
+async function ensureGroupMember(
+  ctx: WriteCtx,
+  input: {
+    projectId: Id<'projects'>
+    groupId: Id<'groups'>
+    userId: Id<'users'>
+    projectMemberId: Id<'projectMembers'>
+    isSteward: boolean
+  },
+) {
+  const existing = await ctx.db
+    .query('groupMembers')
+    .withIndex('by_group_project_member', (q) =>
+      q.eq('groupId', input.groupId).eq('projectMemberId', input.projectMemberId),
+    )
+    .unique()
+  const now = Date.now()
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      projectId: input.projectId,
+      userId: input.userId,
+      status: 'active',
+      isSteward: input.isSteward,
+      updatedAt: now,
+    })
+    return existing._id
+  }
+  return await ctx.db.insert('groupMembers', {
+    projectId: input.projectId,
+    groupId: input.groupId,
+    userId: input.userId,
+    projectMemberId: input.projectMemberId,
+    status: 'active',
+    isSteward: input.isSteward,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+async function projectCompanyForProject(
+  ctx: WriteCtx,
+  dataset: Doc<'showcaseDatasets'>,
+  projectKey: string,
+  projectId: Id<'projects'>,
+  companyId: Id<'companies'>,
+  companyKey: string,
+) {
+  const primarySupportKey = `__support:projectCompany:${projectKey}`
+  const legacyPairSupportKey = `${primarySupportKey}:${companyKey}`
+  const pairSupportKey = `${primarySupportKey}:${companyId}`
+  let supportKey = primarySupportKey
+  let registered = await registryRecord(ctx, dataset.organizationId, supportKey)
+  if (registered) {
+    const registeredId = ctx.db.normalizeId('projectCompanies', registered.recordId)
+    const registeredProjectCompany = registeredId ? await ctx.db.get(registeredId) : null
+    if (registeredProjectCompany && registeredProjectCompany.companyId !== companyId) {
+      const legacyPair = await registryRecord(ctx, dataset.organizationId, legacyPairSupportKey)
+      const currentPair = await registryRecord(ctx, dataset.organizationId, pairSupportKey)
+      supportKey = legacyPair ? legacyPairSupportKey : pairSupportKey
+      registered = legacyPair ?? currentPair
+    }
+  } else {
+    const legacyPair = await registryRecord(ctx, dataset.organizationId, legacyPairSupportKey)
+    const currentPair = await registryRecord(ctx, dataset.organizationId, pairSupportKey)
+    if (legacyPair || currentPair) {
+      supportKey = legacyPair ? legacyPairSupportKey : pairSupportKey
+      registered = legacyPair ?? currentPair
+    }
+  }
+  let projectCompany
+  if (registered) {
+    isShowcaseOwned(registered)
+    const id = ctx.db.normalizeId('projectCompanies', registered.recordId)
+    if (!id) throw new Error(`invalid project company registry id ${projectKey}`)
+    projectCompany = await ctx.db.get(id)
+    if (!projectCompany) throw new Error(`registered project company is missing ${projectKey}`)
+  } else {
+    projectCompany = await ctx.db
+      .query('projectCompanies')
+      .withIndex('by_project_company_term', (q) =>
+        q.eq('projectId', projectId).eq('companyId', companyId).eq('term', 1),
+      )
+      .unique()
+    if (projectCompany) {
+      await registerRecord(ctx, {
+        dataset,
+        recordType: 'projectCompanies',
+        externalKey: supportKey,
+        recordId: String(projectCompany._id),
+        owned: false,
+      })
+    } else {
+      const ownerUser = await ownerUserId(ctx, dataset)
+      const now = Date.now()
+      const projectCompanyId = await ctx.db.insert('projectCompanies', {
+        projectId,
+        companyId,
+        term: 1,
+        status: 'active',
+        acceptedBy: ownerUser,
+        acceptedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      projectCompany = await ctx.db.get(projectCompanyId)
+      await registerRecord(ctx, {
+        dataset,
+        recordType: 'projectCompanies',
+        externalKey: supportKey,
+        recordId: String(projectCompanyId),
+        owned: true,
+      })
+    }
+  }
+  if (!projectCompany) throw new Error(`project company is missing ${projectKey}`)
+  if (projectCompany.projectId !== projectId || projectCompany.companyId !== companyId) {
+    throw new Error(`project company scope mismatch ${projectKey}`)
+  }
+  if (projectCompany.status !== 'active') {
+    await ctx.db.patch(projectCompany._id, { status: 'active', updatedAt: Date.now() })
+    projectCompany = await ctx.db.get(projectCompany._id)
+  }
+  if (!projectCompany) throw new Error(`project company disappeared ${projectKey}`)
+  return projectCompany
+}
+
 async function ensureCompanyMember(
   ctx: WriteCtx,
   dataset: Doc<'showcaseDatasets'>,
@@ -372,8 +680,28 @@ async function ensureCompanyMember(
   const externalKey = `__support:companyMember:${companyId}:${userId}`
   const existingRegistry = await registryRecord(ctx, dataset.organizationId, externalKey)
   if (existingRegistry) {
+    if (!existingRegistry.owned) {
+      const id = ctx.db.normalizeId('companyMembers', existingRegistry.recordId)
+      if (!id) throw new Error('invalid company member registry record')
+      if (!(await ctx.db.get(id))) throw new Error('registered company member is missing')
+      return id
+    }
     const id = ctx.db.normalizeId('companyMembers', existingRegistry.recordId)
     if (!id) throw new Error('invalid company member registry record')
+    const user = await ctx.db.get(userId)
+    if (!user) throw new Error('company member user is missing')
+    const member = await ctx.db.get(id)
+    if (!member || member.companyId !== companyId || member.userId !== userId) {
+      throw new Error('company member scope mismatch')
+    }
+    await ctx.db.patch(id, {
+      role: companyRole(userRole),
+      status: 'active',
+      userDisplayNameSnapshot: user.displayName,
+      companyDisplayNameSnapshot: companyDisplayName,
+      endedAt: undefined,
+      updatedAt: Date.now(),
+    })
     return id
   }
   const existing = await ctx.db
@@ -424,31 +752,65 @@ async function ensureTaskBoard(
 ) {
   const externalKey = `__support:taskBoard:${groupId}`
   const existingRegistry = await registryRecord(ctx, dataset.organizationId, externalKey)
+  let board
   if (existingRegistry) {
+    isShowcaseOwned(existingRegistry)
     const boardId = ctx.db.normalizeId('taskBoards', existingRegistry.recordId)
     if (!boardId) throw new Error('invalid task board registry record')
-    return boardId
+    board = await ctx.db.get(boardId)
+    if (!board) throw new Error('registered task board is missing')
+  } else {
+    board = await ctx.db
+      .query('taskBoards')
+      .withIndex('by_scope_default', (q) =>
+        q.eq('projectId', projectId).eq('groupId', groupId).eq('isDefault', true),
+      )
+      .unique()
+    if (board) {
+      await registerRecord(ctx, {
+        dataset,
+        recordType: 'taskBoards',
+        externalKey,
+        recordId: String(board._id),
+        owned: false,
+      })
+    } else {
+      const now = Date.now()
+      const boardId = await ctx.db.insert('taskBoards', {
+        projectId,
+        groupId,
+        name: `${channelName} tasks`,
+        description: 'Native Track task board for the showcase channel.',
+        rank: '00000001',
+        isDefault: true,
+        createdByProjectMemberId: creatorProjectMemberId,
+        actingCompanyId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      board = await ctx.db.get(boardId)
+      await registerRecord(ctx, {
+        dataset,
+        recordType: 'taskBoards',
+        externalKey,
+        recordId: String(boardId),
+        owned: true,
+      })
+    }
   }
-  const now = Date.now()
-  const boardId = await ctx.db.insert('taskBoards', {
-    projectId,
-    groupId,
-    name: `${channelName} tasks`,
-    description: 'Native Track task board for the showcase channel.',
-    rank: '00000001',
-    isDefault: true,
-    createdByProjectMemberId: creatorProjectMemberId,
-    actingCompanyId,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await registerRecord(ctx, {
-    dataset,
-    recordType: 'taskBoards',
-    externalKey,
-    recordId: String(boardId),
-    owned: true,
-  })
+  if (!board || board.projectId !== projectId || board.groupId !== groupId) {
+    throw new Error('task board scope mismatch')
+  }
+  if (!existingRegistry || existingRegistry.owned) {
+    await ctx.db.patch(board._id, {
+      name: `${channelName} tasks`,
+      description: 'Native Track task board for the showcase channel.',
+      isDefault: true,
+      createdByProjectMemberId: creatorProjectMemberId,
+      actingCompanyId,
+      updatedAt: Date.now(),
+    })
+  }
   const states = [
     ['Backlog', 'backlog', 'neutral'],
     ['To do', 'unstarted', 'blue'],
@@ -457,26 +819,63 @@ async function ensureTaskBoard(
     ['Canceled', 'canceled', 'neutral'],
   ] as const
   for (const [index, [name, category, visualToken]] of states.entries()) {
-    const stateId = await ctx.db.insert('taskWorkflowStates', {
-      projectId,
-      boardId,
-      name,
-      category,
-      visualToken,
-      rank: String(index + 1).padStart(4, '0'),
-      isDefault: category === 'unstarted',
-      createdAt: now,
-      updatedAt: now,
-    })
-    await registerRecord(ctx, {
-      dataset,
-      recordType: 'taskWorkflowStates',
-      externalKey: `${externalKey}:${category}`,
-      recordId: String(stateId),
-      owned: true,
-    })
+    const stateKey = `${externalKey}:${category}`
+    const stateRegistry = await registryRecord(ctx, dataset.organizationId, stateKey)
+    let stateId
+    if (stateRegistry) {
+      isShowcaseOwned(stateRegistry)
+      stateId = ctx.db.normalizeId('taskWorkflowStates', stateRegistry.recordId)
+      if (!stateId) throw new Error('invalid workflow state registry record')
+      const state = await ctx.db.get(stateId)
+      if (!state || state.boardId !== board._id) throw new Error('workflow state scope mismatch')
+      await ctx.db.patch(stateId, {
+        name,
+        category,
+        visualToken,
+        rank: String(index + 1).padStart(4, '0'),
+        isDefault: category === 'unstarted',
+        archivedAt: undefined,
+        updatedAt: Date.now(),
+      })
+    } else {
+      const state = (await ctx.db
+        .query('taskWorkflowStates')
+        .withIndex('by_board_rank', (q) => q.eq('boardId', board._id))
+        .collect())
+        .find((candidate) => candidate.category === category)
+      if (state) {
+        stateId = state._id
+        await registerRecord(ctx, {
+          dataset,
+          recordType: 'taskWorkflowStates',
+          externalKey: stateKey,
+          recordId: String(state._id),
+          owned: false,
+        })
+      } else {
+        const now = Date.now()
+        stateId = await ctx.db.insert('taskWorkflowStates', {
+          projectId,
+          boardId: board._id,
+          name,
+          category,
+          visualToken,
+          rank: String(index + 1).padStart(4, '0'),
+          isDefault: category === 'unstarted',
+          createdAt: now,
+          updatedAt: now,
+        })
+        await registerRecord(ctx, {
+          dataset,
+          recordType: 'taskWorkflowStates',
+          externalKey: stateKey,
+          recordId: String(stateId),
+          owned: true,
+        })
+      }
+    }
   }
-  return boardId
+  return board._id
 }
 
 async function workflowStateFor(
@@ -513,15 +912,9 @@ async function applyOrganization(
 async function applyCompany(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const ownerUser = await ownerUserId(ctx, dataset)
   const displayName = requiredString(record, 'displayName')
   const normalizedHandle = companyHandle(externalKey)
-  const handleCollision = await ctx.db
-    .query('companies')
-    .withIndex('by_handle', (q) => q.eq('normalizedHandle', normalizedHandle))
-    .unique()
-  if (handleCollision) throw new Error(`company handle ${normalizedHandle} already exists`)
   const now = Date.now()
   const scene = await ctx.db
     .query('showcaseDatasetAssets')
@@ -531,16 +924,37 @@ async function applyCompany(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
         .eq('assetKey', 'track/catalog/organization-scene'),
     )
     .unique()
-  const companyId = await ctx.db.insert('companies', {
-    displayName,
-    normalizedHandle,
-    logoStorageId: externalKey === 'track-company-mosaic-works' ? scene?.storageId : undefined,
-    status: 'active',
-    revision: 1,
-    createdBy: ownerUser,
-    createdAt: now,
-    updatedAt: now,
-  })
+  let companyId: Id<'companies'>
+  if (existing) {
+    isShowcaseOwned(existing)
+    const id = ctx.db.normalizeId('companies', existing.recordId)
+    if (!id) throw new Error(`invalid company registry id ${externalKey}`)
+    const company = await ctx.db.get(id)
+    if (!company || company.normalizedHandle !== normalizedHandle) throw new Error(`company scope mismatch ${externalKey}`)
+    companyId = id
+    await ctx.db.patch(id, {
+      displayName,
+      logoStorageId: externalKey === 'track-company-mosaic-works' ? scene?.storageId : undefined,
+      status: 'active',
+      updatedAt: now,
+    })
+  } else {
+    const handleCollision = await ctx.db
+      .query('companies')
+      .withIndex('by_handle', (q) => q.eq('normalizedHandle', normalizedHandle))
+      .unique()
+    if (handleCollision) throw new Error(`refusing existing customer company handle ${normalizedHandle}`)
+    companyId = await ctx.db.insert('companies', {
+      displayName,
+      normalizedHandle,
+      logoStorageId: externalKey === 'track-company-mosaic-works' ? scene?.storageId : undefined,
+      status: 'active',
+      revision: 1,
+      createdBy: ownerUser,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
   await registerRecord(ctx, {
     dataset,
     recordType: 'companies',
@@ -559,26 +973,50 @@ async function applyUser(
 ) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const now = Date.now()
   let userId: Id<'users'>
   let owned = true
   if (useOwner) {
     userId = await ownerUserId(ctx, dataset)
     owned = false
+    if (existing) {
+      if (existing.recordId !== String(userId)) throw new Error(`showcase owner binding mismatch ${externalKey}`)
+    }
   } else {
     const displayName = requiredString(record, 'displayNameEn')
     const email = `${externalKey}@showcase.track.invalid`
-    userId = await ctx.db.insert('users', {
-      googleSubject: `showcase:${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-      normalizedEmail: email,
-      email,
-      displayName,
-      profileDesignation: optionalString(record, 'role'),
-      twoFactorEnabled: false,
-      createdAt: now,
-      updatedAt: now,
-    })
+    const googleSubject = `showcase:${DATASET_ID}:${dataset.organizationKey}:${externalKey}`
+    if (existing) {
+      isShowcaseOwned(existing)
+      const id = ctx.db.normalizeId('users', existing.recordId)
+      if (!id) throw new Error(`invalid user registry id ${externalKey}`)
+      const user = await ctx.db.get(id)
+      if (!user || user.googleSubject !== googleSubject) throw new Error(`user scope mismatch ${externalKey}`)
+      userId = id
+      await ctx.db.patch(id, {
+        normalizedEmail: email,
+        email,
+        displayName,
+        profileDesignation: optionalString(record, 'role'),
+        updatedAt: now,
+      })
+    } else {
+      const collision = await ctx.db
+        .query('users')
+        .withIndex('by_google_subject', (q) => q.eq('googleSubject', googleSubject))
+        .unique()
+      if (collision) throw new Error(`user identity collision ${externalKey}`)
+      userId = await ctx.db.insert('users', {
+        googleSubject,
+        normalizedEmail: email,
+        email,
+        displayName,
+        profileDesignation: optionalString(record, 'role'),
+        twoFactorEnabled: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
   }
   await registerRecord(ctx, {
     dataset,
@@ -593,24 +1031,45 @@ async function applyUser(
 async function applyProject(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const ownerUser = await ownerUserId(ctx, dataset)
   const companyId = await companyForKey(ctx, dataset, requiredString(record, 'companyKey'))
   const now = Date.now()
-  const projectId = await ctx.db.insert('projects', {
-    name: requiredString(record, 'name'),
-    clientLabel: requiredString(record, 'domain'),
-    description: `Fictional ${requiredString(record, 'domain')} project with scoped conversations, evidence, and tasks.`,
-    accessProfile: 'company',
-    proposingCompanyId: companyId,
-    origin: 'single_company',
-    status: 'active',
-    participantRevision: 1,
-    revision: 1,
-    createdBy: ownerUser,
-    createdAt: now,
-    updatedAt: now,
-  })
+  const name = requiredString(record, 'name')
+  const domain = requiredString(record, 'domain')
+  const description = `Fictional ${domain} project with scoped conversations, evidence, and tasks.`
+  let projectId: Id<'projects'>
+  if (existing) {
+    isShowcaseOwned(existing)
+    const id = ctx.db.normalizeId('projects', existing.recordId)
+    if (!id) throw new Error(`invalid project registry id ${externalKey}`)
+    const project = await ctx.db.get(id)
+    if (!project) throw new Error(`registered project is missing ${externalKey}`)
+    projectId = id
+    await ctx.db.patch(id, {
+      name,
+      clientLabel: domain,
+      description,
+      accessProfile: 'company',
+      proposingCompanyId: companyId,
+      status: 'active',
+      updatedAt: now,
+    })
+  } else {
+    projectId = await ctx.db.insert('projects', {
+      name,
+      clientLabel: domain,
+      description,
+      accessProfile: 'company',
+      proposingCompanyId: companyId,
+      origin: 'single_company',
+      status: 'active',
+      participantRevision: 1,
+      revision: 1,
+      createdBy: ownerUser,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
   await registerRecord(ctx, {
     dataset,
     recordType: 'projects',
@@ -618,52 +1077,28 @@ async function applyProject(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
     recordId: String(projectId),
     owned: true,
   })
-  const generalChannelId = await ctx.db.insert('groups', {
-    projectId,
-    kind: 'general',
-    name: 'General',
-    status: 'active',
-    revision: 1,
-    createdBy: ownerUser,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await registerRecord(ctx, {
-    dataset,
-    recordType: 'generalChannels',
-    externalKey: `__support:generalChannel:${externalKey}`,
-    recordId: String(generalChannelId),
-    owned: true,
-  })
-  const projectCompanyId = await ctx.db.insert('projectCompanies', {
-    projectId,
-    companyId,
-    term: 1,
-    status: 'active',
-    acceptedBy: ownerUser,
-    acceptedAt: now,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await registerRecord(ctx, {
-    dataset,
-    recordType: 'projectCompanies',
-    externalKey: `__support:projectCompany:${externalKey}`,
-    recordId: String(projectCompanyId),
-    owned: true,
-  })
+  const general = await generalChannelForProject(ctx, dataset, externalKey, projectId)
+  const generalRecord = await registryRecord(ctx, dataset.organizationId, `__support:generalChannel:${externalKey}`)
+  if (!generalRecord || generalRecord.owned) {
+    await ctx.db.patch(general._id, {
+      name: 'General',
+      status: 'active',
+      updatedAt: now,
+    })
+  }
+  await projectCompanyForProject(ctx, dataset, externalKey, projectId, companyId, requiredString(record, 'companyKey'))
   return String(projectId)
 }
 
 async function applyMembership(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const projectKey = requiredString(record, 'projectKey')
   const userKey = requiredString(record, 'userKey')
   const projectId = await projectForKey(ctx, dataset, projectKey)
   const userId = await userForProjectKey(ctx, dataset, userKey, projectKey)
-  const companyId = await companyForKey(ctx, dataset, requiredString(record, 'companyKey'))
+  const companyKey = requiredString(record, 'companyKey')
+  const companyId = await companyForKey(ctx, dataset, companyKey)
   const company = await ctx.db.get(companyId)
   const userRecord = await registryRecord(ctx, dataset.organizationId, userKey)
   if (!company || !userRecord) throw new Error('membership parent is missing')
@@ -677,80 +1112,93 @@ async function applyMembership(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
     userId,
     userId === dataset.ownerUserId ? 'owner' : (user.profileDesignation ?? ''),
   )
-  let projectCompany = await ctx.db
+  const projectCompany = await projectCompanyForProject(ctx, dataset, projectKey, projectId, companyId, companyKey)
+  const project = await ctx.db.get(projectId)
+  if (!project) throw new Error('project parent is missing')
+  const activeTerms = await ctx.db
     .query('projectCompanies')
     .withIndex('by_project_status', (q) => q.eq('projectId', projectId).eq('status', 'active'))
-    .filter((q) => q.eq(q.field('companyId'), companyId))
-    .unique()
-  if (!projectCompany) {
-    const ownerUser = await ownerUserId(ctx, dataset)
-    const now = Date.now()
-    const projectCompanyId = await ctx.db.insert('projectCompanies', {
-      projectId,
-      companyId,
-      term: 1,
-      status: 'active',
-      acceptedBy: ownerUser,
-      acceptedAt: now,
-      createdAt: now,
-      updatedAt: now,
-    })
-    await registerRecord(ctx, {
-      dataset,
-      recordType: 'projectCompanies',
-      externalKey: `__support:projectCompany:${requiredString(record, 'projectKey')}:${requiredString(record, 'companyKey')}`,
-      recordId: String(projectCompanyId),
-      owned: true,
-    })
-    const project = await ctx.db.get(projectId)
-    if (!project) throw new Error('project parent is missing')
+    .collect()
+  if (project.origin !== (activeTerms.length > 1 ? 'shared' : 'single_company')) {
     await ctx.db.patch(projectId, {
-      origin: 'shared',
+      origin: activeTerms.length > 1 ? 'shared' : 'single_company',
       participantRevision: (project.participantRevision ?? 1) + 1,
       revision: (project.revision ?? 1) + 1,
-      updatedAt: now,
+      updatedAt: Date.now(),
     })
-    projectCompany = await ctx.db.get(projectCompanyId)
   }
-  if (!projectCompany) throw new Error('project company parent is missing')
   const ownerUser = await ownerUserId(ctx, dataset)
   const now = Date.now()
-  const projectMemberId = await ctx.db.insert('projectMembers', {
-    projectId,
-    userId,
-    role: projectRole(requiredString(record, 'permission')),
-    companyId,
-    projectCompanyId: projectCompany._id,
-    status: 'active',
-    term: 1,
-    invitedBy: ownerUser,
-    userDisplayNameSnapshot: user.displayName,
-    companyDisplayNameSnapshot: company.displayName,
-    createdAt: now,
-    updatedAt: now,
-  })
+  const role = projectRole(requiredString(record, 'permission'))
+  let projectMemberId: Id<'projectMembers'>
+  let membershipOwned = true
+  if (existing) {
+    isShowcaseOwned(existing)
+    const id = ctx.db.normalizeId('projectMembers', existing.recordId)
+    if (!id) throw new Error(`invalid membership registry id ${externalKey}`)
+    const membership = await ctx.db.get(id)
+    if (!membership || membership.projectId !== projectId || membership.userId !== userId) {
+      throw new Error(`membership scope mismatch ${externalKey}`)
+    }
+    projectMemberId = id
+    await ctx.db.patch(id, {
+      role,
+      companyId,
+      projectCompanyId: projectCompany._id,
+      status: 'active',
+      term: 1,
+      invitedBy: ownerUser,
+      userDisplayNameSnapshot: user.displayName,
+      companyDisplayNameSnapshot: company.displayName,
+      endedAt: undefined,
+      updatedAt: now,
+    })
+  } else {
+    const matching = await ctx.db
+      .query('projectMembers')
+      .withIndex('by_project_user', (q) => q.eq('projectId', projectId).eq('userId', userId))
+      .unique()
+    if (matching) {
+      projectMemberId = matching._id
+      membershipOwned = false
+      await registerRecord(ctx, {
+        dataset,
+        recordType: 'memberships',
+        externalKey,
+        recordId: String(matching._id),
+        owned: false,
+      })
+    } else {
+      projectMemberId = await ctx.db.insert('projectMembers', {
+        projectId,
+        userId,
+        role,
+        companyId,
+        projectCompanyId: projectCompany._id,
+        status: 'active',
+        term: 1,
+        invitedBy: ownerUser,
+        userDisplayNameSnapshot: user.displayName,
+        companyDisplayNameSnapshot: company.displayName,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+  }
   await registerRecord(ctx, {
     dataset,
     recordType: 'memberships',
     externalKey,
     recordId: String(projectMemberId),
-    owned: true,
+    owned: membershipOwned,
   })
-  const generalChannel = (await ctx.db
-    .query('groups')
-    .withIndex('by_project', (q) => q.eq('projectId', projectId))
-    .collect())
-    .find((group) => group.kind === 'general')
-  if (!generalChannel) throw new Error('general channel parent is missing')
-  await ctx.db.insert('groupMembers', {
+  const generalChannel = await generalChannelForProject(ctx, dataset, projectKey, projectId)
+  await ensureGroupMember(ctx, {
     projectId,
     groupId: generalChannel._id,
     userId,
     projectMemberId,
-    status: 'active',
-    isSteward: projectRole(requiredString(record, 'permission')) === 'manager',
-    createdAt: now,
-    updatedAt: now,
+    isSteward: role === 'manager',
   })
   return String(projectMemberId)
 }
@@ -758,20 +1206,43 @@ async function applyMembership(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
 async function applyChannel(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const projectId = await projectForKey(ctx, dataset, requiredString(record, 'projectKey'))
   const creatorId = await ownerUserId(ctx, dataset)
   const now = Date.now()
-  const groupId = await ctx.db.insert('groups', {
-    projectId,
-    kind: 'custom',
-    name: requiredString(record, 'name'),
-    status: 'active',
-    revision: 1,
-    createdBy: creatorId,
-    createdAt: now,
-    updatedAt: now,
-  })
+  const name = requiredString(record, 'name')
+  let groupId: Id<'groups'>
+  if (existing) {
+    isShowcaseOwned(existing)
+    const id = ctx.db.normalizeId('groups', existing.recordId)
+    if (!id) throw new Error(`invalid channel registry id ${externalKey}`)
+    const channel = await ctx.db.get(id)
+    if (!channel || channel.projectId !== projectId || channel.kind !== 'custom') {
+      throw new Error(`channel scope mismatch ${externalKey}`)
+    }
+    groupId = id
+    await ctx.db.patch(id, {
+      name,
+      status: 'active',
+      updatedAt: now,
+    })
+  } else {
+    const nameCollision = (await ctx.db
+      .query('groups')
+      .withIndex('by_project', (q) => q.eq('projectId', projectId))
+      .collect())
+      .find((channel) => channel.kind === 'custom' && channel.name === name)
+    if (nameCollision) throw new Error(`refusing existing unregistered channel ${externalKey}`)
+    groupId = await ctx.db.insert('groups', {
+      projectId,
+      kind: 'custom',
+      name,
+      status: 'active',
+      revision: 1,
+      createdBy: creatorId,
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
   await registerRecord(ctx, {
     dataset,
     recordType: 'channels',
@@ -781,15 +1252,12 @@ async function applyChannel(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
   })
   const members = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
   for (const member of members) {
-    await ctx.db.insert('groupMembers', {
+    await ensureGroupMember(ctx, {
       projectId,
       groupId,
       userId: member.userId,
       projectMemberId: member._id,
-      status: 'active',
       isSteward: member.role === 'manager',
-      createdAt: now,
-      updatedAt: now,
     })
   }
   return String(groupId)
@@ -798,34 +1266,76 @@ async function applyChannel(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
 async function applyMessage(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const projectKey = requiredString(record, 'projectKey')
   const projectId = await projectForKey(ctx, dataset, projectKey)
-  const groupId = await channelForKey(ctx, dataset, requiredString(record, 'channelKey'))
+  const groupId = isDefaultScopeMessage(externalKey)
+    ? (await generalChannelForProject(ctx, dataset, projectKey, projectId))._id
+    : await channelForKey(ctx, dataset, requiredString(record, 'channelKey'))
+  const group = await ctx.db.get(groupId)
   const authorKey = requiredString(record, 'authorKey')
   const userId = await userForProjectKey(ctx, dataset, authorKey, projectKey)
   const member = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
     q.eq('projectId', projectId).eq('userId', userId),
   ).unique()
   if (!member) throw new Error(`message author is not a member of ${requiredString(record, 'projectKey')}`)
-  const channel = await ctx.db.get(groupId)
-  if (!channel || channel.projectId !== projectId) throw new Error('message channel scope mismatch')
-  const number = Number(externalKey.replace('track-message-', ''))
-  const channelSequence = Math.floor(((number - 1) % 40) / 3) + 1
+  if (!group || group.projectId !== projectId) throw new Error('message channel scope mismatch')
+  const localIndex = messageLocalIndex(externalKey)
+  const mentionCandidates = localIndex % 4 === 0
+    ? (await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect())
+      .filter((candidate) => candidate.userId !== userId)
+    : []
+  const mentionedMember = mentionCandidates.length > 0
+    ? mentionCandidates[Math.floor(localIndex / 4) % mentionCandidates.length]
+    : undefined
+  const baseBody = requiredString(record, 'body')
+  const mentionedUser = mentionedMember ? await ctx.db.get(mentionedMember.userId) : null
+  const body = mentionedMember && mentionedUser
+    ? `${baseBody}\n\n${mentionPrompt(optionalString(record, 'locale'), mentionedUser.displayName)}`
+    : baseBody
+  const mentions = mentionedMember ? [mentionedMember.userId] : []
+  const mentionedProjectMemberIds = mentionedMember ? [mentionedMember._id] : []
+  const channelSequence = messageSequence(externalKey)
   const now = parseDate(record, 'sentAt') + channelSequence
-  const messageId = await ctx.db.insert('messages', {
-    projectId,
-    groupId,
-    authorId: userId,
-    authorProjectMemberId: member._id,
-    actingCompanyId: member.companyId,
-    channelSequence,
-    idempotencyKey: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-    body: requiredString(record, 'body'),
-    mentions: [],
-    attachmentIds: [],
-    createdAt: now,
-  })
+  let messageId: Id<'messages'>
+  if (existing) {
+    isShowcaseOwned(existing)
+    const id = ctx.db.normalizeId('messages', existing.recordId)
+    if (!id) throw new Error(`invalid message registry id ${externalKey}`)
+    const message = await ctx.db.get(id)
+    if (!message || message.projectId !== projectId) throw new Error(`message scope mismatch ${externalKey}`)
+    messageId = id
+    await ctx.db.patch(id, {
+      groupId,
+      authorId: userId,
+      authorProjectMemberId: member._id,
+      actingCompanyId: member.companyId,
+      channelSequence,
+      idempotencyKey: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
+      body,
+      mentions,
+      mentionedProjectMemberIds,
+      channelThreadId: undefined,
+      replyToMessageId: undefined,
+      notificationPreview: body.slice(0, 160),
+      createdAt: now,
+    })
+  } else {
+    messageId = await ctx.db.insert('messages', {
+      projectId,
+      groupId,
+      authorId: userId,
+      authorProjectMemberId: member._id,
+      actingCompanyId: member.companyId,
+      channelSequence,
+      idempotencyKey: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
+      body,
+      mentions,
+      mentionedProjectMemberIds,
+      attachmentIds: [],
+      notificationPreview: body.slice(0, 160),
+      createdAt: now,
+    })
+  }
   await registerRecord(ctx, {
     dataset,
     recordType: 'messages',
@@ -836,10 +1346,193 @@ async function applyMessage(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, rec
   return String(messageId)
 }
 
+async function ensureThreadReadState(
+  ctx: WriteCtx,
+  thread: Doc<'channelThreads'>,
+  projectMember: Doc<'projectMembers'>,
+) {
+  const existing = await ctx.db
+    .query('channelThreadReadStates')
+    .withIndex('by_thread_project_member', (q) =>
+      q.eq('channelThreadId', thread._id).eq('projectMemberId', projectMember._id),
+    )
+    .unique()
+  const now = Date.now()
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      projectId: thread.projectId,
+      groupId: thread.groupId,
+      userId: projectMember.userId,
+      actingCompanyId: projectMember.companyId,
+      updatedAt: now,
+    })
+    return existing._id
+  }
+  return await ctx.db.insert('channelThreadReadStates', {
+    projectId: thread.projectId,
+    groupId: thread.groupId,
+    channelThreadId: thread._id,
+    userId: projectMember.userId,
+    projectMemberId: projectMember._id,
+    actingCompanyId: projectMember.companyId,
+    lastReadChannelSequence: 0,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+async function applyThreadRelationships(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>) {
+  let createdThreads = 0
+  let createdReplies = 0
+  for (let projectOffset = 0; projectOffset < expectedCounts.projects; projectOffset += 1) {
+    const parentNumber = projectOffset * 40 + THREAD_PARENT_LOCAL_INDEX + 1
+    const parentKey = `track-message-${String(parentNumber).padStart(4, '0')}`
+    if (threadRole(parentKey) !== 'parent') throw new Error(`invalid deterministic thread parent ${parentKey}`)
+    const parentId = await messageForKey(ctx, dataset, parentKey)
+    const parent = await ctx.db.get(parentId)
+    if (!parent || parent.channelThreadId !== undefined) {
+      if (!parent) throw new Error(`thread parent is missing ${parentKey}`)
+      await ctx.db.patch(parentId, { channelThreadId: undefined, replyToMessageId: undefined })
+    }
+    const projectMember = parent?.authorProjectMemberId
+      ? await ctx.db.get(parent.authorProjectMemberId)
+      : null
+    if (!parent || !projectMember) throw new Error(`thread parent author is missing ${parentKey}`)
+    const replyKeys = [
+      `track-message-${String(parentNumber + 3).padStart(4, '0')}`,
+      `track-message-${String(parentNumber + 6).padStart(4, '0')}`,
+    ]
+    if (replyKeys.some((key) => threadRole(key) !== 'reply')) throw new Error(`invalid deterministic thread replies ${parentKey}`)
+    const replyIds = await Promise.all(replyKeys.map((key) => messageForKey(ctx, dataset, key)))
+    const replies = await Promise.all(replyIds.map((id) => ctx.db.get(id)))
+    if (replies.some((reply) => !reply)) throw new Error(`thread replies are incomplete ${parentKey}`)
+    const validReplies = replies.filter((reply): reply is Doc<'messages'> => reply !== null)
+    if (validReplies.some((reply) => reply.projectId !== parent.projectId || reply.groupId !== parent.groupId)) {
+      throw new Error(`thread reply scope mismatch ${parentKey}`)
+    }
+    const threadExternalKey = threadKey(parentKey)
+    const idempotencyKey = `${DATASET_ID}:${dataset.organizationKey}:${threadExternalKey}`
+    const existingRegistry = await registryRecord(ctx, dataset.organizationId, threadExternalKey)
+    let threadId: Id<'channelThreads'>
+    let thread: Doc<'channelThreads'> | null
+    if (existingRegistry) {
+      isShowcaseOwned(existingRegistry)
+      const id = ctx.db.normalizeId('channelThreads', existingRegistry.recordId)
+      if (!id) throw new Error(`invalid thread registry id ${threadExternalKey}`)
+      threadId = id
+      thread = await ctx.db.get(id)
+      if (!thread) throw new Error(`registered thread is missing ${threadExternalKey}`)
+    } else {
+      const existingThread = await ctx.db
+        .query('channelThreads')
+        .withIndex('by_group_idempotency', (q) =>
+          q.eq('groupId', parent.groupId).eq('idempotencyKey', idempotencyKey),
+        )
+        .unique()
+      if (existingThread) {
+        threadId = existingThread._id
+        thread = existingThread
+        await registerRecord(ctx, {
+          dataset,
+          recordType: 'channelThreads',
+          externalKey: threadExternalKey,
+          recordId: String(existingThread._id),
+          owned: false,
+        })
+      } else {
+        const createdAt = parent.createdAt + 1
+        threadId = await ctx.db.insert('channelThreads', {
+          projectId: parent.projectId,
+          groupId: parent.groupId,
+          name: `Decision follow-up ${String(projectOffset + 1).padStart(2, '0')}`,
+          sourceMessageId: parent._id,
+          creatorUserId: parent.authorId,
+          creatorProjectMemberId: projectMember._id,
+          actingCompanyId: parent.actingCompanyId,
+          status: 'active',
+          revision: 1,
+          replyCount: validReplies.length,
+          latestReplyAt: Math.max(...validReplies.map((reply) => reply.createdAt)),
+          latestChannelSequence: Math.max(...validReplies.map((reply) => reply.channelSequence ?? 0)),
+          idempotencyKey,
+          createdAt,
+          updatedAt: createdAt,
+        })
+        thread = await ctx.db.get(threadId)
+        if (!thread) throw new Error(`thread creation failed ${threadExternalKey}`)
+        createdThreads += 1
+        await registerRecord(ctx, {
+          dataset,
+          recordType: 'channelThreads',
+          externalKey: threadExternalKey,
+          recordId: String(threadId),
+          owned: true,
+        })
+      }
+    }
+    if (!thread || thread.projectId !== parent.projectId || thread.groupId !== parent.groupId) {
+      throw new Error(`thread scope mismatch ${threadExternalKey}`)
+    }
+    await ctx.db.patch(threadId, {
+      sourceMessageId: parent._id,
+      creatorUserId: parent.authorId,
+      creatorProjectMemberId: projectMember._id,
+      actingCompanyId: parent.actingCompanyId,
+      status: 'active',
+      replyCount: validReplies.length,
+      latestReplyAt: Math.max(...validReplies.map((reply) => reply.createdAt)),
+      latestChannelSequence: Math.max(...validReplies.map((reply) => reply.channelSequence ?? 0)),
+      createdAt: parent.createdAt + 1,
+      archivedAt: undefined,
+      updatedAt: Date.now(),
+    })
+    const refreshedThread = await ctx.db.get(threadId)
+    if (!refreshedThread) throw new Error(`thread disappeared ${threadExternalKey}`)
+    await ctx.db.patch(parent._id, {
+      channelThreadId: undefined,
+      replyToMessageId: undefined,
+    })
+    await upsertThreadFollower(ctx, {
+      thread: refreshedThread,
+      userId: projectMember.userId,
+      projectMember,
+      actingCompanyId: projectMember.companyId,
+      reason: 'created',
+    })
+    await ensureThreadReadState(ctx, refreshedThread, projectMember)
+    for (const [replyIndex, reply] of validReplies.entries()) {
+      const replyMember = reply.authorProjectMemberId
+        ? await ctx.db.get(reply.authorProjectMemberId)
+        : null
+      if (!replyMember) throw new Error(`thread reply author is missing ${replyKeys[replyIndex]}`)
+      const body = threadReplyBody(parent.body, projectOffset, replyIndex)
+      await ctx.db.patch(reply._id, {
+        channelThreadId: threadId,
+        replyToMessageId: parent._id,
+        body,
+        notificationPreview: body.slice(0, 160),
+      })
+      await upsertThreadFollower(ctx, {
+        thread: refreshedThread,
+        userId: replyMember.userId,
+        projectMember: replyMember,
+        actingCompanyId: replyMember.companyId,
+        reason: 'replied',
+      })
+      if (reply.channelThreadId !== threadId) createdReplies += 1
+    }
+  }
+  return {
+    createdThreads,
+    createdReplies,
+    channelThreads: relationshipCounts.channelThreads,
+    threadReplies: relationshipCounts.threadReplies,
+  }
+}
+
 async function applyTask(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) return existing.recordId
   const projectKey = requiredString(record, 'projectKey')
   const projectId = await projectForKey(ctx, dataset, projectKey)
   const sourceMessageId = await messageForKey(ctx, dataset, requiredString(record, 'sourceMessageKey'))
@@ -866,90 +1559,168 @@ async function applyTask(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record
     group.name,
   )
   const state = await workflowStateFor(ctx, boardId, taskStateCategory(requiredString(record, 'state')))
-  const stateTasks = await ctx.db.query('tasks').withIndex('by_board_state_rank', (q) =>
-    q.eq('boardId', boardId).eq('workflowStateId', state._id),
-  ).collect()
   const now = parseDate(record, 'dueAt')
-  const createdAt = sourceMessage.createdAt + 1000 + stateTasks.length
-  const taskId = await ctx.db.insert('tasks', {
+  const taskNumber = Number(externalKey.replace('track-task-', ''))
+  if (!Number.isInteger(taskNumber) || taskNumber < 1 || taskNumber > expectedCounts.tasks) {
+    throw new Error(`invalid Track task key ${externalKey}`)
+  }
+  const publicKey = externalKey.replace('track-task-', 'TRK-').toUpperCase()
+  const title = requiredString(record, 'title')
+  const taskFields = {
     projectId,
-    publicKey: externalKey.replace('track-task-', 'TRK-').toUpperCase(),
+    publicKey,
     boardId,
     groupId: sourceMessage.groupId,
     workflowStateId: state._id,
-    rank: rankForIndex(stateTasks.length),
-    title: requiredString(record, 'title'),
-    description: `Evidence-linked task from ${requiredString(record, 'sourceMessageKey')}.`,
-    searchText: `${requiredString(record, 'title')} ${requiredString(record, 'state')}`,
+    rank: rankForIndex(taskNumber - 1),
+    title,
+    description: `Action captured from the project discussion: ${sourceNarrative(sourceMessage.body)}.`,
+    searchText: `${title} ${requiredString(record, 'state')}`,
     assigneeProjectMemberId: assignee._id,
-    priority: taskPriority(Number(externalKey.replace('track-task-', ''))),
+    priority: taskPriority(taskNumber),
     dueDate: new Date(now).toISOString().slice(0, 10),
     createdByProjectMemberId: creator,
     actingCompanyId: creatorMember.companyId,
     revision: 1,
-    terminalAt: state.category === 'completed' ? createdAt : undefined,
+    terminalAt: state.category === 'completed' ? sourceMessage.createdAt + 1000 + taskNumber : undefined,
     createIdempotencyKey: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-    createdAt,
-    updatedAt: createdAt,
-  })
+  }
+  let taskId: Id<'tasks'>
+  let taskOwned = true
+  let task
+  if (existing) {
+    isShowcaseOwned(existing)
+    const id = ctx.db.normalizeId('tasks', existing.recordId)
+    if (!id) throw new Error(`invalid task registry id ${externalKey}`)
+    task = await ctx.db.get(id)
+    if (!task || task.projectId !== projectId) throw new Error(`task scope mismatch ${externalKey}`)
+    taskId = id
+    await ctx.db.patch(id, { ...taskFields, updatedAt: Date.now() })
+  } else {
+    const matching = await ctx.db.query('tasks').withIndex('by_project_key', (q) =>
+      q.eq('projectId', projectId).eq('publicKey', publicKey),
+    ).unique()
+    if (matching) {
+      taskId = matching._id
+      task = matching
+      taskOwned = false
+      await registerRecord(ctx, {
+        dataset,
+        recordType: 'tasks',
+        externalKey,
+        recordId: String(taskId),
+        owned: false,
+      })
+    } else {
+      const createdAt = sourceMessage.createdAt + 1000 + taskNumber
+      taskId = await ctx.db.insert('tasks', {
+        ...taskFields,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      task = await ctx.db.get(taskId)
+    }
+  }
   await registerRecord(ctx, {
     dataset,
     recordType: 'tasks',
     externalKey,
     recordId: String(taskId),
-    owned: true,
+    owned: taskOwned,
   })
-  await ctx.db.insert('taskReferences', {
+  if (!task) throw new Error('task creation failed')
+  if (!taskOwned) return String(taskId)
+  const createdAt = task.createdAt
+  const references = await ctx.db.query('taskReferences').withIndex('by_task_rank', (q) =>
+    q.eq('taskId', taskId).eq('rank', rankForIndex(0)),
+  ).collect()
+  const reference = references[0]
+  const referenceFields = {
     projectId,
     taskId,
-    type: 'message',
+    type: 'message' as const,
     groupId: sourceMessage.groupId,
+    channelThreadId: sourceMessage.channelThreadId,
     messageId: sourceMessageId,
     quote: sourceMessage.body.slice(0, 280),
-    availability: 'available',
+    availability: 'available' as const,
     isPrimary: true,
     actorProjectMemberId: creator,
     actingCompanyId: creatorMember.companyId,
     rank: rankForIndex(0),
-    createdAt,
-    updatedAt: createdAt,
-  })
-  await ctx.db.insert('taskFollowers', {
-    projectId,
-    taskId,
-    userId: creatorMember.userId,
-    projectMemberId: creator,
-    reason: 'creator',
-    enabled: true,
-    createdAt,
-    updatedAt: createdAt,
-  })
-  if (assignee._id !== creator) {
-    await ctx.db.insert('taskFollowers', {
+    updatedAt: Date.now(),
+  }
+  if (reference) await ctx.db.patch(reference._id, referenceFields)
+  else await ctx.db.insert('taskReferences', { ...referenceFields, createdAt })
+  const followerMembers = [
+    { member: creator, userId: creatorMember.userId, reason: 'creator' as const },
+    ...(assignee._id !== creator ? [{ member: assignee._id, userId: assignee.userId, reason: 'assignee' as const }] : []),
+  ]
+  for (const followerInput of followerMembers) {
+    const followers = await ctx.db.query('taskFollowers').withIndex('by_task_member', (q) =>
+      q.eq('taskId', taskId).eq('projectMemberId', followerInput.member),
+    ).collect()
+    const follower = followers[0]
+    const followerFields = {
       projectId,
       taskId,
-      userId: assignee.userId,
-      projectMemberId: assignee._id,
-      reason: 'assignee',
+      userId: followerInput.userId,
+      projectMemberId: followerInput.member,
+      reason: followerInput.reason,
       enabled: true,
-      createdAt,
-      updatedAt: createdAt,
-    })
+      updatedAt: Date.now(),
+    }
+    if (follower) await ctx.db.patch(follower._id, followerFields)
+    else await ctx.db.insert('taskFollowers', { ...followerFields, createdAt })
   }
-  const task = await ctx.db.get(taskId)
-  if (!task) throw new Error('task creation failed')
-  await appendTaskActivity(ctx, {
+  const activities = await ctx.db.query('taskActivities').withIndex('by_task_created_at', (q) =>
+    q.eq('taskId', taskId),
+  ).collect()
+  const activity = activities.find((candidate) => candidate.action === 'created')
+  const correlationId = `${DATASET_ID}:${dataset.organizationKey}:${externalKey}:created`
+  if (activity) await ctx.db.patch(activity._id, { correlationId })
+  else await appendTaskActivity(ctx, {
     task,
     action: 'created',
     actorProjectMemberId: creator,
     actingCompanyId: creatorMember.companyId,
+    correlationId,
   })
   return String(taskId)
+}
+
+async function ensureSuggestionReference(
+  ctx: WriteCtx,
+  source: Doc<'messages'>,
+  suggestionId: Id<'taskSuggestions'>,
+  rank: string,
+  isPrimary: boolean,
+  createdAt: number,
+) {
+  const references = await ctx.db.query('taskSuggestionReferences').withIndex('by_suggestion_rank', (q) =>
+    q.eq('suggestionId', suggestionId).eq('rank', rank),
+  ).collect()
+  const fields = {
+    projectId: source.projectId,
+    suggestionId,
+    type: 'message' as const,
+    groupId: source.groupId,
+    channelThreadId: source.channelThreadId,
+    messageId: source._id,
+    quote: source.body.slice(0, 280),
+    availability: 'available' as const,
+    isPrimary,
+    rank,
+    updatedAt: Date.now(),
+  }
+  if (references[0]) await ctx.db.patch(references[0]._id, fields)
+  else await ctx.db.insert('taskSuggestionReferences', { ...fields, createdAt })
 }
 
 async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, record: ShowcaseRecord) {
   const externalKey = requiredString(record, 'externalKey')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
+  if (existing) isShowcaseOwned(existing)
   const sourceKeys = arrayField(record, 'sourceMessageKeys').map((value) => {
     if (typeof value !== 'string') throw new Error('source message key must be a string')
     return value
@@ -973,63 +1744,64 @@ async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
   const pending = disposition === 'pending'
   if (!pending && !accepted && disposition !== 'rejected') throw new Error(`unsupported suggestion disposition ${disposition}`)
   const now = Date.now()
+  const status = pending ? 'pending' as const : accepted ? 'accepted' as const : 'dismissed' as const
+  const explanation = requiredString(record, 'explanation')
+  let suggestionId: Id<'taskSuggestions'>
+  let createdAt = now
   if (existing) {
-    const suggestionId = ctx.db.normalizeId('taskSuggestions', existing.recordId)
-    if (!suggestionId) throw new Error(`invalid suggestion registry id ${externalKey}`)
-    const suggestion = await ctx.db.get(suggestionId)
-    if (!suggestion) throw new Error(`registered suggestion is missing ${externalKey}`)
-    if (suggestion.projectId !== source.projectId || suggestion.groupId !== source.groupId) {
+    const id = ctx.db.normalizeId('taskSuggestions', existing.recordId)
+    if (!id) throw new Error(`invalid suggestion registry id ${externalKey}`)
+    const suggestion = await ctx.db.get(id)
+    if (!suggestion || suggestion.projectId !== source.projectId) {
       throw new Error(`registered suggestion scope mismatch ${externalKey}`)
     }
-    await ctx.db.patch(suggestionId, {
-      proposedDescription: requiredString(record, 'explanation'),
+    suggestionId = id
+    createdAt = suggestion.createdAt
+    await ctx.db.patch(id, {
+      groupId: source.groupId,
+      proposedTitle: task.title,
+      proposedDescription: explanation,
       proposedAssigneeProjectMemberId: task.assigneeProjectMemberId,
       proposedPriority: task.priority,
       proposedDueDate: task.dueDate,
-      status: pending ? 'pending' : accepted ? 'accepted' : 'dismissed',
+      status,
       confidence: disposition === 'corrected' ? 0.86 : 0.92,
-      groundingReason: requiredString(record, 'explanation'),
+      groundingReason: explanation,
       decidedByProjectMemberId: pending ? undefined : creator,
       decisionActingCompanyId: pending ? undefined : creatorMember.companyId,
       dismissalReason: pending || accepted ? undefined : 'not_actionable',
       decidedTaskId: accepted ? taskId : undefined,
       duplicateOverride: pending ? undefined : disposition === 'corrected',
       decisionIdempotencyKey: pending ? undefined : `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-      updatedAt: suggestion.updatedAt,
-      decidedAt: pending ? undefined : suggestion.decidedAt ?? suggestion.createdAt,
+      updatedAt: now,
+      decidedAt: pending ? undefined : suggestion.decidedAt ?? now,
     })
-    if (accepted && task.sourceSuggestionId && task.sourceSuggestionId !== suggestionId) {
-      throw new Error(`suggestion task is already linked to another suggestion ${externalKey}`)
-    }
-    if (accepted && task.sourceSuggestionId !== suggestionId) {
-      await ctx.db.patch(taskId, { sourceSuggestionId: suggestionId, updatedAt: now })
-    }
-    return existing.recordId
+  } else {
+    suggestionId = await ctx.db.insert('taskSuggestions', {
+      projectId: source.projectId,
+      groupId: source.groupId,
+      proposedTitle: task.title,
+      proposedDescription: explanation,
+      proposedAssigneeProjectMemberId: task.assigneeProjectMemberId,
+      proposedPriority: task.priority,
+      proposedDueDate: task.dueDate,
+      status,
+      confidence: disposition === 'corrected' ? 0.86 : 0.92,
+      groundingReason: explanation,
+      fingerprint: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
+      decidedByProjectMemberId: pending ? undefined : creator,
+      decisionActingCompanyId: pending ? undefined : creatorMember.companyId,
+      dismissalReason: pending || accepted ? undefined : 'not_actionable',
+      decidedTaskId: accepted ? taskId : undefined,
+      duplicateOverride: pending ? undefined : disposition === 'corrected',
+      decisionIdempotencyKey: pending ? undefined : `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
+      modelVersion: 'showcase-precomputed-v1',
+      promptVersion: 'showcase-precomputed-v1',
+      createdAt,
+      updatedAt: now,
+      decidedAt: pending ? undefined : now,
+    })
   }
-  const suggestionId = await ctx.db.insert('taskSuggestions', {
-    projectId: source.projectId,
-    groupId: source.groupId,
-    proposedTitle: task.title,
-    proposedDescription: requiredString(record, 'explanation'),
-    proposedAssigneeProjectMemberId: task.assigneeProjectMemberId,
-    proposedPriority: task.priority,
-    proposedDueDate: task.dueDate,
-    status: pending ? 'pending' : accepted ? 'accepted' : 'dismissed',
-    confidence: disposition === 'corrected' ? 0.86 : 0.92,
-    groundingReason: requiredString(record, 'explanation'),
-    fingerprint: `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-    decidedByProjectMemberId: pending ? undefined : creator,
-    decisionActingCompanyId: pending ? undefined : creatorMember.companyId,
-    dismissalReason: pending || accepted ? undefined : 'not_actionable',
-    decidedTaskId: accepted ? taskId : undefined,
-    duplicateOverride: pending ? undefined : disposition === 'corrected',
-    decisionIdempotencyKey: pending ? undefined : `${DATASET_ID}:${dataset.organizationKey}:${externalKey}`,
-    modelVersion: 'showcase-precomputed-v1',
-    promptVersion: 'showcase-precomputed-v1',
-    createdAt: now,
-    updatedAt: now,
-    decidedAt: pending ? undefined : now,
-  })
   await registerRecord(ctx, {
     dataset,
     recordType: 'suggestions',
@@ -1040,21 +1812,16 @@ async function applySuggestion(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
   for (const [index, messageId] of sourceIds.entries()) {
     const message = await ctx.db.get(messageId)
     if (!message) throw new Error('suggestion message disappeared')
-    await ctx.db.insert('taskSuggestionReferences', {
-      projectId: source.projectId,
-      suggestionId,
-      type: 'message',
-      groupId: message.groupId,
-      messageId,
-      quote: message.body.slice(0, 280),
-      availability: 'available',
-      isPrimary: index === 0,
-      rank: rankForIndex(index),
-      createdAt: now,
-      updatedAt: now,
-    })
+    await ensureSuggestionReference(ctx, message, suggestionId, rankForIndex(index), index === 0, createdAt)
   }
-  if (accepted) await ctx.db.patch(taskId, { sourceSuggestionId: suggestionId, updatedAt: now })
+  if (accepted) {
+    if (task.sourceSuggestionId && task.sourceSuggestionId !== suggestionId) {
+      throw new Error(`suggestion task is already linked to another suggestion ${externalKey}`)
+    }
+    if (task.sourceSuggestionId !== suggestionId) await ctx.db.patch(taskId, { sourceSuggestionId: suggestionId, updatedAt: now })
+  } else if (task.sourceSuggestionId === suggestionId) {
+    await ctx.db.patch(taskId, { sourceSuggestionId: undefined, updatedAt: now })
+  }
   return String(suggestionId)
 }
 
@@ -1065,19 +1832,6 @@ async function applyAttachment(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
   const message = await ctx.db.get(messageId)
   if (!message || message.projectId !== projectId) throw new Error('attachment message scope mismatch')
   const existing = await registryRecord(ctx, dataset.organizationId, externalKey)
-  if (existing) {
-    const existingId = ctx.db.normalizeId('attachments', existing.recordId)
-    if (!existingId) throw new Error(`invalid attachment registry id ${externalKey}`)
-    const attachment = await ctx.db.get(existingId)
-    if (!attachment) throw new Error(`registered attachment is missing ${externalKey}`)
-    if (attachment.messageId !== messageId || attachment.projectId !== projectId) {
-      throw new Error(`registered attachment scope mismatch ${externalKey}`)
-    }
-    if (!message.attachmentIds.includes(existingId)) {
-      await ctx.db.patch(messageId, { attachmentIds: [...message.attachmentIds, existingId] })
-    }
-    return existing.recordId
-  }
   const asset = await assetForKey(ctx, dataset, requiredString(record, 'assetKey'))
   const metadata = asset.metadata
   const duration = metadata && typeof metadata === 'object' && !Array.isArray(metadata) && typeof metadata.duration === 'number'
@@ -1085,6 +1839,32 @@ async function applyAttachment(ctx: WriteCtx, dataset: Doc<'showcaseDatasets'>, 
     : undefined
   const kind = requiredString(record, 'kind') === 'voice-note' ? 'voice_note' as const : 'file' as const
   const filename = asset.storageKey.split('/').at(-1) ?? externalKey
+  if (existing) {
+    isShowcaseOwned(existing)
+    const existingId = ctx.db.normalizeId('attachments', existing.recordId)
+    if (!existingId) throw new Error(`invalid attachment registry id ${externalKey}`)
+    const attachment = await ctx.db.get(existingId)
+    if (!attachment || attachment.projectId !== projectId) throw new Error(`registered attachment scope mismatch ${externalKey}`)
+    await ctx.db.patch(existingId, {
+      groupId: message.groupId,
+      messageId,
+      channelThreadId: message.channelThreadId,
+      storageId: asset.storageId,
+      filename,
+      contentType: asset.mimeType,
+      size: asset.fileSize,
+      kind,
+      durationMs: duration,
+      uploadedBy: message.authorId,
+      uploadedByProjectMemberId: message.authorProjectMemberId,
+      actingCompanyId: message.actingCompanyId,
+      extractionStatus: 'preserved',
+    })
+    if (!message.attachmentIds.includes(existingId)) {
+      await ctx.db.patch(messageId, { attachmentIds: [...message.attachmentIds, existingId] })
+    }
+    return existing.recordId
+  }
   const attachmentId = await ctx.db.insert('attachments', {
     projectId,
     groupId: message.groupId,
@@ -1121,34 +1901,28 @@ async function applyRecords(
 ) {
   const recordIds: Array<{ externalKey: string; recordId: string }> = []
   let inserted = 0
-  let skipped = 0
+  let updated = 0
   for (const [index, value] of records.entries()) {
     const record = recordObject(value, `${recordType}[${index}]`)
     const externalKey = requiredString(record, 'externalKey')
     const prior = await registryRecord(ctx, dataset.organizationId, externalKey)
     let recordId: string
-    if (prior) {
-      recordId = prior.recordId
-      if (recordType === 'suggestions') await applySuggestion(ctx, dataset, record)
-      if (recordType === 'attachments') await applyAttachment(ctx, dataset, record)
-      skipped += 1
-    } else {
-      if (recordType === 'organizations') recordId = await applyOrganization(ctx, dataset, record)
-      else if (recordType === 'companies') recordId = await applyCompany(ctx, dataset, record)
-      else if (recordType === 'users') recordId = await applyUser(ctx, dataset, record, index === 0 && !(await ctx.db.query('showcaseDatasetRecords').withIndex('by_dataset_organization_type', (q) => q.eq('datasetId', DATASET_ID).eq('organizationId', dataset.organizationId).eq('recordType', 'users')).first()))
-      else if (recordType === 'projects') recordId = await applyProject(ctx, dataset, record)
-      else if (recordType === 'memberships') recordId = await applyMembership(ctx, dataset, record)
-      else if (recordType === 'channels') recordId = await applyChannel(ctx, dataset, record)
-      else if (recordType === 'messages') recordId = await applyMessage(ctx, dataset, record)
-      else if (recordType === 'tasks') recordId = await applyTask(ctx, dataset, record)
-      else if (recordType === 'suggestions') recordId = await applySuggestion(ctx, dataset, record)
-      else if (recordType === 'attachments') recordId = await applyAttachment(ctx, dataset, record)
-      else throw new Error(`unsupported Track record type ${recordType}`)
-      inserted += 1
-    }
+    if (recordType === 'organizations') recordId = await applyOrganization(ctx, dataset, record)
+    else if (recordType === 'companies') recordId = await applyCompany(ctx, dataset, record)
+    else if (recordType === 'users') recordId = await applyUser(ctx, dataset, record, externalKey === OWNER_USER_EXTERNAL_KEY)
+    else if (recordType === 'projects') recordId = await applyProject(ctx, dataset, record)
+    else if (recordType === 'memberships') recordId = await applyMembership(ctx, dataset, record)
+    else if (recordType === 'channels') recordId = await applyChannel(ctx, dataset, record)
+    else if (recordType === 'messages') recordId = await applyMessage(ctx, dataset, record)
+    else if (recordType === 'tasks') recordId = await applyTask(ctx, dataset, record)
+    else if (recordType === 'suggestions') recordId = await applySuggestion(ctx, dataset, record)
+    else if (recordType === 'attachments') recordId = await applyAttachment(ctx, dataset, record)
+    else throw new Error(`unsupported Track record type ${recordType}`)
+    if (prior) updated += 1
+    else inserted += 1
     recordIds.push({ externalKey, recordId })
   }
-  return { inserted, skipped, recordIds }
+  return { inserted, updated, recordIds }
 }
 
 const commonArgs = {
@@ -1166,7 +1940,11 @@ export const resolveOrganization = internalQuery({
   },
   handler: async (ctx, args) => {
     const owned = await datasetByKey(ctx, args.organizationKey)
-    if (owned) return { status: 'owned' as const, organizationId: owned.organizationId }
+    if (owned) return {
+      status: 'owned' as const,
+      organizationId: owned.organizationId,
+      ownerUserId: owned.ownerUserId ? String(owned.ownerUserId) : null,
+    }
     const handles = [args.organizationKey, ...(args.companyHandles ?? [])]
     for (const handle of handles) {
       const existing = await ctx.db
@@ -1232,7 +2010,7 @@ export const begin = internalMutation({
     assetManifestHash: v.string(),
     counts: v.any(),
     assetCount: v.number(),
-    ownerUserId: v.id('users'),
+    ownerUserId: v.optional(v.id('users')),
   },
   handler: async (ctx, args) => {
     const dataset = await requireDataset(ctx, args.organizationId, args.organizationKey)
@@ -1241,7 +2019,9 @@ export const begin = internalMutation({
     }
     if (args.manifestHash !== MANIFEST_HASH || args.assetManifestHash !== ASSET_MANIFEST_HASH) throw new Error('showcase checksum mismatch')
     if (args.assetCount !== 61 || !hasExpectedCounts(args.counts)) throw new Error('showcase count contract mismatch')
-    if (dataset.ownerUserId && dataset.ownerUserId !== args.ownerUserId) throw new Error('showcase owner user mismatch')
+    if (dataset.ownerUserId && args.ownerUserId && dataset.ownerUserId !== args.ownerUserId) throw new Error('showcase owner user mismatch')
+    const owner = args.ownerUserId ?? dataset.ownerUserId
+    if (!owner || !(await ctx.db.get(owner))) throw new Error('showcase owner user is required')
     await ctx.db.patch(dataset._id, {
       datasetVersion: args.datasetVersion,
       product: args.product,
@@ -1250,7 +2030,7 @@ export const begin = internalMutation({
       assetCount: args.assetCount,
       manifestHash: args.manifestHash,
       assetManifestHash: args.assetManifestHash,
-      ownerUserId: args.ownerUserId,
+      ownerUserId: owner,
       updatedAt: Date.now(),
     })
     const updated = await ctx.db.get(dataset._id)
@@ -1314,6 +2094,23 @@ export const applyAssets = internalMutation({
         .unique()
       if (existing) {
         if (existing.contentHash !== contentHash || existing.storageId !== storageId) throw new Error(`asset ${assetKey} is already bound to another binary`)
+        await ctx.db.patch(existing._id, {
+          datasetVersion: args.datasetVersion,
+          product: PRODUCT,
+          organizationKey: dataset.organizationKey,
+          organizationId: dataset.organizationId,
+          storageKey: requiredString(asset, 'storageKey'),
+          mimeType: requiredString(asset, 'mimeType'),
+          fileSize: requiredNumber(asset, 'fileSize'),
+          metadata: asset,
+        })
+        await registerRecord(ctx, {
+          dataset,
+          recordType: 'showcaseDatasetAssets',
+          externalKey: assetKey,
+          recordId: String(existing._id),
+          owned: true,
+        })
         skipped += 1
         continue
       }
@@ -1359,6 +2156,17 @@ export const applyBatch = internalMutation({
   },
 })
 
+export const applyRelationships = internalMutation({
+  args: commonArgs,
+  handler: async (ctx, args) => {
+    const dataset = await requireDataset(ctx, args.organizationId, args.organizationKey, 'applying')
+    if (await registryCount(ctx, dataset, 'messages') !== expectedCounts.messages) {
+      throw new Error('messages must be fully applied before relationships')
+    }
+    return await applyThreadRelationships(ctx, dataset)
+  },
+})
+
 async function registryCount(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>, recordType: string) {
   return (await ctx.db
     .query('showcaseDatasetRecords')
@@ -1389,6 +2197,9 @@ export const finalize = internalMutation({
     }
     if ((await ctx.db.query('showcaseDatasetAssets').withIndex('by_organization', (q) => q.eq('organizationId', dataset.organizationId)).collect()).length !== dataset.assetCount) {
       throw new Error('asset registry count is incomplete')
+    }
+    if (await registryCount(ctx, dataset, 'channelThreads') !== relationshipCounts.channelThreads) {
+      throw new Error('channel thread registry count is incomplete')
     }
     await ctx.db.patch(dataset._id, { status: 'applied', updatedAt: Date.now() })
     return { organizationId: dataset.organizationId, status: 'applied' as const }
@@ -1421,6 +2232,7 @@ async function relationshipErrors(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>
   for (const projectRecord of projectRecords) {
     const project = await requireDocument(projectRecord.externalKey, 'projects')
     if (!project) continue
+    if (project.status !== 'active' || project.accessProfile !== 'company') errors.push(`${projectRecord.externalKey} is not an active company project`)
     const company = records.find((record) => record.recordType === 'companies' && String(project.proposingCompanyId) === record.recordId)
     if (!company) errors.push(`${projectRecord.externalKey} has no owned proposing company`)
     const terms = await ctx.db.query('projectCompanies').withIndex('by_project_status', (q) => q.eq('projectId', project._id).eq('status', 'active')).collect()
@@ -1429,6 +2241,16 @@ async function relationshipErrors(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>
     const generalChannels = (await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect())
       .filter((group) => group.kind === 'general')
     if (generalChannels.length !== 1) errors.push(`${projectRecord.externalKey} must have one General channel`)
+    const projectMembers = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect()
+    const activeGroups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', project._id)).collect()
+    for (const member of projectMembers.filter((candidate) => candidate.status === 'active')) {
+      for (const group of activeGroups.filter((candidate) => candidate.status === 'active')) {
+        const groupMember = await ctx.db.query('groupMembers').withIndex('by_group_project_member', (q) =>
+          q.eq('groupId', group._id).eq('projectMemberId', member._id),
+        ).unique()
+        if (!groupMember || groupMember.status !== 'active') errors.push(`${projectRecord.externalKey} has incomplete channel membership for ${member._id}:${group._id}`)
+      }
+    }
     for (const term of terms) {
       if (!records.some((record) => record.recordType === 'projectCompanies' && record.recordId === String(term._id))) {
         errors.push(`${projectRecord.externalKey} has an unowned project company`)
@@ -1454,12 +2276,22 @@ async function relationshipErrors(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>
     const channel = await ctx.db.get(message.groupId)
     const author = await ctx.db.get(message.authorId)
     if (!channel || !author || channel.projectId !== message.projectId) errors.push(`${record.externalKey} has incomplete message scope`)
+    if (message.mentions.some((userId) => !records.some((candidate) => candidate.recordType === 'users' && candidate.recordId === String(userId)))) {
+      errors.push(`${record.externalKey} mentions an unowned user`)
+    }
+    if ((message.mentionedProjectMemberIds ?? []).some((memberId) => !records.some((candidate) => candidate.recordType === 'memberships' && candidate.recordId === String(memberId)))) {
+      errors.push(`${record.externalKey} mentions an unowned project member`)
+    }
   }
   for (const record of records.filter((candidate) => candidate.recordType === 'tasks')) {
     const task = await requireDocument(record.externalKey, 'tasks')
     if (!task) continue
     const source = await ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', task._id)).collect()
     if (!source.some((reference) => reference.type === 'message' && reference.messageId)) errors.push(`${record.externalKey} has no message evidence`)
+    for (const reference of source.filter((candidate) => candidate.type === 'message')) {
+      const message = reference.messageId ? await ctx.db.get(reference.messageId) : null
+      if (!message || message.projectId !== task.projectId || message.groupId !== task.groupId || message.channelThreadId !== reference.channelThreadId) errors.push(`${record.externalKey} has stale message evidence`)
+    }
   }
   const suggestionStatusCounts = { accepted: 0, dismissed: 0, pending: 0 }
   const pendingSuggestionProjects = new Set<string>()
@@ -1505,6 +2337,156 @@ async function relationshipErrors(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>
   return errors.slice(0, 50)
 }
 
+const heroProjectKeys = [
+  'track-project-agency-campaign',
+  'track-project-construction-coordination',
+  'track-project-software-delivery',
+  'track-project-exhibition-planning',
+  'track-project-cross-functional-operations',
+] as const
+
+async function semanticVerification(ctx: ReadCtx, dataset: Doc<'showcaseDatasets'>) {
+  const records = await ctx.db
+    .query('showcaseDatasetRecords')
+    .withIndex('by_dataset_organization', (q) =>
+      q.eq('datasetId', DATASET_ID).eq('organizationId', dataset.organizationId),
+    )
+    .collect()
+  const projectRecords = records.filter((record) => record.recordType === 'projects')
+  const datasetMessageIds = new Set(records
+    .filter((record) => record.recordType === 'messages')
+    .map((record) => record.recordId))
+  const datasetTaskIds = new Set(records
+    .filter((record) => record.recordType === 'tasks')
+    .map((record) => record.recordId))
+  const datasetSuggestionIds = new Set(records
+    .filter((record) => record.recordType === 'suggestions')
+    .map((record) => record.recordId))
+  const datasetAttachmentIds = new Set(records
+    .filter((record) => record.recordType === 'attachments')
+    .map((record) => record.recordId))
+  const firstLoadProjects = []
+  for (const projectRecord of projectRecords) {
+    const projectId = ctx.db.normalizeId('projects', projectRecord.recordId)
+    if (!projectId) continue
+    const projectMembers = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
+    const firstProjectMember = projectMembers.find((member) => member.status === 'active')
+    const firstGroupMembership = firstProjectMember
+      ? await ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) =>
+        q.eq('projectMemberId', firstProjectMember._id).eq('status', 'active'),
+      ).first()
+      : null
+    const firstGroup = firstGroupMembership ? await ctx.db.get(firstGroupMembership.groupId) : null
+    const topLevelMessages = firstGroup
+      ? await ctx.db.query('messages').withIndex('by_group_thread_created_at', (q) =>
+        q.eq('groupId', firstGroup._id).eq('channelThreadId', undefined),
+      ).order('desc').take(80)
+      : []
+    firstLoadProjects.push({
+      projectKey: projectRecord.externalKey,
+      projectId: projectRecord.recordId,
+      firstGroup: firstGroup ? { groupId: String(firstGroup._id), name: firstGroup.name, kind: firstGroup.kind } : null,
+      topLevelMessageCount: topLevelMessages.length,
+    })
+  }
+  const messages = (await ctx.db.query('messages').collect()).filter((message) => datasetMessageIds.has(String(message._id)))
+  const mentionMessageCount = messages.filter((message) => message.mentions.length > 0).length
+  const mentionLinkCount = messages.reduce((total, message) => total + message.mentions.length, 0)
+  const threadRecords = records.filter((record) => record.recordType === 'channelThreads')
+  const threadSummaries = []
+  let threadReplyCount = 0
+  let invalidThreadRelationshipCount = 0
+  for (const threadRecord of threadRecords) {
+    const threadId = ctx.db.normalizeId('channelThreads', threadRecord.recordId)
+    if (!threadId) {
+      invalidThreadRelationshipCount += 1
+      continue
+    }
+    const thread = await ctx.db.get(threadId)
+    if (!thread) {
+      invalidThreadRelationshipCount += 1
+      continue
+    }
+    const [parent, allReplies] = await Promise.all([
+      thread.sourceMessageId ? ctx.db.get(thread.sourceMessageId) : null,
+      ctx.db.query('messages').withIndex('by_thread_created_at', (q) => q.eq('channelThreadId', threadId)).collect(),
+    ])
+    const replies = allReplies.filter((reply) => datasetMessageIds.has(String(reply._id)))
+    threadReplyCount += replies.length
+    if (!parent || parent.channelThreadId !== undefined || parent.groupId !== thread.groupId || replies.some((reply) =>
+      reply.projectId !== thread.projectId || reply.groupId !== thread.groupId || reply.replyToMessageId !== parent._id,
+    )) invalidThreadRelationshipCount += 1
+    threadSummaries.push({
+      threadId: String(threadId),
+      projectId: String(thread.projectId),
+      parentMessageId: parent ? String(parent._id) : null,
+      replyCount: replies.length,
+      parentMentionCount: parent?.mentions.length ?? 0,
+    })
+  }
+  const heroes = []
+  for (const [heroIndex, projectKey] of heroProjectKeys.entries()) {
+    const projectRecord = projectRecords.find((record) => record.externalKey === projectKey)
+    const projectId = projectRecord ? ctx.db.normalizeId('projects', projectRecord.recordId) : null
+    const parentNumber = heroIndex * 40 + THREAD_PARENT_LOCAL_INDEX + 1
+    const parentKey = `track-message-${String(parentNumber).padStart(4, '0')}`
+    const parentId = await messageForKey(ctx, dataset, parentKey)
+    const parent = await ctx.db.get(parentId)
+    const threadRecord = await registryRecord(ctx, dataset.organizationId, threadKey(parentKey))
+    const threadId = threadRecord ? ctx.db.normalizeId('channelThreads', threadRecord.recordId) : null
+    const replies = threadId
+      ? (await ctx.db.query('messages').withIndex('by_thread_created_at', (q) => q.eq('channelThreadId', threadId)).collect())
+        .filter((reply) => datasetMessageIds.has(String(reply._id)))
+      : []
+    const projectTasks = projectId
+      ? (await ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect())
+        .filter((task) => datasetTaskIds.has(String(task._id)))
+      : []
+    const projectSuggestions = projectId
+      ? (await ctx.db.query('taskSuggestions').withIndex('by_project_status', (q) => q.eq('projectId', projectId)).collect())
+        .filter((suggestion) => datasetSuggestionIds.has(String(suggestion._id)))
+      : []
+    const projectAttachments = projectId
+      ? (await ctx.db.query('attachments').collect()).filter((attachment) =>
+        attachment.projectId === projectId && datasetAttachmentIds.has(String(attachment._id)),
+      )
+      : []
+    heroes.push({
+      projectKey,
+      firstLoad: firstLoadProjects.find((item) => item.projectKey === projectKey) ?? null,
+      thread: {
+        threadId: threadId ? String(threadId) : null,
+        parentMessageId: String(parentId),
+        replyCount: replies.length,
+        parentMentionCount: parent?.mentions.length ?? 0,
+        replyMentionCount: replies.reduce((total, reply) => total + reply.mentions.length, 0),
+        linkedTaskCount: projectTasks.length,
+        linkedSuggestionCount: projectSuggestions.length,
+        linkedAttachmentCount: projectAttachments.length,
+      },
+    })
+  }
+  return {
+    firstLoad: {
+      projectCount: firstLoadProjects.length,
+      populatedProjectCount: firstLoadProjects.filter((project) => project.topLevelMessageCount > 0).length,
+      projects: firstLoadProjects,
+    },
+    mentions: { messageCount: mentionMessageCount, linkCount: mentionLinkCount },
+    threads: {
+      count: threadRecords.length,
+      replyCount: threadReplyCount,
+      invalidRelationshipCount: invalidThreadRelationshipCount,
+      samples: threadSummaries.slice(0, 5),
+    },
+    heroes,
+    reactions: {
+      supported: false,
+      reason: 'The current native Track schema has no reactions table or message reaction field.',
+    },
+  }
+}
+
 export const verify = internalQuery({
   args: {
     ...commonArgs,
@@ -1521,11 +2503,36 @@ export const verify = internalQuery({
     for (const recordType of manifestRecordTypes) counts[recordType] = await registryCount(ctx, dataset, recordType)
     const assetCount = (await ctx.db.query('showcaseDatasetAssets').withIndex('by_organization', (q) => q.eq('organizationId', dataset.organizationId)).collect()).length
     const relationship = await relationshipErrors(ctx, dataset)
+    const semantic = await semanticVerification(ctx, dataset)
     const errors = [...relationship]
+    const expectedRegistryCounts = {
+      organization: expectedCounts.organizations,
+      companies: expectedCounts.companies,
+      users: expectedCounts.users,
+      projects: expectedCounts.projects,
+      memberships: expectedCounts.memberships,
+      channels: expectedCounts.channels,
+      messages: expectedCounts.messages,
+      tasks: expectedCounts.tasks,
+      suggestions: expectedCounts.suggestions,
+      attachments: expectedCounts.attachments,
+    }
+    for (const [recordType, expected] of Object.entries(expectedRegistryCounts)) {
+      if (counts[recordType] !== expected) errors.push(`${recordType} registry count is ${counts[recordType] ?? 0}, expected ${expected}`)
+    }
     if (dataset.status !== 'applied') errors.push(`dataset status is ${dataset.status}`)
     if (args.manifestHash !== MANIFEST_HASH || dataset.manifestHash !== MANIFEST_HASH || dataset.manifestHash !== args.manifestHash) errors.push('manifest hash mismatch')
     if (args.assetManifestHash !== ASSET_MANIFEST_HASH || dataset.assetManifestHash !== ASSET_MANIFEST_HASH || dataset.assetManifestHash !== args.assetManifestHash) errors.push('asset manifest hash mismatch')
     if (assetCount !== 61 || assetCount !== args.assetCount) errors.push(`asset count is ${assetCount}, expected ${args.assetCount}`)
+    if (semantic.firstLoad.projectCount !== expectedCounts.projects || semantic.firstLoad.populatedProjectCount !== expectedCounts.projects) {
+      errors.push(`native first-load has ${semantic.firstLoad.populatedProjectCount}/${semantic.firstLoad.projectCount} populated projects`)
+    }
+    if (semantic.mentions.messageCount !== relationshipCounts.mentionMessages || semantic.mentions.linkCount !== relationshipCounts.mentionMessages) {
+      errors.push(`native mention relationships are incomplete: ${JSON.stringify(semantic.mentions)}`)
+    }
+    if (semantic.threads.count !== relationshipCounts.channelThreads || semantic.threads.replyCount !== relationshipCounts.threadReplies || semantic.threads.invalidRelationshipCount !== 0) {
+      errors.push(`native thread relationships are incomplete: ${JSON.stringify(semantic.threads)}`)
+    }
     return {
       ok: errors.length === 0,
       status: dataset.status,
@@ -1533,6 +2540,7 @@ export const verify = internalQuery({
       counts,
       assetCount,
       relationshipErrors: errors,
+      semantic,
     }
   },
 })
@@ -1565,6 +2573,7 @@ async function assertNoUnregisteredProjectData(ctx: WriteCtx, dataset: Doc<'show
   const registeredMemberships = registeredIds('memberships')
   const registeredProjectCompanies = registeredIds('projectCompanies')
   const registeredMessages = registeredIds('messages')
+  const registeredThreads = registeredIds('channelThreads')
   const registeredTasks = registeredIds('tasks')
   const registeredAttachments = registeredIds('attachments')
   const projectIds = records
@@ -1588,6 +2597,10 @@ async function assertNoUnregisteredProjectData(ctx: WriteCtx, dataset: Doc<'show
     const messages = await ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect()
     const unregisteredMessage = messages.find((message) => !registeredMessages.has(String(message._id)))
     if (unregisteredMessage) throw new Error(`refusing removal with unregistered message ${unregisteredMessage._id}`)
+
+    const threads = await ctx.db.query('channelThreads').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
+    const unregisteredThread = threads.find((thread) => !registeredThreads.has(String(thread._id)))
+    if (unregisteredThread) throw new Error(`refusing removal with unregistered channel thread ${unregisteredThread._id}`)
 
     const tasks = await ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect()
     const unregisteredTask = tasks.find((task) => !registeredTasks.has(String(task._id)))
@@ -1662,6 +2675,18 @@ async function deleteNativeRegistryRecord(ctx: WriteCtx, record: RegistryRecord)
   if (record.recordType === 'messages') {
     const id = ctx.db.normalizeId('messages', record.recordId)
     if (!id) throw new Error(`invalid message id ${record.externalKey}`)
+    if (await ctx.db.get(id)) await ctx.db.delete(id)
+    return
+  }
+  if (record.recordType === 'channelThreads') {
+    const id = ctx.db.normalizeId('channelThreads', record.recordId)
+    if (!id) throw new Error(`invalid channel thread id ${record.externalKey}`)
+    const [following, unfollowed, readStates] = await Promise.all([
+      ctx.db.query('channelThreadFollowers').withIndex('by_thread_preference', (q) => q.eq('channelThreadId', id).eq('preference', 'following')).collect(),
+      ctx.db.query('channelThreadFollowers').withIndex('by_thread_preference', (q) => q.eq('channelThreadId', id).eq('preference', 'unfollowed')).collect(),
+      ctx.db.query('channelThreadReadStates').withIndex('by_thread_project_member', (q) => q.eq('channelThreadId', id)).collect(),
+    ])
+    for (const row of [...following, ...unfollowed, ...readStates]) await ctx.db.delete(row._id)
     if (await ctx.db.get(id)) await ctx.db.delete(id)
     return
   }
