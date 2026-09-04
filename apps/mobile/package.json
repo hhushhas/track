@@ -59,8 +59,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.17",
-    "typescript": "6.0.2",
-    "vitest": "^4.1.10"
+    "typescript": "7.0.2",
+    "vitest": "^4.1.11"
   },
   "expo": {
     "install": {
