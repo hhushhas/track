@@ -176,5 +176,17 @@ export const MaxFontScale = 1.3;
 
 export const TouchTarget = Platform.select({ ios: 44, android: 48 }) ?? 44;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 72 }) ?? 0;
+/** Shared visual icon sizes. The control owns the touch target around them. */
+export const IconSize = {
+  small: 16,
+  medium: 20,
+  large: 24,
+} as const;
+
+/**
+ * Space reserved below scrollable content for the floating app navigation.
+ * The navigation owns the device safe-area inset; screens only need this
+ * stable content reserve so the last row never hides behind the bar.
+ */
+export const BottomTabInset = 58;
 export const MaxContentWidth = 800;

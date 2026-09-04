@@ -5,13 +5,14 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { TaskStatusPill } from '@/components/task-ui';
+import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { shortTaskKey } from '@/lib/task-presentation';
+import { displayText } from '@/lib/display-text';
 
 /** Matches the avatar column MessageBubble reserves, so cards line up with bubbles. */
 const GUTTER = 40;
@@ -79,16 +80,17 @@ export function TaskInlineCards({
                 hapticLight();
                 router.push(taskDetailHref(projectId, item.task.publicKey, identity));
               }}
-              style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
-              <View style={styles.header}>
-                <ThemedText numberOfLines={1} style={styles.key} themeColor="textSecondary" type="mono">
-                  {shortTaskKey(item.task.publicKey)}
+              style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+              <PlatformIcon color={theme.textSecondary} name="check-circle" size={16} />
+              <View style={styles.body}>
+                <ThemedText numberOfLines={1} type="smallBold">
+                  {displayText(item.task.title)}
                 </ThemedText>
-                <TaskStatusPill category={item.state?.category} label={status} />
+                <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
+                  {`${shortTaskKey(item.task.publicKey)} · ${status}`}
+                </ThemedText>
               </View>
-              <ThemedText numberOfLines={2} type="small">
-                {item.task.title}
-              </ThemedText>
+              <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />
             </Pressable>
           );
         })}
@@ -99,23 +101,18 @@ export function TaskInlineCards({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: Radius.large,
+    alignItems: 'center',
+    borderRadius: Radius.medium,
+    flexDirection: 'row',
     borderWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.one,
+    gap: Spacing.two,
     paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.three,
   },
   gutter: {
     width: GUTTER,
   },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: Spacing.two,
-    justifyContent: 'space-between',
-    minWidth: 0,
-  },
-  key: {
+  body: {
     flexShrink: 1,
     minWidth: 0,
   },

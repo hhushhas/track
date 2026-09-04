@@ -17,6 +17,7 @@ import { CompanyProvider } from '@/contexts/company-context';
 import { ThemeOverrideProvider, useThemeOverride } from '@/contexts/theme-override-context';
 import { Colors } from '@/constants/theme';
 import { PushNotificationBridge } from '@/lib/push-notifications';
+import { OfflineTaskSync } from '@/components/offline-task-sync';
 
 type ProviderAuthClient = ComponentProps<typeof ConvexBetterAuthProvider>['authClient'];
 const providerAuthClient = authClient as unknown as ProviderAuthClient;
@@ -44,9 +45,10 @@ const NAV_THEME_DARK = {
 };
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts(MaterialCommunityIcons.font);
-
-  if (!fontsLoaded) return null;
+  // Do not block the entire application on the icon font. Expo can keep the
+  // native splash visible indefinitely when a font request is delayed; the
+  // rest of the UI remains usable while the font finishes loading.
+  useFonts(MaterialCommunityIcons.font);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -76,6 +78,7 @@ function AppLayout() {
         <TrackUserProvider>
           <PushNotificationBridge>
             <CompanyProvider>
+              <OfflineTaskSync />
               <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
               <Stack
                 screenOptions={{
@@ -92,7 +95,11 @@ function AppLayout() {
                 }}>
                 <Stack.Screen name="index" options={{ headerShown: false }} />
                 <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                <Stack.Screen name="today" options={{ title: 'Home' }} />
                 <Stack.Screen name="projects" options={{ title: 'Projects' }} />
+                <Stack.Screen name="project" options={{ title: 'Project' }} />
+                <Stack.Screen name="inbox" options={{ title: 'Inbox' }} />
+                <Stack.Screen name="search" options={{ title: 'Search' }} />
                 <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
                 <Stack.Screen name="company" options={{ title: 'Companies' }} />
                 <Stack.Screen name="groups" options={{ title: 'Channels' }} />

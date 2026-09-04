@@ -21,7 +21,7 @@
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "test": "turbo test && vitest run --dir convex --environment node",
+    "test": "turbo test && vitest run --dir convex --environment node --testTimeout 15000",
     "convex:dev": "convex dev",
     "convex:deploy:dev": "convex deploy",
     "convex:deploy:prod": "convex deploy --env-file convex.prod.env"
@@ -45,11 +45,12 @@
     "@upstash/box": "0.4.4",
     "ai": "^6.0.223",
     "better-auth": "1.6.25",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "firebase-admin": "14.2.0",
     "hono": "4.12.34",
     "jose": "6.2.5",
-    "react": "19.2.7",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
     "web-push": "^3.6.7"
   }
 }

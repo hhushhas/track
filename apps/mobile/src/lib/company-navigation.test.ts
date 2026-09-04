@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { channelHref, navigationUnavailableCopy, projectChannelsHref } from './company-navigation';
+import { channelHref, navigationUnavailableCopy, projectChannelsHref, projectOverviewHref } from './company-navigation';
 
 describe('Company mobile navigation presenter', () => {
   const projectId = 'project-id' as Id<'projects'>;
@@ -16,5 +16,10 @@ describe('Company mobile navigation presenter', () => {
     expect(channelHref(projectId, groupId, context, 'message-id' as Id<'messages'>)).toBe('/conversation?groupId=group-id&projectId=project-id&companyId=company-id&membershipId=membership-id&messageId=message-id');
     expect(channelHref(projectId, groupId, { archived: true, companyId, membershipId })).toContain('&archive=1');
     expect(navigationUnavailableCopy(true)).not.toContain(groupId);
+  });
+
+  it('opens the Project overview while retaining represented membership context', () => {
+    const context = { archived: false, companyId, membershipId };
+    expect(projectOverviewHref(projectId, context)).toBe('/project?projectId=project-id&companyId=company-id&membershipId=membership-id');
   });
 });

@@ -1,6 +1,6 @@
 import { useMutation } from 'convex/react'
 import { ArrowLeft, ArrowRight, Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -23,22 +23,22 @@ export function TaskBoard({
   onOpen: (publicKey: string) => void
   tasks: Array<TaskView>
 }) {
-  const moveTask = useMutation(api.tasks.move)
+  const moveTask = useMutation(api.tasks.moveTask)
   const [optimisticStates, setOptimisticStates] = useState<Record<string, string>>({})
-  const [draggedTask, setDraggedTask] = useState<Id<'tasks'> | null>(null)
+  const draggedTask = useRef<Id<'tasks'> | null>(null)
   const grouped = useMemo(
     () => groupTaskViewsByState(board.states, tasks, optimisticStates),
     [board.states, optimisticStates, tasks],
   )
 
   async function move(item: TaskView, stateId: Id<'taskWorkflowStates'>, targetIndex: number) {
+    const destinationTasks = grouped.get(stateId) ?? []
     setOptimisticStates((current) => ({ ...current, [item.task._id]: stateId }))
     try {
       await moveTask({
         taskId: item.task._id,
-        destinationBoardId: board.board._id,
         workflowStateId: stateId,
-        targetIndex,
+        beforeTaskId: destinationTasks[targetIndex]?.task._id,
         expectedRevision: item.task.revision,
         ...identity,
       })
@@ -63,10 +63,11 @@ export function TaskBoard({
             className="task-column"
             key={state._id}
             onDragOver={(event) => event.preventDefault()}
-            onDrop={() => {
-              const item = tasks.find((candidate) => candidate.task._id === draggedTask)
+            onDrop={(event) => {
+              event.preventDefault()
+              const item = tasks.find((candidate) => candidate.task._id === draggedTask.current)
               if (item) void move(item, state._id, columnTasks.length)
-              setDraggedTask(null)
+              draggedTask.current = null
             }}
           >
             <header>
@@ -81,8 +82,14 @@ export function TaskBoard({
                   className="task-card"
                   draggable
                   key={item.task._id}
-                  onDragEnd={() => setDraggedTask(null)}
-                  onDragStart={() => setDraggedTask(item.task._id)}
+                  onDragEnd={() => { draggedTask.current = null }}
+                  onDragStart={(event) => {
+                    draggedTask.current = item.task._id
+                    // Setting a payload is required by some browsers before they
+                    // will accept a drop, and makes the drag operation explicit.
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('text/plain', item.task._id)
+                  }}
                 >
                   <button className="task-card-open" onClick={() => onOpen(item.task.publicKey)} type="button">
                     <span className="task-card-idline"><span>{item.task.publicKey}</span><StateRing category={state.category} size="dense" /></span>

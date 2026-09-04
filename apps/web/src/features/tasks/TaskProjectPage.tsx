@@ -9,6 +9,7 @@ import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
 import { useReleaseConfig } from '#/lib/release-config'
 import { TaskAdminDialog } from './TaskAdminDialog'
 import { TaskBoard } from './TaskBoard'
@@ -159,39 +160,35 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
           <section className="task-workspace">
           <div className="task-toolbar">
             {view === 'board' ? (
-              <NativeSelect
-                aria-label="Board"
-                onChange={(event) => void navigate({
+              <TaskFilterSelect
+                ariaLabel="Board"
+                className="task-board-select"
+                display="value"
+                label="Board"
+                onChange={(value) => void navigate({
                   to: '/workspace/projects/$projectId/tasks', params: { projectId },
-                  search: { ...search, board: event.target.value },
+                  search: { ...search, board: value },
                 })}
+                options={(boards ?? []).map((item) => ({ label: item.board.name, value: item.board._id }))}
                 value={selectedBoard?.board._id ?? ''}
-              >
-                {(boards ?? []).map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}
-              </NativeSelect>
+              />
             ) : <strong>{view === 'my' ? 'Open work assigned to you' : 'Accessible Project work'}</strong>}
-            <NativeSelect
-              aria-label="Filter by priority"
-              onChange={(event) => void navigate({
+            <TaskFilterSelect
+                ariaLabel="Filter by priority"
+              label="Priority"
+              onChange={(value) => void navigate({
                 to: '/workspace/projects/$projectId/tasks', params: { projectId },
-                search: { ...search, priority: event.target.value },
+                search: { ...search, priority: value },
               })}
+              options={['all', 'urgent', 'high', 'medium', 'low', 'none'].map((priority) => ({
+                label: priority === 'all' ? 'All priorities' : priority,
+                value: priority,
+              }))}
               value={search.priority ?? 'all'}
-            >
-              {['all', 'urgent', 'high', 'medium', 'low', 'none'].map((priority) =>
-                <NativeSelectOption key={priority} value={priority}>{priority === 'all' ? 'All priorities' : priority}</NativeSelectOption>)}
-            </NativeSelect>
-            <NativeSelect aria-label="Filter by status" onChange={(event) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, state: event.target.value } })} value={search.state ?? 'all'}>
-              <NativeSelectOption value="all">All statuses</NativeSelectOption>
-              {(boards ?? []).flatMap((item) => item.states).filter((state, index, states) => states.findIndex((candidate) => candidate._id === state._id) === index).map((state) => <NativeSelectOption key={state._id} value={state._id}>{state.name}</NativeSelectOption>)}
-            </NativeSelect>
-            <NativeSelect aria-label="Filter by due state" onChange={(event) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, due: event.target.value } })} value={search.due ?? 'all'}>
-              {['all', 'overdue', 'due_today', 'upcoming', 'none'].map((due) => <NativeSelectOption key={due} value={due}>{due === 'all' ? 'All due dates' : due.replaceAll('_', ' ')}</NativeSelectOption>)}
-            </NativeSelect>
-            <NativeSelect aria-label="Filter by label" onChange={(event) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, label: event.target.value } })} value={search.label ?? 'all'}>
-              <NativeSelectOption value="all">All labels</NativeSelectOption>
-              {labels?.map((label) => <NativeSelectOption key={label._id} value={label._id}>{label.name}</NativeSelectOption>)}
-            </NativeSelect>
+            />
+            <TaskFilterSelect ariaLabel="Filter by status" label="Status" onChange={(value) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, state: value } })} options={[{ label: 'All statuses', value: 'all' }, ...(boards ?? []).flatMap((item) => item.states).filter((state, index, states) => states.findIndex((candidate) => candidate._id === state._id) === index).map((state) => ({ label: state.name, value: state._id }))]} value={search.state ?? 'all'} />
+            <TaskFilterSelect ariaLabel="Filter by due state" label="Due" onChange={(value) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, due: value } })} options={['all', 'overdue', 'due_today', 'upcoming', 'none'].map((due) => ({ label: due === 'all' ? 'All due dates' : due.replaceAll('_', ' '), value: due }))} value={search.due ?? 'all'} />
+            <TaskFilterSelect ariaLabel="Filter by label" label="Label" onChange={(value) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, label: value } })} options={[{ label: 'All labels', value: 'all' }, ...(labels ?? []).map((label) => ({ label: label.name, value: label._id }))]} value={search.label ?? 'all'} />
             <label className="task-archive-filter"><input checked={Boolean(search.archived)} onChange={(event) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, archived: event.target.checked } })} type="checkbox" /> Archived</label>
           </div>
           {boards === undefined || taskRows === undefined ? <TaskLoading /> : !boards.length ? (
@@ -258,6 +255,16 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
       />
     </main>
   )
+}
+
+function TaskFilterSelect({ ariaLabel, className, display = 'label', label, onChange, options, value }: { ariaLabel: string; className?: string; display?: 'label' | 'value'; label: string; onChange: (value: string) => void; options: Array<{ label: string; value: string }>; value: string }) {
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? label
+  return <Select onValueChange={(next) => { if (next) onChange(next) }} value={value}>
+    <SelectTrigger aria-label={ariaLabel} className={`task-filter-select ${className ?? ''}`} size="sm"><span className="task-filter-select-label">{display === 'value' ? selectedLabel : label}</span><SelectValue className="task-filter-select-value" /></SelectTrigger>
+    <SelectContent align="start" alignItemWithTrigger={false} className="task-filter-select-content">
+      <SelectGroup>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectGroup>
+    </SelectContent>
+  </Select>
 }
 
 function TaskNotificationButton({ identity, projectId }: { identity: ReturnType<typeof taskIdentity>; projectId: Id<'projects'> }) {

@@ -195,6 +195,8 @@ export function TaskDueChip({
 export function TaskCard({
   assignee,
   category,
+  contextLabel,
+  description,
   dueDate,
   evidence,
   onPress,
@@ -207,6 +209,8 @@ export function TaskCard({
 }: {
   assignee?: string;
   category?: TaskStateCategory;
+  contextLabel?: string;
+  description?: string;
   dueDate?: string;
   evidence?: boolean;
   onPress: () => void;
@@ -239,7 +243,7 @@ export function TaskCard({
         <View style={styles.cardMeta}>
           <View style={styles.cardKey}>
             {evidence ? <View style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
-            <ThemedText themeColor="textTertiary" type="mono">{shortTaskKey(publicKey)}</ThemedText>
+            {!board ? <ThemedText themeColor="textTertiary" type="mono">{shortTaskKey(publicKey)}</ThemedText> : null}
           </View>
           {board ? (
             <PlatformIcon color={theme.textTertiary} name="drag-handle" size={16} />
@@ -247,13 +251,31 @@ export function TaskCard({
             <TaskPriorityBadge priority={priority} />
           )}
         </View>
-        <ThemedText numberOfLines={2} style={styles.cardTitle} type="smallBold">{title}</ThemedText>
+        <View style={styles.titleRow}>
+          {board ? <PlatformIcon color={theme.text} name="check-box-outline" size={17} /> : null}
+          <ThemedText numberOfLines={board ? 1 : 2} style={styles.cardTitle} type="smallBold">{title}</ThemedText>
+        </View>
+        {!board && contextLabel ? (
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
+            {contextLabel}
+          </ThemedText>
+        ) : null}
+        {board && description ? (
+          <ThemedText numberOfLines={1} style={styles.cardDescription} themeColor="textSecondary" type="caption">
+            {description}
+          </ThemedText>
+        ) : null}
         <View style={styles.cardFooter}>
-          <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />
+          {board ? (
+            <View style={styles.boardAssignee}>
+              {assignee ? <ColoredAvatar label={assignee} seed={assignee} size={24} /> : null}
+              <TaskDueChip category={category} dueDate={dueDate} />
+            </View>
+          ) : <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />}
           <View style={styles.cardTrailing}>
             {board ? <TaskPriorityBadge priority={priority} /> : null}
-            <TaskDueChip category={category} dueDate={dueDate} />
-            {assignee ? <ColoredAvatar label={assignee} seed={assignee} size={22} /> : null}
+            {!board ? <TaskDueChip category={category} dueDate={dueDate} /> : null}
+            {!board && assignee ? <ColoredAvatar label={assignee} seed={assignee} size={22} /> : null}
           </View>
         </View>
       </Pressable>
@@ -343,7 +365,7 @@ export function TaskAction({
 }
 
 const styles = StyleSheet.create({
-  action: { alignItems: 'center', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
+  action: { alignItems: 'center', alignSelf: 'stretch', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   actionPrimaryText: { color: Colors.light.text },
   banner: { alignItems: 'center', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   bannerText: { flex: 1 },
@@ -355,6 +377,8 @@ const styles = StyleSheet.create({
   cardMeta: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: 18 },
   cardPressable: { gap: Spacing.two, padding: Spacing.three },
   cardTitle: { flexShrink: 1 },
+  cardDescription: { flexShrink: 1 },
+  boardAssignee: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
   cardTrailing: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.two, justifyContent: 'flex-end' },
   inlineMeta: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one },
   originDot: { borderRadius: Radius.pill, borderWidth: 2, height: 8, width: 8 },
@@ -363,7 +387,7 @@ const styles = StyleSheet.create({
   pillLabel: { flexShrink: 1 },
   priority: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   priorityGlyph: { fontWeight: '800' },
-  segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.small, borderWidth: StyleSheet.hairlineWidth, flex: 1, justifyContent: 'center', minHeight: 38, paddingHorizontal: Spacing.two },
+  segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.small, borderWidth: StyleSheet.hairlineWidth, flex: 1, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   segmented: { borderRadius: Radius.medium, flexDirection: 'row', padding: 3 },
   skeletonAvatar: { borderRadius: Radius.pill, height: 24, width: 24 },
   skeletonBottom: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.one },
@@ -373,4 +397,5 @@ const styles = StyleSheet.create({
   skeletonPill: { borderRadius: Radius.medium, height: 22, width: 84 },
   skeletonTitle: { borderRadius: Radius.small, height: 13, width: '84%' },
   skeletonTitleShort: { borderRadius: Radius.small, height: 13, width: '52%' },
+  titleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
 });

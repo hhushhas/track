@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
 import { useReleaseConfig } from "#/lib/release-config";
 import {
   CreateCompanyForm,
@@ -153,7 +154,7 @@ export function CompanyHubPage() {
         ) : (
           <>
             <label htmlFor="acting-company">Represent Company</label>
-            <select
+            <NativeSelect
               id="acting-company"
               onChange={(event) =>
                 setActingCompanyId(event.target.value as Id<"companies">)
@@ -163,14 +164,14 @@ export function CompanyHubPage() {
               {companies.flatMap((item) =>
                 item.company
                   ? [
-                      <option key={item.company._id} value={item.company._id}>
+                      <NativeSelectOption key={item.company._id} value={item.company._id}>
                         {item.company.displayName} · @
                         {item.company.normalizedHandle} · {item.membership.role}
-                      </option>,
+                      </NativeSelectOption>,
                     ]
                   : [],
               )}
-            </select>
+            </NativeSelect>
             <CreateCompanyForm run={run} />
           </>
         )}

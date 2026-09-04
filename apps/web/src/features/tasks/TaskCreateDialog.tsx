@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
+import { DatePicker } from '#/components/ui/date-picker'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '#/components/ui/dialog'
@@ -118,7 +119,7 @@ export function TaskCreateDialog({
               <NativeSelectOption value="">Unassigned</NativeSelectOption>
               {assignees?.map((item) => <NativeSelectOption key={item.member._id} value={item.member._id}>{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</NativeSelectOption>)}
             </NativeSelect></label>
-            <label>Due date<Input onChange={(event) => setDueDate(event.target.value)} type="date" value={dueDate} /></label>
+            <label>Due date<DatePicker aria-label="Due date" onChange={setDueDate} value={dueDate} /></label>
           </div>
           <fieldset><legend>Labels</legend><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => setLabelIds((current) => current.includes(label._id) ? current.filter((id) => id !== label._id) : [...current, label._id])} size="sm" type="button" variant={labelIds.includes(label._id) ? 'default' : 'outline'}>{label.name}</Button>)}</div></fieldset>
           {error ? <p className="task-form-error" role="alert">{error}</p> : null}

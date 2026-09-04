@@ -5,7 +5,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { platformStorage } from '@/lib/platform-storage';
 import { useReleaseConfig } from '@/lib/release-config';
-import { useTrackUser } from './track-user-context';
+import { useTrackUser } from '@/contexts/track-user-context';
 
 const STORAGE_KEY = 'track.acting-company.v1';
 

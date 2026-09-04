@@ -55,7 +55,7 @@ export default function Index() {
   // Only a settled, empty session sends anyone to sign-in.
   if (!hasAccess) return <Redirect href="/sign-in" />;
 
-  if (isAuthReady && trackUserId) return <Redirect href="/projects" />;
+  if (isAuthReady && trackUserId) return <Redirect href="/today" />;
 
   return (
     <View style={[styles.centered, { backgroundColor: theme.background }]}>

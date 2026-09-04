@@ -30,7 +30,7 @@ const identityArgs = {
   projectMemberId: v.optional(v.id('projectMembers')),
 }
 
-async function suggestionAccess(
+export async function suggestionAccess(
   ctx: Parameters<typeof resolveTaskRequestContext>[0],
   actor: Parameters<typeof resolveTaskRequestContext>[1],
   suggestion: Doc<'taskSuggestions'>,
@@ -52,7 +52,7 @@ function terminalResult(suggestion: Doc<'taskSuggestions'>) {
   }
 }
 
-async function suggestionReferenceVisible(
+export async function suggestionReferenceVisible(
   ctx: Parameters<typeof resolveTaskRequestContext>[0],
   reference: Doc<'taskSuggestionReferences'>,
 ) {

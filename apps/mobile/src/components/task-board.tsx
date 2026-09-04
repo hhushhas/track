@@ -23,6 +23,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticMedium } from '@/lib/haptics';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 
 const ColumnWidth = 268;
 const ColumnGap = Spacing.three;
@@ -128,6 +129,7 @@ export function TaskBoard({
   readOnly: boolean;
 }) {
   const theme = useTheme();
+  const bottomContentInset = useBottomTabContentInset();
   const rootRef = useAnimatedRef<Animated.View>();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const drag = useDragState();
@@ -237,7 +239,7 @@ export function TaskBoard({
           tone="danger"
         />
       ) : null}
-      <Animated.ScrollView
+                <Animated.ScrollView
         contentContainerStyle={styles.columns}
         horizontal
         onScroll={scrollHandler}
@@ -248,6 +250,7 @@ export function TaskBoard({
         {display.map((column, index) => (
           <BoardColumn
             assigneeName={assigneeName}
+            bottomContentInset={bottomContentInset}
             column={column}
             columnCount={display.length}
             drag={drag}
@@ -268,6 +271,7 @@ export function TaskBoard({
           <TaskCard
             assignee={assigneeName(dragged)}
             category={dragged.state?.category}
+            description={dragged.task.description}
             dueDate={dragged.task.dueDate}
             evidence={dragged.references.length > 0}
             onPress={() => undefined}
@@ -298,6 +302,7 @@ export function TaskBoard({
 
 function BoardColumn({
   assigneeName,
+  bottomContentInset,
   column,
   columnCount,
   drag,
@@ -311,6 +316,7 @@ function BoardColumn({
   rootRef,
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
+  bottomContentInset: number;
   column: BoardColumnView;
   columnCount: number;
   drag: DragState;
@@ -354,7 +360,11 @@ function BoardColumn({
     <View style={styles.column}>
       {/* The count sits against its own chip: pushed to the column edge it read
           as a label on the next column. */}
-      <View style={styles.columnHeading}>
+      <View style={[styles.columnHeading, {
+        backgroundColor: column.state.category === 'completed'
+          ? theme.successSoft
+          : column.state.category === 'started' ? theme.accentSoft : theme.backgroundElement,
+      }]}>
         <TaskStatusPill category={column.state.category} label={column.state.name} />
         <ThemedText
           accessibilityLabel={`${column.tasks.length} ${column.tasks.length === 1 ? 'task' : 'tasks'} in ${column.state.name}`}
@@ -364,7 +374,7 @@ function BoardColumn({
         </ThemedText>
       </View>
       <Animated.ScrollView
-        contentContainerStyle={styles.columnBody}
+        contentContainerStyle={[styles.columnBody, { paddingBottom: bottomContentInset }]}
         onContentSizeChange={(_, height) => { content.value = height; }}
         onLayout={(event) => { viewport.value = event.nativeEvent.layout.height; }}
         onScroll={scrollHandler}
@@ -500,6 +510,7 @@ function BoardCard({
         <TaskCard
           assignee={assigneeName(item)}
           category={item.state?.category}
+          description={item.task.description}
           dueDate={item.task.dueDate}
           evidence={item.references.length > 0}
           onPress={() => onOpen(item)}
@@ -517,7 +528,7 @@ function BoardCard({
 
 const styles = StyleSheet.create({
   column: { width: ColumnWidth },
-  columnBody: { gap: CardGap, paddingBottom: Spacing.six },
+  columnBody: { gap: CardGap },
   columnEmpty: {
     alignItems: 'center',
     borderRadius: Radius.large,
@@ -528,9 +539,11 @@ const styles = StyleSheet.create({
   },
   columnHeading: {
     alignItems: 'center',
+    borderRadius: Radius.medium,
     flexDirection: 'row',
     gap: Spacing.two,
     height: ListTop,
+    paddingHorizontal: Spacing.three,
   },
   columns: { gap: ColumnGap, paddingRight: Spacing.three },
   indicator: { borderRadius: Radius.small, height: 3, left: 0, position: 'absolute', right: 0, top: 0 },

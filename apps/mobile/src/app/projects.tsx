@@ -14,11 +14,13 @@ import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { EmptyState } from '@/components/empty-state';
+import { PrimaryNavigation } from '@/components/primary-navigation';
 import { OptionsSheet, SheetInput, SheetSection, SheetRow } from '@/components/options-sheet';
 import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { hapticLight, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
-import { projectChannelsHref } from '@/lib/company-navigation';
+import { projectOverviewHref } from '@/lib/company-navigation';
 
 type MobileProject = {
   project: Doc<'projects'>;
@@ -27,8 +29,22 @@ type MobileProject = {
   unreadCount: number;
 };
 
+type AttentionPreview = {
+  id: string;
+  kind: 'task' | 'message' | 'suggestion' | 'invitation';
+  taskId?: string;
+  taskTitle?: string;
+  title?: string;
+  senderName?: string;
+  preview?: string;
+  projectName: string;
+  groupName?: string;
+  eventType: string;
+};
+
 export default function ProjectsScreen() {
   const theme = useTheme();
+  const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const { trackUserId, signOut, openProfileSheet } = useTrackUser();
   const { actingCompanyId, actingCompany, companyModelEnabled } = useCompany();
@@ -45,6 +61,9 @@ export default function ProjectsScreen() {
   const requestAccountDeletion = useMutation(api.auth.requestAccountDeletion);
 
   const projects = useQuery(api.mobile.listProjects, trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip');
+  const attention = useQuery(api.mobile.listAttention, trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip') as AttentionPreview[] | undefined;
+  const uniqueAttention = uniqueAttentionPreview(attention ?? []);
+  const attentionPreview = uniqueAttention.slice(0, 3);
   const projectItems = (projects ?? []) as MobileProject[];
 
   function openTools() {
@@ -77,7 +96,7 @@ export default function ProjectsScreen() {
       setProjectName('');
       setProjectClientLabel('');
       setCreateOpen(false);
-      router.push(`/groups?projectId=${projectId}`);
+      router.push(projectOverviewHref(projectId, null));
     } catch (error) {
       Alert.alert(
         'Project not created',
@@ -96,9 +115,9 @@ export default function ProjectsScreen() {
 
     if (projectItems.length === 0) {
       const projectId = await ensureStarter({ userId: trackUserId });
-      router.push(projectChannelsHref(projectId, null));
+      router.push(projectOverviewHref(projectId, null));
     } else {
-      router.push(projectChannelsHref(item.project._id, actingCompanyId ? {
+      router.push(projectOverviewHref(item.project._id, actingCompanyId ? {
         archived: item.membership.status === 'archived',
         companyId: actingCompanyId,
         membershipId: item.membership._id,
@@ -193,9 +212,16 @@ export default function ProjectsScreen() {
       ) : (
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
           data={projectItems}
           keyExtractor={(item) => item.membership._id}
+          ListHeaderComponent={attentionPreview.length > 0 ? (
+            <AttentionPreviewCard
+              items={attentionPreview}
+              totalCount={uniqueAttention.length}
+              onPress={() => router.push('/inbox')}
+            />
+          ) : null}
           renderItem={({ item }) => (
             <ProjectRow item={item} onPress={() => void navigateToProject(item)} />
           )}
@@ -246,6 +272,7 @@ export default function ProjectsScreen() {
         </SheetSection>
         <SheetSection>
           <SheetRow icon="account-edit-outline" label="Edit profile" onPress={() => { setToolsOpen(false); openProfileSheet(); }} />
+          <SheetRow icon="inbox" label="Inbox" onPress={() => { setToolsOpen(false); router.push('/inbox'); }} />
           <SheetRow icon="bell-outline" label="Notifications" onPress={() => { setToolsOpen(false); router.push('/notifications'); }} />
           <SheetRow icon="shield-lock-outline" label="Privacy policy" onPress={() => void Linking.openURL('https://track.q9labs.ai/privacy')} />
           <SheetRow icon="file-document-outline" label="Terms of Service" onPress={() => void Linking.openURL('https://track.q9labs.ai/terms')} />
@@ -254,6 +281,7 @@ export default function ProjectsScreen() {
           <SheetRow destructive icon="trash-can-outline" label={deletingAccount ? 'Deleting account…' : 'Delete account'} onPress={() => { setToolsOpen(false); confirmDeletion(); }} />
         </SheetSection>
       </OptionsSheet>
+      <PrimaryNavigation />
     </ThemedView>
   );
 }
@@ -295,6 +323,59 @@ function ProjectRow({ item, onPress }: { item: MobileProject; onPress: () => voi
   );
 }
 
+function AttentionPreviewCard({ items, onPress, totalCount }: { items: AttentionPreview[]; onPress: () => void; totalCount: number }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.attentionCard, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, borderWidth: StyleSheet.hairlineWidth }]}>
+      <View style={styles.attentionHeading}>
+        <View style={styles.attentionTitleRow}>
+          <PlatformIcon color={theme.accentStrong} name="alert-circle" size={19} />
+          <ThemedText type="title">{totalCount > 3 ? '3+' : totalCount} {totalCount === 1 ? 'thing' : 'things'} need your attention</ThemedText>
+        </View>
+        <ThemedText themeColor="textSecondary" type="caption">Review the next useful action.</ThemedText>
+      </View>
+      {items.map((item) => (
+        <View key={item.id} style={styles.attentionItem}>
+          <View style={[styles.attentionDot, { backgroundColor: theme.accentStrong }]} />
+          <View style={styles.attentionItemBody}>
+            <ThemedText numberOfLines={1} type="smallBold">
+              {item.kind === 'task' ? item.taskTitle : item.kind === 'message' ? `${item.senderName ?? 'A teammate'} ${item.eventType === 'mention' ? 'mentioned you' : 'replied to you'}` : item.title}
+            </ThemedText>
+            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
+              {item.kind === 'task' ? `${item.projectName} · ${attentionEventCopy(item.eventType)}` : item.kind === 'message' ? `${item.projectName} · ${item.groupName ?? 'Conversation'}` : `${item.projectName} · ${attentionEventCopy(item.eventType)}`}
+            </ThemedText>
+          </View>
+        </View>
+      ))}
+      <Pressable accessibilityRole="button" onPress={onPress} style={[styles.attentionButton, { backgroundColor: theme.text }]}>
+        <ThemedText style={{ color: theme.background }} type="smallBold">Review attention</ThemedText>
+      </Pressable>
+    </View>
+  );
+}
+
+function uniqueAttentionPreview(items: AttentionPreview[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = item.kind === 'task' && item.taskId
+      ? `task:${item.taskId}`
+      : `${item.kind}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function attentionEventCopy(eventType: string) {
+  if (eventType === 'assignment') return 'assigned to you';
+  if (eventType === 'mention') return 'you were mentioned';
+  if (eventType === 'overdue') return 'overdue';
+  if (eventType === 'due_soon') return 'due soon';
+  if (eventType === 'task_suggestion') return 'suggestion to review';
+  if (eventType === 'company_invitation') return 'invitation to review';
+  return 'updated';
+}
+
 const styles = StyleSheet.create({
   badge: {
     alignItems: 'center',
@@ -307,6 +388,43 @@ const styles = StyleSheet.create({
   // to the light-theme stone that clears AA against it (9.18:1).
   badgeText: {
     color: Colors.light.text,
+  },
+  attentionButton: {
+    alignItems: 'center',
+    borderRadius: Radius.medium,
+    minHeight: TouchTarget,
+    justifyContent: 'center',
+    marginTop: Spacing.one,
+    paddingHorizontal: Spacing.three,
+  },
+  attentionCard: {
+    borderRadius: Radius.large,
+    gap: Spacing.two,
+    padding: Spacing.three,
+  },
+  attentionDot: {
+    borderRadius: Radius.pill,
+    height: 6,
+    marginTop: 6,
+    width: 6,
+  },
+  attentionHeading: {
+    gap: 2,
+  },
+  attentionItem: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  attentionItemBody: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  attentionTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.two,
   },
   contextBanner: {
     gap: Spacing.one,

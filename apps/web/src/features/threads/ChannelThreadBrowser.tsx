@@ -6,6 +6,7 @@ import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
+import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { useReleaseConfig } from '#/lib/release-config'
 import { threadHref, type RepresentedThreadContext } from './thread-navigation'
 
@@ -149,7 +150,7 @@ export function ChannelThreadBrowser({
         {searchTerm.length >= 2 ? <ul className="track-thread-list">{searchRows.slice(0, 4).map((item) => <li key={item.id}><a href={threadHref(projectId, item.groupId, item.threadId, context, item.messageId)}><span><strong>{item.title}</strong><small>{item.detail}</small></span></a></li>)}</ul> : null}
         {!readOnly && status === 'active' ? <form className="track-thread-create" onSubmit={(event) => void submit(event)}>
           <Input aria-label="Thread name" maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Thread name" required value={name} />
-          <label><span className="sr-only">Optional source message</span><select aria-label="Optional source message" onChange={(event) => setSourceMessageId(event.target.value as Id<'messages'> | '')} value={sourceMessageId}><option value="">Start directly in this Channel</option>{availableSources.map((item) => <option key={item.message._id} value={item.message._id}>{item.author?.displayName ?? 'Unknown member'}: {item.message.body || 'Attachment message'}</option>)}</select></label>
+          <label><span className="sr-only">Optional source message</span><NativeSelect aria-label="Optional source message" onChange={(event) => setSourceMessageId(event.target.value as Id<'messages'> | '')} value={sourceMessageId}><NativeSelectOption value="">Start directly in this Channel</NativeSelectOption>{availableSources.map((item) => <NativeSelectOption key={item.message._id} value={item.message._id}>{item.author?.displayName ?? 'Unknown member'}: {item.message.body || 'Attachment message'}</NativeSelectOption>)}</NativeSelect></label>
           <Button disabled={saving || !name.trim()} size="sm" type="submit"><Plus size={12} /> {saving ? 'Starting…' : 'Start thread'}</Button>
         </form> : null}
       </details>
@@ -236,18 +237,18 @@ export function ChannelThreadBrowser({
           />
           <label>
             <span className="sr-only">Optional source message</span>
-            <select
+            <NativeSelect
               aria-label="Optional source message"
               onChange={(event) => setSourceMessageId(event.target.value as Id<'messages'> | '')}
               value={sourceMessageId}
             >
-              <option value="">Start directly in this Channel</option>
+              <NativeSelectOption value="">Start directly in this Channel</NativeSelectOption>
               {availableSources.map((item) => (
-                <option key={item.message._id} value={item.message._id}>
+                <NativeSelectOption key={item.message._id} value={item.message._id}>
                   {item.author?.displayName ?? 'Unknown member'}: {item.message.body || 'Attachment message'}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
+          </NativeSelect>
           </label>
           <Button disabled={saving || !name.trim()} type="submit">
             {saving ? 'Starting…' : 'Start thread'}

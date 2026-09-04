@@ -17,6 +17,7 @@ import type * as channels from "../channels.js";
 import type * as companies from "../companies.js";
 import type * as companyMigration from "../companyMigration.js";
 import type * as crons from "../crons.js";
+import type * as demoSeed from "../demoSeed.js";
 import type * as foundation from "../foundation.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
@@ -104,6 +105,7 @@ declare const fullApi: ApiFromModules<{
   companies: typeof companies;
   companyMigration: typeof companyMigration;
   crons: typeof crons;
+  demoSeed: typeof demoSeed;
   foundation: typeof foundation;
   groups: typeof groups;
   http: typeof http;

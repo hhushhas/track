@@ -7,16 +7,19 @@ import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
+import { PrimaryNavigation } from '@/components/primary-navigation';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskListHref } from '@/lib/task-navigation';
+import { threadListHref } from '@/lib/thread-navigation';
 import { usePushNotifications } from '@/lib/push-notifications';
 
 type MobileGroup = {
@@ -28,6 +31,7 @@ type MobileGroup = {
 
 export default function GroupsScreen() {
   const theme = useTheme();
+  const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
@@ -57,7 +61,6 @@ export default function GroupsScreen() {
   const groupItems = (groups ?? []) as MobileGroup[];
   const projectName = (projects as { project: Doc<'projects'> }[] | undefined)
     ?.find((p) => p.project._id === projectId)?.project.name ?? 'Channels';
-
   function navigate(item: MobileGroup) {
     hapticLight();
     router.push(channelHref(projectId as Id<'projects'>, item.group._id, companyId && membershipId ? {
@@ -98,10 +101,18 @@ export default function GroupsScreen() {
       ) : navigation.available ? (
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
           data={groupItems}
           keyExtractor={(item) => item.group._id}
-          renderItem={({ item }) => <GroupRow item={item} onPress={() => navigate(item)} />}
+          renderItem={({ item }) => <GroupRow
+            item={item}
+            onPress={() => navigate(item)}
+            onThreads={release.threads ? () => router.push(threadListHref(projectId as Id<'projects'>, item.group._id, companyId && membershipId ? {
+              archived: archive === '1',
+              companyId: companyId as Id<'companies'>,
+              membershipId: membershipId as Id<'projectMembers'>,
+            } : null) as never) : undefined}
+          />}
           ListHeaderComponent={push.permissionState === 'not_determined' ? (
             <View style={[styles.notificationCard, { backgroundColor: theme.backgroundElement }]}>
               <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
@@ -121,11 +132,16 @@ export default function GroupsScreen() {
           }
         />
       ) : null}
+      <PrimaryNavigation tasksHref={release.tasks ? taskListHref(projectId as Id<'projects'>, companyId && membershipId ? {
+        archived: archive === '1',
+        companyId: companyId as Id<'companies'>,
+        membershipId: membershipId as Id<'projectMembers'>,
+      } : null) : undefined} />
     </ThemedView>
   );
 }
 
-function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void }) {
+function GroupRow({ item, onPress, onThreads }: { item: MobileGroup; onPress: () => void; onThreads?: () => void }) {
   const theme = useTheme();
   return (
     // See projects.tsx: a themed fill and a ripple on the same pressable share
@@ -135,7 +151,7 @@ function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void })
         android_ripple={{ color: theme.backgroundSelected }}
         hitSlop={4}
         onPress={() => { hapticLight(); onPress(); }}
-        style={styles.rowPressable}>
+        style={[styles.rowPressable, onThreads && styles.rowMainPressable]}>
         <ColoredAvatar label={item.group.name} seed={item.group._id} shape="rounded" size={44} />
         <View style={styles.rowBody}>
           <ThemedText numberOfLines={1} type="title">{item.group.name}</ThemedText>
@@ -156,6 +172,16 @@ function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void })
           <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
         )}
       </Pressable>
+      {onThreads ? (
+        <Pressable
+          accessibilityLabel={`Open Threads for ${item.group.name}`}
+          accessibilityRole="button"
+          android_ripple={{ color: theme.backgroundSelected }}
+          onPress={() => { hapticLight(); onThreads(); }}
+          style={[styles.threadButton, { borderLeftColor: theme.hairline }]}>
+          <PlatformIcon color={theme.textSecondary} name="forum-outline" size={19} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -204,9 +230,11 @@ const styles = StyleSheet.create({
     width: TouchTarget,
   },
   row: {
+    flexDirection: 'row',
     borderRadius: Radius.large,
     overflow: 'hidden',
   },
+  rowMainPressable: { flex: 1 },
   rowBody: {
     flex: 1,
     gap: 2,
@@ -219,6 +247,13 @@ const styles = StyleSheet.create({
     minHeight: 64,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
+  },
+  threadButton: {
+    alignItems: 'center',
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minHeight: 68,
+    width: TouchTarget,
   },
   screen: {
     flex: 1,

@@ -7,6 +7,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
+import { PrimaryNavigation } from '@/components/primary-navigation';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
@@ -16,7 +17,9 @@ import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
 import { useReleaseConfig } from '@/lib/release-config';
-import { threadConversationHref } from '@/lib/thread-navigation';
+import { useBottomTabBarInset, useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
+import { taskListHref } from '@/lib/task-navigation';
+import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
 
 type ThreadListRow = {
   key: string;
@@ -30,6 +33,8 @@ type ThreadListRow = {
 
 export default function ThreadsScreen() {
   const theme = useTheme();
+  const bottomTabBarInset = useBottomTabBarInset();
+  const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const releaseConfig = useReleaseConfig();
   const { trackUserId } = useTrackUser();
@@ -185,7 +190,7 @@ export default function ThreadsScreen() {
       />
       {error ? <ThemedText accessibilityLiveRegion="polite" style={[styles.error, { color: theme.danger }]} type="small">{error}. Retry keeps the same request.</ThemedText> : null}
       <FlatList
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
         data={rows}
         keyExtractor={(item) => item.key}
         ListEmptyComponent={(searchActive ? searchResults : threads) === undefined
@@ -218,7 +223,7 @@ export default function ThreadsScreen() {
         )}
       />
       {!readOnly && status === 'active' && !searchActive ? (
-        <View style={[styles.create, { borderTopColor: theme.hairline }]}>
+        <View style={[styles.create, { borderTopColor: theme.hairline, marginBottom: bottomTabBarInset }]}>
           <TextInput
             accessibilityLabel="Thread name"
             cursorColor={theme.accent}
@@ -240,6 +245,10 @@ export default function ThreadsScreen() {
           </Pressable>
         </View>
       ) : null}
+      <PrimaryNavigation
+        tasksHref={pid ? taskListHref(pid, context) : undefined}
+        threadsHref={pid && gid ? threadListHref(pid, gid, context) : undefined}
+      />
     </ThemedView>
   );
 }

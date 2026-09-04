@@ -1,9 +1,9 @@
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useRouter, type Href } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
+import type * as NotificationsModule from 'expo-notifications';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -11,6 +11,23 @@ import { useTrackUser } from '@/contexts/track-user-context';
 import { consumePushResponseId, getPushInstallationId } from '@/lib/push-installation';
 import { shouldPresentPush } from '@/lib/push-presentation';
 import { resolvePushHref } from '@/lib/push-routing';
+
+type NotificationsApi = typeof NotificationsModule;
+
+// Expo Go can still resolve this file, but SDK 53+ intentionally throws when
+// remote-notification APIs are loaded there. Keep the module out of the
+// evaluation path so Expo Router can load the layout and the rest of the app.
+const isExpoGo = Constants.appOwnership === 'expo';
+let notificationsApi: NotificationsApi | null = null;
+
+function getNotificationsApi(): NotificationsApi | null {
+  if (isExpoGo) return null;
+  if (!notificationsApi) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    notificationsApi = require('expo-notifications') as NotificationsApi;
+  }
+  return notificationsApi;
+}
 
 export type PushPermissionState = 'not_determined' | 'denied' | 'granted' | 'provisional';
 
@@ -28,11 +45,11 @@ type PushContextValue = {
 
 const PushContext = createContext<PushContextValue | null>(null);
 
-function permissionState(permission: Notifications.NotificationPermissionsStatus): PushPermissionState {
-  if (permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL ||
-    permission.ios?.status === Notifications.IosAuthorizationStatus.EPHEMERAL) return 'provisional';
+function permissionState(permission: NotificationsModule.NotificationPermissionsStatus): PushPermissionState {
+  if (notificationsApi && (permission.ios?.status === notificationsApi.IosAuthorizationStatus.PROVISIONAL ||
+    permission.ios?.status === notificationsApi.IosAuthorizationStatus.EPHEMERAL)) return 'provisional';
   if (permission.granted) return 'granted';
-  if (permission.status === Notifications.PermissionStatus.DENIED) return 'denied';
+  if (notificationsApi && permission.status === notificationsApi.PermissionStatus.DENIED) return 'denied';
   return 'not_determined';
 }
 
@@ -42,7 +59,8 @@ function pushEnvironment(): 'development' | 'preview' | 'production' {
   return __DEV__ ? 'development' : 'production';
 }
 
-Notifications.setNotificationHandler({
+const notifications = getNotificationsApi();
+notifications?.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data;
     const present = shouldPresentPush(data);
@@ -78,29 +96,30 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
   );
 
   const sync = useCallback(async (request: boolean) => {
-    if (!trackUserId || Platform.OS === 'web') return;
+    const push = getNotificationsApi();
+    if (!trackUserId || Platform.OS === 'web' || !push) return;
     setSyncing(true);
     setError(null);
     try {
       const id = installationId ?? await getPushInstallationId();
       setInstallationId(id);
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('track-default', {
-          importance: Notifications.AndroidImportance.HIGH,
+        await push.setNotificationChannelAsync('track-default', {
+          importance: push.AndroidImportance.HIGH,
           name: 'Track notifications',
           // Omitted sound = system default; a string names a bundled custom file.
           vibrationPattern: [0, 180, 80, 180],
         });
-        await Notifications.setNotificationChannelAsync('track-silent', {
-          importance: Notifications.AndroidImportance.HIGH,
+        await push.setNotificationChannelAsync('track-silent', {
+          importance: push.AndroidImportance.HIGH,
           name: 'Track notifications (silent)',
           sound: null,
           vibrationPattern: [0, 180, 80, 180],
         });
       }
-      const existing = await Notifications.getPermissionsAsync();
+      const existing = await push.getPermissionsAsync();
       const permission = request && !existing.granted && existing.canAskAgain
-        ? await Notifications.requestPermissionsAsync()
+        ? await push.requestPermissionsAsync()
         : existing;
       const state = permissionState(permission);
       setLocalPermission(state);
@@ -116,7 +135,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
         await reportPermission(common);
         return;
       }
-      const token = await Notifications.getDevicePushTokenAsync();
+      const token = await push.getDevicePushTokenAsync();
       await registerInstallation({ ...common, token: token.data });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'notification_sync_failed');
@@ -126,15 +145,16 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
   }, [installationId, registerInstallation, reportPermission, trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || Platform.OS === 'web') return;
+    const push = getNotificationsApi();
+    if (!trackUserId || Platform.OS === 'web' || !push) return;
     void sync(false);
     const appState = AppState.addEventListener('change', (state) => {
       if (state === 'active') void sync(false);
     });
-    const tokenSubscription = Notifications.addPushTokenListener((devicePushToken) => {
+    const tokenSubscription = push.addPushTokenListener((devicePushToken) => {
       if (!installationId) return;
       void (async () => {
-        const permission = await Notifications.getPermissionsAsync();
+        const permission = await push.getPermissionsAsync();
         await registerInstallation({
           userId: trackUserId,
           installationId,
@@ -153,8 +173,9 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
   }, [installationId, registerInstallation, sync, trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || Platform.OS === 'web') return;
-    async function open(response: Notifications.NotificationResponse | null) {
+    const push = getNotificationsApi();
+    if (!trackUserId || Platform.OS === 'web' || !push) return;
+    async function open(response: NotificationsModule.NotificationResponse | null) {
       if (!response) return;
       const responseId = response.notification.request.identifier;
       if (!await consumePushResponseId(responseId)) return;
@@ -171,8 +192,8 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       }
       router.push(href as Href);
     }
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { void open(response); });
-    void Notifications.getLastNotificationResponseAsync().then(open);
+    const subscription = push.addNotificationResponseReceivedListener((response) => { void open(response); });
+    void push.getLastNotificationResponseAsync().then(open);
     return () => subscription.remove();
   }, [installationId, recordOpen, router, trackUserId]);
 
@@ -188,7 +209,9 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       if (!trackUserId) return null;
       if (serverStatus?.registered) return await sendTest({ userId: trackUserId });
       if (__DEV__ && (localPermission === 'granted' || localPermission === 'provisional')) {
-        await Notifications.scheduleNotificationAsync({
+        const push = getNotificationsApi();
+        if (!push) return null;
+        await push.scheduleNotificationAsync({
           content: {
             title: 'Track simulator test',
             body: 'Local notification presentation and routing are connected.',

@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
+import { DatePicker } from '#/components/ui/date-picker'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '#/components/ui/sheet'
@@ -189,7 +190,7 @@ export function TaskDetailDrawer({
                     <NativeSelectOption value="">Unassigned</NativeSelectOption>
                     {assignees?.map((item) => <NativeSelectOption key={item.member._id} value={item.member._id}>{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</NativeSelectOption>)}
                   </NativeSelect></label>
-                  <label className="task-property-control"><span className="sr-only">Due date</span><Input disabled={!detail.capabilities.canEdit} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} type="date" value={draft.dueDate} /></label>
+                  <label className="task-property-control"><span className="sr-only">Due date</span><DatePicker aria-label="Due date" disabled={!detail.capabilities.canEdit} onChange={(dueDate) => setDraft({ ...draft, dueDate })} value={draft.dueDate} /></label>
                 </div>
                 {detail.capabilities.canEdit ? <Button className="task-save-button" disabled={saving} size="sm" type="submit"><Check size={13} /> {saving ? 'Saving…' : 'Save changes'}</Button> : <p className="task-read-only">Read-only task history</p>}
               </form>

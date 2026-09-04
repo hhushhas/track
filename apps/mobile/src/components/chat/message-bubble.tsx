@@ -10,6 +10,7 @@ import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { isAutoAttachmentBody, isImageAttachment } from '@/lib/attachment-presentation';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
+import { displayText } from '@/lib/display-text';
 
 const AVATAR_SIZE = 32;
 /** Media sits nearly edge-to-edge; text sections add the rest of the inset. */
@@ -37,7 +38,7 @@ export function MessageBubble({
   const theme = useTheme();
   const name = message.author?.displayName ?? 'Member';
   const authorId = message.author?._id ?? name;
-  const rawBody = message.message.body.trim();
+  const rawBody = displayText(message.message.body.trim());
   const body = message.attachments.length && isAutoAttachmentBody(rawBody) ? '' : rawBody;
   const showHeader = isFirstInGroup && !isOwnMessage;
   const hasMedia = message.attachments.some(
@@ -73,25 +74,6 @@ export function MessageBubble({
             <ThemedText numberOfLines={1} style={styles.authorName} type="smallBold">
               {name}
             </ThemedText>
-            {message.authorRole ? (
-              <View style={[styles.roleChip, { backgroundColor: theme.backgroundSelected }]}>
-                <ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">
-                  {message.authorRole}
-                </ThemedText>
-              </View>
-            ) : null}
-            {message.authorCompany ? (
-              <View
-                style={[
-                  styles.companyBadge,
-                  { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline },
-                ]}>
-                <PlatformIcon color={theme.textSecondary} name="office-building" size={12} />
-                <ThemedText numberOfLines={1} style={styles.companyName} type="captionBold">
-                  {message.authorCompany.displayName}
-                </ThemedText>
-              </View>
-            ) : null}
           </View>
         ) : null}
 
@@ -116,7 +98,7 @@ export function MessageBubble({
               {message.replyTo.authorName}
             </ThemedText>
             <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">
-              {message.replyTo.body}
+              {displayText(message.replyTo.body)}
             </ThemedText>
           </Pressable>
         ) : null}
@@ -229,10 +211,10 @@ const styles = StyleSheet.create({
   },
   bubbleText: {
     paddingHorizontal: Spacing.two,
-    paddingVertical: 6,
+    paddingVertical: Spacing.two,
   },
   companyBadge: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderRadius: Radius.small,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',

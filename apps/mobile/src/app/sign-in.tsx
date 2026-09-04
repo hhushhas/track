@@ -1,5 +1,6 @@
 import {
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -39,8 +40,19 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const signedIn = Boolean(session.data);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // A session that arrives while this screen is up — a restore that finished
   // late, or a sign-in on another tab of the same flow — carries the user in
@@ -89,10 +101,10 @@ export default function SignInScreen() {
       const result = await authClient.signIn.email({
         email: input.email,
         password,
-        callbackURL: '/',
       });
       if (result.error) {
-        throw new Error('Email or password is incorrect.');
+        const authError = result.error as { code?: string; message?: string };
+        throw new Error(authError.message ?? authError.code ?? 'Sign-in failed.');
       }
       if (requiresTwoFactor(result.data)) {
         return;
@@ -122,7 +134,6 @@ export default function SignInScreen() {
         email: input.email,
         name: input.name,
         password,
-        callbackURL: '/',
       });
       if (result.error) {
         throw new Error(result.error.message ?? 'Could not create the account.');
@@ -168,7 +179,7 @@ export default function SignInScreen() {
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
           >
-            <SignInHero />
+            {!keyboardVisible ? <SignInHero /> : null}
 
             {/* Auth panel */}
             <View style={styles.panel}>

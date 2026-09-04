@@ -2,13 +2,15 @@ import type { TaskPriority } from '@track/shared/tasks';
 import { useMutation, useQuery } from 'convex/react';
 import { useNetworkState } from 'expo-network';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { DateField } from '@/components/date-field';
 import { EmptyState } from '@/components/empty-state';
+import { PrimaryNavigation } from '@/components/primary-navigation';
+import { SkeletonList } from '@/components/skeleton-row';
 import { OptionsSheet, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import type { TaskMoveInput } from '@/components/task-board';
@@ -19,11 +21,14 @@ import {
   type MobileSuggestionView,
   type MobileTaskView,
 } from '@/components/task-list-content';
-import { TaskAction, TaskSegmentedControl, TaskStateBanner } from '@/components/task-ui';
+import { TaskAction, TaskCard, TaskSegmentedControl, TaskStateBanner } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Spacing, TouchTarget } from '@/constants/theme';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
+import { useCompany } from '@/contexts/company-context';
+import { useTrackUser } from '@/contexts/track-user-context';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
 import { groupMobileTasksByState, taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
@@ -37,6 +42,13 @@ type AssigneeView = {
 
 type PrimaryTaskTab = 'board' | 'my' | 'all';
 type TaskTab = PrimaryTaskTab | 'inbox';
+type BoardSort = 'manual' | 'due' | 'priority';
+type BoardFilter = 'all' | 'open' | 'completed' | 'high';
+type GlobalTaskView = MobileTaskView & {
+  project: { _id: Id<'projects'>; name: string };
+  companyId?: Id<'companies'>;
+  projectMemberId: Id<'projectMembers'>;
+};
 const priorities: TaskPriority[] = ['none', 'urgent', 'high', 'medium', 'low'];
 const primaryTabs: Array<{ label: string; value: PrimaryTaskTab }> = [
   { label: 'Board', value: 'board' },
@@ -53,14 +65,18 @@ function readableError(failure: unknown) {
 
 export default function TasksScreen() {
   const theme = useTheme();
+  const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const release = useReleaseConfig();
   const network = useNetworkState();
-  const { projectId, companyId, membershipId, archive } = useLocalSearchParams<{
-    projectId: string;
+  const { trackUserId } = useTrackUser();
+  const { actingCompanyId } = useCompany();
+  const { projectId, companyId, membershipId, archive, tab: tabParam } = useLocalSearchParams<{
+    projectId?: string;
     companyId?: string;
     membershipId?: string;
     archive?: string;
+    tab?: string;
   }>();
   const project = projectId as Id<'projects'>;
   const identity: MobileTaskIdentity | null = companyId && membershipId ? {
@@ -75,35 +91,40 @@ export default function TasksScreen() {
   const readOnly = archive === '1';
   const offline = network.isConnected === false || network.isInternetReachable === false;
   const currentUser = useQuery(api.auth.getCurrentUser);
-  const boards = useQuery(api.taskBoards.list, release.tasks ? {
+  const boards = useQuery(api.taskBoards.list, release.tasks && projectId ? {
     projectId: project,
     ...queryIdentity,
   } : 'skip') as MobileBoardView[] | undefined;
-  const assignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && !readOnly ? {
+  const assignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && projectId && !readOnly ? {
     projectId: project,
     ...queryIdentity,
   } : 'skip') as AssigneeView[] | undefined;
   const currentMemberId = identity?.membershipId
     ?? assignees?.find((item) => item.user._id === currentUser?._id)?.member._id;
-  const [tab, setTab] = useState<TaskTab>('board');
+  const [tab, setTab] = useState<TaskTab>(projectId ? (tabParam === 'inbox' ? 'inbox' : 'board') : 'my');
   const [boardId, setBoardId] = useState<string>('');
   const selectedBoard = boards?.find((item) => item.board._id === boardId)
     ?? boards?.find((item) => item.board.isDefault)
     ?? boards?.[0];
-  const createAssignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && !readOnly
+  const createAssignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && projectId && !readOnly
     && selectedBoard ? {
     projectId: project,
     groupId: selectedBoard.board.groupId,
     ...queryIdentity,
   } : 'skip') as AssigneeView[] | undefined;
-  const tasks = useQuery(api.tasks.list, release.tasks && tab !== 'inbox'
+  const tasks = useQuery(api.tasks.list, release.tasks && projectId && tab !== 'inbox'
     && (tab !== 'my' || currentMemberId) ? {
     projectId: project,
     boardId: tab === 'board' ? selectedBoard?.board._id : undefined,
     assigneeProjectMemberId: tab === 'my' ? currentMemberId : undefined,
     ...queryIdentity,
   } : 'skip') as MobileTaskView[] | undefined;
-  const suggestions = useQuery(api.taskSuggestions.list, release.tasks && tab === 'inbox' && !readOnly ? {
+  const myTasks = useQuery(api.mobile.listMyTasks, release.tasks && !projectId && trackUserId ? {
+    userId: trackUserId,
+    actingCompanyId: (companyId as Id<'companies'> | undefined) ?? actingCompanyId ?? undefined,
+    openOnly: true,
+  } : 'skip') as GlobalTaskView[] | undefined;
+  const suggestions = useQuery(api.taskSuggestions.list, release.tasks && projectId && tab === 'inbox' && !readOnly ? {
     projectId: project,
     ...queryIdentity,
   } : 'skip') as MobileSuggestionView[] | undefined;
@@ -123,6 +144,22 @@ export default function TasksScreen() {
   const [assigneeId, setAssigneeId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [boardSearch, setBoardSearch] = useState('');
+  const [boardSort, setBoardSort] = useState<BoardSort>('manual');
+  const [boardFilter, setBoardFilter] = useState<BoardFilter>('all');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // Keep route-driven navigation authoritative when the bottom bar changes
+  // project or opens/closes the task suggestion inbox without remounting this
+  // screen.
+  useEffect(() => {
+    setTab(projectId ? (tabParam === 'inbox' ? 'inbox' : 'board') : 'my');
+    setBoardId('');
+    setError('');
+  }, [projectId, tabParam]);
+
   const currentMember = assignees?.find((item) => item.member._id === currentMemberId);
   const canAssignOthers = currentMember
     ? ['owner', 'admin', 'staff', 'manager'].includes(currentMember.member.role)
@@ -136,15 +173,28 @@ export default function TasksScreen() {
 
   const columns = useMemo(() => {
     if (!selectedBoard) return [];
+    const search = boardSearch.trim().toLowerCase();
+    const priorityRank: Record<TaskPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
+    const visibleTasks = (tasks ?? [])
+      .filter((item) => !search || `${item.task.title} ${item.task.description ?? ''}`.toLowerCase().includes(search))
+      .filter((item) => boardFilter === 'all'
+        || (boardFilter === 'completed' && item.state?.category === 'completed')
+        || (boardFilter === 'open' && item.state?.category !== 'completed' && item.state?.category !== 'canceled')
+        || (boardFilter === 'high' && (item.task.priority === 'urgent' || item.task.priority === 'high')))
+      .sort((a, b) => {
+        if (boardSort === 'priority') return priorityRank[a.task.priority] - priorityRank[b.task.priority];
+        if (boardSort === 'due') return (a.task.dueDate ?? '9999-12-31').localeCompare(b.task.dueDate ?? '9999-12-31');
+        return a.task.rank.localeCompare(b.task.rank);
+      });
     const grouped = groupMobileTasksByState(
       selectedBoard.states.map((state) => state._id),
-      tasks ?? [],
+      visibleTasks,
     );
     return selectedBoard.states.map((state, index) => ({
       state,
       tasks: grouped[index].tasks,
     }));
-  }, [selectedBoard, tasks]);
+  }, [boardFilter, boardSearch, boardSort, selectedBoard, tasks]);
   const statusStates = boards?.find((item) =>
     item.board._id === statusTarget?.task.boardId,
   )?.states ?? [];
@@ -253,12 +303,65 @@ export default function TasksScreen() {
     );
   }
 
+  if (!projectId) {
+    return (
+      <ThemedView style={styles.screen}>
+        <Stack.Screen options={{ title: 'My Tasks' }} />
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic">
+          {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
+          <View style={styles.globalHeading}>
+            <ThemedText themeColor="textSecondary" type="message">
+              Your open work across every Project you can access.
+            </ThemedText>
+          </View>
+          <GlobalTaskList
+            onOpen={(item) => router.push(taskDetailHref(item.project._id, item.task.publicKey, item.companyId ? {
+              companyId: item.companyId,
+              membershipId: item.projectMemberId,
+            } : null))}
+            tasks={myTasks}
+          />
+          <View style={styles.projectBoardPrompt}>
+            <ThemedText type="subtitle">Need a Project board?</ThemedText>
+            <ThemedText themeColor="textSecondary" type="small">Choose a Project only when you want its board, Channels, or to create new work.</ThemedText>
+            <TaskAction label="Open Projects" onPress={() => router.push('/projects')} primary />
+          </View>
+        </ScrollView>
+        <PrimaryNavigation />
+      </ThemedView>
+    );
+  }
+
   const heading = (
     <>
       {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
       {readOnly ? <TaskStateBanner icon="shield-lock-outline" message="Read-only Company exit archive" /> : null}
       {tab !== 'inbox' ? (
         <>
+          {tab === 'board' ? (
+            <View style={styles.boardToolbar}>
+              <Pressable
+                accessibilityLabel={`Board: ${selectedBoard?.board.name ?? 'none'}`}
+                accessibilityRole="button"
+                onPress={() => setBoardOpen(true)}
+                style={styles.boardViewButton}>
+                <PlatformIcon color={theme.text} name="view-board" size={18} />
+                <ThemedText numberOfLines={1} style={styles.boardViewLabel} type="smallBold">{selectedBoard?.board.name ?? 'Board'}</ThemedText>
+                <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
+              </Pressable>
+              <View style={styles.boardTools}>
+                <Pressable accessibilityLabel="Sort tasks" onPress={() => setSortOpen(true)} style={styles.toolButton}>
+                  <PlatformIcon color={theme.textSecondary} name="sort" size={19} />
+                </Pressable>
+                <Pressable accessibilityLabel="Search tasks" onPress={() => setSearchOpen(true)} style={styles.toolButton}>
+                  <PlatformIcon color={boardSearch ? theme.accentStrong : theme.textSecondary} name="search" size={19} />
+                </Pressable>
+                <Pressable accessibilityLabel="Filter tasks" onPress={() => setFilterOpen(true)} style={styles.toolButton}>
+                  <PlatformIcon color={boardFilter !== 'all' ? theme.accentStrong : theme.textSecondary} name="filter" size={19} />
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.contextHeading}>
             <View style={styles.contextTitle}>
               <ThemedText numberOfLines={1} type="subtitle">
@@ -270,26 +373,6 @@ export default function TasksScreen() {
                 {tasks ? `${tasks.length} task${tasks.length === 1 ? '' : 's'}` : 'Loading work…'}
               </ThemedText>
             </View>
-            {tab === 'board' && boards && boards.length > 1 ? (
-              <Pressable
-                accessibilityHint="Opens the list of boards"
-                accessibilityLabel={`Board: ${selectedBoard?.board.name ?? 'none'}`}
-                accessibilityRole="button"
-                onPress={() => {
-                  hapticLight();
-                  setBoardOpen(true);
-                }}
-                style={[styles.boardPicker, {
-                  backgroundColor: theme.backgroundElement,
-                  borderColor: theme.hairline,
-                }]}>
-                <PlatformIcon color={theme.textSecondary} name="view-board" size={18} />
-                <ThemedText numberOfLines={1} style={styles.boardPickerLabel} type="label">
-                  {selectedBoard?.board.name ?? 'Choose board'}
-                </ThemedText>
-                <PlatformIcon color={theme.textSecondary} name="selector" size={18} />
-              </Pressable>
-            ) : null}
           </View>
           <TaskSegmentedControl onChange={setPrimaryTab} segments={primaryTabs} value={tab} />
         </>
@@ -364,7 +447,7 @@ export default function TasksScreen() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled">
@@ -475,29 +558,74 @@ export default function TasksScreen() {
         {error ? <ThemedText themeColor="danger" type="small">{error}</ThemedText> : null}
         <TaskAction disabled={busy || !title.trim()} label={busy ? 'Creating…' : 'Create task'} onPress={() => void create()} primary />
       </OptionsSheet>
+
+      <OptionsSheet onClose={() => setSearchOpen(false)} title="Search tasks" visible={searchOpen}>
+        <SheetInput autoFocus label="Search" onChangeText={setBoardSearch} placeholder="Search by title or description" value={boardSearch} />
+        <TaskAction label="Done" onPress={() => setSearchOpen(false)} primary />
+      </OptionsSheet>
+      <OptionsSheet onClose={() => setSortOpen(false)} title="Sort tasks" visible={sortOpen}>
+        <SheetSection>
+          <SheetRow icon="drag-handle" label="Board order" selected={boardSort === 'manual'} onPress={() => { setBoardSort('manual'); setSortOpen(false); }} />
+          <SheetRow icon="calendar" label="Due date" selected={boardSort === 'due'} onPress={() => { setBoardSort('due'); setSortOpen(false); }} />
+          <SheetRow icon="flag" label="Priority" selected={boardSort === 'priority'} onPress={() => { setBoardSort('priority'); setSortOpen(false); }} />
+        </SheetSection>
+      </OptionsSheet>
+      <OptionsSheet onClose={() => setFilterOpen(false)} title="Filter tasks" visible={filterOpen}>
+        <SheetSection>
+          <SheetRow icon="check-box-outline" label="All tasks" selected={boardFilter === 'all'} onPress={() => { setBoardFilter('all'); setFilterOpen(false); }} />
+          <SheetRow icon="circle-outline" label="Open tasks" selected={boardFilter === 'open'} onPress={() => { setBoardFilter('open'); setFilterOpen(false); }} />
+          <SheetRow icon="check-circle" label="Completed" selected={boardFilter === 'completed'} onPress={() => { setBoardFilter('completed'); setFilterOpen(false); }} />
+          <SheetRow icon="flag" label="High priority" selected={boardFilter === 'high'} onPress={() => { setBoardFilter('high'); setFilterOpen(false); }} />
+        </SheetSection>
+      </OptionsSheet>
+      <PrimaryNavigation tasksHref={`/tasks?projectId=${encodeURIComponent(project)}${companyId && membershipId ? `&companyId=${encodeURIComponent(companyId)}&membershipId=${encodeURIComponent(membershipId)}${archive === '1' ? '&archive=1' : ''}` : ''}`} />
     </ThemedView>
   );
 }
 
+function GlobalTaskList({ onOpen, tasks }: { onOpen: (item: GlobalTaskView) => void; tasks?: GlobalTaskView[] }) {
+  if (tasks === undefined) return <SkeletonList count={4} label="Loading My Tasks" />;
+  if (!tasks.length) {
+    return <EmptyState icon="check-box-outline" title="Nothing assigned to you" body="Tasks assigned to you across your Projects will appear here." />;
+  }
+  return (
+    <View style={styles.globalList}>
+      {tasks.map((item) => (
+        <TaskCard
+          assignee="You"
+          category={item.state?.category}
+          contextLabel={item.project.name}
+          description={item.task.description}
+          dueDate={item.task.dueDate}
+          evidence={item.references.length > 0}
+          key={item.task._id}
+          onPress={() => onOpen(item)}
+          priority={item.task.priority}
+          publicKey={item.task.publicKey}
+          stateName={item.state?.name ?? 'Unknown'}
+          title={item.task.title}
+        />
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  boardPicker: {
-    alignItems: 'center',
-    borderRadius: Radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: Spacing.two,
-    maxWidth: 190,
-    minHeight: 38,
-    paddingHorizontal: Spacing.three,
-  },
-  boardPickerLabel: { flexShrink: 1 },
+  boardToolbar: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 40 },
+  boardTools: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  boardViewButton: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, maxWidth: 220, minHeight: TouchTarget },
+  boardViewLabel: { flexShrink: 1 },
   boardScreen: { flex: 1, gap: Spacing.three, padding: Spacing.three },
-  content: { gap: Spacing.three, padding: Spacing.three, paddingBottom: Spacing.six },
+  content: { gap: Spacing.three, padding: Spacing.three },
   contextHeading: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
   contextTitle: { flex: 1, gap: 2 },
   headerActions: { alignItems: 'center', flexDirection: 'row' },
   headerButton: { alignItems: 'center', borderRadius: TouchTarget / 2, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   inboxHeading: { gap: Spacing.one },
+  globalHeading: { gap: Spacing.one },
+  globalList: { gap: Spacing.two },
+  projectBoardPrompt: { gap: Spacing.two, marginTop: Spacing.two },
   screen: { flex: 1 },
   sheetIntro: { gap: Spacing.one },
+  toolButton: { alignItems: 'center', borderRadius: TouchTarget / 2, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
 });

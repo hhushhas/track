@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
@@ -19,6 +20,7 @@ type PreviewMode = 'full' | 'context' | 'hidden';
 export default function NotificationSettingsScreen() {
   const theme = useTheme();
   const { trackUserId } = useTrackUser();
+  const router = useRouter();
   const push = usePushNotifications();
   const settings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId } : 'skip');
   const diagnostics = useQuery(api.pushDelivery.getDiagnostics, trackUserId ? { userId: trackUserId } : 'skip');
@@ -72,6 +74,10 @@ export default function NotificationSettingsScreen() {
           </View>
           <ThemedText type="subtitle">{permissionTitle}</ThemedText>
           <ThemedText themeColor="textSecondary">{permissionBody}</ThemedText>
+          <ThemedText themeColor="textSecondary" type="caption">
+            Inbox keeps unread work inside Track. These settings control alerts when the app is closed.
+          </ThemedText>
+          <PrimaryButton disabled={false} label="Open Inbox" onPress={() => router.push('/inbox')} />
           {push.error ? <ThemedText accessibilityRole="alert" style={{ color: theme.danger }} type="small">{push.error.replaceAll('_', ' ')}</ThemedText> : null}
           {push.permissionState === 'denied' ? (
             <PrimaryButton disabled={push.syncing} label="Open device settings" onPress={() => void push.openDeviceSettings()} />

@@ -80,6 +80,16 @@ export function TaskDetailsTab({
         <MetadataRow icon="view-board" label="Board" value={detail.board?.name ?? 'Archived board'} />
       </Surface>
 
+      <TaskSection title="Why this task exists">
+        {detail.references.length ? detail.references.map((reference) => (
+          <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
+        )) : (
+          <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+            <ThemedText themeColor="textSecondary" type="small">No linked conversation or evidence.</ThemedText>
+          </View>
+        )}
+      </TaskSection>
+
       <TaskSection title="Description">
         <Pressable
           accessibilityHint={readOnly ? undefined : 'Opens the description editor'}
@@ -184,15 +194,6 @@ export function TaskDetailsTab({
         ) : null}
       </TaskSection>
 
-      <TaskSection title="Linked context">
-        {detail.references.length ? detail.references.map((reference) => (
-          <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
-        )) : (
-          <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-            <ThemedText themeColor="textSecondary" type="small">No linked conversation or evidence.</ThemedText>
-          </View>
-        )}
-      </TaskSection>
     </>
   );
 }

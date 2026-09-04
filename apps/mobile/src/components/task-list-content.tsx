@@ -85,6 +85,7 @@ export function TaskCollection({
         <TaskCard
           assignee={assigneeName(item)}
           category={item.state?.category}
+          description={item.task.description}
           dueDate={item.task.dueDate}
           evidence={item.references.length > 0}
           key={item.task._id}

@@ -5,6 +5,7 @@ import { useState, type FormEvent } from 'react'
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
+import { DatePicker } from '#/components/ui/date-picker'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
@@ -95,7 +96,7 @@ function TaskSourceCreate({
         <label>Board<NativeSelect onChange={(event) => setBoardId(event.target.value)} value={boardId || compatibleBoards.find((item) => item.board.isDefault)?.board._id || compatibleBoards[0]?.board._id || ''}><NativeSelectOption value="">Automatic Channel board</NativeSelectOption>{compatibleBoards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}</NativeSelect></label>
         <label>Assignee<NativeSelect onChange={(event) => setAssigneeId(event.target.value)} value={assigneeId}><NativeSelectOption value="">Unassigned</NativeSelectOption>{assignees?.map((item) => <NativeSelectOption key={item.member._id} value={item.member._id}>{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</NativeSelectOption>)}</NativeSelect></label>
         <label>Priority<NativeSelect onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}>{['none', 'urgent', 'high', 'medium', 'low'].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}</NativeSelect></label>
-        <label>Due date<Input onChange={(event) => setDueDate(event.target.value)} type="date" value={dueDate} /></label>
+        <label>Due date<DatePicker aria-label="Due date" onChange={setDueDate} value={dueDate} /></label>
       </div><fieldset><legend>Labels</legend><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => setLabelIds((current) => current.includes(label._id) ? current.filter((id) => id !== label._id) : [...current, label._id])} size="sm" type="button" variant={labelIds.includes(label._id) ? 'default' : 'outline'}>{label.name}</Button>)}</div></fieldset>{error ? <p className="task-form-error" role="alert">{error}</p> : null}<Button disabled={!title.trim()} type="submit">Create task</Button></form>
     </PopoverContent>
   </Popover>
@@ -158,7 +159,7 @@ export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { 
     </div>
     {detection?.canManage ? <details className="track-rail-task-settings"><summary>Task detection · {detection.enabled ? 'on' : 'off'} · {detection.lastRunStatus ?? 'idle'}</summary>
       <Button onClick={() => void run(() => setDetection({ projectId: group.projectId, groupId: group._id, enabled: !detection.enabled, ...identity }))} size="sm" variant="ghost">Turn {detection.enabled ? 'off' : 'on'}</Button>
-      <div><Input aria-label="History start date" onChange={(event) => setHistoryFrom(event.target.value)} type="date" value={historyFrom} /><Input aria-label="History end date" onChange={(event) => setHistoryTo(event.target.value)} type="date" value={historyTo} /><Button onClick={() => void run(() => requestHistory({ projectId: group.projectId, groupId: group._id, from: new Date(`${historyFrom}T00:00:00`).getTime(), to: new Date(`${historyTo}T23:59:59.999`).getTime(), ...identity }))} size="sm">Scan history</Button></div>
+      <div><DatePicker aria-label="History start date" onChange={setHistoryFrom} value={historyFrom} /><DatePicker aria-label="History end date" onChange={setHistoryTo} value={historyTo} /><Button onClick={() => void run(() => requestHistory({ projectId: group.projectId, groupId: group._id, from: new Date(`${historyFrom}T00:00:00`).getTime(), to: new Date(`${historyTo}T23:59:59.999`).getTime(), ...identity }))} size="sm">Scan history</Button></div>
       {detection.lastErrorCategory ? <p role="alert">Detection failed: {detection.lastErrorCategory.replaceAll('_', ' ')}</p> : null}
       {detectionError ? <p role="alert">{detectionError}</p> : null}
     </details> : null}
@@ -170,7 +171,7 @@ export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { 
     {detection?.canManage ? <details className="task-detection-settings"><summary>Task detection · {detection.enabled ? 'on' : 'off'} · {detection.lastRunStatus ?? 'idle'}</summary>
       <p>Eligible Channel messages are sent to the configured AI provider. Disabling does not cancel a provider request already in flight; stale results are discarded.</p>
       <Button onClick={() => void run(() => setDetection({ projectId: group.projectId, groupId: group._id, enabled: !detection.enabled, ...identity }))} size="sm" variant="outline">Turn {detection.enabled ? 'off' : 'on'}</Button>
-      <div className="task-history-controls"><Input aria-label="History start date" onChange={(event) => setHistoryFrom(event.target.value)} type="date" value={historyFrom} /><Input aria-label="History end date" onChange={(event) => setHistoryTo(event.target.value)} type="date" value={historyTo} /><Button onClick={() => void run(() => requestHistory({ projectId: group.projectId, groupId: group._id, from: new Date(`${historyFrom}T00:00:00`).getTime(), to: new Date(`${historyTo}T23:59:59.999`).getTime(), ...identity }))} size="sm">Find tasks in history</Button></div>
+      <div className="task-history-controls"><DatePicker aria-label="History start date" onChange={setHistoryFrom} value={historyFrom} /><DatePicker aria-label="History end date" onChange={setHistoryTo} value={historyTo} /><Button onClick={() => void run(() => requestHistory({ projectId: group.projectId, groupId: group._id, from: new Date(`${historyFrom}T00:00:00`).getTime(), to: new Date(`${historyTo}T23:59:59.999`).getTime(), ...identity }))} size="sm">Find tasks in history</Button></div>
       {detection.lastErrorCategory ? <p role="alert">Detection failed: {detection.lastErrorCategory.replaceAll('_', ' ')}</p> : null}
       {detectionError ? <p role="alert">{detectionError}</p> : null}
     </details> : null}

@@ -6,6 +6,7 @@ import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
 
 type AsyncAction = (action: () => Promise<unknown>) => Promise<void>;
 
@@ -85,16 +86,16 @@ export function InviteMemberForm({
       </div>
       <div>
         <Label htmlFor="member-role">Role</Label>
-        <select
+        <NativeSelect
           id="member-role"
           onChange={(event) =>
             setRole(event.target.value as "admin" | "member")
           }
           value={role}
         >
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
-        </select>
+          <NativeSelectOption value="member">Member</NativeSelectOption>
+          <NativeSelectOption value="admin">Admin</NativeSelectOption>
+        </NativeSelect>
       </div>
       <Button type="submit">Invite member</Button>
     </form>
@@ -302,7 +303,7 @@ export function SharedProjectForm({
       </div>
       <div>
         <Label htmlFor="shared-project-relationship">Relationship</Label>
-        <select
+        <NativeSelect
           id="shared-project-relationship"
           onChange={(event) =>
             setRelationshipId(event.target.value as Id<"relationships">)
@@ -310,13 +311,13 @@ export function SharedProjectForm({
           required
           value={relationshipId}
         >
-          <option value="">Select Relationship</option>
+          <NativeSelectOption value="">Select Relationship</NativeSelectOption>
           {relationships.map((item) => (
-            <option key={item.relationship._id} value={item.relationship._id}>
+            <NativeSelectOption key={item.relationship._id} value={item.relationship._id}>
               {item.relationship.name}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
         <span className="company-field-hint">
           {targets.length
             ? `Invites ${targets.map((company) => company.displayName).join(", ")}`

@@ -18,8 +18,8 @@ function taskContext(identity: MobileTaskIdentity | null) {
   return `&companyId=${encodeURIComponent(identity.companyId)}&membershipId=${encodeURIComponent(identity.membershipId)}${identity.archived ? '&archive=1' : ''}`;
 }
 
-export function taskListHref(projectId: Id<'projects'>, identity: MobileTaskIdentity | null) {
-  return `/tasks?projectId=${encodeURIComponent(projectId)}${taskContext(identity)}` as const;
+export function taskListHref(projectId: Id<'projects'>, identity: MobileTaskIdentity | null, tab?: 'inbox') {
+  return `/tasks?projectId=${encodeURIComponent(projectId)}${taskContext(identity)}${tab ? '&tab=inbox' : ''}` as const;
 }
 
 export function taskDetailHref(

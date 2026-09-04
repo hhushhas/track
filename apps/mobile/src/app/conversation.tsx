@@ -3,17 +3,20 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
 import { KeyboardEvents } from 'react-native-keyboard-controller';
+import { useNetworkState } from 'expo-network';
+import type { TaskPriority } from '@track/shared/tasks';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { Composer } from '@/components/composer';
+import { DateField } from '@/components/date-field';
 import { MessageActions } from '@/components/message-actions';
 import { PlatformIcon } from '@/components/platform-icon';
 import { TaskInlineCards } from '@/components/task-inline-cards';
 import { DateSeparator, ThreadRow, type DetailedMessage, type GroupedThreadItem, type ProjectMemberRow, resolveMentionIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { OptionsSheet, SheetSection, SheetRow } from '@/components/options-sheet';
+import { OptionsSheet, SheetInput, SheetSection, SheetRow } from '@/components/options-sheet';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
@@ -21,9 +24,13 @@ import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 import { buildMentionCandidates } from '@/lib/mention-autocomplete';
 import { useReleaseConfig } from '@/lib/release-config';
-import type { MobileTaskIdentity } from '@/lib/task-navigation';
+import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
+import { taskPriorityLabel } from '@/lib/task-presentation';
+import { TaskAction } from '@/components/task-ui';
 import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
+import { enqueueOfflineTask } from '@/lib/offline-task-queue';
+import { displayText } from '@/lib/display-text';
 
 /** WhatsApp-style grouping gap: a longer pause re-states who is speaking. */
 const FIVE_MINUTES = 5 * 60 * 1000;
@@ -41,6 +48,25 @@ const reportReasonLabels: Record<(typeof reportReasons)[number], string> = {
 
 type PendingMessage = { id: string; body: string; at: number };
 
+type TaskReviewTarget = {
+  key: string;
+  source: string;
+  reference: {
+    type: 'message' | 'assistant_answer';
+    messageId?: Id<'messages'>;
+    assistantStreamId?: Id<'assistantStreams'>;
+    isPrimary: true;
+  };
+};
+
+type TaskAssigneeView = {
+  member: Doc<'projectMembers'>;
+  user: { _id: Id<'users'>; displayName: string };
+  company: Doc<'companies'> | null;
+};
+
+const taskPriorities: TaskPriority[] = ['none', 'urgent', 'high', 'medium', 'low'];
+
 function dateSepLabel(ts: number) {
   const d = new Date(ts);
   const today = new Date();
@@ -53,6 +79,7 @@ function dateSepLabel(ts: number) {
 
 export default function ConversationScreen() {
   const theme = useTheme();
+  const network = useNetworkState();
   const router = useRouter();
   const { trackUserId } = useTrackUser();
   const releaseConfig = useReleaseConfig();
@@ -93,6 +120,9 @@ export default function ConversationScreen() {
   const assistantStreams = useQuery(api.assistant.listForGroup, trackUserId && gid && navigation?.available ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, limit: 40 } : 'skip');
   const notifSettings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId, projectMemberId: pmid } : 'skip');
   const projectMembers = useQuery(api.mobile.listProjectMembers, trackUserId && pid && navigation?.available ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
+  const taskAssignees = useQuery(api.tasks.listEligibleAssignees, trackUserId && pid && gid && navigation?.available && !readOnly ? {
+    projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid,
+  } : 'skip') as TaskAssigneeView[] | undefined;
 
   const listRef = useRef<FlatList<GroupedThreadItem>>(null);
   /** Tracks whether the reader is pinned to the newest message, so arriving messages never yank them off history. */
@@ -109,6 +139,14 @@ export default function ConversationScreen() {
   const [reportReason, setReportReason] = useState<(typeof reportReasons)[number]>('inaccurate');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
+  const [taskReviewTarget, setTaskReviewTarget] = useState<TaskReviewTarget | null>(null);
+  const [taskTitleDraft, setTaskTitleDraft] = useState('');
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>('none');
+  const [taskDueDate, setTaskDueDate] = useState<string | null>(null);
+  const [taskAssigneeId, setTaskAssigneeId] = useState<string>('');
+  const [taskCreateState, setTaskCreateState] = useState<'idle' | 'creating' | 'success' | 'error' | 'queued'>('idle');
+  const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
+  const [createdTaskKey, setCreatedTaskKey] = useState<string | null>(null);
   /**
    * Rows that render task cards below them; those cards interrupt author
    * grouping. Rows only report while mounted, so scrolling never regroups.
@@ -176,6 +214,67 @@ export default function ConversationScreen() {
 
   const mentionCandidates = useMemo(() => buildMentionCandidates(memberItems), [memberItems]);
 
+  function openTaskReview(target: Exclude<GroupedThreadItem, { kind: 'date-sep' }>) {
+    if (!pid) return;
+    const source = displayText(target.kind === 'message' ? target.item.message.body : target.stream.answer);
+    setTaskReviewTarget({
+      key: target.key,
+      source,
+      reference: target.kind === 'message'
+        ? { type: 'message', messageId: target.item.message._id, isPrimary: true }
+        : { type: 'assistant_answer', assistantStreamId: target.stream._id, isPrimary: true },
+    });
+    setTaskTitleDraft(source.trim().slice(0, 180) || 'Follow up');
+    setTaskPriority('none');
+    setTaskDueDate(null);
+    setTaskAssigneeId('');
+    setTaskCreateState('idle');
+    setTaskCreateError(null);
+    setCreatedTaskKey(null);
+  }
+
+  async function submitTaskReview() {
+    if (!pid || !gid || !taskReviewTarget || !taskTitleDraft.trim() || taskCreateState === 'creating') return;
+    const taskInput = {
+      projectId: pid,
+      groupId: gid,
+      title: taskTitleDraft.trim(),
+      priority: taskPriority,
+      dueDate: taskDueDate ?? undefined,
+      assigneeProjectMemberId: taskAssigneeId ? taskAssigneeId as Id<'projectMembers'> : undefined,
+      references: [taskReviewTarget.reference],
+      idempotencyKey: `message-task:${taskReviewTarget.key}`,
+      actingCompanyId: cid,
+      projectMemberId: pmid,
+    };
+    if (network.isConnected === false) {
+      if (!trackUserId) {
+        setTaskCreateError('Sign in again before saving this task for later.');
+        setTaskCreateState('error');
+        return;
+      }
+      try {
+        await enqueueOfflineTask(trackUserId, taskInput);
+        setTaskCreateState('queued');
+        setTaskCreateError(null);
+      } catch {
+        setTaskCreateError('This task could not be saved on the device.');
+        setTaskCreateState('error');
+      }
+      return;
+    }
+    setTaskCreateState('creating');
+    setTaskCreateError(null);
+    try {
+      const result = await createTask(taskInput);
+      setCreatedTaskKey(result.publicKey);
+      setTaskCreateState('success');
+    } catch (error) {
+      setTaskCreateError(error instanceof Error ? error.message.replaceAll('_', ' ') : 'Task could not be created.');
+      setTaskCreateState('error');
+    }
+  }
+
   /** The composer grows over the list when the keyboard opens; follow it down. */
   const pinToLatest = useCallback(() => {
     if (!atBottomRef.current) return;
@@ -224,21 +323,7 @@ export default function ConversationScreen() {
         label: 'Create task',
         icon: 'plus' as const,
         onPress: () => {
-          const source = actionTarget.kind === 'message' ? actionTarget.item.message.body : actionTarget.stream.answer;
-          const reference = actionTarget.kind === 'message'
-            ? { type: 'message' as const, messageId: actionTarget.item.message._id, isPrimary: true }
-            : { type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true };
-          if (!pid || !gid) return;
-          void createTask({
-            projectId: pid,
-            groupId: gid,
-            title: source.trim().slice(0, 180) || 'Follow up',
-            priority: 'none',
-            references: [reference],
-            idempotencyKey: `${actionTarget.key}:${Date.now()}`,
-            actingCompanyId: cid,
-            projectMemberId: pmid,
-          });
+          openTaskReview(actionTarget);
         },
       }] : []),
       ...(!readOnly &&
@@ -283,7 +368,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget, cid, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, trackUserId]);
+  }, [actionTarget, cid, createTask, deleteMessage, gid, openTaskReview, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, trackUserId]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {
@@ -446,16 +531,28 @@ export default function ConversationScreen() {
               <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
             </Pressable>
           ),
-          headerRight: () => !readOnly ? (
-            <Pressable
-              accessibilityLabel="Notifications"
-              android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-              hitSlop={8}
-              onPress={() => { hapticLight(); setToolsOpen(true); }}
-              style={styles.headerButton}>
-              <PlatformIcon color={theme.text} name="dots-horizontal" size={22} />
-            </Pressable>
-          ) : null,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              <Pressable
+                accessibilityLabel="Open Threads"
+                android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+                hitSlop={8}
+                onPress={() => pid && gid && router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never)}
+                style={styles.headerButton}>
+                <PlatformIcon color={theme.text} name="forum-outline" size={21} />
+              </Pressable>
+              {!readOnly ? (
+                <Pressable
+                  accessibilityLabel="Conversation options"
+                  android_ripple={{ color: theme.backgroundSelected, borderless: true }}
+                  hitSlop={8}
+                  onPress={() => { hapticLight(); setToolsOpen(true); }}
+                  style={styles.headerButton}>
+                  <PlatformIcon color={theme.text} name="dots-horizontal" size={22} />
+                </Pressable>
+              ) : null}
+            </View>
+          ),
         }}
       />
 
@@ -619,6 +716,105 @@ export default function ConversationScreen() {
         </Pressable>
       </OptionsSheet>
 
+      <OptionsSheet
+        onClose={() => {
+          if (taskCreateState === 'creating') return;
+          setTaskReviewTarget(null);
+          setTaskCreateState('idle');
+          setTaskCreateError(null);
+        }}
+        title={taskCreateState === 'success' ? 'Task created' : taskCreateState === 'queued' ? 'Waiting to sync' : 'Create task from message'}
+        visible={Boolean(taskReviewTarget)}>
+        {taskCreateState === 'success' ? (
+          <>
+            <SheetSection>
+              <View style={styles.taskSuccess}>
+                <PlatformIcon color={theme.success} name="check-circle" size={24} />
+                <ThemedText type="subtitle">Task created from this conversation</ThemedText>
+                <ThemedText themeColor="textSecondary" type="small">
+                  The source message is linked to {createdTaskKey ?? 'the new task'}.
+                </ThemedText>
+              </View>
+            </SheetSection>
+            <TaskAction label="Open task" onPress={() => {
+                if (!pid || !createdTaskKey) return;
+                setTaskReviewTarget(null);
+                router.push(taskDetailHref(pid, createdTaskKey, taskIdentity));
+              }} primary />
+          </>
+        ) : taskCreateState === 'queued' ? (
+          <SheetSection>
+            <View style={styles.taskSuccess}>
+              <PlatformIcon color={theme.textSecondary} name="cloud-off" size={24} />
+              <ThemedText type="subtitle">Saved locally</ThemedText>
+              <ThemedText themeColor="textSecondary" type="small">
+                Waiting to sync. Track will create this task when the connection returns.
+              </ThemedText>
+            </View>
+          </SheetSection>
+        ) : (
+          <>
+            <SheetSection>
+              <View style={styles.taskReviewCopy}>
+                <ThemedText themeColor="textSecondary" type="captionBold">Source message</ThemedText>
+                <ThemedText numberOfLines={4} themeColor="textSecondary" type="small">
+                  {taskReviewTarget?.source}
+                </ThemedText>
+                <ThemedText themeColor="textSecondary" type="caption">
+                  This message will stay linked to the task.
+                </ThemedText>
+              </View>
+            </SheetSection>
+            <SheetSection title="Task title">
+              <SheetInput
+                autoFocus
+                label="Title"
+                onChangeText={setTaskTitleDraft}
+                value={taskTitleDraft}
+              />
+            </SheetSection>
+            <DateField onChange={setTaskDueDate} value={taskDueDate} />
+            <SheetSection title="Priority">
+              {taskPriorities.map((value) => (
+                <SheetRow
+                  icon="flag"
+                  key={value}
+                  label={taskPriorityLabel(value)}
+                  selected={taskPriority === value}
+                  onPress={() => setTaskPriority(value)}
+                />
+              ))}
+            </SheetSection>
+            <SheetSection title="Assignee">
+              <SheetRow icon="person" label="Unassigned" selected={!taskAssigneeId} onPress={() => setTaskAssigneeId('')} />
+              {taskAssignees?.map((item) => (
+                <SheetRow
+                  icon="person"
+                  key={item.member._id}
+                  label={`${item.user.displayName}${item.company ? ` · ${item.company.displayName}` : ''}`}
+                  selected={taskAssigneeId === item.member._id}
+                  onPress={() => setTaskAssigneeId(item.member._id)}
+                />
+              ))}
+              {!taskAssignees && network.isConnected === false ? (
+                <ThemedText themeColor="textSecondary" type="caption">Assignees will load when you’re back online.</ThemedText>
+              ) : null}
+            </SheetSection>
+            {taskCreateError ? (
+              <ThemedText accessibilityRole="alert" style={styles.taskCreateError} themeColor="danger" type="small">
+                {taskCreateError}
+              </ThemedText>
+            ) : null}
+            <TaskAction
+              disabled={taskCreateState === 'creating' || !taskTitleDraft.trim()}
+              label={taskCreateState === 'creating' ? 'Creating task…' : taskCreateState === 'error' ? 'Try again' : network.isConnected === false ? 'Save for later' : 'Create task'}
+              onPress={() => void submitTaskReview()}
+              primary
+            />
+          </>
+        )}
+      </OptionsSheet>
+
       <MessageActions
         visible={actionSheetOpen}
         onClose={() => setActionSheetOpen(false)}
@@ -644,6 +840,7 @@ const styles = StyleSheet.create({
     right: Spacing.three,
     width: 40,
   },
+  headerActions: { alignItems: 'center', flexDirection: 'row' },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   headerTitle: { alignItems: 'center', flexDirection: 'row', gap: 4 },
   pendingAvatarSpacer: { width: 36 },
@@ -654,5 +851,8 @@ const styles = StyleSheet.create({
   reasonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, padding: Spacing.three },
   reportButton: { alignItems: 'center', borderRadius: 10, justifyContent: 'center', minHeight: 46, paddingHorizontal: Spacing.four },
   screen: { flex: 1 },
+  taskCreateError: { paddingHorizontal: Spacing.four, paddingTop: Spacing.two },
+  taskReviewCopy: { gap: Spacing.two, padding: Spacing.three },
+  taskSuccess: { alignItems: 'center', gap: Spacing.two, padding: Spacing.four },
   thread: { paddingBottom: Spacing.two, paddingTop: Spacing.two },
 });

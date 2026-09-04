@@ -4,6 +4,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
+import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 
 type RelationshipItem = {
   relationship: { _id: Id<'relationships'>; name: string }
@@ -64,13 +65,13 @@ export function MigrationPanel({
     <h2>Guided legacy upgrade</h2>
     <p>Track will not infer Company identity or neutral roles. Map every person explicitly; existing Group membership is preserved exactly.</p>
     <form className="company-migration-form" onSubmit={(event) => void submit(event)}>
-      <label>Legacy Project<select onChange={(event) => {
+      <label>Legacy Project<NativeSelect onChange={(event) => {
         setProjectId(event.target.value as Id<'projects'>)
         setCompanyByMember({})
         setRoleByMember({})
-      }} required value={projectId}><option value="">Select Project</option>{legacyProjects?.filter((item) => item.membership.role === 'owner').map((item) => <option key={item.project._id} value={item.project._id}>{item.project.name}</option>)}</select></label>
-      <label>Relationship for multiple Companies<select onChange={(event) => setRelationshipId(event.target.value as Id<'relationships'>)} value={relationshipId}><option value="">Single-Company upgrade</option>{relationships.map((item) => <option key={item.relationship._id} value={item.relationship._id}>{item.relationship.name}</option>)}</select></label>
-      {members?.map(({ membership, user }) => <fieldset key={membership._id}><legend>{user?.displayName ?? 'Unknown member'}</legend><label>Represented Company<select onChange={(event) => setCompanyByMember((current) => ({ ...current, [membership._id]: event.target.value }))} required value={companyByMember[membership._id] ?? ''}><option value="">Choose explicitly</option>{companyChoices.map((company) => <option key={company._id} value={company._id}>{company.displayName}</option>)}</select></label><label>Neutral Project role<select onChange={(event) => setRoleByMember((current) => ({ ...current, [membership._id]: event.target.value as 'manager' | 'member' }))} required value={roleByMember[membership._id] ?? ''}><option value="">Choose explicitly</option><option value="manager">Manager</option><option value="member">Member</option></select></label></fieldset>)}
+      }} required value={projectId}><NativeSelectOption value="">Select Project</NativeSelectOption>{legacyProjects?.filter((item) => item.membership.role === 'owner').map((item) => <NativeSelectOption key={item.project._id} value={item.project._id}>{item.project.name}</NativeSelectOption>)}</NativeSelect></label>
+      <label>Relationship for multiple Companies<NativeSelect onChange={(event) => setRelationshipId(event.target.value as Id<'relationships'>)} value={relationshipId}><NativeSelectOption value="">Single-Company upgrade</NativeSelectOption>{relationships.map((item) => <NativeSelectOption key={item.relationship._id} value={item.relationship._id}>{item.relationship.name}</NativeSelectOption>)}</NativeSelect></label>
+      {members?.map(({ membership, user }) => <fieldset key={membership._id}><legend>{user?.displayName ?? 'Unknown member'}</legend><label>Represented Company<NativeSelect onChange={(event) => setCompanyByMember((current) => ({ ...current, [membership._id]: event.target.value }))} required value={companyByMember[membership._id] ?? ''}><NativeSelectOption value="">Choose explicitly</NativeSelectOption>{companyChoices.map((company) => <NativeSelectOption key={company._id} value={company._id}>{company.displayName}</NativeSelectOption>)}</NativeSelect></label><label>Neutral Project role<NativeSelect onChange={(event) => setRoleByMember((current) => ({ ...current, [membership._id]: event.target.value as 'manager' | 'member' }))} required value={roleByMember[membership._id] ?? ''}><NativeSelectOption value="">Choose explicitly</NativeSelectOption><NativeSelectOption value="manager">Manager</NativeSelectOption><NativeSelectOption value="member">Member</NativeSelectOption></NativeSelect></label></fieldset>)}
       <Button disabled={!projectId || Boolean(upgrade)} type="submit">Start reviewed upgrade</Button>
     </form>
     {upgrade ? <div className="company-admin-card"><strong>Upgrade status: {upgrade.upgrade.status}</strong><p>{upgrade.companies.filter((item) => item.status === 'confirmed').length} of {upgrade.companies.length} Companies confirmed.</p>{upgrade.upgrade.status === 'ready' ? <Button onClick={() => void run(() => activate({ upgradeId: upgrade.upgrade._id }))}>Activate atomically</Button> : null}{upgrade.upgrade.status !== 'activated' ? <Button onClick={() => void run(() => cancel({ upgradeId: upgrade.upgrade._id }))} variant="outline">Cancel draft</Button> : null}</div> : null}
