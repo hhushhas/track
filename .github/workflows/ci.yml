@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -38,6 +40,22 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Install architecture scanner
+        run: |
+          python3 -m venv "$RUNNER_TEMP/track-semgrep"
+          "$RUNNER_TEMP/track-semgrep/bin/python" -m pip install semgrep==1.166.0
+          echo "$RUNNER_TEMP/track-semgrep/bin" >> "$GITHUB_PATH"
+
+      - name: Repository standards gate
+        env:
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base_sha="$EVENT_BASE_SHA"
+          if [ -z "$base_sha" ] || ! git cat-file -e "$base_sha^{commit}" 2>/dev/null; then
+            base_sha="$(git rev-parse HEAD^ 2>/dev/null || git rev-parse HEAD)"
+          fi
+          pnpm gate -- --base "$base_sha"
+
       - name: Lint
         run: pnpm lint
 
@@ -52,6 +70,18 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Measure production bundle budgets
+        run: pnpm perf:build
+
+      - name: Preserve bundle measurement
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: track-web-bundle-measurement
+          path: artifacts/performance/web-bundle.json
+          if-no-files-found: warn
+          retention-days: 14
 
   android:
     name: Unsigned Android build
@@ -133,3 +163,46 @@ jobs:
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+  browser:
+    name: Browser journeys and performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 10.19.0
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run deterministic browser journeys
+        run: pnpm e2e
+
+      - name: Measure fixture performance budgets
+        run: pnpm perf:fixture
+
+      - name: Preserve browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: track-browser-evidence
+          path: |
+            artifacts/performance/
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 14

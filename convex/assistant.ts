@@ -1,9 +1,11 @@
 import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
+import { paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 
 import { action, internalMutation, query } from './_generated/server'
 import { api, internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
+import type { QueryCtx } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
 import {
   attachmentNameMatchesQuestion,
@@ -15,8 +17,16 @@ import { emitOperationalEvent } from './lib/observability'
 import { rateLimiter } from './lib/rateLimit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import {
+  decodeLegacyArchivedChannel,
+  decodeLegacyArchivedMember,
+} from './lib/legacyArchiveSnapshot'
+import {
+  getArchivedChannelSnapshot,
+  getArchivedMemberSnapshot,
+  getArchivedThreadSnapshot,
+} from './lib/projectExitArchive'
+import {
   requireThreadsEnabled,
-  resolveActorProjectMember,
   threadsEnabled,
 } from './lib/channelThreadPolicy'
 
@@ -50,6 +60,35 @@ type CollectedAssistantContext = {
   attachments: Array<AssistantAttachmentCandidate>
   evidence: Array<AssistantEvidence>
   messages: Array<AssistantMessageContext>
+}
+
+async function resolveTargetStream(
+  ctx: QueryCtx,
+  targetMessageId: Id<'messages'> | undefined,
+  scope: { groupId: Id<'groups'>; channelThreadId?: Id<'channelThreads'> },
+  cutoff?: number,
+) {
+  if (!targetMessageId) return null
+  const targetMessage = await ctx.db.get(targetMessageId)
+  if (
+    !targetMessage ||
+    targetMessage.groupId !== scope.groupId ||
+    targetMessage.channelThreadId !== scope.channelThreadId ||
+    (cutoff !== undefined && targetMessage.createdAt > cutoff) ||
+    !targetMessage.trackInvocationId
+  ) return null
+  const stream = await ctx.db.get(targetMessage.trackInvocationId)
+  if (
+    !stream ||
+    stream.groupId !== scope.groupId ||
+    stream.channelThreadId !== scope.channelThreadId ||
+    (cutoff !== undefined && stream.createdAt > cutoff)
+  ) return null
+  return stream
+}
+
+function boundedPageSize(requested: number) {
+  return Math.min(Math.max(requested, 1), 100)
 }
 
 function cleanQuestion(question: string) {
@@ -97,6 +136,7 @@ export const listForGroup = query({
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
     limit: v.optional(v.number()),
+    targetMessageId: v.optional(v.id('messages')),
   },
   handler: async (ctx, args) => {
     const group = await ctx.db.get(args.groupId)
@@ -109,13 +149,19 @@ export const listForGroup = query({
       projectMemberId: args.projectMemberId,
     }, 'readChannel')
     const cutoff = access.companyAccess?.entitlement?.exitAt
-    return await ctx.db
+    const streams = await ctx.db
       .query('assistantStreams')
       .withIndex('by_group_thread_created_at', (q) => cutoff
         ? q.eq('groupId', args.groupId).eq('channelThreadId', undefined).lte('createdAt', cutoff)
         : q.eq('groupId', args.groupId).eq('channelThreadId', undefined))
       .order('desc')
-      .take(args.limit ?? 20)
+      .take(boundedPageSize(args.limit ?? 20))
+    const targetStream = await resolveTargetStream(ctx, args.targetMessageId, {
+      groupId: args.groupId,
+    }, cutoff)
+    return targetStream && !streams.some((stream) => stream._id === targetStream._id)
+      ? [...streams, targetStream]
+      : streams
   },
 })
 
@@ -126,6 +172,7 @@ export const listForThread = query({
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
     limit: v.optional(v.number()),
+    targetMessageId: v.optional(v.id('messages')),
   },
   handler: async (ctx, args) => {
     if (!threadsEnabled()) return []
@@ -140,17 +187,146 @@ export const listForThread = query({
         projectMemberId: args.projectMemberId,
       }, 'readChannel')
       const cutoff = access.companyAccess?.entitlement?.exitAt
-      if (cutoff && !(access.companyAccess?.entitlement?.threadSnapshots ?? [])
-        .some((snapshot: { _id?: Id<'channelThreads'> }) => snapshot._id === thread._id)) return []
-      return await ctx.db
+      const snapshotOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+      const archivedThread = cutoff && snapshotOperationId
+        ? await getArchivedThreadSnapshot(
+            ctx,
+            snapshotOperationId,
+            access.projectMember._id,
+            thread._id,
+          )
+        : null
+      const hasVisibleThreadSnapshot = archivedThread !== null || (
+        !snapshotOperationId &&
+        (access.companyAccess?.entitlement?.threadSnapshots ?? [])
+          .some((snapshot: { _id?: Id<'channelThreads'> }) => snapshot._id === thread._id)
+      )
+      if (
+        cutoff &&
+        !hasVisibleThreadSnapshot
+      ) return []
+      const streams = await ctx.db
         .query('assistantStreams')
         .withIndex('by_thread_created_at', (q) => cutoff
           ? q.eq('channelThreadId', thread._id).lte('createdAt', cutoff)
           : q.eq('channelThreadId', thread._id))
         .order('desc')
-        .take(args.limit ?? 20)
+        .take(boundedPageSize(args.limit ?? 20))
+      const targetStream = await resolveTargetStream(ctx, args.targetMessageId, {
+        groupId: thread.groupId,
+        channelThreadId: thread._id,
+      }, cutoff)
+      return targetStream && !streams.some((stream) => stream._id === targetStream._id)
+        ? [...streams, targetStream]
+        : streams
     } catch {
       return []
+    }
+  },
+})
+
+export const listForGroupPage = query({
+  args: {
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    targetMessageId: v.optional(v.id('messages')),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    const result = await ctx.db
+      .query('assistantStreams')
+      .withIndex('by_group_thread_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId).eq('channelThreadId', undefined).lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId).eq('channelThreadId', undefined))
+      .order('desc')
+      .paginate({ ...args.paginationOpts, numItems: boundedPageSize(args.paginationOpts.numItems) })
+    let page = [...result.page]
+    if (args.paginationOpts.cursor === null) {
+      const targetStream = await resolveTargetStream(ctx, args.targetMessageId, {
+        groupId: args.groupId,
+      }, cutoff)
+      if (targetStream && !page.some((stream) => stream._id === targetStream._id)) {
+        page = [...page, targetStream]
+      }
+    }
+    return { ...result, page }
+  },
+})
+
+export const listForThreadPage = query({
+  args: {
+    threadId: v.id('channelThreads'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    targetMessageId: v.optional(v.id('messages')),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (!threadsEnabled()) return { page: [], isDone: true, continueCursor: '' }
+    const thread = await ctx.db.get(args.threadId)
+    if (!thread) return { page: [], isDone: true, continueCursor: '' }
+    try {
+      const access = await authorizeScopedRequest(ctx, {
+        projectId: thread.projectId,
+        groupId: thread.groupId,
+        claimedUserId: args.userId,
+        actingCompanyId: args.actingCompanyId,
+        projectMemberId: args.projectMemberId,
+      }, 'readChannel')
+      const cutoff = access.companyAccess?.entitlement?.exitAt
+      const snapshotOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+      const archivedThread = cutoff && snapshotOperationId
+        ? await getArchivedThreadSnapshot(
+            ctx,
+            snapshotOperationId,
+            access.projectMember._id,
+            thread._id,
+          )
+        : null
+      const hasVisibleThreadSnapshot = archivedThread !== null || (
+        !snapshotOperationId &&
+        (access.companyAccess?.entitlement?.threadSnapshots ?? [])
+          .some((snapshot: { _id?: Id<'channelThreads'> }) => snapshot._id === thread._id)
+      )
+      if (
+        cutoff &&
+        !hasVisibleThreadSnapshot
+      ) {
+        return { page: [], isDone: true, continueCursor: '' }
+      }
+      const result = await ctx.db
+        .query('assistantStreams')
+        .withIndex('by_thread_created_at', (q) => cutoff
+          ? q.eq('channelThreadId', thread._id).lte('createdAt', cutoff)
+          : q.eq('channelThreadId', thread._id))
+        .order('desc')
+        .paginate({ ...args.paginationOpts, numItems: boundedPageSize(args.paginationOpts.numItems) })
+      let page = [...result.page]
+      if (args.paginationOpts.cursor === null) {
+        const targetStream = await resolveTargetStream(ctx, args.targetMessageId, {
+          groupId: thread.groupId,
+          channelThreadId: thread._id,
+        }, cutoff)
+        if (targetStream && !page.some((stream) => stream._id === targetStream._id)) {
+          page = [...page, targetStream]
+        }
+      }
+      return { ...result, page }
+    } catch {
+      return { page: [], isDone: true, continueCursor: '' }
     }
   },
 })
@@ -247,17 +423,51 @@ export const collectContext = query({
       projectMemberId: args.projectMemberId,
     }, 'readChannel')
 
-    const messages = await ctx.db
+    const recentMessages = await ctx.db
       .query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId))
       .order('desc')
       .take(80)
-    const orderedMessages = messages
+    const promptMessage = args.promptMessageId
+      ? await ctx.db.get(args.promptMessageId)
+      : null
+    const candidateMessages = promptMessage &&
+      promptMessage.projectId === args.projectId &&
+      promptMessage.groupId === args.groupId &&
+      promptMessage.channelThreadId === args.channelThreadId
+      ? [...recentMessages, promptMessage]
+      : recentMessages
+    const visibleMessages = [...new Map(
+      candidateMessages.map((message) => [message._id, message] as const),
+    ).values()]
       .filter((message) =>
         (!message.channelThreadId || threadsEnabled()) &&
         (!access.companyAccess?.entitlement?.exitAt || message.createdAt <= access.companyAccess.entitlement.exitAt),
       )
-      .reverse()
+    // eslint-disable-next-line unicorn/no-array-sort -- reason: ES2022 compatibility; operates on a fresh local array.
+    visibleMessages.sort((left, right) => left.createdAt - right.createdAt)
+    const recentWindow = visibleMessages.slice(-80)
+    const orderedMessages = promptMessage &&
+      visibleMessages.some((message) => message._id === promptMessage._id) &&
+      !recentWindow.some((message) => message._id === promptMessage._id)
+      ? [promptMessage, ...recentWindow.slice(-79)]
+      : recentWindow
+
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    const snapshotOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+    const legacyMemberSnapshots = (access.companyAccess?.entitlement?.memberSnapshots ?? [])
+      .map((snapshot) => decodeLegacyArchivedMember(ctx, snapshot))
+    const archivedMemberIds = [...new Set(
+      orderedMessages
+        .map((message) => message.authorProjectMemberId)
+        .filter((memberId): memberId is Id<'projectMembers'> => memberId !== undefined),
+    )]
+    const stagedMemberSnapshots = snapshotOperationId
+      ? (await Promise.all(archivedMemberIds.map(async (memberId) =>
+          await getArchivedMemberSnapshot(ctx, snapshotOperationId, memberId),
+        ))).filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== null)
+      : []
+    const memberSnapshots = [...legacyMemberSnapshots, ...stagedMemberSnapshots]
 
     const users = await Promise.all(
       Array.from(new Set(orderedMessages.map((message) => message.authorId))).map(
@@ -265,6 +475,15 @@ export const collectContext = query({
       ),
     )
     const userNames = new Map(users.filter((user) => user !== null).map((user) => [user._id, user.displayName]))
+    for (const snapshot of memberSnapshots) {
+      userNames.set(snapshot.user._id, snapshot.user.displayName)
+    }
+    if (cutoff !== undefined) {
+      const archivedUserIds = new Set(memberSnapshots.map((snapshot) => String(snapshot.user._id)))
+      for (const user of users) {
+        if (user && !archivedUserIds.has(String(user._id))) userNames.delete(user._id)
+      }
+    }
     const attachmentDetailsByMessageId = new Map<Id<'messages'>, Array<AssistantAttachmentCandidate>>()
     const attachmentCandidates = (
       await Promise.all(
@@ -272,7 +491,12 @@ export const collectContext = query({
           const messageAttachments = await Promise.all(
             message.attachmentIds.map(async (attachmentId) => {
               const attachment = await ctx.db.get(attachmentId)
-              if (!attachment || attachment.projectId !== args.projectId || attachment.groupId !== args.groupId) {
+              if (
+                !attachment ||
+                attachment.projectId !== args.projectId ||
+                attachment.groupId !== args.groupId ||
+                (cutoff !== undefined && attachment.createdAt > cutoff)
+              ) {
                 return null
               }
               const url = await ctx.storage.getUrl(attachment.storageId)
@@ -309,6 +533,9 @@ export const collectContext = query({
       )
     ).flat()
 
+    const legacyChannelSnapshots = (access.companyAccess?.entitlement?.channelSnapshots ?? [])
+      .map((snapshot) => decodeLegacyArchivedChannel(ctx, snapshot))
+
     const formattedMessages = await Promise.all(
       orderedMessages.map(async (message) => {
         const bodyParts = [message.body]
@@ -327,7 +554,15 @@ export const collectContext = query({
         if (message.replyToMessageId) {
           const replyToMessage = await ctx.db.get(message.replyToMessageId)
           if (replyToMessage && replyToMessage.groupId === message.groupId) {
-            const replyAuthor = await ctx.db.get(replyToMessage.authorId)
+            const stagedReplyAuthor = cutoff && snapshotOperationId && replyToMessage.authorProjectMemberId
+              ? await getArchivedMemberSnapshot(ctx, snapshotOperationId, replyToMessage.authorProjectMemberId)
+              : null
+            const legacyReplyAuthor = memberSnapshots.find((snapshot) =>
+              replyToMessage.authorProjectMemberId
+                ? snapshot.membership._id === replyToMessage.authorProjectMemberId
+                : snapshot.membership.userId === replyToMessage.authorId,
+            )
+            const replyAuthor = stagedReplyAuthor?.user ?? legacyReplyAuthor?.user ?? await ctx.db.get(replyToMessage.authorId)
             bodyParts.unshift(
               `Replying to ${replyAuthor?.displayName ?? 'Unknown Member'}: ${replyToMessage.body || 'Attachment message'}`,
             )
@@ -335,13 +570,22 @@ export const collectContext = query({
         }
         const forwardedFrom = message.forwardedFrom
         if (forwardedFrom) {
-          const sourceMembership = await ctx.db
-            .query('groupMembers')
-            .withIndex('by_group_user', (q) =>
-              q.eq('groupId', forwardedFrom.sourceGroupId).eq('userId', args.requesterId),
-            )
-            .unique()
-          const sourceGroup = sourceMembership ? await ctx.db.get(forwardedFrom.sourceGroupId) : null
+          const stagedSourceGroup = cutoff && snapshotOperationId
+            ? await getArchivedChannelSnapshot(ctx, snapshotOperationId, forwardedFrom.sourceGroupId)
+            : null
+          const legacySourceGroup = legacyChannelSnapshots.find((snapshot) =>
+            snapshot._id === forwardedFrom.sourceGroupId,
+          )
+          const sourceMembership = cutoff || snapshotOperationId
+            ? null
+            : await ctx.db
+                .query('groupMembers')
+                .withIndex('by_group_user', (q) =>
+                  q.eq('groupId', forwardedFrom.sourceGroupId).eq('userId', args.requesterId),
+                )
+                .unique()
+          const sourceGroup = stagedSourceGroup ?? legacySourceGroup ??
+            (sourceMembership ? await ctx.db.get(forwardedFrom.sourceGroupId) : null)
           const sourceLabel = sourceGroup ? ` from ${sourceGroup.name}` : ' from another Group'
           bodyParts.push(
             `Forwarded/copied evidence${sourceLabel}. Original author ${forwardedFrom.originalAuthorName}: ${forwardedFrom.originalBody || 'Attachment message'}`,
@@ -416,12 +660,7 @@ export const authorizeAsk = internalMutation({
       key: args.requesterId,
       throws: true,
     })
-    const projectMember = await resolveActorProjectMember(
-      ctx,
-      group.projectId,
-      args.requesterId,
-      access.companyAccess?.projectMember,
-    )
+    const projectMember = access.projectMember
     return {
       projectMemberId: projectMember._id,
       actingCompanyId: access.companyAccess?.company._id,

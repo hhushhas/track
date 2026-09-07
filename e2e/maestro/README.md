@@ -6,7 +6,9 @@ Device flows for the Track mobile app (`ai.q9labs.track`), driven by
 
 These were written during the July 2026 push-notification and task-UI
 verification work and lived unversioned in `scratchpad/` until the 2026-08-23
-docs audit promoted them here. They are not yet wired into CI.
+docs audit promoted them here. They remain opt-in device checks and are not the
+curated CI acceptance suite; CI runs the deterministic browser journeys under
+[`e2e/README.md`](../README.md).
 
 ## Running
 

@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { shortTaskKey } from '@/lib/task-presentation';
+import { useTaskLinkBatch } from '@/lib/task-link-context';
 
 /** Matches the avatar column MessageBubble reserves, so cards line up with bubbles. */
 const GUTTER = 40;
@@ -40,19 +41,22 @@ export function TaskInlineCards({
 }: Props) {
   const theme = useTheme();
   const router = useRouter();
+  const batch = useTaskLinkBatch();
   const queryIdentity = identity ? {
     actingCompanyId: identity.companyId,
     projectMemberId: identity.membershipId,
   } : {};
   const messageTasks = useQuery(
     api.tasks.listForMessage,
-    messageId ? { messageId, ...queryIdentity } : 'skip',
+    messageId && !batch ? { messageId, ...queryIdentity } : 'skip',
   );
   const assistantTasks = useQuery(
     api.tasks.listForAssistant,
-    assistantStreamId ? { assistantStreamId, ...queryIdentity } : 'skip',
+    assistantStreamId && !batch ? { assistantStreamId, ...queryIdentity } : 'skip',
   );
-  const tasks = messageId ? messageTasks : assistantTasks;
+  const tasks = messageId
+    ? batch?.messageTasks.get(String(messageId)) ?? messageTasks
+    : batch?.assistantTasks.get(String(assistantStreamId)) ?? assistantTasks;
   const hasCards = Boolean(tasks?.length);
   const rowId = messageId ?? assistantStreamId;
 

@@ -1,9 +1,14 @@
 import { v } from 'convex/values'
 
-import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
-import { appendTaskActivity } from './lib/taskData'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
+import {
+  appendTaskActivity,
+  isTaskArchiveLabelPayload,
+  taskArchiveRowsPage,
+  taskArchiveSourceForEntitlement,
+} from './lib/taskData'
 import { requireTaskAccess, resolveTaskRequestContext } from './lib/taskPolicy'
 
 const identityArgs = {
@@ -11,18 +16,21 @@ const identityArgs = {
   projectMemberId: v.optional(v.id('projectMembers')),
 }
 
+const labelPageLimit = 100
+
 export const list = query({
   args: { projectId: v.id('projects'), includeArchived: v.optional(v.boolean()), ...identityArgs },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args)
     if (access.capabilities.accessMode === 'archive' && access.entitlement) {
-      const snapshots = await ctx.db.query('taskArchiveSnapshots')
-        .withIndex('by_entitlement_table', (q) =>
-          q.eq('entitlementId', access.entitlement!._id).eq('sourceTable', 'taskLabels'),
-        )
-        .collect()
-      const labels = snapshots.map((snapshot) => snapshot.payload as Doc<'taskLabels'>)
+      const source = taskArchiveSourceForEntitlement(access.entitlement)
+      const snapshots = await taskArchiveRowsPage(ctx, source, 'taskLabels', {
+        cursor: null,
+        numItems: labelPageLimit,
+      })
+      const labels = snapshots.page.flatMap((snapshot) =>
+        isTaskArchiveLabelPayload(snapshot.payload) ? [snapshot.payload] : [])
       return args.includeArchived ? labels : labels.filter((label) => !label.archivedAt)
     }
     const labels = await ctx.db.query('taskLabels')
@@ -36,6 +44,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     if (!access.capabilities.canManageProject) throw new Error('task_label_manage_forbidden')
     const name = args.name.trim()
     if (!name || name.length > 40) throw new Error('task_label_name_invalid')
@@ -61,6 +70,7 @@ export const setArchived = mutation({
     const label = await ctx.db.get(args.labelId)
     if (!label) throw new Error('task_label_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, label.projectId, args)
+    await assertProjectSnapshotWritable(ctx, label.projectId)
     if (!access.capabilities.canManageProject) throw new Error('task_label_manage_forbidden')
     await ctx.db.patch(label._id, { archivedAt: args.archived ? Date.now() : undefined, updatedAt: Date.now() })
     return label._id
@@ -72,6 +82,7 @@ export const setTaskLabels = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canEdit) throw new Error('task_edit_forbidden')
     if (access.task.revision !== args.expectedRevision) throw new Error(`task_conflict:${access.task.revision}`)
     const labels = []

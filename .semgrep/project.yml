@@ -1,0 +1,3 @@
+# Project-owned Semgrep rules belong here. The q9 rule packs are resolved from
+# gate.config.ts so their versioned rules remain the source of truth.
+rules: []

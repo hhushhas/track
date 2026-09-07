@@ -1,8 +1,10 @@
 import { parseMentions } from '@track/shared';
+import type { FunctionReturnType } from 'convex/server';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import type { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { AssistantMessage } from '@/components/chat/assistant-message';
 import { MessageBubble } from '@/components/chat/message-bubble';
@@ -23,7 +25,7 @@ export type GroupedThreadItem =
   | { kind: 'assistant'; key: string; at: number; stream: Doc<'assistantStreams'>; isFirstInGroup: boolean }
   | { kind: 'date-sep'; key: string; at: number; label: string };
 
-export type ProjectMemberRow = { membership: Doc<'projectMembers'>; user: Doc<'users'> | null };
+export type ProjectMemberRow = FunctionReturnType<typeof api.mobile.listProjectMembersPage>['page'][number];
 
 const SWIPE_LIMIT = 72;
 const SWIPE_THRESHOLD = 56;
@@ -140,11 +142,7 @@ function resolveMentionMembers(body: string, members: ProjectMemberRow[]) {
   const matches = new Map<string, Array<{ projectMemberId: Id<'projectMembers'>; userId: Id<'users'> }>>();
   for (const { membership, user } of members) {
     if (!user) continue;
-    const keys = new Set(
-      [user.displayName, user.email, user.email?.split('@')[0]]
-        .filter(Boolean)
-        .map((v) => norm(String(v))),
-    );
+    const keys = new Set([norm(user.displayName)]);
     for (const key of keys) {
       if (!tokenSet.has(key)) continue;
       matches.set(key, [

@@ -269,7 +269,7 @@ export function TaskBoard({
             assignee={assigneeName(dragged)}
             category={dragged.state?.category}
             dueDate={dragged.task.dueDate}
-            evidence={dragged.references.length > 0}
+            evidence={false}
             onPress={() => undefined}
             priority={dragged.task.priority}
             publicKey={dragged.task.publicKey}
@@ -501,7 +501,7 @@ function BoardCard({
           assignee={assigneeName(item)}
           category={item.state?.category}
           dueDate={item.task.dueDate}
-          evidence={item.references.length > 0}
+          evidence={item.hasEvidence}
           onPress={() => onOpen(item)}
           onStatusPress={readOnly ? undefined : () => onStatusPress(item)}
           priority={item.task.priority}

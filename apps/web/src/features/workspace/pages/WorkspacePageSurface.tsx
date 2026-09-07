@@ -39,6 +39,7 @@ type WorkspacePageSurfaceModel = {
   navigation: ReturnType<typeof useWorkspaceNavigation>
   notifications: ReturnType<typeof useWorkspaceNotifications>
   presentation: ReturnType<typeof useWorkspacePresentationData>
+  projectSearchReturnFocusRef: RefObject<HTMLElement | null>
   threadInteractions: ReturnType<typeof useWorkspaceThreadInteractions>
   auth: {
     devAuthEnabled: boolean
@@ -78,6 +79,7 @@ type WorkspacePageSurfaceModel = {
     emojiPickerOpen: boolean
     fileInputRef: RefObject<HTMLInputElement | null>
     flashingMessageId: string | null
+    loadingOlderMessages: boolean
     logoutConfirmOpen: boolean
     memoryImportOpen: boolean
     mentionIndex: number
@@ -101,6 +103,7 @@ type WorkspacePageSurfaceModel = {
     onComposerChange: (value: string, cursor: number) => void
     onMemoryImportBusyChange: (busy: boolean) => void
     onOpenProjectSearch: () => void
+    loadOlderMessages: () => void
     onSearchClose: () => void
     onSearchToggle: () => void
     onSignOut: () => void
@@ -135,6 +138,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
     navigation,
     notifications,
     presentation,
+    projectSearchReturnFocusRef,
     route,
     state,
     threadInteractions,
@@ -145,9 +149,11 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
     activeProject,
     activeProjectMembers,
     currentTrackUser,
+    hasMoreMessages,
     messages,
     projectMemberRoleByUserId,
     projectSearchResults,
+    projectSearchUpdating,
     projectItems,
     visibleGroups,
   } = data
@@ -250,6 +256,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             activeGroupId={state.activeGroupId}
             activeProjectId={state.activeProjectId}
             activeTypingIndicators={conversation.activeTypingIndicators}
+            assistantRetryPending={messageActions.assistantRetryPending}
             busyAction={state.busyAction}
             chatSearchMatchKeys={presentation.chatSearchMatchKeys}
             chatSearchMatches={presentation.chatSearchMatches}
@@ -262,6 +269,8 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             fileInputRef={state.fileInputRef}
             filteredMentionOptions={conversation.filteredMentionOptions}
             flashingMessageId={state.flashingMessageId}
+            hasMoreMessages={hasMoreMessages}
+            loadingOlderMessages={state.loadingOlderMessages}
             mentionGroups={conversation.mentionGroups}
             mentionIndex={state.mentionIndex}
             mentionOptionRefs={state.mentionOptionRefs}
@@ -286,12 +295,16 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             onOpenGroup={navigation.navigateToGroup}
             onOpenMessageCitation={threadInteractions.requestMessageFocus}
             onOpenMessageSource={threadInteractions.handleOpenMessageSource}
+            onLoadOlderMessages={update.loadOlderMessages}
             onRecordingChange={update.setVoiceRecordingActive}
             onReplyMessage={threadInteractions.handleReplyMessage}
             onReplyToMessageChange={update.setReplyToMessage}
             onSendMessage={() => void messageActions.handleSendMessage()}
             onShowMentionMenuClose={() => update.setComposerCursor(0)}
-            onThreadScroll={threadInteractions.handleThreadScroll}
+            onThreadScroll={() => {
+              threadInteractions.handleThreadScroll()
+              update.loadOlderMessages()
+            }}
             onVoiceNoteRecorded={attachments.handleVoiceNoteRecorded}
             pendingAttachments={attachments.pendingAttachments}
             projectMemberRoleByUserId={projectMemberRoleByUserId}
@@ -364,8 +377,10 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         open={state.projectSearchOpen}
         projectName={activeProject?.project.name ?? 'Project'}
         query={state.projectSearchQuery}
+        returnFocusRef={projectSearchReturnFocusRef}
         sections={presentation.projectSearchSections}
         total={presentation.projectSearchTotal}
+        updating={projectSearchUpdating}
       />
       <WorkspaceDialogs
         activeGroupId={state.activeGroupId}

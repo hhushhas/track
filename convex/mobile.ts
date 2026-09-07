@@ -1,14 +1,149 @@
 import { v } from 'convex/values'
+import { paginationOptsValidator, type PaginationResult } from 'convex/server'
 
 import { mutation, query } from './_generated/server'
-import type { Id } from './_generated/dataModel'
+import type { Doc, Id } from './_generated/dataModel'
 import type { QueryCtx } from './_generated/server'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import { requireActiveCompanyMembership, requireCompanyModelEnabled } from './lib/companyPolicy'
 import { threadsEnabled } from './lib/channelThreadPolicy'
+import {
+  getArchivedChannelSnapshot,
+  listArchivedChannelVisibilityPage,
+  listArchivedMemberSnapshotsPage,
+} from './lib/projectExitArchive'
+import {
+  decodeLegacyArchivedChannel,
+  decodeLegacyArchivedMember,
+  decodeLegacyArchivedProject,
+  paginateLegacySnapshot,
+} from './lib/legacyArchiveSnapshot'
 
 const platform = v.union(v.literal('web'), v.literal('ios'), v.literal('android'))
+
+type MobileMemberRow = {
+  membership: {
+    _id: Id<'projectMembers'>
+    userId: Id<'users'>
+    role: Doc<'projectMembers'>['role']
+    companyId?: Id<'companies'>
+  }
+  user: { _id: Id<'users'>; displayName: string } | null
+  company: { _id: Id<'companies'>; displayName: string } | null
+}
+
+type MobileGroupRow = {
+  group: { _id: Id<'groups'>; projectId: Id<'projects'>; name: string; kind: string; status?: string }
+  membership: { _id: string; groupId: Id<'groups'>; projectId: Id<'projects'> }
+  lastMessage: Doc<'messages'> | null
+  unreadCount: number
+}
+
+const directoryScopeArgs = {
+  projectId: v.id('projects'),
+  userId: v.id('users'),
+  actingCompanyId: v.optional(v.id('companies')),
+  projectMemberId: v.optional(v.id('projectMembers')),
+  paginationOpts: paginationOptsValidator,
+}
+
+export const listProjectMembersPage = query({
+  args: directoryScopeArgs,
+  handler: async (ctx, args): Promise<PaginationResult<MobileMemberRow>> => {
+    const access = await authorizeScopedRequest(ctx, {
+      ...args, claimedUserId: args.userId,
+    }, 'readProject')
+    const options = { ...args.paginationOpts, numItems: Math.max(1, Math.min(100, args.paginationOpts.numItems)) }
+    const entitlement = access.companyAccess?.entitlement
+    if (entitlement) {
+      const result = entitlement.snapshotOperationId
+        ? await listArchivedMemberSnapshotsPage(ctx, { ...options, operationId: entitlement.snapshotOperationId })
+        : paginateLegacySnapshot<unknown>(entitlement.memberSnapshots ?? [], options)
+      return {
+        ...result,
+        page: result.page.map((value) => {
+          const snapshot = decodeLegacyArchivedMember(ctx, value)
+          return { ...snapshot, company: snapshot.company ?? null }
+        }),
+      }
+    }
+    const result = access.companyAccess
+      ? await ctx.db.query('projectMembers').withIndex('by_project_status', (q) =>
+          q.eq('projectId', args.projectId).eq('status', 'active')).paginate(options)
+      : await ctx.db.query('projectMembers').withIndex('by_project', (q) =>
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          q.eq('projectId', args.projectId)).filter((q) => q.eq(q.field('companyId'), undefined)).paginate(options)
+    return {
+      ...result,
+      page: await Promise.all(result.page.map(async (membership) => {
+        const [user, company] = await Promise.all([
+          ctx.db.get(membership.userId),
+          membership.companyId ? ctx.db.get(membership.companyId) : null,
+        ])
+        return {
+          membership,
+          user: user ? { _id: user._id, displayName: user.displayName } : null,
+          company: company ? { _id: company._id, displayName: company.displayName } : null,
+        }
+      })),
+    }
+  },
+})
+
+export const listGroupsPage = query({
+  args: directoryScopeArgs,
+  handler: async (ctx, args): Promise<PaginationResult<MobileGroupRow>> => {
+    const access = await authorizeScopedRequest(ctx, {
+      ...args, claimedUserId: args.userId,
+    }, 'readProject')
+    const options = { ...args.paginationOpts, numItems: Math.max(1, Math.min(100, args.paginationOpts.numItems)) }
+    const entitlement = access.companyAccess?.entitlement
+    const companyMemberId = access.companyAccess?.projectMember._id
+    const legacyChannelSnapshots = entitlement && !entitlement.snapshotOperationId
+      ? new Map(entitlement.channelSnapshots.map((value: unknown) => {
+          const snapshot = decodeLegacyArchivedChannel(ctx, value)
+          return [snapshot._id, snapshot] as const
+        }))
+      : null
+    const result = entitlement
+      ? entitlement.snapshotOperationId
+        ? await listArchivedChannelVisibilityPage(ctx, {
+            ...options, operationId: entitlement.snapshotOperationId,
+            projectMemberId: entitlement.projectMemberId,
+          })
+        : paginateLegacySnapshot(entitlement.channelIds.map((groupId) => ({
+            _id: String(groupId), groupId, projectId: args.projectId,
+          })), options)
+      : companyMemberId
+        ? await ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) =>
+            q.eq('projectMemberId', companyMemberId).eq('status', 'active')).paginate(options)
+        : await ctx.db.query('groupMembers').withIndex('by_project_user', (q) =>
+            q.eq('projectId', args.projectId).eq('userId', args.userId)).paginate(options)
+    const page = await Promise.all(result.page.map(async (membership): Promise<MobileGroupRow | null> => {
+      const liveGroup = await ctx.db.get(membership.groupId)
+      let group: MobileGroupRow['group'] | null = liveGroup
+      if (entitlement) {
+        const snapshot = entitlement.snapshotOperationId
+          ? await getArchivedChannelSnapshot(ctx, entitlement.snapshotOperationId, membership.groupId)
+          : legacyChannelSnapshots?.get(membership.groupId)
+        if (!snapshot) throw new Error('archive_channel_snapshot_unavailable')
+        group = { ...snapshot, projectId: args.projectId }
+      }
+      if (!group) return null
+      const cutoff = entitlement?.exitAt
+      const lastMessage = await ctx.db.query('messages').withIndex('by_group_thread_created_at', (q) =>
+        cutoff
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          ? q.eq('groupId', membership.groupId).eq('channelThreadId', undefined).lte('createdAt', cutoff)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          : q.eq('groupId', membership.groupId).eq('channelThreadId', undefined)).order('desc').first()
+      const unreadCount = await getGroupUnreadCount(ctx, membership.groupId, args.userId, companyMemberId, cutoff)
+      return { group, membership, lastMessage, unreadCount }
+    }))
+    return { ...result, page: page.filter((row) => row !== null) }
+  },
+})
 
 async function getGroupUnreadCount(
   ctx: QueryCtx,
@@ -119,8 +254,12 @@ export const listProjects = query({
           ? await ctx.db.query('projectArchiveEntitlements').withIndex('by_member', (q) => q.eq('projectMemberId', membership._id)).unique()
           : null
         if (membership.status === 'archived' && entitlement?.retentionStatus !== 'active') return null
+        const archiveOperationId = entitlement?.snapshotOperationId
         const projectGroupMemberships = entitlement
-          ? entitlement.channelIds.map((groupId) => ({ groupId }))
+          ? archiveOperationId
+            ? await ctx.db.query('projectExitChannelVisibility').withIndex('by_operation_member', (q) =>
+                q.eq('operationId', archiveOperationId).eq('projectMemberId', membership._id)).collect()
+            : entitlement.channelIds.map((groupId) => ({ groupId }))
           : groupMemberships.filter((item) => item.projectId === project._id)
         const unreadCount = (
           await Promise.all(
@@ -137,9 +276,12 @@ export const listProjects = query({
         ).reduce((total, count) => total + count, 0)
 
         return {
-          project: entitlement?.projectSnapshot ?? project,
+          project: {
+            _id: project._id,
+            name: entitlement ? decodeLegacyArchivedProject(entitlement.projectSnapshot).name : project.name,
+          },
           membership,
-          groupCount: projectGroupMemberships.length,
+          groupCount: entitlement?.channelCount ?? projectGroupMemberships.length,
           unreadCount,
         }
       }),
@@ -200,6 +342,12 @@ export const listProjectMembers = query({
       projectMemberId: args.projectMemberId,
     }, 'readProject')
     if (access.companyAccess?.entitlement) {
+      const operationId = access.companyAccess.entitlement.snapshotOperationId
+      if (operationId) {
+        const rows = await ctx.db.query('projectExitSnapshotStaging').withIndex('by_operation_scope', (q) =>
+          q.eq('operationId', operationId).eq('scope', 'member')).collect()
+        return rows.flatMap((row) => row.payload.kind === 'member' ? [row.payload.snapshot] : [])
+      }
       return access.companyAccess.entitlement.memberSnapshots ?? []
     }
     const memberships = await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect()
@@ -241,8 +389,13 @@ export const listGroups = query({
             q.eq('projectMemberId', access.companyAccess!.projectMember._id).eq('status', 'active'),
           ).collect()
       : await ctx.db.query('groupMembers').withIndex('by_user', (q) => q.eq('userId', args.userId)).collect()
+    const archiveOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+    const archivedProjectMemberId = access.companyAccess?.projectMember._id
     const visibleMemberships = access.companyAccess?.entitlement
-      ? access.companyAccess.entitlement.channelIds.map((groupId) => ({ groupId, projectId: args.projectId, _id: groupId }))
+      ? archiveOperationId && archivedProjectMemberId
+        ? await ctx.db.query('projectExitChannelVisibility').withIndex('by_operation_member', (q) =>
+            q.eq('operationId', archiveOperationId).eq('projectMemberId', archivedProjectMemberId)).collect()
+        : access.companyAccess.entitlement.channelIds.map((groupId) => ({ groupId, projectId: args.projectId, _id: groupId }))
       : memberships.filter((membership) => membership.projectId === args.projectId)
 
     const rows = await Promise.all(
@@ -258,7 +411,11 @@ export const listGroups = query({
           .order('desc')
           .first()
         const unreadCount = await getGroupUnreadCount(ctx, group._id, args.userId, args.projectMemberId, cutoff)
-        const snapshot = access.companyAccess?.entitlement?.channelSnapshots.find((item: { _id?: string }) => item._id === group._id)
+        const snapshot = archiveOperationId
+          ? await getArchivedChannelSnapshot(ctx, archiveOperationId, group._id)
+          : access.companyAccess?.entitlement?.channelSnapshots
+            .map((value: unknown) => decodeLegacyArchivedChannel(ctx, value))
+            .find((item) => item._id === group._id)
         return { group: snapshot ?? group, membership, lastMessage, unreadCount }
       }),
     )

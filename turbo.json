@@ -7,6 +7,20 @@
     },
     "build": {
       "dependsOn": ["^build"],
+      "env": [
+        "APP_URL",
+        "CONVEX_DEPLOYMENT",
+        "CONVEX_SITE_URL",
+        "CONVEX_URL",
+        "VITE_*"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.env",
+        "$TURBO_ROOT$/.env.local",
+        "$TURBO_ROOT$/.env.production",
+        "$TURBO_ROOT$/.env.production.local"
+      ],
       "outputs": ["dist/**", ".output/**", "build/**"]
     },
     "typecheck": {

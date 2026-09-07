@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -42,6 +42,8 @@ export function TaskCreateDialog({
   const [labelIds, setLabelIds] = useState<Array<Id<'taskLabels'>>>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const createIntentRef = useRef(crypto.randomUUID())
+  const pendingRef = useRef(false)
   const board = boards.find((item) => item.board._id === boardId)
   const assignees = useQuery(
     api.tasks.listEligibleAssignees,
@@ -63,6 +65,8 @@ export function TaskCreateDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (pendingRef.current || !title.trim()) return
+    pendingRef.current = true
     setSaving(true)
     setError('')
     try {
@@ -76,7 +80,7 @@ export function TaskCreateDialog({
         dueDate: dueDate || undefined,
         assigneeProjectMemberId: assignee ? assignee as Id<'projectMembers'> : undefined,
         labelIds,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: createIntentRef.current,
         ...identity,
       })
       setTitle('')
@@ -84,10 +88,12 @@ export function TaskCreateDialog({
       setDueDate('')
       setAssignee('')
       setLabelIds([])
+      createIntentRef.current = crypto.randomUUID()
       onCreated(result.publicKey)
     } catch (failure) {
       setError(taskError(failure))
     } finally {
+      pendingRef.current = false
       setSaving(false)
     }
   }

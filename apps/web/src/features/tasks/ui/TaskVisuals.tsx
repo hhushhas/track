@@ -2,7 +2,7 @@ import { CalendarDays } from 'lucide-react'
 import { getTaskDueState } from '@track/shared/tasks'
 
 import type { Doc } from '../../../../../../convex/_generated/dataModel'
-import type { TaskView } from '../task-types'
+import type { TaskListItem } from '../task-types'
 
 type StateCategory = Doc<'taskWorkflowStates'>['category']
 type Priority = Doc<'tasks'>['priority']
@@ -44,31 +44,22 @@ export function formatTaskDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-export function OriginCaption({ item, boardName }: { item: TaskView; boardName?: string }) {
-  const reference = item.references.find((candidate) => candidate.isPrimary) ?? item.references[0]
-  if (!reference) return null
-  const source = reference.channelThreadId
-    ? 'Thread'
-    : reference.type === 'message'
-      ? 'Channel message'
-      : reference.type.replaceAll('_', ' ')
-  return (
-    <span className="task-origin-caption" title={`${source}${boardName ? ` · ${boardName}` : ''}`}>
-      <span className="task-origin-dot" />
-      <em>{source}{boardName ? ` · ${boardName}` : ''}</em>
-    </span>
-  )
+export function OriginCaption({ item, boardName }: { item: TaskListItem; boardName?: string }) {
+  void item
+  void boardName
+  return null
 }
 
-export function TaskDenseRow({ item, onOpen, omitAssignee = false }: { item: TaskView; onOpen: () => void; omitAssignee?: boolean }) {
+export function TaskDenseRow({ item, onOpen, omitAssignee = false }: { item: TaskListItem; onOpen: () => void; omitAssignee?: boolean }) {
   const category = item.state?.category ?? 'backlog'
+  const terminal = category === 'completed' || category === 'canceled'
   return (
-    <button className={`task-list-row${item.terminal ? ' terminal' : ''}${omitAssignee ? ' omit-assignee' : ''}`} onClick={onOpen} type="button">
+    <button className={`task-list-row${terminal ? ' terminal' : ''}${omitAssignee ? ' omit-assignee' : ''}`} onClick={onOpen} type="button">
       <StateRing category={category} size="dense" />
       <span className="task-list-key">{item.task.publicKey}</span>
       <strong>{item.task.title}</strong>
       <OriginCaption boardName={item.board?.name} item={item} />
-      <DueChip dueDate={item.task.dueDate} terminal={item.terminal} />
+      <DueChip dueDate={item.task.dueDate} terminal={terminal} />
       {!omitAssignee ? <TaskAvatar member={item.assignee} /> : null}
       <PriorityGlyph priority={item.task.priority} />
     </button>

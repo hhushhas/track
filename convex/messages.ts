@@ -2,9 +2,10 @@ import {
   resolveProjectAccessProfile,
   resolveReleaseFeatureFlag,
 } from '@track/shared/feature-flags'
+import { paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
 
-import { mutation, query } from './_generated/server'
+import { internalMutation, mutation, query } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import { internal } from './_generated/api'
@@ -14,17 +15,101 @@ import { rateLimiter } from './lib/rateLimit'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
 import { invalidateTaskEvidence } from './lib/taskEvidence'
 import {
+  getArchivedChannelSnapshot,
+  getArchivedMemberSnapshot,
+  getArchivedThreadSnapshot,
+} from './lib/projectExitArchive'
+import {
+  claimMessageUploadIntent,
+  markMessageUploadAsUploaded,
+  resolveMessageUploadIntent,
+  type MessageUploadMetadata,
+  type MessageUploadScope,
+} from './lib/messageUpload'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
+import {
   allocateChannelSequence,
   assertReplyScope,
   followMentionedThreadMembers,
   requireThreadsEnabled,
-  resolveActorProjectMember,
   threadsEnabled,
   upsertThreadFollower,
 } from './lib/channelThreadPolicy'
 
 const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
+const previewErrorCode = v.union(
+  v.literal('image_too_large'),
+  v.literal('missing_source'),
+  v.literal('not_an_image'),
+  v.literal('processor_failed'),
+)
+const messageAttachment = v.object({
+  uploadIntentId: v.id('messageUploadIntents'),
+  filename: v.string(),
+  contentType: v.string(),
+  size: v.number(),
+  kind: v.optional(attachmentKind),
+  durationMs: v.optional(v.number()),
+})
 type MessageDetailCtx = QueryCtx | MutationCtx
+type MessageAttachmentInput = {
+  uploadIntentId: Id<'messageUploadIntents'>
+  filename: string
+  contentType: string
+  size: number
+  kind?: 'file' | 'voice_note'
+  durationMs?: number
+}
+
+const UPLOAD_INTENT_TTL_MS = 15 * 60 * 1000
+
+function validateUploadMetadata(input: {
+  filename: string
+  contentType: string
+  size: number
+  durationMs?: number
+}) {
+  if (input.filename.trim().length === 0 || input.contentType.trim().length === 0) {
+    throw new Error('attachment_metadata_invalid')
+  }
+  if (!Number.isInteger(input.size) || input.size < 0) {
+    throw new Error('attachment_metadata_invalid')
+  }
+  if (input.durationMs !== undefined && (!Number.isInteger(input.durationMs) || input.durationMs < 0)) {
+    throw new Error('attachment_metadata_invalid')
+  }
+}
+
+async function deleteStorageBestEffort(ctx: MutationCtx, storageId: Id<'_storage'>) {
+  try {
+    await ctx.storage.delete(storageId)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function scheduleMediaPreview(
+  ctx: MutationCtx,
+  input: {
+    attachmentId: Id<'attachments'>
+    contentType: string
+    storageId: Id<'_storage'>
+    previewStatus?: Doc<'attachments'>['previewStatus']
+  },
+) {
+  if (!input.contentType.toLowerCase().startsWith('image/')) return
+  if (input.previewStatus === 'ready' || input.previewStatus === 'failed') return
+  await ctx.db.patch(input.attachmentId, {
+    previewStatus: 'pending',
+    previewErrorCode: undefined,
+  })
+  await ctx.scheduler.runAfter(0, internal.mediaPreview.generate, {
+    attachmentId: input.attachmentId,
+    contentType: input.contentType,
+    sourceStorageId: input.storageId,
+  })
+}
 type ArchivedMemberSnapshot = {
   membership: {
     _id: Id<'projectMembers'>
@@ -35,6 +120,87 @@ type ArchivedMemberSnapshot = {
   }
   user: { _id: Id<'users'>; displayName: string }
   company: { _id: Id<'companies'>; displayName: string } | null
+}
+
+function boundedMessageLimit(limit: number | undefined) {
+  return Math.min(Math.max(limit ?? 50, 1), 100)
+}
+
+type ResolvedMessageAttachment = {
+  input: MessageAttachmentInput
+  intent: Doc<'messageUploadIntents'>
+}
+
+function uploadMetadata(input: MessageAttachmentInput): MessageUploadMetadata {
+  return {
+    filename: input.filename,
+    contentType: input.contentType,
+    size: input.size,
+    kind: input.kind,
+    durationMs: input.durationMs,
+  }
+}
+
+async function resolveMessageAttachments(
+  ctx: MutationCtx,
+  attachments: Array<MessageAttachmentInput>,
+  scope: MessageUploadScope,
+  messageId?: Id<'messages'>,
+) {
+  const seenIntentIds = new Set<string>()
+  const seenStorageIds = new Set<string>()
+  const resolved: Array<ResolvedMessageAttachment> = []
+  for (const attachment of attachments) {
+    if (!Number.isInteger(attachment.size) || attachment.size < 0) {
+      throw new Error('attachment_metadata_invalid')
+    }
+    if (attachment.filename.trim().length === 0) throw new Error('attachment_metadata_invalid')
+    if (seenIntentIds.has(String(attachment.uploadIntentId))) {
+      throw new Error('attachment_intent_duplicate')
+    }
+    seenIntentIds.add(String(attachment.uploadIntentId))
+    const intent = await resolveMessageUploadIntent(ctx, {
+      intentId: attachment.uploadIntentId,
+      scope,
+      metadata: uploadMetadata(attachment),
+      messageId,
+    })
+    const storageId = intent.storageId
+    if (!storageId) throw new Error('upload_intent_not_uploaded')
+    if (seenStorageIds.has(String(storageId))) {
+      throw new Error('attachment_storage_duplicate')
+    }
+    seenStorageIds.add(String(storageId))
+    if (messageId === undefined) {
+      const existingClaims = await ctx.db
+        .query('attachments')
+        .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+        .collect()
+      if (existingClaims.length > 0) throw new Error('attachment_storage_already_claimed')
+    }
+    resolved.push({ input: attachment, intent })
+  }
+  return resolved
+}
+
+async function attachmentSetMatches(
+  ctx: MutationCtx,
+  message: Doc<'messages'>,
+  attachments: Array<MessageAttachmentInput>,
+  scope: MessageUploadScope,
+) {
+  if (message.attachmentIds.length !== attachments.length) return false
+  const resolved = await resolveMessageAttachments(ctx, attachments, scope, message._id)
+  const stored = await Promise.all(message.attachmentIds.map(async (attachmentId) => await ctx.db.get(attachmentId)))
+  return resolved.every(({ input, intent }) => stored.some((candidate) =>
+    candidate !== null &&
+    candidate.storageId === intent.storageId &&
+    candidate.filename === input.filename &&
+    candidate.contentType === input.contentType &&
+    candidate.size === input.size &&
+    candidate.kind === input.kind &&
+    candidate.durationMs === input.durationMs,
+  ))
 }
 
 function archivedMemberForMessage(
@@ -92,6 +258,85 @@ async function markThreadAuthorRead(
   })
 }
 
+export const commitMediaPreview = internalMutation({
+  args: {
+    attachmentId: v.id('attachments'),
+    sourceStorageId: v.id('_storage'),
+    status: v.union(v.literal('ready'), v.literal('failed')),
+    reason: v.optional(previewErrorCode),
+    previewStorageId: v.optional(v.id('_storage')),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    previewWidth: v.optional(v.number()),
+    previewHeight: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<{ committed: boolean; deferred?: boolean }> => {
+    const attachment = await ctx.db.get(args.attachmentId)
+    if (
+      !attachment ||
+      attachment.storageId !== args.sourceStorageId ||
+      !attachment.contentType.toLowerCase().startsWith('image/')
+    ) {
+      if (args.previewStorageId) {
+        await deleteStorageBestEffort(ctx, args.previewStorageId)
+      }
+      return { committed: false }
+    }
+    try {
+      await assertProjectSnapshotWritable(ctx, attachment.projectId)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'project_snapshot_in_progress') {
+        return { committed: false, deferred: true }
+      }
+      throw error
+    }
+
+    if (args.status === 'ready') {
+      if (
+        !args.previewStorageId ||
+        args.width === undefined ||
+        args.height === undefined ||
+        args.previewWidth === undefined ||
+        args.previewHeight === undefined
+      ) {
+        throw new Error('preview_metadata_missing')
+      }
+      const previousPreviewStorageId = attachment.previewStorageId
+      await ctx.db.patch(attachment._id, {
+        height: args.height,
+        previewErrorCode: undefined,
+        previewHeight: args.previewHeight,
+        previewStatus: 'ready',
+        previewStorageId: args.previewStorageId,
+        previewWidth: args.previewWidth,
+        width: args.width,
+      })
+      if (previousPreviewStorageId && previousPreviewStorageId !== args.previewStorageId) {
+        await deleteStorageBestEffort(ctx, previousPreviewStorageId)
+      }
+      return { committed: true }
+    }
+
+    const previousPreviewStorageId = attachment.previewStorageId
+    await ctx.db.patch(attachment._id, {
+      height: undefined,
+      previewErrorCode: args.reason,
+      previewHeight: undefined,
+      previewStatus: 'failed',
+      previewStorageId: undefined,
+      previewWidth: undefined,
+      width: undefined,
+    })
+    if (previousPreviewStorageId) {
+      await deleteStorageBestEffort(ctx, previousPreviewStorageId)
+    }
+    if (args.previewStorageId) {
+      await deleteStorageBestEffort(ctx, args.previewStorageId)
+    }
+    return { committed: true }
+  },
+})
+
 export async function buildMessageDetail(
   ctx: MessageDetailCtx,
   message: Doc<'messages'>,
@@ -107,9 +352,13 @@ export async function buildMessageDetail(
     latestReplyAt?: number
   }>,
   archivedMemberSnapshots?: Array<ArchivedMemberSnapshot>,
+  archiveSnapshotOperationId?: string,
 ) {
+  const archiveAuthorSnapshot = cutoff && archiveSnapshotOperationId && message.authorProjectMemberId
+    ? await getArchivedMemberSnapshot(ctx, archiveSnapshotOperationId, message.authorProjectMemberId)
+    : null
   const archivedAuthor = cutoff
-    ? archivedMemberForMessage(message, archivedMemberSnapshots)
+    ? archiveAuthorSnapshot ?? archivedMemberForMessage(message, archivedMemberSnapshots)
     : undefined
   const author = cutoff ? archivedAuthor?.user ?? null : await ctx.db.get(message.authorId)
   const authorProjectMember = cutoff
@@ -123,34 +372,59 @@ export async function buildMessageDetail(
     message.attachmentIds.map(async (attachmentId) => {
       const attachment = await ctx.db.get(attachmentId)
       if (!attachment || (cutoff && attachment.createdAt > cutoff)) return null
-      const url = await ctx.storage.getUrl(attachment.storageId)
-      return { attachment, url }
+      const [url, previewUrl] = await Promise.all([
+        ctx.storage.getUrl(attachment.storageId),
+        attachment.previewStatus === 'ready' && attachment.previewStorageId
+          ? ctx.storage.getUrl(attachment.previewStorageId)
+          : Promise.resolve(null),
+      ])
+      return {
+        attachment,
+        height: attachment.height,
+        previewHeight: attachment.previewHeight,
+        previewUrl,
+        previewWidth: attachment.previewWidth,
+        url,
+        width: attachment.width,
+      }
     }),
   )
   const replyToMessage = message.replyToMessageId ? await ctx.db.get(message.replyToMessageId) : null
+  const archiveReplyAuthorSnapshot = cutoff && archiveSnapshotOperationId && replyToMessage?.authorProjectMemberId
+    ? await getArchivedMemberSnapshot(ctx, archiveSnapshotOperationId, replyToMessage.authorProjectMemberId)
+    : null
   const archivedReplyAuthor = cutoff && replyToMessage
-    ? archivedMemberForMessage(replyToMessage, archivedMemberSnapshots)
+    ? archiveReplyAuthorSnapshot ?? archivedMemberForMessage(replyToMessage, archivedMemberSnapshots)
     : undefined
   const replyToAuthor = cutoff
     ? archivedReplyAuthor?.user ?? null
     : replyToMessage ? await ctx.db.get(replyToMessage.authorId) : null
-  const sourceMembership = message.forwardedFrom && !archivedChannelSnapshots
+  const archiveSourceGroupSnapshot = cutoff && archiveSnapshotOperationId && message.forwardedFrom
+    ? await getArchivedChannelSnapshot(ctx, archiveSnapshotOperationId, message.forwardedFrom.sourceGroupId)
+    : null
+  const normalizedChannelSnapshots = cutoff && archiveSnapshotOperationId
+    ? [...(archivedChannelSnapshots ?? []), ...(archiveSourceGroupSnapshot ? [archiveSourceGroupSnapshot] : [])]
+    : archiveSourceGroupSnapshot
+      ? [...(archivedChannelSnapshots ?? []), archiveSourceGroupSnapshot]
+      : archivedChannelSnapshots
+  const forwardedFrom = message.forwardedFrom
+  const sourceMembership = forwardedFrom && !normalizedChannelSnapshots
     ? viewerProjectMemberId
       ? await ctx.db.query('groupMembers').withIndex('by_group_project_member', (q) =>
-          q.eq('groupId', message.forwardedFrom!.sourceGroupId).eq('projectMemberId', viewerProjectMemberId),
+          q.eq('groupId', forwardedFrom.sourceGroupId).eq('projectMemberId', viewerProjectMemberId),
         ).unique()
-      : await getGroupMembership(ctx, message.forwardedFrom.sourceGroupId, viewerId)
+      : await getGroupMembership(ctx, forwardedFrom.sourceGroupId, viewerId)
     : null
-  const sourceGroupAccess = message.forwardedFrom
-    ? archivedChannelSnapshots
-      ? archivedChannelSnapshots.some((channel) => channel._id === message.forwardedFrom!.sourceGroupId)
+  const sourceGroupAccess = forwardedFrom
+    ? normalizedChannelSnapshots
+      ? normalizedChannelSnapshots.some((channel) => channel._id === forwardedFrom.sourceGroupId)
       : Boolean(sourceMembership && (!sourceMembership.status || sourceMembership.status === 'active'))
     : false
-  const sourceGroupSnapshot = message.forwardedFrom
-    ? archivedChannelSnapshots?.find((channel) => channel._id === message.forwardedFrom!.sourceGroupId)
+  const sourceGroupSnapshot = forwardedFrom
+    ? normalizedChannelSnapshots?.find((channel) => channel._id === forwardedFrom.sourceGroupId)
     : undefined
-  const sourceGroup = message.forwardedFrom && sourceGroupAccess && !archivedChannelSnapshots
-    ? await ctx.db.get(message.forwardedFrom.sourceGroupId)
+  const sourceGroup = forwardedFrom && sourceGroupAccess && !normalizedChannelSnapshots
+    ? await ctx.db.get(forwardedFrom.sourceGroupId)
     : null
   const sourceThread = threadsEnabled() && !message.channelThreadId
     ? await ctx.db
@@ -160,8 +434,14 @@ export async function buildMessageDetail(
         )
         .unique()
     : null
+  const archiveSourceThreadSnapshot = cutoff && archiveSnapshotOperationId && sourceThread && viewerProjectMemberId
+    ? await getArchivedThreadSnapshot(ctx, archiveSnapshotOperationId, viewerProjectMemberId, sourceThread._id)
+    : null
+  const normalizedThreadSnapshots = archiveSourceThreadSnapshot
+    ? [...(archivedThreadSnapshots ?? []), archiveSourceThreadSnapshot]
+    : archivedThreadSnapshots
   const sourceThreadSnapshot = sourceThread
-    ? archivedThreadSnapshots?.find((snapshot) => snapshot._id === sourceThread._id)
+    ? normalizedThreadSnapshots?.find((snapshot) => snapshot._id === sourceThread._id)
     : undefined
   return {
     message: message.forwardedFrom ? { ...message, forwardedFrom: undefined } : message,
@@ -233,10 +513,15 @@ export const list = query({
     return await ctx.db
       .query('messages')
       .withIndex('by_group_thread_created_at', (q) => cutoff
-        ? q.eq('groupId', args.groupId).eq('channelThreadId', undefined).lte('createdAt', cutoff)
-        : q.eq('groupId', args.groupId).eq('channelThreadId', undefined))
+        ? q.eq('groupId', args.groupId)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          .eq('channelThreadId', undefined)
+          .lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          .eq('channelThreadId', undefined))
       .order('desc')
-      .take(args.limit ?? 50)
+      .take(boundedMessageLimit(args.limit))
   },
 })
 
@@ -263,19 +548,53 @@ export const listDetailed = query({
     const messages = await ctx.db
       .query('messages')
       .withIndex('by_group_thread_created_at', (q) => cutoff
-        ? q.eq('groupId', args.groupId).eq('channelThreadId', undefined).lte('createdAt', cutoff)
-        : q.eq('groupId', args.groupId).eq('channelThreadId', undefined))
+        ? q.eq('groupId', args.groupId)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          .eq('channelThreadId', undefined)
+          .lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          .eq('channelThreadId', undefined))
       .order('desc')
-      .take(args.limit ?? 50)
+      .take(boundedMessageLimit(args.limit))
 
     const target = args.targetMessageId ? await ctx.db.get(args.targetMessageId) : null
     const targetIsVisible = target &&
       target.groupId === args.groupId &&
       target.channelThreadId === undefined &&
       (!cutoff || target.createdAt <= cutoff)
-    const selectedMessages = targetIsVisible && !messages.some((message) => message._id === target._id)
-      ? [...messages, target]
-      : messages
+    let selectedMessages = messages
+    if (targetIsVisible && !messages.some((message) => message._id === target._id)) {
+      const contextSize = Math.max(1, Math.floor((boundedMessageLimit(args.limit) - 1) / 2))
+      const [older, newer] = await Promise.all([
+        ctx.db
+          .query('messages')
+          .withIndex('by_group_thread_created_at', (q) => q
+            .eq('groupId', args.groupId)
+            // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+            .eq('channelThreadId', undefined)
+            .lt('createdAt', target.createdAt))
+          .order('desc')
+          .take(contextSize),
+        ctx.db
+          .query('messages')
+          .withIndex('by_group_thread_created_at', (q) => cutoff
+            ? q.eq('groupId', args.groupId)
+              // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+              .eq('channelThreadId', undefined)
+              .gt('createdAt', target.createdAt).lte('createdAt', cutoff)
+            : q.eq('groupId', args.groupId)
+              // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+              .eq('channelThreadId', undefined)
+              .gt('createdAt', target.createdAt))
+          .order('asc')
+          .take(contextSize),
+      ])
+      const reversedNewer = [...newer]
+      // eslint-disable-next-line unicorn/no-array-reverse -- reason: ES2022 compatibility; operates on a fresh local array.
+      reversedNewer.reverse()
+      selectedMessages = [...reversedNewer, target, ...older]
+    }
 
     return await Promise.all(selectedMessages.map(async (message) =>
       await buildMessageDetail(
@@ -287,8 +606,100 @@ export const listDetailed = query({
         access.companyAccess?.entitlement?.channelSnapshots,
         access.companyAccess?.entitlement?.threadSnapshots,
         access.companyAccess?.entitlement?.memberSnapshots,
+        access.companyAccess?.entitlement?.snapshotOperationId,
       ),
     ))
+  },
+})
+
+export const listPage = query({
+  args: {
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    targetMessageId: v.optional(v.id('messages')),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    const pageSize = Math.min(Math.max(args.paginationOpts.numItems, 1), 100)
+    const result = await ctx.db
+      .query('messages')
+      .withIndex('by_group_thread_created_at', (q) => cutoff
+        ? q.eq('groupId', args.groupId)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          .eq('channelThreadId', undefined)
+          .lte('createdAt', cutoff)
+        : q.eq('groupId', args.groupId)
+          // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+          .eq('channelThreadId', undefined))
+      .order('desc')
+      .paginate({ ...args.paginationOpts, numItems: pageSize })
+    let page = [...result.page]
+    if (args.paginationOpts.cursor === null && args.targetMessageId) {
+      const target = await ctx.db.get(args.targetMessageId)
+      const targetIsVisible = target &&
+        target.projectId === group.projectId &&
+        target.groupId === args.groupId &&
+        target.channelThreadId === undefined &&
+        (!cutoff || target.createdAt <= cutoff)
+      if (targetIsVisible && !page.some((message) => message._id === target._id)) {
+        const contextSize = Math.max(1, Math.floor((pageSize - 1) / 2))
+        const [older, newer] = await Promise.all([
+          ctx.db
+            .query('messages')
+            .withIndex('by_group_thread_created_at', (q) => cutoff
+              // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+              ? q.eq('groupId', args.groupId).eq('channelThreadId', undefined)
+                .lt('createdAt', target.createdAt)
+              // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+              : q.eq('groupId', args.groupId).eq('channelThreadId', undefined)
+                .lt('createdAt', target.createdAt))
+            .order('desc')
+            .take(contextSize),
+          ctx.db
+            .query('messages')
+            .withIndex('by_group_thread_created_at', (q) => q
+              .eq('groupId', args.groupId)
+              // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent optional fields explicitly.
+              .eq('channelThreadId', undefined)
+              .gt('createdAt', target.createdAt)
+              .lte('createdAt', cutoff ?? Number.MAX_SAFE_INTEGER))
+            .order('asc')
+            .take(contextSize),
+        ])
+        const reversedNewer = [...newer]
+        // eslint-disable-next-line unicorn/no-array-reverse -- reason: ES2022 compatibility; operates on a fresh local array.
+        reversedNewer.reverse()
+        page = [...reversedNewer, target, ...older]
+      }
+    }
+    return {
+      ...result,
+      page: await Promise.all(page.map(async (message) =>
+        await buildMessageDetail(
+          ctx,
+          message,
+          args.userId,
+          args.projectMemberId,
+          cutoff,
+          access.companyAccess?.entitlement?.channelSnapshots,
+          access.companyAccess?.entitlement?.threadSnapshots,
+          access.companyAccess?.entitlement?.memberSnapshots,
+          access.companyAccess?.entitlement?.snapshotOperationId,
+        ),
+      )),
+    }
   },
 })
 
@@ -306,6 +717,7 @@ export const send = mutation({
     notificationPreview: v.optional(v.string()),
     channelThreadId: v.optional(v.id('channelThreads')),
     idempotencyKey: v.optional(v.string()),
+    attachments: v.optional(v.array(messageAttachment)),
   },
   handler: async (ctx, args) => {
     const access = await authorizeScopedRequest(ctx, {
@@ -319,12 +731,15 @@ export const send = mutation({
     if (!group || group.projectId !== args.projectId) {
       throw new Error('group_project_mismatch')
     }
-    const projectMember = await resolveActorProjectMember(
-      ctx,
-      args.projectId,
-      args.authorId,
-      access.companyAccess?.projectMember,
-    )
+    const projectMember = access.projectMember
+    const uploadScope: MessageUploadScope = {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      channelThreadId: args.channelThreadId,
+      uploaderId: args.authorId,
+      uploaderProjectMemberId: projectMember._id,
+      actingCompanyId: access.companyAccess?.company._id,
+    }
     let channelThread = null
     if (args.channelThreadId) {
       requireThreadsEnabled()
@@ -361,6 +776,9 @@ export const send = mutation({
         ) {
           throw new Error('idempotency_scope_mismatch')
         }
+        if (args.attachments && !await attachmentSetMatches(ctx, existing, args.attachments, uploadScope)) {
+          throw new Error('idempotency_attachment_mismatch')
+        }
         return existing._id
       }
     }
@@ -369,6 +787,8 @@ export const send = mutation({
       throws: true,
     })
     await assertReplyScope(ctx, args.replyToMessageId, args)
+    const attachments = args.attachments ?? []
+    const resolvedAttachments = await resolveMessageAttachments(ctx, attachments, uploadScope)
     const channelSequence = await allocateChannelSequence(ctx, group)
     const messageId = await ctx.db.insert('messages', {
       projectId: args.projectId,
@@ -387,6 +807,63 @@ export const send = mutation({
       notificationPreview: args.notificationPreview,
       createdAt: Date.now(),
     })
+    const attachmentIds = await Promise.all(resolvedAttachments.map(async ({ input, intent }) => {
+      if (!intent.storageId) throw new Error('upload_intent_not_uploaded')
+      const attachmentId = await ctx.db.insert('attachments', {
+        projectId: args.projectId,
+        groupId: args.groupId,
+        messageId,
+        channelThreadId: args.channelThreadId,
+        storageId: intent.storageId,
+        filename: input.filename,
+        contentType: input.contentType,
+        size: input.size,
+        kind: input.kind,
+        durationMs: input.durationMs,
+        uploadedBy: args.authorId,
+        uploadedByProjectMemberId: projectMember._id,
+        actingCompanyId: access.companyAccess?.company._id,
+        extractionStatus: 'preserved',
+        createdAt: Date.now(),
+      })
+      await scheduleMediaPreview(ctx, {
+        attachmentId,
+        contentType: input.contentType,
+        storageId: intent.storageId,
+      })
+      return attachmentId
+    }))
+    await Promise.all(resolvedAttachments.map(async ({ input }) =>
+      await claimMessageUploadIntent(ctx, {
+        intentId: input.uploadIntentId,
+        scope: uploadScope,
+        metadata: uploadMetadata(input),
+        messageId,
+      }),
+    ))
+    if (attachmentIds.length > 0) {
+      await ctx.db.patch(messageId, { attachmentIds })
+      await Promise.all(attachmentIds.map(async (attachmentId, index) =>
+        await appendAuditEvent(ctx, {
+          projectId: args.projectId,
+          groupId: args.groupId,
+          actorId: args.authorId,
+          actorProjectMemberId: projectMember._id,
+          actingCompanyId: access.companyAccess?.company._id,
+          channelThreadId: args.channelThreadId,
+          entityType: 'attachment',
+          entityId: attachmentId,
+          action: 'attachment.preserved',
+          after: {
+            filename: resolvedAttachments[index]?.input.filename,
+            contentType: resolvedAttachments[index]?.input.contentType,
+            size: resolvedAttachments[index]?.input.size,
+            kind: resolvedAttachments[index]?.input.kind ?? 'file',
+            durationMs: resolvedAttachments[index]?.input.durationMs,
+          },
+        }),
+      ))
+    }
 
     if (channelThread) {
       const createdAt = Date.now()
@@ -486,12 +963,7 @@ export const forwardMessage = mutation({
       args.targetGroupId,
       resolveProjectAccessProfile(access.project.accessProfile),
     )
-    const projectMember = await resolveActorProjectMember(
-      ctx,
-      args.projectId,
-      args.actorId,
-      access.companyAccess?.projectMember,
-    )
+    const projectMember = access.projectMember
     let targetThread = null
     if (args.targetChannelThreadId) {
       requireThreadsEnabled()
@@ -698,12 +1170,7 @@ export const remove = mutation({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'writeChannel')
-    const projectMember = await resolveActorProjectMember(
-      ctx,
-      message.projectId,
-      args.actorId,
-      access.companyAccess?.projectMember,
-    )
+    const projectMember = access.projectMember
     const channelThread = message.channelThreadId
       ? await ctx.db.get(message.channelThreadId)
       : null
@@ -818,8 +1285,16 @@ export const generateUploadUrl = mutation({
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
     channelThreadId: v.optional(v.id('channelThreads')),
+    intentKey: v.string(),
+    filename: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    kind: v.optional(attachmentKind),
+    durationMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    validateUploadMetadata(args)
+    if (args.intentKey.trim().length === 0) throw new Error('upload_intent_key_invalid')
     const group = await ctx.db.get(args.groupId)
     if (!group) throw new Error('channel_unavailable')
     const access = await authorizeScopedRequest(ctx, {
@@ -842,7 +1317,222 @@ export const generateUploadUrl = mutation({
         throw new Error(thread?.status === 'archived' ? 'thread_archived' : 'thread_access_changed')
       }
     }
-    return await ctx.storage.generateUploadUrl()
+    const projectMember = access.projectMember
+    const actingCompanyId = access.companyAccess?.company._id
+    const existing = await ctx.db
+      .query('messageUploadIntents')
+      .withIndex('by_uploader_intent_key', (q) =>
+        q.eq('uploaderProjectMemberId', projectMember._id).eq('intentKey', args.intentKey),
+      )
+      .first()
+    const now = Date.now()
+    if (existing) {
+      if (
+        existing.projectId !== group.projectId ||
+        existing.groupId !== group._id ||
+        existing.channelThreadId !== args.channelThreadId ||
+        existing.uploaderId !== args.userId ||
+        existing.actingCompanyId !== actingCompanyId ||
+        existing.filename !== args.filename ||
+        existing.contentType !== args.contentType ||
+        existing.size !== args.size ||
+        existing.kind !== args.kind ||
+        existing.durationMs !== args.durationMs
+      ) {
+        throw new Error('upload_intent_key_mismatch')
+      }
+      if (existing.status === 'claimed') {
+        return {
+          intentId: existing._id,
+          uploadUrl: null,
+          status: existing.status,
+          storageId: existing.storageId ?? null,
+          expiresAt: existing.expiresAt,
+        }
+      }
+      if (existing.status === 'uploaded' && existing.storageId) {
+        return {
+          intentId: existing._id,
+          uploadUrl: null,
+          status: existing.status,
+          storageId: existing.storageId,
+          expiresAt: existing.expiresAt,
+        }
+      }
+      if (existing.expiresAt > now && existing.status === 'issued') {
+        return {
+          intentId: existing._id,
+          uploadUrl: await ctx.storage.generateUploadUrl(),
+          status: existing.status,
+          storageId: null,
+          expiresAt: existing.expiresAt,
+        }
+      }
+      if (existing.storageId) {
+        const storageId = existing.storageId
+        const claims = await ctx.db
+          .query('attachments')
+          .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+          .first()
+        if (!claims) await deleteStorageBestEffort(ctx, storageId)
+      }
+      await ctx.db.patch(existing._id, {
+        status: 'abandoned',
+        updatedAt: now,
+      })
+    }
+    const intentId = await ctx.db.insert('messageUploadIntents', {
+      projectId: group.projectId,
+      groupId: group._id,
+      channelThreadId: args.channelThreadId,
+      uploaderId: args.userId,
+      uploaderProjectMemberId: projectMember._id,
+      actingCompanyId,
+      intentKey: args.intentKey,
+      filename: args.filename,
+      contentType: args.contentType,
+      size: args.size,
+      kind: args.kind,
+      durationMs: args.durationMs,
+      status: 'issued',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: now + UPLOAD_INTENT_TTL_MS,
+    })
+    return {
+      intentId,
+      uploadUrl: await ctx.storage.generateUploadUrl(),
+      status: 'issued' as const,
+      storageId: null,
+      expiresAt: now + UPLOAD_INTENT_TTL_MS,
+    }
+  },
+})
+
+export const claimUploadIntent = mutation({
+  args: {
+    intentId: v.id('messageUploadIntents'),
+    storageId: v.string(),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+  },
+  handler: async (ctx, args) => {
+    const storageId = ctx.db.system.normalizeId('_storage', args.storageId)
+    if (!storageId) throw new Error('upload_storage_id_invalid')
+    const intent = await ctx.db.get(args.intentId)
+    if (!intent) throw new Error('upload_intent_not_found')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: intent.projectId,
+      groupId: intent.groupId,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
+    const group = await ctx.db.get(intent.groupId)
+    if (!group || group.projectId !== intent.projectId) throw new Error('group_project_mismatch')
+    if (intent.uploaderId !== args.userId || intent.uploaderProjectMemberId !== access.projectMember._id) {
+      throw new Error('upload_intent_scope_mismatch')
+    }
+    if (intent.actingCompanyId !== access.companyAccess?.company._id) {
+      throw new Error('upload_intent_scope_mismatch')
+    }
+    if (intent.channelThreadId) {
+      requireThreadsEnabled()
+      if (
+        (group.status && group.status !== 'active') ||
+        (access.project.status && access.project.status !== 'active')
+      ) {
+        throw new Error('thread_parent_read_only')
+      }
+      const thread = await ctx.db.get(intent.channelThreadId)
+      if (!thread || thread.groupId !== group._id || thread.status !== 'active') {
+        throw new Error(thread?.status === 'archived' ? 'thread_archived' : 'thread_access_changed')
+      }
+    }
+    const uploaded = await markMessageUploadAsUploaded(ctx, {
+      intentId: intent._id,
+      scope: {
+        projectId: intent.projectId,
+        groupId: intent.groupId,
+        channelThreadId: intent.channelThreadId,
+        uploaderId: args.userId,
+        uploaderProjectMemberId: access.projectMember._id,
+        actingCompanyId: access.companyAccess?.company._id,
+      },
+      storageId,
+    })
+    return {
+      intentId: uploaded._id,
+      status: uploaded.status,
+      storageId,
+      expiresAt: uploaded.expiresAt,
+    }
+  },
+})
+
+export const abandonUploadIntent = mutation({
+  args: {
+    intentId: v.id('messageUploadIntents'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+  },
+  handler: async (ctx, args) => {
+    const intent = await ctx.db.get(args.intentId)
+    if (!intent) return null
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: intent.projectId,
+      groupId: intent.groupId,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'writeChannel')
+    if (intent.uploaderId !== args.userId || intent.uploaderProjectMemberId !== access.projectMember._id) {
+      throw new Error('upload_intent_scope_mismatch')
+    }
+    if (intent.actingCompanyId !== access.companyAccess?.company._id) {
+      throw new Error('upload_intent_scope_mismatch')
+    }
+    if (intent.status === 'claimed') return intent
+    if (intent.storageId) {
+      const storageId = intent.storageId
+      const attachment = await ctx.db
+        .query('attachments')
+        .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+        .first()
+      if (!attachment) await deleteStorageBestEffort(ctx, storageId)
+    }
+    const now = Date.now()
+    await ctx.db.patch(intent._id, { status: 'abandoned', updatedAt: now })
+    return await ctx.db.get(intent._id)
+  },
+})
+
+export const cleanupExpiredUploadIntents = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now()
+    let cleaned = 0
+    for (const status of ['issued', 'uploaded'] as const) {
+      const intents = await ctx.db
+        .query('messageUploadIntents')
+        .withIndex('by_status_expires_at', (q) => q.eq('status', status).lt('expiresAt', now))
+        .collect()
+      for (const intent of intents) {
+        if (intent.storageId) {
+          const storageId = intent.storageId
+          const attachment = await ctx.db
+            .query('attachments')
+            .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+            .first()
+          if (!attachment) await deleteStorageBestEffort(ctx, storageId)
+        }
+        await ctx.db.patch(intent._id, { status: 'abandoned', updatedAt: now })
+        cleaned += 1
+      }
+    }
+    return cleaned
   },
 })
 
@@ -854,6 +1544,7 @@ export const attachFile = mutation({
     userId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
+    uploadIntentId: v.id('messageUploadIntents'),
     storageId: v.id('_storage'),
     filename: v.string(),
     contentType: v.string(),
@@ -869,12 +1560,7 @@ export const attachFile = mutation({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'writeChannel')
-    const projectMember = await resolveActorProjectMember(
-      ctx,
-      args.projectId,
-      args.userId,
-      access.companyAccess?.projectMember,
-    )
+    const projectMember = access.projectMember
     const group = await ctx.db.get(args.groupId)
     if (!group || group.projectId !== args.projectId) {
       throw new Error('group_project_mismatch')
@@ -886,6 +1572,14 @@ export const attachFile = mutation({
       message.groupId !== args.groupId
     ) {
       throw new Error('message_scope_mismatch')
+    }
+    const representedCompanyId = access.companyAccess?.company._id
+    const messageAuthorMatches = message.authorProjectMemberId
+      ? message.authorProjectMemberId === projectMember._id
+      : message.authorId === args.userId
+    if (!messageAuthorMatches) throw new Error('attachment_author_mismatch')
+    if (message.actingCompanyId !== representedCompanyId) {
+      throw new Error('attachment_scope_mismatch')
     }
     if (message.channelThreadId) {
       requireThreadsEnabled()
@@ -900,12 +1594,84 @@ export const attachFile = mutation({
         throw new Error(thread?.status === 'archived' ? 'thread_archived' : 'thread_access_changed')
       }
     }
+    validateUploadMetadata(args)
+    const uploadScope: MessageUploadScope = {
+      projectId: args.projectId,
+      groupId: args.groupId,
+      channelThreadId: message.channelThreadId,
+      uploaderId: args.userId,
+      uploaderProjectMemberId: projectMember._id,
+      actingCompanyId: representedCompanyId,
+    }
+    await markMessageUploadAsUploaded(ctx, {
+      intentId: args.uploadIntentId,
+      scope: uploadScope,
+      storageId: args.storageId,
+    })
+    const intent = await resolveMessageUploadIntent(ctx, {
+      intentId: args.uploadIntentId,
+      scope: uploadScope,
+      metadata: {
+        filename: args.filename,
+        contentType: args.contentType,
+        size: args.size,
+        kind: args.kind,
+        durationMs: args.durationMs,
+      },
+      messageId: args.messageId,
+    })
+    const storageId = intent.storageId
+    if (!storageId || storageId !== args.storageId) {
+      throw new Error('upload_intent_storage_mismatch')
+    }
+    const storageClaims = await ctx.db
+      .query('attachments')
+      .withIndex('by_storage', (q) => q.eq('storageId', storageId))
+      .collect()
+    const existing = storageClaims.find((attachment) =>
+      attachment.projectId === args.projectId &&
+      attachment.groupId === args.groupId &&
+      attachment.messageId === args.messageId &&
+      attachment.uploadedBy === args.userId &&
+      attachment.uploadedByProjectMemberId === projectMember._id &&
+      attachment.actingCompanyId === representedCompanyId,
+    )
+    if (existing) {
+      if (
+        existing.filename !== args.filename ||
+        existing.contentType !== args.contentType ||
+        existing.size !== args.size ||
+        existing.kind !== args.kind ||
+        existing.durationMs !== args.durationMs
+      ) {
+        throw new Error('attachment_metadata_mismatch')
+      }
+      if (!message.attachmentIds.some((attachmentId) => attachmentId === existing._id)) {
+        await ctx.db.patch(args.messageId, {
+          attachmentIds: [...message.attachmentIds, existing._id],
+        })
+      }
+      await claimMessageUploadIntent(ctx, {
+        intentId: args.uploadIntentId,
+        scope: uploadScope,
+        metadata: {
+          filename: args.filename,
+          contentType: args.contentType,
+          size: args.size,
+          kind: args.kind,
+          durationMs: args.durationMs,
+        },
+        messageId: args.messageId,
+      })
+      return existing._id
+    }
+    if (storageClaims.length > 0) throw new Error('attachment_storage_already_claimed')
     const attachmentId = await ctx.db.insert('attachments', {
       projectId: args.projectId,
       groupId: args.groupId,
       messageId: args.messageId,
       channelThreadId: message.channelThreadId,
-      storageId: args.storageId,
+      storageId,
       filename: args.filename,
       contentType: args.contentType,
       size: args.size,
@@ -913,9 +1679,14 @@ export const attachFile = mutation({
       durationMs: args.durationMs,
       uploadedBy: args.userId,
       uploadedByProjectMemberId: projectMember._id,
-      actingCompanyId: access.companyAccess?.company._id,
+      actingCompanyId: representedCompanyId,
       extractionStatus: 'preserved',
       createdAt: Date.now(),
+    })
+    await scheduleMediaPreview(ctx, {
+      attachmentId,
+      contentType: args.contentType,
+      storageId,
     })
     await ctx.db.patch(args.messageId, {
       attachmentIds: [...message.attachmentIds, attachmentId],
@@ -936,6 +1707,18 @@ export const attachFile = mutation({
         kind: args.kind ?? 'file',
         durationMs: args.durationMs,
       },
+    })
+    await claimMessageUploadIntent(ctx, {
+      intentId: args.uploadIntentId,
+      scope: uploadScope,
+      metadata: {
+        filename: args.filename,
+        contentType: args.contentType,
+        size: args.size,
+        kind: args.kind,
+        durationMs: args.durationMs,
+      },
+      messageId: args.messageId,
     })
     return attachmentId
   },

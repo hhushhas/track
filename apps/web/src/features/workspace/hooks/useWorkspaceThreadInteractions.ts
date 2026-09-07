@@ -1,11 +1,10 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '../thread-items'
 import type { ChatSearchMatch } from '../search/chat-search'
 import type { ProjectSearchResult } from '../search/ProjectSearchDialog'
-import { threadHref } from '#/features/threads/thread-navigation'
 
 type ActiveMention = { start: number; end: number } | null
 
@@ -27,6 +26,8 @@ export function useWorkspaceThreadInteractions({
   latestThreadItemKey,
   messagesLoaded,
   navigateToGroup,
+  navigateToSearchResult,
+  openProjectSearch,
   pendingFocusMessageId,
   setActiveChatMatchIndex,
   setComposer,
@@ -63,7 +64,9 @@ export function useWorkspaceThreadInteractions({
   latestThreadItemKey: string | null
   messagesLoaded: boolean
   navigateToGroup: (groupId: Id<'groups'>) => void
-  pendingFocusMessageId: string | null
+  navigateToSearchResult?: (result: ProjectSearchResult) => void
+  openProjectSearch: () => void
+  pendingFocusMessageId: Id<'messages'> | null
   setActiveChatMatchIndex: Dispatch<SetStateAction<number>>
   setComposer: Dispatch<SetStateAction<string>>
   setComposerCursor: Dispatch<SetStateAction<number>>
@@ -71,7 +74,7 @@ export function useWorkspaceThreadInteractions({
   setFlashingMessageId: Dispatch<SetStateAction<string | null>>
   setMentionIndex: Dispatch<SetStateAction<number>>
   setMobileNavOpen: Dispatch<SetStateAction<boolean>>
-  setPendingFocusMessageId: Dispatch<SetStateAction<string | null>>
+  setPendingFocusMessageId: Dispatch<SetStateAction<Id<'messages'> | null>>
   setProjectSearchOpen: Dispatch<SetStateAction<boolean>>
   setProjectSearchQuery: Dispatch<SetStateAction<string>>
   setReplyToMessage: Dispatch<SetStateAction<GroupMessageItem | null>>
@@ -82,15 +85,16 @@ export function useWorkspaceThreadInteractions({
   view: 'home' | 'project' | 'group' | 'settings'
   visibleMessages: Array<GroupMessageItem>
 }) {
-  function scrollThreadToLatest(behavior: ScrollBehavior = 'smooth') {
+  const focusedPendingMessageIdRef = useRef<Id<'messages'> | null>(null)
+  const scrollThreadToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const scrollElement = threadScrollRef.current
     if (!scrollElement) return
     scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior })
     shouldFollowLatestRef.current = true
     setShowJumpToLatest(false)
-  }
+  }, [setShowJumpToLatest, shouldFollowLatestRef, threadScrollRef])
 
-  function scrollThreadItemIntoView(threadItemKey: string, behavior: ScrollBehavior = 'smooth') {
+  const scrollThreadItemIntoView = useCallback((threadItemKey: string, behavior: ScrollBehavior = 'smooth') => {
     const target = threadScrollRef.current?.querySelector<HTMLElement>(
       `[data-thread-item-key="${CSS.escape(threadItemKey)}"]`,
     )
@@ -98,31 +102,35 @@ export function useWorkspaceThreadInteractions({
     target.scrollIntoView({ behavior, block: 'center' })
     shouldFollowLatestRef.current = false
     setShowJumpToLatest(true)
-  }
+  }, [setShowJumpToLatest, shouldFollowLatestRef, threadScrollRef])
 
-  function requestThreadScrollToLatest(behavior: ScrollBehavior = 'smooth') {
+  const requestThreadScrollToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
     requestAnimationFrame(() => requestAnimationFrame(() => scrollThreadToLatest(behavior)))
-  }
+  }, [scrollThreadToLatest])
 
-  function requestThreadItemScroll(threadItemKey: string, behavior: ScrollBehavior = 'smooth') {
+  const requestThreadItemScroll = useCallback((threadItemKey: string, behavior: ScrollBehavior = 'smooth') => {
     requestAnimationFrame(() => requestAnimationFrame(() => scrollThreadItemIntoView(threadItemKey, behavior)))
-  }
+  }, [scrollThreadItemIntoView])
 
-  function requestMessageFlash(messageId: Id<'messages'> | string) {
+  const requestMessageFlash = useCallback((messageId: Id<'messages'> | string) => {
     if (flashMessageTimeoutRef.current) clearTimeout(flashMessageTimeoutRef.current)
     setFlashingMessageId(String(messageId))
     flashMessageTimeoutRef.current = setTimeout(() => {
       setFlashingMessageId(null)
       flashMessageTimeoutRef.current = null
     }, 1500)
-  }
+  }, [flashMessageTimeoutRef, setFlashingMessageId])
 
-  function requestMessageFocus(messageId: Id<'messages'> | string, behavior: ScrollBehavior = 'smooth') {
+  const requestMessageFocus = useCallback((messageId: Id<'messages'> | string, behavior: ScrollBehavior = 'smooth') => {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior, block: 'center' })
       requestMessageFlash(messageId)
     }))
-  }
+  }, [requestMessageFlash])
+
+  const focusComposer = useCallback(() => {
+    requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
+  }, [composerRef])
 
   useEffect(() => {
     if (view !== 'group' || !messagesLoaded) return
@@ -130,25 +138,28 @@ export function useWorkspaceThreadInteractions({
     lastLoadedGroupIdRef.current = activeGroupId
     shouldFollowLatestRef.current = true
     requestThreadScrollToLatest('auto')
-    requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
-  }, [activeGroupId, messagesLoaded, view])
+    focusComposer()
+  }, [activeGroupId, focusComposer, lastLoadedGroupIdRef, messagesLoaded, requestThreadScrollToLatest, shouldFollowLatestRef, view])
 
   useEffect(() => {
     if (view !== 'group') lastLoadedGroupIdRef.current = null
-  }, [view])
+  }, [lastLoadedGroupIdRef, view])
 
   useEffect(() => {
     if (view !== 'group') return
-    requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }))
-  }, [activeGroupId, view])
+    focusComposer()
+  }, [focusComposer, view])
 
   useEffect(() => {
-    if (view === 'group' && !chatSearchQuery.trim() && shouldFollowLatestRef.current) {
+    if (view === 'group' && !chatSearchQuery.trim() && latestThreadItemKey !== null && shouldFollowLatestRef.current) {
       requestThreadScrollToLatest('smooth')
     }
-  }, [chatSearchQuery, latestThreadItemKey, view])
+  }, [chatSearchQuery, latestThreadItemKey, requestThreadScrollToLatest, shouldFollowLatestRef, view])
 
-  useEffect(() => setActiveChatMatchIndex(0), [chatSearchTerm, setActiveChatMatchIndex])
+  useEffect(() => {
+    if (!chatSearchTerm) return
+    setActiveChatMatchIndex(0)
+  }, [chatSearchTerm, setActiveChatMatchIndex])
 
   useEffect(() => {
     if (activeChatMatchIndex < chatSearchMatches.length) return
@@ -159,25 +170,26 @@ export function useWorkspaceThreadInteractions({
     if (view !== 'group' || !activeChatMatch) return
     requestThreadItemScroll(activeChatMatch.key)
     if (activeChatMatch.kind === 'message' && activeChatMatch.messageId) requestMessageFlash(activeChatMatch.messageId)
-  }, [activeChatMatch, view])
+  }, [activeChatMatch, requestMessageFlash, requestThreadItemScroll, view])
 
   useEffect(() => {
     if (view !== 'group' || !pendingFocusMessageId || !messagesLoaded) return
     if (!visibleMessages.some((item) => item.message._id === pendingFocusMessageId)) return
+    if (focusedPendingMessageIdRef.current === pendingFocusMessageId) return
     requestMessageFocus(pendingFocusMessageId)
-    setPendingFocusMessageId(null)
-  }, [messagesLoaded, pendingFocusMessageId, setPendingFocusMessageId, view, visibleMessages])
+    focusedPendingMessageIdRef.current = pendingFocusMessageId
+  }, [messagesLoaded, pendingFocusMessageId, requestMessageFocus, view, visibleMessages])
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        setProjectSearchOpen(true)
+        openProjectSearch()
       }
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [setProjectSearchOpen])
+  }, [openProjectSearch])
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -192,7 +204,7 @@ export function useWorkspaceThreadInteractions({
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
-  }, [setSearchOpen, view])
+  }, [composerRef, setSearchOpen, view])
 
   function handleMessageSent() {
     setComposer('')
@@ -274,17 +286,11 @@ export function useWorkspaceThreadInteractions({
     setProjectSearchQuery('')
     setMobileNavOpen(false)
     if (result.kind === 'task' && result.taskKey && activeProjectId) {
-      window.location.assign(`/workspace/projects/${activeProjectId}/tasks?view=all&task=${encodeURIComponent(result.taskKey)}`)
+      navigateToSearchResult?.(result)
       return
     }
     if (result.threadId && result.groupId && activeProjectId) {
-      window.location.assign(threadHref(
-        activeProjectId,
-        result.groupId,
-        result.threadId,
-        undefined,
-        result.messageId,
-      ))
+      navigateToSearchResult?.(result)
       return
     }
     if (!result.groupId) return

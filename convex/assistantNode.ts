@@ -10,6 +10,7 @@ import { generateTrackDocumentNotes, generateTrackText } from './lib/ai'
 import { extractAttachmentText, formatExtractedAttachmentNote } from './lib/attachmentTextExtraction'
 import {
   attachmentReaderQuestion,
+  attachmentDownloadTimeoutMs,
   compactText,
   formatAttachmentSize,
   maxDocumentReaderBytes,
@@ -69,11 +70,27 @@ function extractCitations(answer: string) {
 
 async function fetchAttachmentBytes(attachment: AssistantAttachmentCandidate, maxBytes: number): Promise<LoadedAttachment> {
   if (!attachment.url) return { ok: false, reason: 'no storage URL available' }
-  const response = await fetch(attachment.url)
+  let response: Response
+  try {
+    response = await fetch(attachment.url, { signal: AbortSignal.timeout(attachmentDownloadTimeoutMs) })
+  } catch (error) {
+    const reason = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ? 'download timed out'
+      : 'download failed'
+    return { ok: false, reason }
+  }
   if (!response.ok) return { ok: false, reason: `download failed with ${response.status}` }
   const contentLength = Number(response.headers.get('content-length') ?? 0)
   if (contentLength > maxBytes) return { ok: false, reason: `file is larger than ${formatAttachmentSize(maxBytes)}` }
-  const data = new Uint8Array(await response.arrayBuffer())
+  let data: Uint8Array
+  try {
+    data = new Uint8Array(await response.arrayBuffer())
+  } catch (error) {
+    const reason = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ? 'download timed out'
+      : 'download failed'
+    return { ok: false, reason }
+  }
   if (data.byteLength > maxBytes) return { ok: false, reason: `file is larger than ${formatAttachmentSize(maxBytes)}` }
   return { ok: true, data }
 }

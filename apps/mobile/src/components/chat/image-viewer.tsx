@@ -20,6 +20,7 @@ const MAX_SCALE = 6;
 const ZOOMED_SCALE = 2.5;
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 900;
+const PLACEHOLDER = 'L6Ptp*~q00%M?bofM{WB00Rj_3M{';
 
 function clamp(value: number, min: number, max: number) {
   'worklet';
@@ -35,6 +36,8 @@ export function ImageViewer({ image, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [imageFailed, setImageFailed] = useState(false);
+  const [imageAttempt, setImageAttempt] = useState(0);
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -58,6 +61,8 @@ export function ImageViewer({ image, onClose }: Props) {
     if (image) {
       reset();
       setShareError(null);
+      setImageFailed(false);
+      setImageAttempt(0);
     }
   }, [image, reset]);
 
@@ -139,13 +144,20 @@ export function ImageViewer({ image, onClose }: Props) {
         cacheKey: image.id,
         contentType: image.contentType,
         filename: image.filename,
-        url: image.url,
+        url: image.originalUrl ?? image.url,
       });
     } catch (error) {
       setShareError(attachmentActionError(error));
     } finally {
       setSharing(false);
     }
+  }
+
+  function retryImage() {
+    if (!image) return;
+    hapticLight();
+    setImageFailed(false);
+    setImageAttempt((attempt) => attempt + 1);
   }
 
   return (
@@ -161,13 +173,32 @@ export function ImageViewer({ image, onClose }: Props) {
           <View accessibilityViewIsModal style={styles.root}>
             <GestureDetector gesture={gesture}>
               <Animated.View style={[styles.stage, imageStyle]}>
-                <Image
-                  accessibilityLabel={`Image ${image.filename}`}
-                  contentFit="contain"
-                  source={{ uri: image.url }}
-                  style={styles.image}
-                  transition={150}
-                />
+                {imageFailed ? (
+                  <View accessibilityLiveRegion="polite" style={styles.failedImage}>
+                    <PlatformIcon color={viewer.textSecondary} name="image" size={24} />
+                    <ThemedText style={styles.failedImageText} type="caption">
+                      Image could not be loaded.
+                    </ThemedText>
+                    <Pressable accessibilityLabel="Retry image" accessibilityRole="button" onPress={retryImage}>
+                      <ThemedText style={styles.retry} type="captionBold">
+                        Retry
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Image
+                    accessibilityLabel={`Image ${image.filename}`}
+                    contentFit="contain"
+                    key={`${image.id}-${imageAttempt}`}
+                    onError={() => setImageFailed(true)}
+                    placeholder={PLACEHOLDER}
+                    placeholderContentFit="contain"
+                    recyclingKey={image.id}
+                    source={{ uri: image.originalUrl ?? image.url }}
+                    style={styles.image}
+                    transition={150}
+                  />
+                )}
               </Animated.View>
             </GestureDetector>
             <View style={[styles.header, { paddingTop: insets.top + Spacing.two }]}>
@@ -237,6 +268,15 @@ const styles = StyleSheet.create({
   errorText: {
     color: viewer.text,
     flexShrink: 1,
+  },
+  failedImage: {
+    alignItems: 'center',
+    gap: Spacing.two,
+    justifyContent: 'center',
+    padding: Spacing.four,
+  },
+  failedImageText: {
+    color: viewer.textSecondary,
   },
   header: {
     alignItems: 'center',

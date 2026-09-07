@@ -3,6 +3,8 @@ import { v } from 'convex/values'
 
 import { companyCoreTables } from './schema/companyCoreTables'
 import { companyProjectTables } from './schema/companyProjectTables'
+import { messageUploadTables } from './schema/messageUploadTables'
+import { projectExitTables } from './schema/projectExitTables'
 import { taskAutomationTables } from './schema/taskAutomationTables'
 import { taskCoreTables } from './schema/taskCoreTables'
 import {
@@ -123,6 +125,17 @@ const memoryImportSourceKind = v.union(
 )
 
 const attachmentKind = v.union(v.literal('file'), v.literal('voice_note'))
+const mediaPreviewStatus = v.union(
+  v.literal('pending'),
+  v.literal('ready'),
+  v.literal('failed'),
+)
+const mediaPreviewErrorCode = v.union(
+  v.literal('not_an_image'),
+  v.literal('image_too_large'),
+  v.literal('missing_source'),
+  v.literal('processor_failed'),
+)
 
 const evidenceItem = v.object({
   messageId: v.optional(v.id('messages')),
@@ -154,6 +167,8 @@ const forwardedMessageSnapshot = v.object({
 export default defineSchema({
   ...companyCoreTables,
   ...companyProjectTables,
+  ...projectExitTables,
+  ...messageUploadTables,
   ...taskCoreTables,
   ...taskAutomationTables,
 
@@ -182,6 +197,7 @@ export default defineSchema({
     clientLabel: v.optional(v.string()),
     description: v.optional(v.string()),
     accessProfile: v.optional(projectAccessProfile),
+    owningCompanyId: v.optional(v.id('companies')),
     relationshipId: v.optional(v.id('relationships')),
     proposingCompanyId: v.optional(v.id('companies')),
     origin: v.optional(projectOrigin),
@@ -194,6 +210,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_created_by', ['createdBy'])
+    .index('by_owning_company_status', ['owningCompanyId', 'status'])
     .index('by_relationship_status', ['relationshipId', 'status'])
     .index('by_proposing_company_status', ['proposingCompanyId', 'status']),
 
@@ -213,6 +230,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_project', ['projectId'])
+    .index('by_project_status', ['projectId', 'status'])
     .index('by_user', ['userId'])
     .index('by_project_user', ['projectId', 'userId'])
     .index('by_project_company_status', ['projectId', 'companyId', 'status'])
@@ -250,6 +268,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_group', ['groupId'])
+    .index('by_project_user', ['projectId', 'userId'])
     .index('by_user', ['userId'])
     .index('by_group_user', ['groupId', 'userId'])
     .index('by_group_project_member', ['groupId', 'projectMemberId'])
@@ -431,6 +450,13 @@ export default defineSchema({
     size: v.number(),
     kind: v.optional(attachmentKind),
     durationMs: v.optional(v.number()),
+    previewStorageId: v.optional(v.id('_storage')),
+    previewStatus: v.optional(mediaPreviewStatus),
+    previewErrorCode: v.optional(mediaPreviewErrorCode),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    previewWidth: v.optional(v.number()),
+    previewHeight: v.optional(v.number()),
     uploadedBy: v.id('users'),
     uploadedByProjectMemberId: v.optional(v.id('projectMembers')),
     actingCompanyId: v.optional(v.id('companies')),
@@ -532,6 +558,7 @@ export default defineSchema({
     updatedAt: v.number(),
     completedAt: v.optional(v.number()),
   })
+    .index('by_project_status', ['projectId', 'status'])
     .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_group_created_at', ['groupId', 'createdAt'])
     .index('by_status_updated_at', ['status', 'updatedAt']),

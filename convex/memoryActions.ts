@@ -39,13 +39,14 @@ const sourceFileValidator = v.object({
   size: v.number(),
 })
 
-async function writeReservedContext(
+async function writeReservedMemoryFile(
   ctx: ActionCtx,
   input: {
     projectId: Id<'projects'>
     boxId: string
     content: string
-    contextLength: number
+    contextLength?: number
+    path: string
   },
 ) {
   const revision = await ctx.runMutation(internal.memory.beginMemoryBoxContextWrite, {
@@ -53,7 +54,7 @@ async function writeReservedContext(
     projectId: input.projectId,
   })
   try {
-    await createLiveMemoryBoxAdapter().writeFile(input.boxId, contextPath, input.content)
+    await createLiveMemoryBoxAdapter().writeFile(input.boxId, input.path, input.content)
     await ctx.runMutation(internal.memory.completeMemoryBoxContextWrite, {
       boxId: input.boxId,
       contextLength: input.contextLength,
@@ -294,7 +295,12 @@ export const writeTool = action({
         path: decision.normalizedPath,
       })
     }
-    await createLiveMemoryBoxAdapter().writeFile(boxId, decision.normalizedPath, args.content)
+    await writeReservedMemoryFile(ctx, {
+      boxId,
+      path: decision.normalizedPath,
+      content: args.content,
+      projectId: args.projectId,
+    })
     await auditTool(ctx, args, 'memory_tool.write.allowed', decision.normalizedPath, { newLength: args.content.length })
     return { path: decision.normalizedPath, length: args.content.length }
   },
@@ -342,7 +348,8 @@ export const editTool = action({
         await auditTool(ctx, args, 'memory_context.update_rejected', contextPath, validation)
         throw new Error(validation.reason)
       }
-      await writeReservedContext(ctx, {
+      await writeReservedMemoryFile(ctx, {
+        path: contextPath,
         boxId,
         contextLength: validation.newLength,
         content: validation.newContent,
@@ -740,7 +747,8 @@ async function promoteImportToContext(
   }
   const lockId = await acquirePathLock(ctx, input.projectId, contextPath)
   try {
-    await writeReservedContext(ctx, {
+    await writeReservedMemoryFile(ctx, {
+      path: contextPath,
       boxId: input.boxId,
       contextLength: validation.newLength,
       content: validation.newContent,
@@ -787,7 +795,8 @@ async function writeContextThroughGateway(
       await auditTool(ctx, input, 'memory_tool.write.denied', input.path, validation)
       throw new Error(validation.reason)
     }
-    await writeReservedContext(ctx, {
+    await writeReservedMemoryFile(ctx, {
+      path: contextPath,
       boxId: input.boxId,
       contextLength: validation.newLength,
       content: validation.newContent,

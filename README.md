@@ -1,17 +1,28 @@
 # Track
 
-Track is a project collaboration workspace with realtime conversation,
-references, and permission-aware AI assistance. Company collaboration adds peer
-Relationships, shared Projects, explicit Channels, immutable Company exit
-archives, and guided migration from the legacy Project model across web, mobile,
-shared contracts, and Convex. Channel threads add named focused conversations,
-follow and unread state, manual lifecycle controls, scoped search, and complete
-web and mobile flows.
+Track organizes realtime conversation, tasks, references, and permission-aware
+AI assistance under Companies and Projects. A Company is the umbrella: each
+Project has one owning Company and can include collaborating Companies in the
+same workspace. An internal Project does not require a partner relationship;
+collaboration can be added later without duplicating conversations or tasks.
+
+Company relationships, explicitly joined Channels, immutable Company exit
+archives, and guided transitions preserve access boundaries. Older Projects
+remain accessible through their existing memberships until ownership is
+explicitly assigned; ownership is never inferred from the selected Company.
+Ownership confirmation for an existing multi-Company Project requires approval
+from every current participating Company. Later transfers are initiated by the
+owning Company and use the same approval boundary; an owning Company must
+transfer ownership before exiting a Project that retains other participants.
+Channel threads add named focused conversations, follow and unread state,
+manual lifecycle controls, scoped search, and web and mobile flows.
 
 Task management adds scoped Project and Channel boards, configurable workflows,
 task details and lists, conversation evidence, human-reviewed AI suggestions,
-search, notifications, and essential native workflows. It operates with legacy
-Projects and does not require Channel threads or Company collaboration.
+search, notifications, and essential native workflows. Boards, lists, details,
+conversations, and threads are views of the same Project work. Task management
+also preserves compatibility with older Projects and does not require Channel
+threads or Company collaboration to be enabled.
 
 Company collaboration, task management, and Channel threads are enabled by
 default through independent server-authoritative controls. An exact `false`
@@ -98,9 +109,16 @@ pnpm typecheck
 pnpm test
 pnpm audit --prod
 pnpm build
+pnpm gate
+pnpm e2e
+pnpm perf:fixture
+pnpm perf:build
 ```
 
-CI runs the same gate after a frozen install. The mobile `build` script records that release builds are handled by EAS; web client, SSR, and Worker output is built locally.
+CI runs the same repository gate after a frozen install, plus the isolated
+browser journeys and performance budgets. The mobile `build` script records
+that release builds are handled by EAS; web client, SSR, and Worker output is
+built locally.
 
 ## Configuration and safety
 

@@ -51,6 +51,14 @@ export type ProjectCompanyStatus = (typeof projectCompanyStatuses)[number]
 export const companyProjectRoles = ['manager', 'member'] as const
 export type CompanyProjectRole = (typeof companyProjectRoles)[number]
 
+export const companyProjectParticipationRoles = [
+  'owner',
+  'collaborator',
+  'unassigned_legacy',
+] as const
+export type CompanyProjectParticipationRole =
+  (typeof companyProjectParticipationRoles)[number]
+
 export const projectMemberStatuses = [
   'active',
   'suspended',
@@ -102,6 +110,14 @@ export function canAdministerCompany(role: CompanyRole) {
 
 export function canManageProject(role: CompanyProjectRole) {
   return role === 'manager'
+}
+
+export function resolveCompanyProjectParticipationRole(
+  owningCompanyId: string | undefined,
+  actingCompanyId: string,
+): CompanyProjectParticipationRole {
+  if (!owningCompanyId) return 'unassigned_legacy'
+  return owningCompanyId === actingCompanyId ? 'owner' : 'collaborator'
 }
 
 export function resolveRelationshipStatus(activeCompanyCount: number) {

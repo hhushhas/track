@@ -1,0 +1,29 @@
+.track-media-preview,
+.track-media-preview-empty {
+  background: var(--track-surface-elevated, #ece9e2);
+  border-radius: 0.75rem;
+  color: var(--track-text-muted, #6b6a65);
+}
+
+.track-media-preview-link {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.track-media-preview-empty {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  padding: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-media-preview-image {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}

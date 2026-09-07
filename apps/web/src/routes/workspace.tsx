@@ -1,4 +1,5 @@
-import { Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
+import { Link, Navigate, Outlet, createFileRoute } from '@tanstack/react-router'
+import { useConvexAuth } from 'convex/react'
 
 import TrackLoader from '#/components/TrackLoader'
 import { authClient } from '#/lib/auth-client'
@@ -10,6 +11,7 @@ export const Route = createFileRoute('/workspace')({
 })
 
 function WorkspaceLayoutRoute() {
+  const convexAuth = useConvexAuth()
   const session = authClient.useSession()
   const devAuthBypass = useDevAuthBypass()
   const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled)
@@ -21,6 +23,15 @@ function WorkspaceLayoutRoute() {
   if (oauthCallbackPending) return <TrackLoader label="Finishing Google sign-in" />
   if (session.isPending && !devAuthBypass.enabled) return <TrackLoader label="Checking your session" />
   if (!hasSessionAccess) return <Navigate to="/sign-in" />
+  if (convexAuth.isLoading) return <TrackLoader label="Connecting your workspace" />
+  if (!convexAuth.isAuthenticated) {
+    return (
+      <main className="track-loading">
+        <p role="alert">We couldn’t connect your session to the workspace.</p>
+        <Link to="/sign-in">Sign in again</Link>
+      </main>
+    )
+  }
 
   return <Outlet />
 }

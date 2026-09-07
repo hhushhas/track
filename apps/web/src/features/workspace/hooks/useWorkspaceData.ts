@@ -1,5 +1,5 @@
-import { useQuery } from 'convex/react'
-import { useMemo } from 'react'
+import { usePaginatedQuery, useQuery } from 'convex/react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
@@ -8,12 +8,28 @@ import { getActiveChannelMembers } from '#/features/workspace/lib/channel-header
 import { filterVisibleProjectGroups } from '#/features/workspace/lib/route-state'
 import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
 
+type PageStatus = 'LoadingFirstPage' | 'CanLoadMore' | 'LoadingMore' | 'Exhausted'
+
+function combinePageStatus(messageStatus: PageStatus, assistantStatus: PageStatus): PageStatus {
+  if (messageStatus === 'LoadingFirstPage' || assistantStatus === 'LoadingFirstPage') {
+    return 'LoadingFirstPage'
+  }
+  if (messageStatus === 'LoadingMore' || assistantStatus === 'LoadingMore') {
+    return 'LoadingMore'
+  }
+  if (messageStatus === 'CanLoadMore' || assistantStatus === 'CanLoadMore') {
+    return 'CanLoadMore'
+  }
+  return 'Exhausted'
+}
+
 export function useWorkspaceData({
   activeGroupId,
   activeProjectId,
   projectSearchFilter,
   projectSearchOpen,
   projectSearchQuery,
+  targetMessageId,
   trackUserId,
 }: {
   activeGroupId: Id<'groups'> | null
@@ -21,8 +37,14 @@ export function useWorkspaceData({
   projectSearchFilter: ProjectSearchFilter
   projectSearchOpen: boolean
   projectSearchQuery: string
+  targetMessageId: Id<'messages'> | null
   trackUserId: Id<'users'> | null
 }) {
+  const [debouncedProjectSearchQuery, setDebouncedProjectSearchQuery] = useState(projectSearchQuery)
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedProjectSearchQuery(projectSearchQuery), 200)
+    return () => window.clearTimeout(timeout)
+  }, [projectSearchQuery])
   const currentTrackUser = useQuery(
     api.auth.getUser,
     trackUserId ? { userId: trackUserId } : 'skip',
@@ -68,30 +90,47 @@ export function useWorkspaceData({
       ? { groupId: confirmedActiveGroupId, userId: trackUserId }
       : 'skip',
   )
-  const messages = useQuery(
-    api.messages.listDetailed,
+  const messagePage = usePaginatedQuery(
+    api.messages.listPage,
     trackUserId && confirmedActiveGroupId
-      ? { userId: trackUserId, groupId: confirmedActiveGroupId, limit: 80 }
+      ? {
+          userId: trackUserId,
+          groupId: confirmedActiveGroupId,
+          targetMessageId: targetMessageId ?? undefined,
+        }
       : 'skip',
+    { initialNumItems: 80 },
   )
   const projectSearchResults = useQuery(
     api.search.project,
-    trackUserId && activeProjectId && projectSearchOpen && projectSearchQuery.trim().length >= 2
+    trackUserId && activeProjectId && projectSearchOpen && debouncedProjectSearchQuery.trim().length >= 2
       ? {
           filter: projectSearchFilter,
           limit: 8,
           projectId: activeProjectId,
-          query: projectSearchQuery,
+          query: debouncedProjectSearchQuery,
           userId: trackUserId,
         }
       : 'skip',
   )
-  const assistantStreams = useQuery(
-    api.assistant.listForGroup,
+  const assistantPage = usePaginatedQuery(
+    api.assistant.listForGroupPage,
     trackUserId && confirmedActiveGroupId
-      ? { userId: trackUserId, groupId: confirmedActiveGroupId, limit: 20 }
+      ? {
+          userId: trackUserId,
+          groupId: confirmedActiveGroupId,
+          targetMessageId: targetMessageId ?? undefined,
+        }
       : 'skip',
+    { initialNumItems: 80 },
   )
+  const messages = messagePage.status === 'LoadingFirstPage' ? undefined : messagePage.results
+  const assistantStreams = assistantPage.status === 'LoadingFirstPage' ? undefined : assistantPage.results
+  const messagePageStatus = combinePageStatus(messagePage.status, assistantPage.status)
+  const loadMoreMessages = (count: number) => {
+    if (messagePage.status === 'CanLoadMore') messagePage.loadMore(count)
+    if (assistantPage.status === 'CanLoadMore') assistantPage.loadMore(count)
+  }
   const projectItems = useMemo(
     () =>
       (projects ?? []) as Array<{
@@ -135,6 +174,7 @@ export function useWorkspaceData({
 
   return {
     activeChannelMembers,
+    hasMoreMessages: messagePageStatus === 'CanLoadMore',
     activeGroup,
     activeProject,
     activeProjectMembers,
@@ -146,10 +186,16 @@ export function useWorkspaceData({
     groupMessages,
     groups,
     messages,
+    messagePageStatus,
+    loadMoreMessages,
     projectItems,
     projectMemberRoleByUserId,
     projectMembers,
     projectSearchResults,
+    projectSearchUpdating:
+      projectSearchOpen &&
+      projectSearchQuery.trim().length >= 2 &&
+      projectSearchQuery !== debouncedProjectSearchQuery,
     projects,
     visibleGroups,
   }

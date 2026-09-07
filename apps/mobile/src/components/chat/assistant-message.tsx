@@ -3,6 +3,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { AssistantMark } from '@/components/chat/assistant-mark';
+import {
+  assistantFailureHint,
+  assistantProgressLabel,
+  type AssistantErrorCode,
+  type AssistantProgressStage,
+} from '@/components/chat/assistant-progress';
 import { MessageText } from '@/components/chat/message-text';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
@@ -27,9 +33,11 @@ type Props = {
  */
 export function AssistantMessage({ isFirstInGroup, onLongPress, stream, timeLabel }: Props) {
   const theme = useTheme();
-  const answer = stream.answer.trim();
+  const progressStream: AssistantProgressStream = stream;
+  const failed = stream.status === 'failed';
+  const answer = failed ? '' : stream.answer.trim();
   const pending = (stream.status === 'queued' || stream.status === 'running') && !answer;
-  const failed = stream.status === 'failed' && !answer;
+  const progressLabel = assistantProgressLabel(stream.status, progressStream.stage);
   const evidence = stream.evidence.slice(0, VISIBLE_EVIDENCE);
   const hiddenEvidence = stream.evidence.length - evidence.length;
   // Only an answer that closes the bubble can tuck the time into its last line.
@@ -63,14 +71,14 @@ export function AssistantMessage({ isFirstInGroup, onLongPress, stream, timeLabe
           <View accessibilityLiveRegion="polite" style={styles.status}>
             <ThinkingDots />
             <ThemedText themeColor="textSecondary" type="caption">
-              Track is thinking…
+              {`Track is ${progressLabel.toLowerCase()}…`}
             </ThemedText>
           </View>
         ) : failed ? (
           <View accessibilityLiveRegion="polite" style={styles.status}>
             <PlatformIcon color={theme.danger} name="alert-circle" size={16} />
             <ThemedText style={{ color: theme.danger }} type="small">
-              Track could not answer. Ask again to retry.
+              {assistantFailureHint(progressStream.errorCode)}
             </ThemedText>
           </View>
         ) : answer ? (
@@ -144,6 +152,11 @@ export function AssistantMessage({ isFirstInGroup, onLongPress, stream, timeLabe
     </View>
   );
 }
+
+type AssistantProgressStream = Pick<Doc<'assistantStreams'>, 'status'> & {
+  errorCode?: AssistantErrorCode;
+  stage?: AssistantProgressStage;
+};
 
 function ThinkingDots() {
   return (

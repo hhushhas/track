@@ -1,8 +1,9 @@
 import type { TaskPriority } from '@track/shared/tasks';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Clipboard,
   KeyboardAvoidingView,
@@ -26,13 +27,7 @@ import {
   TaskDetailsTab,
   TaskDiscussionTab,
 } from '@/components/task-detail-content';
-import type {
-  MobileTaskAssignee,
-  MobileTaskBoard,
-  MobileTaskDetail,
-  MobileTaskListItem,
-  TaskEditField,
-} from '@/components/task-detail-types';
+import type { TaskEditField } from '@/components/task-detail-types';
 import {
   TaskCardSkeletons,
   TaskDueChip,
@@ -52,6 +47,7 @@ import { setActivePushContext } from '@/lib/push-presentation';
 import { shortTaskKey, taskPriorityLabel } from '@/lib/task-presentation';
 
 type DetailTab = 'details' | 'discussion' | 'activity';
+type MobileTaskListItem = FunctionReturnType<typeof api.tasks.listChildren>['page'][number];
 
 type TaskFieldPatch = {
   assigneeProjectMemberId?: Id<'projectMembers'> | null;
@@ -60,6 +56,11 @@ type TaskFieldPatch = {
   priority?: TaskPriority;
   title?: string;
   workflowStateId?: Id<'taskWorkflowStates'>;
+};
+
+type TaskEditableSnapshot = {
+  description: string;
+  title: string;
 };
 
 const priorities: TaskPriority[] = ['none', 'urgent', 'high', 'medium', 'low'];
@@ -110,24 +111,39 @@ export default function TaskScreen() {
     projectId: project,
     publicKey: taskKey,
     ...identity,
-  } : 'skip') as MobileTaskDetail | null | undefined;
+  } : 'skip');
   const boards = useQuery(api.taskBoards.list, release.tasks ? {
     projectId: project,
     ...identity,
-  } : 'skip') as MobileTaskBoard[] | undefined;
-  const allTasks = useQuery(api.tasks.list, release.tasks ? {
-    projectId: project,
+  } : 'skip');
+  const childPage = usePaginatedQuery(api.tasks.listChildren, detail ? {
+    parentTaskId: detail.task._id,
+    includeArchived: archive === '1' || Boolean(detail.task.archivedAt),
     ...identity,
-  } : 'skip') as MobileTaskListItem[] | undefined;
+  } : 'skip', { initialNumItems: 50 });
+  const commentPage = usePaginatedQuery(api.tasks.listHistory, detail ? {
+    taskId: detail.task._id,
+    kind: 'comments',
+    ...identity,
+  } : 'skip', { initialNumItems: 50 });
+  const activityPage = usePaginatedQuery(api.tasks.listHistory, detail ? {
+    taskId: detail.task._id,
+    kind: 'activities',
+    ...identity,
+  } : 'skip', { initialNumItems: 50 });
+  const referencePage = usePaginatedQuery(api.tasks.listReferences, detail ? {
+    taskId: detail.task._id,
+    ...identity,
+  } : 'skip', { initialNumItems: 50 });
   const assignees = useQuery(api.tasks.listEligibleAssignees, detail && archive !== '1' ? {
     projectId: project,
     groupId: detail.task.groupId,
     ...identity,
-  } : 'skip') as MobileTaskAssignee[] | undefined;
+  } : 'skip');
   const labels = useQuery(api.taskLabels.list, release.tasks && archive !== '1' ? {
     projectId: project,
     ...identity,
-  } : 'skip') as Array<Doc<'taskLabels'>> | undefined;
+  } : 'skip');
   const updateTask = useMutation(api.tasks.update);
   const createTask = useMutation(api.tasks.create);
   const createComment = useMutation(api.taskComments.create);
@@ -149,18 +165,74 @@ export default function TaskScreen() {
   // Each save returns the next revision, so consecutive inline edits chain
   // without waiting for the reactive query to catch up.
   const savedRevision = useRef<number | null>(null);
+  const subtaskIntentRef = useRef(crypto.randomUUID());
+  const subtaskPendingRef = useRef(false);
+  const focusTitleInput = useCallback((input: TextInput | null) => {
+    if (input) input.focus();
+  }, []);
+  const taskIdentityRef = useRef<string | null>(null);
+  const serverSnapshotRef = useRef<TaskEditableSnapshot | null>(null);
+  const baselineSnapshotRef = useRef<TaskEditableSnapshot | null>(null);
+  const taskIdentity = [
+    projectId,
+    taskKey,
+    companyId ?? '',
+    membershipId ?? '',
+  ].join(':');
+
+  useEffect(() => {
+    if (!detail || detail.task.publicKey !== taskKey) return;
+    const nextSnapshot = {
+      description: detail.task.description ?? '',
+      title: detail.task.title,
+    };
+    if (taskIdentityRef.current !== taskIdentity || !serverSnapshotRef.current || !baselineSnapshotRef.current) {
+      taskIdentityRef.current = taskIdentity;
+      serverSnapshotRef.current = nextSnapshot;
+      baselineSnapshotRef.current = nextSnapshot;
+      savedRevision.current = detail.task.revision;
+      setTitleDraft(null);
+      setDescription('');
+      setConflict(false);
+      setError('');
+      return;
+    }
+
+    const previousSnapshot = serverSnapshotRef.current;
+    const baselineSnapshot = baselineSnapshotRef.current;
+    const localTitle = titleDraft ?? previousSnapshot.title;
+    const localDescription = field === 'description' ? description : previousSnapshot.description;
+    const titleDirty = localTitle !== baselineSnapshot.title;
+    const descriptionDirty = localDescription !== baselineSnapshot.description;
+    const titleChanged = previousSnapshot.title !== nextSnapshot.title;
+    const descriptionChanged = previousSnapshot.description !== nextSnapshot.description;
+    if ((titleDirty && titleChanged) || (descriptionDirty && descriptionChanged)) setConflict(true);
+    if (!titleDirty && titleDraft !== null && titleDraft !== nextSnapshot.title) setTitleDraft(nextSnapshot.title);
+    if (!descriptionDirty && field === 'description' && description !== nextSnapshot.description) setDescription(nextSnapshot.description);
+    serverSnapshotRef.current = nextSnapshot;
+    if (!titleDirty && !descriptionDirty) {
+      baselineSnapshotRef.current = nextSnapshot;
+      savedRevision.current = detail.task.revision;
+    }
+  }, [description, detail, field, taskIdentity, taskKey, titleDraft]);
 
   const offline = network.isConnected === false || network.isInternetReachable === false;
   const board = boards?.find((item) => item.board._id === detail?.task.boardId);
-  const subtasks = useMemo(
-    () => allTasks?.filter((item) => item.task.parentTaskId === detail?.task._id) ?? [],
-    [allTasks, detail?.task._id],
+  const subtasks = useMemo(() => childPage.results, [childPage.results]);
+  const comments = useMemo(
+    () => commentPage.results.filter((item): item is Doc<'taskComments'> => 'body' in item),
+    [commentPage.results],
   );
+  const activities = useMemo(
+    () => activityPage.results.filter((item): item is Doc<'taskActivities'> => 'action' in item),
+    [activityPage.results],
+  );
+  const references = referencePage.results;
   const completedSubtasks = subtasks.filter((item) =>
     item.state?.category === 'completed' || item.state?.category === 'canceled',
   ).length;
   const readOnly = archive === '1' || Boolean(detail && !detail.capabilities.canEdit);
-  const labelIds = detail?.labels.map((label) => label._id) ?? [];
+  const labelIds = detail?.labels.flatMap((label) => label ? [label._id] : []) ?? [];
 
   async function run(action: () => Promise<unknown>, clear?: () => void) {
     setBusy(true);
@@ -169,12 +241,14 @@ export default function TaskScreen() {
       await action();
       clear?.();
       hapticMedium();
+      return true;
     } catch (failure) {
       setError(errorMessage(failure));
       if (failure instanceof Error && failure.message.includes('task_conflict')) {
         savedRevision.current = null;
         setConflict(true);
       }
+      return false;
     } finally {
       setBusy(false);
     }
@@ -184,15 +258,27 @@ export default function TaskScreen() {
     if (!detail) return;
     setField(null);
     setConfirmPatch(null);
-    await run(async () => {
+    const succeeded = await run(async () => {
       try {
-        savedRevision.current = await updateTask({
+        const nextRevision = await updateTask({
           taskId: detail.task._id,
-          expectedRevision: Math.max(detail.task.revision, savedRevision.current ?? 0),
+          expectedRevision: savedRevision.current ?? detail.task.revision,
           confirmOpenSubtasks,
           ...patch,
           ...identity,
         });
+        savedRevision.current = nextRevision;
+        const previousSnapshot = serverSnapshotRef.current;
+        if (previousSnapshot) {
+          const nextSnapshot = {
+            description: patch.description === undefined
+              ? previousSnapshot.description
+              : patch.description ?? '',
+            title: patch.title ?? previousSnapshot.title,
+          };
+          serverSnapshotRef.current = nextSnapshot;
+          baselineSnapshotRef.current = nextSnapshot;
+        }
       } catch (failure) {
         if (failure instanceof Error
           && failure.message.includes('task_open_subtasks_confirmation_required')) {
@@ -201,6 +287,8 @@ export default function TaskScreen() {
         throw failure;
       }
     });
+    if (succeeded && patch.title !== undefined) setTitleDraft(null);
+    if (!succeeded && patch.description !== undefined) setField('description');
   }
 
   async function saveLabels(next: Array<Id<'taskLabels'>>) {
@@ -209,7 +297,7 @@ export default function TaskScreen() {
       savedRevision.current = await setTaskLabels({
         taskId: detail.task._id,
         labelIds: next,
-        expectedRevision: Math.max(detail.task.revision, savedRevision.current ?? 0),
+        expectedRevision: savedRevision.current ?? detail.task.revision,
         ...identity,
       });
     });
@@ -223,13 +311,15 @@ export default function TaskScreen() {
         ?? board.states.find((state) => state.category === 'unstarted')
       : board.states.find((state) => state.category === 'completed');
     if (!destination) return;
-    await run(() => updateTask({
+    await run(async () => {
+      savedRevision.current = await updateTask({
       taskId: item.task._id,
-      expectedRevision: item.task.revision,
+      expectedRevision: savedRevision.current ?? item.task.revision,
       workflowStateId: destination._id,
       confirmOpenSubtasks: true,
       ...identity,
-    }));
+      });
+    });
   }
 
   function openReference(reference: Doc<'taskReferences'>) {
@@ -248,10 +338,37 @@ export default function TaskScreen() {
   }
 
   function reviewConflict() {
-    savedRevision.current = null;
+    if (!detail) return;
+    const snapshot = {
+      description: detail.task.description ?? '',
+      title: detail.task.title,
+    };
+    serverSnapshotRef.current = snapshot;
+    baselineSnapshotRef.current = snapshot;
+    savedRevision.current = detail.task.revision;
     setConflict(false);
     setError('');
     setTitleDraft(null);
+    setDescription('');
+  }
+
+  function addSubtask() {
+    if (!detail || !subtask.trim() || subtaskPendingRef.current) return;
+    subtaskPendingRef.current = true;
+    void run(() => createTask({
+      projectId: project,
+      boardId: detail.task.boardId,
+      parentTaskId: detail.task._id,
+      title: subtask.trim(),
+      priority: 'none',
+      idempotencyKey: subtaskIntentRef.current,
+      ...identity,
+    }), () => {
+      setSubtask('');
+      subtaskIntentRef.current = crypto.randomUUID();
+    }).finally(() => {
+      subtaskPendingRef.current = false;
+    });
   }
 
   if (!release.tasks) {
@@ -368,14 +485,17 @@ export default function TaskScreen() {
               <TextInput
                 accessibilityLabel="Task title"
                 allowFontScaling
-                autoFocus
+                ref={focusTitleInput}
                 cursorColor={theme.accent}
                 maxFontSizeMultiplier={MaxFontScale}
                 multiline
                 onBlur={() => {
                   const next = titleDraft.trim();
-                  setTitleDraft(null);
-                  if (next && next !== detail.task.title) void saveField({ title: next });
+                  if (!next || next === detail.task.title) {
+                    setTitleDraft(null);
+                    return;
+                  }
+                  void saveField({ title: next });
                 }}
                 onChangeText={setTitleDraft}
                 selectionColor={theme.accent}
@@ -418,29 +538,38 @@ export default function TaskScreen() {
               busy={busy}
               completedSubtasks={completedSubtasks}
               detail={detail}
-              onAddSubtask={() => void run(() => createTask({
-                projectId: project,
-                boardId: detail.task.boardId,
-                parentTaskId: detail.task._id,
-                title: subtask.trim(),
-                priority: 'none',
-                idempotencyKey: `${Date.now()}-subtask`,
-                ...identity,
-              }), () => setSubtask(''))}
+              onAddSubtask={addSubtask}
               onEditField={(next) => {
                 if (next === 'description') setDescription(detail.task.description ?? '');
                 setField(next);
               }}
               onOpenReference={openReference}
+              onLoadMoreReferences={referencePage.status === 'CanLoadMore' ? () => referencePage.loadMore(50) : undefined}
               onSubtaskChange={setSubtask}
               onToggleSubtask={(item) => void toggleSubtask(item)}
               readOnly={readOnly}
               subtask={subtask}
               subtasks={subtasks}
+              references={references}
+              referencesLoading={referencePage.status === 'LoadingFirstPage'}
+              referencesLoadingMore={referencePage.status === 'LoadingMore'}
+              onLoadMoreSubtasks={childPage.status === 'CanLoadMore' ? () => childPage.loadMore(50) : undefined}
+              subtasksLoadingMore={childPage.status === 'LoadingMore'}
             />
           ) : null}
-          {tab === 'discussion' ? <TaskDiscussionTab assignees={assignees} detail={detail} /> : null}
-          {tab === 'activity' ? <TaskActivityTab detail={detail} /> : null}
+          {tab === 'discussion' ? <TaskDiscussionTab
+            assignees={assignees}
+            comments={comments}
+            loading={commentPage.status === 'LoadingFirstPage'}
+            loadingMore={commentPage.status === 'LoadingMore'}
+            onLoadMore={commentPage.status === 'CanLoadMore' ? () => commentPage.loadMore(50) : undefined}
+          /> : null}
+          {tab === 'activity' ? <TaskActivityTab
+            activities={activities}
+            loading={activityPage.status === 'LoadingFirstPage'}
+            loadingMore={activityPage.status === 'LoadingMore'}
+            onLoadMore={activityPage.status === 'CanLoadMore' ? () => activityPage.loadMore(50) : undefined}
+          /> : null}
         </ScrollView>
 
         {tab === 'discussion' && detail.capabilities.canComment && archive !== '1' ? (

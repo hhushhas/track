@@ -3,7 +3,6 @@ import { useEffect } from 'react'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
-import type { GroupMessageItem } from '../thread-items'
 import { findVisibleRouteGroupId } from '../lib/route-state'
 import { getResolvedTrackUserId, setResolvedTrackUserId } from '../workspace-session'
 
@@ -36,7 +35,6 @@ export function useWorkspaceSynchronization({
   setMentionIndex,
   setRailResizing,
   setRailWidth,
-  setReplyToMessage,
   setShowJumpToLatest,
   setTrackUserId,
   setUiError,
@@ -72,7 +70,6 @@ export function useWorkspaceSynchronization({
   setMentionIndex: Dispatch<SetStateAction<number>>
   setRailResizing: Dispatch<SetStateAction<boolean>>
   setRailWidth: Dispatch<SetStateAction<number>>
-  setReplyToMessage: Dispatch<SetStateAction<GroupMessageItem | null>>
   setShowJumpToLatest: Dispatch<SetStateAction<boolean>>
   setTrackUserId: Dispatch<SetStateAction<Id<'users'> | null>>
   setUiError: Dispatch<SetStateAction<string | null>>
@@ -101,8 +98,6 @@ export function useWorkspaceSynchronization({
     if (!showMentionMenu) return
     mentionOptionRefs.current[mentionIndex]?.scrollIntoView({ block: 'nearest' })
   }, [mentionIndex, mentionOptionRefs, showMentionMenu])
-
-  useEffect(() => setReplyToMessage(null), [activeGroupId, setReplyToMessage])
 
   useEffect(() => {
     if (!railResizing) return

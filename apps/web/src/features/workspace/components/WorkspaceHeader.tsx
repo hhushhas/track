@@ -55,21 +55,31 @@ export function WorkspaceHeader({
 }: WorkspaceHeaderProps) {
   const releaseConfig = useReleaseConfig()
   const channelTasks = useQuery(
-    api.tasks.list,
+    api.tasks.listPage,
     releaseConfig.tasks && activeGroup
-      ? { projectId: activeGroup.projectId, groupId: activeGroup._id }
+      ? {
+          projectId: activeGroup.projectId,
+          groupId: activeGroup._id,
+          openOnly: true,
+          paginationOpts: { cursor: null, numItems: 100 },
+        }
       : 'skip',
-  ) as Array<{ terminal: boolean }> | undefined
+  )
   const channelBoards = useQuery(
     api.taskBoards.list,
     releaseConfig.tasks && activeGroup
       ? { projectId: activeGroup.projectId }
       : 'skip',
-  ) as Array<{ board: Doc<'taskBoards'> }> | undefined
+  )
   const activeChannelBoard = channelBoards?.find(
     (item) => item.board.groupId === activeGroup?._id && item.board.isDefault,
   ) ?? channelBoards?.find((item) => item.board.groupId === activeGroup?._id)
-  const openChannelTaskCount = channelTasks?.filter((item) => !item.terminal).length ?? 0
+  const openChannelTaskCount = channelTasks?.page.length ?? 0
+  let taskCountLabel = '…'
+  if (channelTasks) {
+    taskCountLabel = String(openChannelTaskCount)
+    if (!channelTasks.isDone) taskCountLabel += '+'
+  }
   return (
     <header className="track-thread-header">
       <Button
@@ -106,7 +116,10 @@ export function WorkspaceHeader({
             search={{ board: activeChannelBoard?.board._id, view: 'board' }}
             to="/workspace/projects/$projectId/tasks"
           >
-            <Columns3 size={13} /> Board <span className="track-header-tab-count">{openChannelTaskCount}</span>
+            <Columns3 size={13} /> Board <span
+              className="track-header-tab-count"
+              title={channelTasks && !channelTasks.isDone ? 'Partial count. Open the board to view all tasks.' : undefined}
+            >{taskCountLabel}</span>
           </Link>
         </nav>
       ) : null}

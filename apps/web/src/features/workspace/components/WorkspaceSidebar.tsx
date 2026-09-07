@@ -147,7 +147,7 @@ export function WorkspaceSidebar({
               disabled={!projectItems.length}
               title={navCollapsed ? activeProject?.project.name ?? 'Select a project' : undefined}
             >
-              <FolderKanban className="track-nav-icon" size={14} />
+              <FolderKanban className="track-nav-icon track-project-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
                 <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No label'}</span>
@@ -183,7 +183,7 @@ export function WorkspaceSidebar({
         {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Companies</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
 
         {activeProjectId ? (
-          <div className="track-nav-secondary">
+          <div className="track-nav-secondary track-project-navigation">
             <div className="track-sidebar-groups">
               <div className="track-nav-section">
                 <span>Channels</span>

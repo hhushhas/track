@@ -2,7 +2,7 @@ import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/reac
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type ListRenderItem } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type FlatListProps, type ListRenderItem } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -12,7 +12,7 @@ import { MessageActions } from '@/components/message-actions';
 import { OptionsSheet, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { TaskInlineCards } from '@/components/task-inline-cards';
-import { ThreadRow, type DetailedMessage, type GroupedThreadItem, type ProjectMemberRow, resolveMentionIds, resolveMentionProjectMemberIds } from '@/components/thread-row';
+import { ThreadRow, type DetailedMessage, type GroupedThreadItem, resolveMentionIds, resolveMentionProjectMemberIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Spacing, TouchTarget } from '@/constants/theme';
@@ -22,10 +22,13 @@ import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation
 import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
 import { hapticLight } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
+import { buildMentionCandidates } from '@/lib/mention-autocomplete';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
+import { useComposerDraft } from '@/hooks/use-composer-draft';
+import { TaskLinkBatchProvider } from '@/lib/task-link-context';
 
 export default function ThreadScreen() {
   const theme = useTheme();
@@ -65,12 +68,25 @@ export default function ThreadScreen() {
     queryArgs ? { ...queryArgs, targetMessageId } : 'skip',
     { initialNumItems: 50 },
   );
-  const assistantStreams = useQuery(api.assistant.listForThread, queryArgs ? { ...queryArgs, limit: 40 } : 'skip');
-  const projectMembers = useQuery(api.mobile.listProjectMembers, trackUserId && pid && navigation?.available
-    ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid }
-    : 'skip');
+  const assistantPage = usePaginatedQuery(
+    api.assistant.listForThreadPage,
+    queryArgs ? { ...queryArgs, targetMessageId } : 'skip',
+    { initialNumItems: 50 },
+  );
+  const assistantStreams = assistantPage.status === 'LoadingFirstPage' ? undefined : assistantPage.results;
+  const projectMembersPage = usePaginatedQuery(
+    api.mobile.listProjectMembersPage,
+    trackUserId && pid && navigation?.available
+      ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid }
+      : 'skip',
+    { initialNumItems: 100 },
+  );
+  const projectMembers = projectMembersPage.status === 'LoadingFirstPage'
+    ? undefined
+    : projectMembersPage.results;
   const sendMessage = useMutation(api.messages.send);
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl);
+  const claimUploadIntent = useMutation(api.messages.claimUploadIntent);
   const attachFile = useMutation(api.messages.attachFile);
   const askTrack = useAction(api.assistant.ask);
   const markRead = useMutation(api.channelThreads.markRead);
@@ -80,8 +96,8 @@ export default function ThreadScreen() {
   const createReport = useMutation(api.reports.create);
   const createTask = useMutation(api.tasks.create);
   const deleteMessage = useMutation(api.messages.remove);
-  const [composer, setComposer] = useState('');
-  const [replyTo, setReplyTo] = useState<DetailedMessage | null>(null);
+  const sendSignatureRef = useRef<string | null>(null);
+  const [replySelection, setReplySelection] = useState<{ scopeKey: string; message: DetailedMessage } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -89,28 +105,84 @@ export default function ThreadScreen() {
   const [renameValue, setRenameValue] = useState('');
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const hasMoreThreadItems = messagePageStatus === 'CanLoadMore' || assistantPage.status === 'CanLoadMore';
+  const composerDraftScope = useMemo(() => trackUserId && pid && gid && tid ? {
+    actorId: trackUserId,
+    actingCompanyId: cid,
+    projectMemberId: pmid,
+    projectId: pid,
+    groupId: gid,
+    threadId: tid,
+  } : null, [cid, gid, pid, pmid, tid, trackUserId]);
+  const composerDraft = useComposerDraft(composerDraftScope);
+  const composer = composerDraft.draft.composer;
+  const setComposer = useCallback((nextComposer: string) => {
+    composerDraft.setDraft((current) => current.composer === nextComposer
+      ? current
+      : { ...current, composer: nextComposer });
+  }, [composerDraft]);
   const sendKey = useRef<string | null>(null);
   const listRef = useRef<FlatList<GroupedThreadItem>>(null);
-  const memberItems = useMemo(() => (projectMembers ?? []) as ProjectMemberRow[], [projectMembers]);
+  const screenActiveRef = useRef(false);
+  const lastViewedSequenceRef = useRef(0);
+  const lastAcknowledgedSequenceRef = useRef(0);
+  const acknowledgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const memberItems = useMemo(() => projectMembers ?? [], [projectMembers]);
+  const mentionCandidates = useMemo(() => buildMentionCandidates(memberItems), [memberItems]);
   const readOnly = archive === '1' || navigation?.archived === true || thread?.thread.status === 'archived';
-  const taskIdentity: MobileTaskIdentity | null = cid && pmid ? {
+  const taskIdentity = useMemo<MobileTaskIdentity | null>(() => cid && pmid ? {
     archived: readOnly,
     companyId: cid,
     membershipId: pmid,
-  } : null;
+  } : null, [cid, pmid, readOnly]);
 
   useEffect(() => {
     if (thread) setRenameValue(thread.thread.name);
   }, [thread]);
   useEffect(() => {
-    if (!queryArgs || messages === undefined || navigation?.readStateImmutable) return;
-    void markRead(queryArgs).catch(() => undefined);
-  }, [markRead, messages, navigation?.readStateImmutable, queryArgs]);
+    return () => {
+      if (acknowledgeTimeoutRef.current) clearTimeout(acknowledgeTimeoutRef.current);
+    };
+  }, []);
+  useFocusEffect(useCallback(() => {
+    screenActiveRef.current = true;
+    return () => {
+      screenActiveRef.current = false;
+    };
+  }, []));
+
+  const acknowledgeViewedMessage = useCallback((sequence: number) => {
+    if (!queryArgs || !screenActiveRef.current || navigation?.readStateImmutable) return;
+    if (!Number.isInteger(sequence) || sequence <= lastAcknowledgedSequenceRef.current) return;
+    lastViewedSequenceRef.current = Math.max(lastViewedSequenceRef.current, sequence);
+    if (acknowledgeTimeoutRef.current) return;
+    acknowledgeTimeoutRef.current = setTimeout(() => {
+      acknowledgeTimeoutRef.current = null;
+      const nextSequence = lastViewedSequenceRef.current;
+      if (!nextSequence || !screenActiveRef.current || nextSequence <= lastAcknowledgedSequenceRef.current) return;
+      lastAcknowledgedSequenceRef.current = nextSequence;
+      void markRead({ ...queryArgs, viewedChannelSequence: nextSequence }).catch(() => {
+        lastAcknowledgedSequenceRef.current = Math.min(lastAcknowledgedSequenceRef.current, nextSequence - 1);
+      });
+    }, 150);
+  }, [markRead, navigation?.readStateImmutable, queryArgs]);
+
+  const onViewableItemsChanged = useCallback<NonNullable<FlatListProps<GroupedThreadItem>['onViewableItemsChanged']>>(({ viewableItems }) => {
+    const visibleMessages = viewableItems
+      .filter((token) => token.isViewable && token.item.kind === 'message')
+      .map((token) => token.item);
+    // eslint-disable-next-line unicorn/no-array-sort -- reason: Copy first to preserve immutability while supporting the web ES2022 target.
+    visibleMessages.sort((left, right) => left.at - right.at);
+    const lastVisible = visibleMessages.at(-1);
+    if (lastVisible?.kind === 'message') acknowledgeViewedMessage(lastVisible.item.message.channelSequence ?? 0);
+  }, [acknowledgeViewedMessage]);
+  const viewabilityConfig = useMemo(() => ({ itemVisiblePercentThreshold: 60 }), []);
 
   const threadItems = useMemo<GroupedThreadItem[]>(() => {
     const uniqueMessages = [...new Map(
       ((messages ?? []) as DetailedMessage[]).map((item) => [item.message._id, item] as const),
     ).values()];
+    // eslint-disable-next-line unicorn/no-array-reverse -- reason: Reverse a newly copied array for the existing message ordering while supporting the web ES2022 target.
     const messageItems = uniqueMessages.reverse().map((item) => ({
       kind: 'message' as const,
       key: item.message._id,
@@ -125,8 +197,32 @@ export default function ThreadScreen() {
       stream,
       isFirstInGroup: true,
     }));
-    return [...messageItems, ...assistantItems].sort((a, b) => a.at - b.at);
+    const sortedItems = [...messageItems, ...assistantItems];
+    // eslint-disable-next-line unicorn/no-array-sort -- reason: Copy first to preserve immutability while supporting the web ES2022 target.
+    sortedItems.sort((a, b) => a.at - b.at);
+    return sortedItems;
   }, [assistantStreams, messages]);
+  const draftReply = useMemo(() => {
+    const pendingReplyId = composerDraft.draft.replyToMessageId;
+    if (!pendingReplyId) return null;
+    const reply = threadItems.find(
+      (item) => item.kind === 'message' && item.item.message._id === pendingReplyId,
+    );
+    return reply?.kind === 'message' ? reply.item : null;
+  }, [composerDraft.draft.replyToMessageId, threadItems]);
+  const replyTo = replySelection?.scopeKey === composerDraft.scopeKey
+    ? replySelection.message
+    : draftReply;
+  const replyMessageId = replyTo?.message._id;
+  const setReplyTo = useCallback((nextReply: DetailedMessage | null) => {
+    const replyToMessageId = nextReply?.message._id ?? null;
+    composerDraft.setDraft((current) => current.replyToMessageId === replyToMessageId
+      ? current
+      : { ...current, replyToMessageId });
+    setReplySelection(nextReply && composerDraft.scopeKey
+      ? { scopeKey: composerDraft.scopeKey, message: nextReply }
+      : null);
+  }, [composerDraft]);
   useEffect(() => {
     if (!targetMessageId) return;
     const index = threadItems.findIndex((item) => item.kind === 'message' && item.item.message._id === targetMessageId);
@@ -140,27 +236,48 @@ export default function ThreadScreen() {
     }
     const body = payload.body.trim();
     const replyToMessageId = replyTo?.message._id;
+    const sendSignature = JSON.stringify({
+      attachmentIds: payload.attachments.map((attachment) => attachment.id),
+      body,
+      replyToMessageId: replyToMessageId ?? null,
+    });
+    if (!sendKey.current || sendSignatureRef.current !== sendSignature) {
+      sendKey.current = idempotencyKey();
+      sendSignatureRef.current = sendSignature;
+    }
     setBusy(true);
     setError(null);
     try {
-      // Generated inside the guard: Hermes does not guarantee
-      // `crypto.randomUUID`, and a throw out here left the composer stuck busy
-      // with nothing shown to the sender.
-      sendKey.current ??= idempotencyKey();
       const result = await sendComposerMessage({
         ...payload,
         body,
+        idempotencyKey: sendKey.current,
         replyToMessageId,
         target: {
           attachFile: (input) => attachFile({
             projectId: pid, groupId: gid, userId: trackUserId,
             actingCompanyId: cid, projectMemberId: pmid,
-            messageId: input.messageId as Id<'messages'>,
-            storageId: input.storageId as Id<'_storage'>,
+            messageId: input.messageId,
+            uploadIntentId: input.uploadIntentId,
+            storageId: input.storageId,
             filename: input.filename, contentType: input.contentType,
             size: input.size, kind: input.kind, durationMs: input.durationMs,
           }),
-          generateUploadUrl: () => generateUploadUrl({ groupId: gid, channelThreadId: tid, userId: trackUserId, actingCompanyId: cid, projectMemberId: pmid }),
+          claimUploadIntent: (input) => claimUploadIntent({
+            intentId: input.intentId,
+            storageId: input.storageId,
+            userId: trackUserId,
+            actingCompanyId: cid,
+            projectMemberId: pmid,
+          }),
+          generateUploadUrl: (input) => generateUploadUrl({
+            ...input,
+            groupId: gid,
+            channelThreadId: tid,
+            userId: trackUserId,
+            actingCompanyId: cid,
+            projectMemberId: pmid,
+          }),
           sendMessage: (input) => sendMessage({
             projectId: pid,
             groupId: gid,
@@ -168,11 +285,11 @@ export default function ThreadScreen() {
             authorId: trackUserId,
             actingCompanyId: cid,
             projectMemberId: pmid,
-            idempotencyKey: sendKey.current ?? undefined,
+            idempotencyKey: input.idempotencyKey,
             body: input.body,
             mentions: resolveMentionIds(input.body, memberItems),
             mentionedProjectMemberIds: resolveMentionProjectMemberIds(input.body, memberItems),
-            replyToMessageId: input.replyToMessageId as Id<'messages'> | undefined,
+            replyToMessageId: input.replyToMessageId,
             notificationPreview: input.body,
           }),
         },
@@ -183,11 +300,14 @@ export default function ThreadScreen() {
         await askTrack({
           projectId: pid, groupId: gid, channelThreadId: tid, requesterId: trackUserId,
           actingCompanyId: cid, projectMemberId: pmid,
-          promptMessageId: result.messageId as Id<'messages'>, question: body,
+          promptMessageId: result.messageId, question: body,
         });
       }
       // Only retire the idempotency key once every attachment landed; a retry reuses the same message.
-      if (result.failedIds.length === 0) sendKey.current = null;
+      if (result.failedIds.length === 0) {
+        sendKey.current = null;
+        sendSignatureRef.current = null;
+      }
       return result;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save");
@@ -248,7 +368,7 @@ export default function ThreadScreen() {
                     actingCompanyId: cid,
                     projectMemberId: pmid,
                   }).then(() => {
-                    setReplyTo((current) => current?.message._id === actionTarget.item.message._id ? null : current);
+                    if (replyMessageId === actionTarget.item.message._id) setReplyTo(null);
                     setNotice('Message deleted.');
                   }).catch((caught) => {
                     setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't delete message");
@@ -273,7 +393,7 @@ export default function ThreadScreen() {
         });
       } },
     ];
-  }, [actionTarget, cid, createReport, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, trackUserId]);
+  }, [actionTarget, cid, createReport, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, replyMessageId, setReplyTo, trackUserId]);
 
   const renderItem = useCallback<ListRenderItem<GroupedThreadItem>>(({ item }) => {
     if (item.kind === 'date-sep') return null;
@@ -292,7 +412,7 @@ export default function ThreadScreen() {
         projectId={pid}
       /> : null}
     </>;
-  }, [pid, readOnly, releaseConfig.tasks, taskIdentity, trackUserId]);
+  }, [pid, readOnly, releaseConfig.tasks, setReplyTo, taskIdentity, trackUserId]);
 
   async function changeFollowing() {
     if (!queryArgs || !thread) return;
@@ -349,6 +469,8 @@ export default function ThreadScreen() {
     return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Thread' }} /><EmptyState body="Opening the authorized conversation…" icon="forum-outline" title="Loading thread" /></ThemedView>;
   }
   const source = thread.source
+  const taskLinkMessageIds = threadItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : []);
+  const taskLinkAssistantStreamIds = threadItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.stream._id] : []);
 
   return (
     <ThemedView style={styles.screen}>
@@ -370,6 +492,12 @@ export default function ThreadScreen() {
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={[styles.notice, { color: theme.success }]} type="small">{notice}</ThemedText> : null}
       {error ? <ThemedText accessibilityLiveRegion="assertive" style={[styles.error, { color: theme.danger }]} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}
       {readOnly ? <View style={[styles.archive, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Archived thread</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">This conversation is read-only.</ThemedText></View> : null}
+      <TaskLinkBatchProvider
+        assistantStreamIds={taskLinkAssistantStreamIds}
+        enabled={releaseConfig.tasks}
+        identity={taskIdentity}
+        messageIds={taskLinkMessageIds}
+      >
       <FlatList
           contentContainerStyle={styles.list}
           style={styles.flex}
@@ -377,27 +505,40 @@ export default function ThreadScreen() {
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(item) => item.key}
-          ListEmptyComponent={messagePageStatus === 'LoadingFirstPage'
+          ListEmptyComponent={messagePageStatus === 'LoadingFirstPage' || assistantPage.status === 'LoadingFirstPage'
             ? <ThemedText style={{ color: theme.textSecondary, padding: Spacing.three }}>Loading replies…</ThemedText>
             : <EmptyState body="Start the focused conversation." icon="forum-outline" title="No replies yet" />}
-          ListHeaderComponent={messagePageStatus === 'CanLoadMore' ? <Pressable
+          ListHeaderComponent={hasMoreThreadItems ? <Pressable
             accessibilityRole="button"
-            onPress={() => loadMoreMessages(50)}
+            disabled={messagePageStatus === 'LoadingMore' || assistantPage.status === 'LoadingMore'}
+            onPress={() => {
+              if (messagePageStatus === 'CanLoadMore') loadMoreMessages(50);
+              if (assistantPage.status === 'CanLoadMore') assistantPage.loadMore(50);
+            }}
             style={styles.loadMore}>
             <ThemedText type="smallBold">Load older replies</ThemedText>
           </Pressable> : null}
           onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
+          onViewableItemsChanged={onViewableItemsChanged}
           ref={listRef}
           // Matches conversation.tsx: Android cell clipping leaves stale colors after a theme change.
           removeClippedSubviews={false}
           renderItem={renderItem}
+          viewabilityConfig={viewabilityConfig}
         />
+      </TaskLinkBatchProvider>
       {!readOnly ? <Composer
         activeGroupName={thread.thread.name}
         busy={busy}
+        mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
+        mentionCandidatesLoading={projectMembersPage.status === 'LoadingMore'}
+        mentionCandidates={mentionCandidates}
         onCancelReply={() => setReplyTo(null)}
         onChangeText={setComposer}
         onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
+        onLoadMoreMentionCandidates={() => {
+          if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
+        }}
         onSendMessage={handleSendMessage}
         replyTo={replyTo}
         value={composer}

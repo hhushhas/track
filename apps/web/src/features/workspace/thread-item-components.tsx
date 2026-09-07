@@ -6,11 +6,14 @@ import { Card } from '#/components/ui/card'
 import { AttachmentTypeIcon, formatFileSize } from './attachment-ui'
 import { AvatarNameTooltip } from './avatar-tooltip'
 import { getGroupAvatar } from './group-avatar'
+import type { GroupReference } from './group-types'
 import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
 import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
 import { MessageInlineTasks } from '#/features/tasks/ConversationTaskActions'
+import type { TaskIdentity } from '#/features/tasks/task-types'
 import { threadHref } from '#/features/threads/thread-navigation'
+import type { RepresentedThreadContext } from '#/features/threads/thread-navigation'
 
 export type ReplyToMessagePreview = {
   messageId: Id<'messages'>
@@ -37,10 +40,22 @@ export type ForwardedMessagePreview = {
   sourceGroupName: string | null
 }
 
+type MessageAuthor = Pick<Doc<'users'>, '_id' | 'displayName'> &
+  Partial<
+    Pick<
+      Doc<'users'>,
+      'email' | 'profileBannerStyle' | 'profileBio' | 'profileDesignation' | 'timezone'
+    >
+  >
+
 export type GroupMessageItem = {
   message: Doc<'messages'>
-  author: Doc<'users'> | null
+  author: MessageAuthor | null
   authorRole: Doc<'projectMembers'>['role'] | null
+  authorCompany?: {
+    companyId: Id<'companies'>
+    displayName: string
+  } | null
   attachments: Array<{ attachment: Doc<'attachments'>; url: string | null }>
   replyTo: ReplyToMessagePreview | null
   forwardedFrom: ForwardedMessagePreview | null
@@ -78,28 +93,37 @@ export function MessageRow({
   activeGroupId,
   busyAction,
   canDeleteMessages,
+  canCreateTasks,
+  canForwardMessages = true,
+  canReply,
   currentUserId,
   groups,
   isFlashing,
   item,
   avatarUrl,
   mentionGroups,
+  identity,
   onDeleteMessage,
   onForwardMessage,
   onOpenGroup,
   onOpenMessageSource,
   onReplyMessage,
   searchQuery,
+  threadContext,
 }: {
   activeGroupId: Id<'groups'> | null
   busyAction: string | null
   canDeleteMessages: boolean
+  canCreateTasks?: boolean
+  canForwardMessages?: boolean
+  canReply?: boolean
   currentUserId: Id<'users'>
-  groups: Array<Doc<'groups'>>
+  groups: Array<GroupReference>
   isFlashing?: boolean
   item: GroupMessageItem
   avatarUrl?: string | null
-  mentionGroups: Map<string, Doc<'groups'>>
+  mentionGroups: Map<string, GroupReference>
+  identity?: TaskIdentity
   onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
@@ -110,14 +134,17 @@ export function MessageRow({
   onOpenMessageSource: (groupId: Id<'groups'>, messageId: Id<'messages'>) => void
   onReplyMessage: (item: GroupMessageItem) => void
   searchQuery?: string
+  threadContext?: RepresentedThreadContext
 }) {
   const authorName = item.author?.displayName ?? 'Unknown Member'
-  const canForward = groups.some((group) => group._id !== item.message.groupId)
+  const canForward = canForwardMessages && groups.some((group) => group._id !== item.message.groupId)
   return (
     <article
       className={isFlashing ? 'track-message-row flashing' : 'track-message-row'}
       data-thread-item-key={item.message._id}
+      data-channel-sequence={item.message.channelSequence}
       id={`message-${item.message._id}`}
+      tabIndex={-1}
     >
       <AvatarNameTooltip
         avatarUrl={avatarUrl}
@@ -139,7 +166,10 @@ export function MessageRow({
           activeGroupId={activeGroupId}
           busyAction={busyAction}
           canForward={canForward}
+          canCreateTasks={canCreateTasks}
+          canReply={canReply}
           groups={groups}
+          identity={identity}
           item={item}
           canDelete={canDeleteMessages && item.message.authorId === currentUserId}
           onDeleteMessage={onDeleteMessage}
@@ -148,6 +178,9 @@ export function MessageRow({
         />
         <div className="track-message-meta">
           <strong>{authorName}</strong>
+          {item.authorCompany ? (
+            <span className="track-author-company">{item.authorCompany.displayName}</span>
+          ) : null}
           {/*<Badge className="track-role-chip" variant="outline">
             {visibleRole}
           </Badge>*/}
@@ -181,6 +214,7 @@ export function MessageRow({
               item.message.projectId,
               item.message.groupId,
               item.channelThread.threadId,
+              threadContext,
             )}
           >
             <strong>{item.channelThread.name}</strong>
@@ -259,7 +293,7 @@ export function MessageRow({
             })}
           </div>
         ) : null}
-        <MessageInlineTasks message={item.message} />
+        <MessageInlineTasks identity={identity} message={item.message} />
       </Card>
     </article>
   )
@@ -320,7 +354,7 @@ export function MentionInline({
 }: {
   handle: string
   index: number
-  mentionGroups: Map<string, Doc<'groups'>>
+  mentionGroups: Map<string, GroupReference>
   onOpenGroup: (groupId: Id<'groups'>) => void
 }) {
   const group = mentionGroups.get(handle)

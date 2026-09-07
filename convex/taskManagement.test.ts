@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { api, internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import {
+  backfillTaskArchiveSearchFieldsBatch,
   captureTaskExitStaging,
   materializeTaskArchiveSnapshots,
   removeTaskMemberFromScope,
 } from './lib/taskLifecycle'
+import { searchArchivedTasks } from './lib/taskData'
 import schema from './schema'
 
 const modules = (
@@ -87,6 +89,152 @@ describe('task management authorization and invariants', () => {
       boardId,
       name: 'Leaked administration',
     })).rejects.toThrow('task_board_manage_forbidden')
+  })
+
+  it('returns bounded task pages, child pages, and history pages', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const boardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      name: 'Paged work',
+      description: 'Hidden from card projections',
+    })
+    const messageId = await fixture.t.run(async (ctx) => await ctx.db.insert('messages', {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      authorId: fixture.staffId,
+      authorProjectMemberId: fixture.staffMemberId,
+      channelSequence: 1,
+      body: 'Evidence for the paged parent.',
+      mentions: [],
+      attachmentIds: [],
+      createdAt: Date.now(),
+    }))
+    const parent = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      title: 'Paged parent',
+      description: 'Parent description',
+      priority: 'none',
+      references: [{ type: 'message', messageId }],
+      idempotencyKey: 'paged-parent',
+    })
+    const child = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      parentTaskId: parent.taskId,
+      title: 'Paged child',
+      priority: 'none',
+      idempotencyKey: 'paged-child',
+    })
+    await owner.mutation(api.taskComments.create, {
+      taskId: parent.taskId,
+      body: 'Bounded history',
+      mentionedProjectMemberIds: [],
+      idempotencyKey: 'paged-comment',
+    })
+
+    const first = await owner.query(api.tasks.listPage, {
+      projectId: fixture.projectId,
+      boardId,
+      paginationOpts: { cursor: null, numItems: 1 },
+    })
+    expect(first.page).toHaveLength(1)
+    expect(first.page[0]?.task).not.toHaveProperty('searchText')
+    expect(first.page[0]?.board).not.toHaveProperty('description')
+    expect(first.page[0]?.hasEvidence).toBe(true)
+    const second = first.isDone ? null : await owner.query(api.tasks.listPage, {
+      projectId: fixture.projectId,
+      boardId,
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    })
+    expect([first.page[0]?.task._id, second?.page[0]?.task._id]).toContain(child.taskId)
+
+    const children = await owner.query(api.tasks.listChildren, {
+      parentTaskId: parent.taskId,
+      paginationOpts: { cursor: null, numItems: 1 },
+    })
+    expect(children.page.map((item) => item.task._id)).toContain(child.taskId)
+    const history = await owner.query(api.tasks.listHistory, {
+      taskId: parent.taskId,
+      kind: 'comments',
+      paginationOpts: { cursor: null, numItems: 1 },
+    })
+    expect(history.page).toHaveLength(1)
+  })
+
+  it('freezes task and board writes during immutable snapshot capture', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const boardId = await owner.mutation(api.taskBoards.create, {
+      projectId: fixture.projectId,
+      name: 'Frozen board',
+    })
+    const task = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      title: 'Frozen task',
+      priority: 'none',
+      idempotencyKey: 'frozen-task',
+    })
+    const operationId = await fixture.t.run(async (ctx) => {
+      const now = Date.now()
+      const companyId = await ctx.db.insert('companies', {
+        displayName: 'Freeze company',
+        normalizedHandle: 'freeze-company',
+        status: 'active',
+        revision: 1,
+        createdBy: fixture.ownerId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      const projectCompanyId = await ctx.db.insert('projectCompanies', {
+        projectId: fixture.projectId,
+        companyId,
+        term: 1,
+        status: 'exit_pending',
+        acceptedBy: fixture.ownerId,
+        acceptedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return await ctx.db.insert('projectExitOperations', {
+        projectCompanyId,
+        projectId: fixture.projectId,
+        operationId: 'freeze-task-writes',
+        cutoff: now,
+        status: 'capturing',
+        phase: 'tasks',
+        stagedCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+
+    await expect(owner.mutation(api.tasks.update, {
+      taskId: task.taskId,
+      expectedRevision: 1,
+      title: 'Should fail',
+    })).rejects.toThrow('project_snapshot_in_progress')
+    await expect(owner.mutation(api.taskBoards.update, {
+      boardId,
+      name: 'Should fail',
+    })).rejects.toThrow('project_snapshot_in_progress')
+    await expect(owner.mutation(api.taskComments.create, {
+      taskId: task.taskId,
+      body: 'Should fail',
+      mentionedProjectMemberIds: [],
+      idempotencyKey: 'frozen-comment',
+    })).rejects.toThrow('project_snapshot_in_progress')
+    await expect(owner.mutation(api.taskLabels.create, {
+      projectId: fixture.projectId,
+      name: 'Should fail',
+      colorToken: 'blue',
+    })).rejects.toThrow('project_snapshot_in_progress')
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(operationId, { status: 'cancelled', updatedAt: Date.now() })
+    })
   })
 
   it('enforces scoped-client editing and assignment while staff can triage', async () => {
@@ -981,6 +1129,48 @@ describe('task management authorization and invariants', () => {
     expect(archivedTasks[0]?.payload).toMatchObject({
       title: 'Visible at exit',
     })
+    const searchResults = await fixture.t.run(async (ctx) => {
+      const [entitlement, projectMember] = await Promise.all([
+        ctx.db.get(entitlementId),
+        ctx.db.get(fixture.ownerMemberId),
+      ])
+      if (!entitlement || !projectMember) throw new Error('archive_search_fixture_invalid')
+      return await searchArchivedTasks(ctx, { entitlement, projectMember }, 'visible at exit', 20)
+    })
+    expect(searchResults.map((result) => result.task.title)).toEqual(['Visible at exit'])
+    const backfilledSearchResults = await fixture.t.run(async (ctx) => {
+      const taskSnapshot = archivedTasks[0]
+      await ctx.db.patch(taskSnapshot._id, {
+        taskPublicKey: undefined,
+        taskSearchText: undefined,
+      })
+      const backfill = await backfillTaskArchiveSearchFieldsBatch(ctx, { entitlementId })
+      if (!backfill.done || backfill.patched !== 1) throw new Error('archive_search_backfill_incomplete')
+      const [entitlement, projectMember] = await Promise.all([
+        ctx.db.get(entitlementId),
+        ctx.db.get(fixture.ownerMemberId),
+      ])
+      if (!entitlement || !projectMember) throw new Error('archive_search_fixture_invalid')
+      return await searchArchivedTasks(ctx, { entitlement, projectMember }, 'visible at exit', 20)
+    })
+    expect(backfilledSearchResults.map((result) => result.task.title)).toEqual(['Visible at exit'])
+    const stagedSearchResults = await fixture.t.run(async (ctx) => {
+      const operationId = 'archive-search-operation'
+      await captureTaskExitStaging(ctx, {
+        projectCompanyId,
+        projectId: fixture.projectId,
+        operationId,
+        cutoff: Date.now(),
+      })
+      await ctx.db.patch(entitlementId, { snapshotOperationId: operationId })
+      const [entitlement, projectMember] = await Promise.all([
+        ctx.db.get(entitlementId),
+        ctx.db.get(fixture.ownerMemberId),
+      ])
+      if (!entitlement || !projectMember) throw new Error('archive_search_fixture_invalid')
+      return await searchArchivedTasks(ctx, { entitlement, projectMember }, 'edited after cutoff', 20)
+    })
+    expect(stagedSearchResults.map((result) => result.task.title)).toEqual(['Edited after cutoff'])
   })
 })
 

@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { useState, type FormEvent } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
@@ -8,6 +9,23 @@ import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 
 type AsyncAction = (action: () => Promise<unknown>) => Promise<void>;
+
+function formatProjectInvitationError(error: unknown) {
+  if (!(error instanceof Error)) return "The invitation could not be sent.";
+  if (error.message.includes("company_invitation_pending")) {
+    return "An invitation for this Company is already pending.";
+  }
+  if (error.message.includes("company_already_participating")) {
+    return "This Company already participates in the Project.";
+  }
+  if (error.message.includes("owning_company_required")) {
+    return "Only the owning Company can invite collaborators.";
+  }
+  if (error.message.includes("project_relationship_conflict")) {
+    return "This Project is already linked to a different Relationship.";
+  }
+  return "The invitation could not be sent. Try again.";
+}
 
 export function CreateCompanyForm({ run }: { run: AsyncAction }) {
   const createCompany = useMutation(api.companies.create);
@@ -117,12 +135,19 @@ export function CompanyProfileForm({
       className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
-        void run(() => updateProfile({ companyId: actingCompanyId, displayName }));
+        void run(() =>
+          updateProfile({ companyId: actingCompanyId, displayName }),
+        );
       }}
     >
       <div>
         <Label htmlFor="company-profile-name">Company display name</Label>
-        <Input id="company-profile-name" onChange={(event) => setDisplayName(event.target.value)} required value={displayName} />
+        <Input
+          id="company-profile-name"
+          onChange={(event) => setDisplayName(event.target.value)}
+          required
+          value={displayName}
+        />
       </div>
       <Button type="submit">Save profile</Button>
     </form>
@@ -244,6 +269,226 @@ export function RelationshipParticipantForm({
         Invite Company
       </Button>
     </form>
+  );
+}
+
+export function InternalProjectForm({
+  actingCompanyId,
+  currentUserId,
+  run,
+}: {
+  actingCompanyId: Id<"companies">;
+  currentUserId: Id<"users">;
+  run: AsyncAction;
+}) {
+  const createProject = useMutation(api.sharedProjects.createInternal);
+  const [name, setName] = useState("");
+
+  return (
+    <form
+      className="company-inline-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void run(async () => {
+          await createProject({
+            actingCompanyId,
+            initialMembers: [{ userId: currentUserId, role: "manager" }],
+            name,
+          });
+          setName("");
+        });
+      }}
+    >
+      <div>
+        <Label htmlFor="company-project-name">Project name</Label>
+        <Input
+          id="company-project-name"
+          onChange={(event) => setName(event.target.value)}
+          placeholder="e.g. Website launch"
+          required
+          value={name}
+        />
+        <span className="company-field-hint">
+          Starts inside this Company. You can invite collaborators later.
+        </span>
+      </div>
+      <Button type="submit">Create Project</Button>
+    </form>
+  );
+}
+
+export function ProjectCompanyInviteForm({
+  actingCompanyId,
+  options,
+  projectId,
+  projectMemberId,
+  run,
+}: {
+  actingCompanyId: Id<"companies">;
+  options: FunctionReturnType<
+    typeof api.sharedProjects.getCollaborationOptions
+  >;
+  projectId: Id<"projects">;
+  projectMemberId: Id<"projectMembers">;
+  run: (action: () => Promise<unknown>) => Promise<boolean>;
+}) {
+  const inviteCompanies = useMutation(api.sharedProjects.inviteCompanies);
+  const projectRelationshipId = options.projectRelationshipId ?? undefined;
+  const [relationshipId, setRelationshipId] = useState<
+    Id<"relationships"> | ""
+  >(projectRelationshipId ?? "");
+  const [targetCompanyId, setTargetCompanyId] = useState<Id<"companies"> | "">(
+    "",
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const eligibleRelationships = options.relationships.filter(
+    (item) => item.companies.length > 0,
+  );
+  const selectedRelationshipId =
+    projectRelationshipId ??
+    (eligibleRelationships.some(
+      (item) => item.relationship._id === relationshipId,
+    )
+      ? relationshipId
+      : (eligibleRelationships[0]?.relationship._id ?? ""));
+  const selectedRelationship = eligibleRelationships.find(
+    (item) => item.relationship._id === selectedRelationshipId,
+  );
+  const selectedCompanyId = selectedRelationship?.companies.some(
+    (company) => company._id === targetCompanyId,
+  )
+    ? targetCompanyId
+    : (selectedRelationship?.companies[0]?._id ?? "");
+  const pendingCount = options.pendingInvitations.length;
+  const relationshipSelectId = "project-relationship-" + projectId;
+  const companySelectId = "project-partner-company-" + projectId;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedRelationshipId || !selectedCompanyId || submitting) return;
+    let invitationError: unknown;
+    setSubmitting(true);
+    setError(null);
+    const saved = await run(async () => {
+      try {
+        await inviteCompanies({
+          actingCompanyId,
+          projectId,
+          projectMemberId,
+          relationshipId: selectedRelationshipId,
+          targetCompanyIds: [selectedCompanyId],
+        });
+      } catch (caughtError) {
+        invitationError = caughtError;
+        throw caughtError;
+      }
+    });
+    if (!saved) setError(formatProjectInvitationError(invitationError));
+    setTargetCompanyId("");
+    setSubmitting(false);
+  }
+
+  return (
+    <section className="company-admin-card">
+      <strong>Invite a partner Company</strong>
+      <p>
+        Invite an existing Relationship partner into this same Project. Their
+        Company must accept before its members gain access.
+      </p>
+
+      {pendingCount > 0 ? (
+        <div>
+          <span className="company-field-hint">
+            {pendingCount} pending{" "}
+            {pendingCount === 1 ? "invitation" : "invitations"}
+          </span>
+          <ul>
+            {options.pendingInvitations.map(({ invitation, targetCompany }) => (
+              <li key={invitation._id}>
+                {targetCompany?.displayName ?? "Unavailable Company"} · pending
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {eligibleRelationships.length > 0 ? (
+        <form
+          className="company-inline-form"
+          onSubmit={(event) => void submit(event)}
+        >
+          <div>
+            <Label htmlFor={relationshipSelectId}>Relationship</Label>
+            <select
+              disabled={Boolean(projectRelationshipId) || submitting}
+              id={relationshipSelectId}
+              onChange={(event) => {
+                const selected = eligibleRelationships.find(
+                  (item) => item.relationship._id === event.target.value,
+                );
+                setRelationshipId(selected?.relationship._id ?? "");
+                setTargetCompanyId("");
+                setError(null);
+              }}
+              value={selectedRelationshipId}
+            >
+              {eligibleRelationships.map((item) => (
+                <option
+                  key={item.relationship._id}
+                  value={item.relationship._id}
+                >
+                  {item.relationship.name}
+                </option>
+              ))}
+            </select>
+            <span className="company-field-hint">
+              {projectRelationshipId
+                ? "Invitations stay within this Project’s Relationship."
+                : "The first invitation links this Project to the selected Relationship."}
+            </span>
+          </div>
+          <div>
+            <Label htmlFor={companySelectId}>Company</Label>
+            <select
+              disabled={submitting}
+              id={companySelectId}
+              onChange={(event) => {
+                const selected = selectedRelationship?.companies.find(
+                  (company) => company._id === event.target.value,
+                );
+                setTargetCompanyId(selected?._id ?? "");
+                setError(null);
+              }}
+              value={selectedCompanyId}
+            >
+              {selectedRelationship?.companies.map((company) => (
+                <option key={company._id} value={company._id}>
+                  {company.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button disabled={!selectedCompanyId || submitting} type="submit">
+            {submitting ? "Sending invitation…" : "Invite Company"}
+          </Button>
+        </form>
+      ) : (
+        <p>
+          {pendingCount > 0
+            ? "No other partner Companies are available to invite."
+            : options.relationships.length > 0
+              ? "Every Company in this Relationship already participates in this Project."
+              : "No eligible partner Companies. Create an active Relationship in the Company workspace first."}
+        </p>
+      )}
+
+      {error ? (
+        <p aria-live="polite" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

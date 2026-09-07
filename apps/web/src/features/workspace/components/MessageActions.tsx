@@ -1,14 +1,16 @@
 import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
 import { Textarea } from '#/components/ui/textarea'
+import type { TaskIdentity } from '#/features/tasks/task-types'
 import type { GroupMessageItem, ReplyToMessagePreview } from '../thread-item-components'
 import { getGroupAvatar } from '../group-avatar'
+import type { GroupReference } from '../group-types'
 import { CreateTaskFromMessage } from '#/features/tasks/ConversationTaskActions'
 
 export function MessageActions({
@@ -16,7 +18,10 @@ export function MessageActions({
   busyAction,
   canDelete,
   canForward,
+  canReply = true,
+  canCreateTasks = true,
   groups,
+  identity,
   item,
   onDeleteMessage,
   onForwardMessage,
@@ -26,7 +31,10 @@ export function MessageActions({
   busyAction: string | null
   canDelete: boolean
   canForward: boolean
-  groups: Array<Doc<'groups'>>
+  canReply?: boolean
+  canCreateTasks?: boolean
+  groups: Array<GroupReference>
+  identity?: TaskIdentity
   item: GroupMessageItem
   onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onForwardMessage: (input: {
@@ -38,15 +46,17 @@ export function MessageActions({
 }) {
   return (
     <div className="track-message-actions" aria-label="Message actions">
-      <Button
-        aria-label="Reply to message"
-        className="icon-button track-message-action-button"
-        onClick={() => onReplyMessage(item)}
-        title="Reply"
-        type="button"
-      >
-        <CornerUpLeft size={14} />
-      </Button>
+      {canReply ? (
+        <Button
+          aria-label="Reply to message"
+          className="icon-button track-message-action-button"
+          onClick={() => onReplyMessage(item)}
+          title="Reply"
+          type="button"
+        >
+          <CornerUpLeft size={14} />
+        </Button>
+      ) : null}
       <ForwardMessagePopover
         activeGroupId={activeGroupId}
         busyAction={busyAction}
@@ -55,7 +65,7 @@ export function MessageActions({
         item={item}
         onForwardMessage={onForwardMessage}
       />
-      <CreateTaskFromMessage message={item.message} />
+      {canCreateTasks ? <CreateTaskFromMessage identity={identity} message={item.message} /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -110,7 +120,7 @@ function ForwardMessagePopover({
   activeGroupId: Id<'groups'> | null
   busyAction: string | null
   canForward: boolean
-  groups: Array<Doc<'groups'>>
+  groups: Array<GroupReference>
   item: GroupMessageItem
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>

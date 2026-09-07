@@ -1,9 +1,10 @@
 import { FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from 'convex/react';
+import { usePaginatedQuery, useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 
 import { api } from '../../../../convex/_generated/api';
-import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
@@ -19,12 +20,7 @@ import { useReleaseConfig } from '@/lib/release-config';
 import { taskListHref } from '@/lib/task-navigation';
 import { usePushNotifications } from '@/lib/push-notifications';
 
-type MobileGroup = {
-  group: Doc<'groups'>;
-  membership: Doc<'groupMembers'>;
-  lastMessage: Doc<'messages'> | null;
-  unreadCount: number;
-};
+type MobileGroup = FunctionReturnType<typeof api.mobile.listGroupsPage>['page'][number];
 
 export default function GroupsScreen() {
   const theme = useTheme();
@@ -44,19 +40,19 @@ export default function GroupsScreen() {
     actingCompanyId: companyId as Id<'companies'> | undefined,
     projectMemberId: membershipId as Id<'projectMembers'> | undefined,
   } : 'skip');
-  const groups = useQuery(
-    api.mobile.listGroups,
+  const { results: groups, status: groupsStatus, loadMore: loadMoreGroups } = usePaginatedQuery(
+    api.mobile.listGroupsPage,
     trackUserId && projectId && navigation?.available ? {
       userId: trackUserId,
       projectId: projectId as Id<'projects'>,
       actingCompanyId: companyId as Id<'companies'> | undefined,
       projectMemberId: membershipId as Id<'projectMembers'> | undefined,
     } : 'skip',
+    { initialNumItems: 50 },
   );
 
-  const groupItems = (groups ?? []) as MobileGroup[];
-  const projectName = (projects as { project: Doc<'projects'> }[] | undefined)
-    ?.find((p) => p.project._id === projectId)?.project.name ?? 'Channels';
+  const projectName = projects?.find((p) => p.project._id === projectId)?.project.name ?? 'Channels';
+  const readOnlyArchive = archive === '1' || navigation?.archived === true;
 
   function navigate(item: MobileGroup) {
     hapticLight();
@@ -93,15 +89,15 @@ export default function GroupsScreen() {
 
       {navigation && !navigation.available ? <View style={styles.list}><EmptyState icon="shield-lock-outline" title="Project unavailable" body={navigationUnavailableCopy(Boolean(companyId))} /></View> : null}
 
-      {!navigation || navigation.available && groups === undefined ? (
+      {!navigation || navigation.available && groupsStatus === 'LoadingFirstPage' ? (
         <SkeletonList label="Loading Channels" />
       ) : navigation.available ? (
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.list}
-          data={groupItems}
+          data={groups}
           keyExtractor={(item) => item.group._id}
-          renderItem={({ item }) => <GroupRow item={item} onPress={() => navigate(item)} />}
+          renderItem={({ item }) => <GroupRow archived={readOnlyArchive} item={item} onPress={() => navigate(item)} />}
           ListHeaderComponent={push.permissionState === 'not_determined' ? (
             <View style={[styles.notificationCard, { backgroundColor: theme.backgroundElement }]}>
               <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
@@ -116,6 +112,17 @@ export default function GroupsScreen() {
               </Pressable>
             </View>
           ) : null}
+          ListFooterComponent={groupsStatus === 'CanLoadMore' || groupsStatus === 'LoadingMore' ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={groupsStatus === 'LoadingMore'}
+              onPress={() => loadMoreGroups(50)}
+              style={styles.loadMore}>
+              <ThemedText type="smallBold">
+                {groupsStatus === 'LoadingMore' ? 'Loading more Channels…' : 'Load more Channels'}
+              </ThemedText>
+            </Pressable>
+          ) : null}
           ListEmptyComponent={
             <EmptyState icon="forum-outline" title="No Channels visible" body="Only Channels explicitly granted to this represented membership appear here." />
           }
@@ -125,7 +132,7 @@ export default function GroupsScreen() {
   );
 }
 
-function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void }) {
+function GroupRow({ archived, item, onPress }: { archived: boolean; item: MobileGroup; onPress: () => void }) {
   const theme = useTheme();
   return (
     // See projects.tsx: a themed fill and a ripple on the same pressable share
@@ -141,7 +148,7 @@ function GroupRow({ item, onPress }: { item: MobileGroup; onPress: () => void })
           <ThemedText numberOfLines={1} type="title">{item.group.name}</ThemedText>
           <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
             {item.lastMessage?.body || 'No messages yet'}
-            {item.group.status === 'archived' ? ' · read-only archive' : ''}
+            {archived ? ' · read-only archive' : ''}
           </ThemedText>
         </View>
         {item.unreadCount > 0 ? (
@@ -184,6 +191,12 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     padding: Spacing.three,
     paddingTop: Spacing.two,
+  },
+  loadMore: {
+    alignItems: 'center',
+    minHeight: TouchTarget,
+    justifyContent: 'center',
+    padding: Spacing.two,
   },
   notificationCard: {
     alignItems: 'center',

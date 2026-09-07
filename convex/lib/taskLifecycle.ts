@@ -1,5 +1,19 @@
-import type { Id } from '../_generated/dataModel'
+import { normalizeTaskText } from '@track/shared/tasks'
+
+import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx } from '../_generated/server'
+import {
+  isTaskArchiveActivityPayload,
+  isTaskArchiveBoardPayload,
+  isTaskArchiveCommentPayload,
+  isTaskArchiveLabelLinkPayload,
+  isTaskArchiveLabelPayload,
+  isTaskArchivePayload,
+  isTaskArchiveReferencePayload,
+  isTaskArchiveStatePayload,
+  isTaskArchiveSuggestionPayload,
+  isTaskArchiveSuggestionReferencePayload,
+} from './taskData'
 
 const snapshotTables = [
   'taskBoards',
@@ -15,6 +29,165 @@ const snapshotTables = [
 ] as const
 
 type SnapshotTable = (typeof snapshotTables)[number]
+
+type SnapshotRow =
+  | { table: 'taskBoards'; row: Doc<'taskBoards'> }
+  | { table: 'taskWorkflowStates'; row: Doc<'taskWorkflowStates'> }
+  | { table: 'tasks'; row: Doc<'tasks'> }
+  | { table: 'taskLabels'; row: Doc<'taskLabels'> }
+  | { table: 'taskLabelLinks'; row: Doc<'taskLabelLinks'> }
+  | { table: 'taskReferences'; row: Doc<'taskReferences'> }
+  | { table: 'taskComments'; row: Doc<'taskComments'> }
+  | { table: 'taskActivities'; row: Doc<'taskActivities'> }
+  | { table: 'taskSuggestions'; row: Doc<'taskSuggestions'> }
+  | { table: 'taskSuggestionReferences'; row: Doc<'taskSuggestionReferences'> }
+
+type TaskCaptureCursor = {
+  table: SnapshotTable
+  cursor: string | null
+}
+
+type TaskStageMetadata = Pick<
+  Doc<'taskExitSnapshotStaging'>,
+  'taskId' | 'taskPublicKey' | 'taskSearchText' | 'groupId' |
+  'messageId' | 'attachmentId' | 'assistantStreamId'
+>
+
+type TaskArchivePayload =
+  | Doc<'taskBoards'>
+  | Doc<'taskWorkflowStates'>
+  | Doc<'tasks'>
+  | Doc<'taskLabels'>
+  | Doc<'taskLabelLinks'>
+  | Doc<'taskReferences'>
+  | Doc<'taskComments'>
+  | Doc<'taskActivities'>
+  | Doc<'taskSuggestions'>
+  | Doc<'taskSuggestionReferences'>
+
+function decodeTaskArchivePayload(sourceTable: string, payload: unknown): TaskArchivePayload {
+  switch (sourceTable) {
+    case 'taskBoards':
+      if (isTaskArchiveBoardPayload(payload)) return payload
+      break
+    case 'taskWorkflowStates':
+      if (isTaskArchiveStatePayload(payload)) return payload
+      break
+    case 'tasks':
+      if (isTaskArchivePayload(payload)) return payload
+      break
+    case 'taskLabels':
+      if (isTaskArchiveLabelPayload(payload)) return payload
+      break
+    case 'taskLabelLinks':
+      if (isTaskArchiveLabelLinkPayload(payload)) return payload
+      break
+    case 'taskReferences':
+      if (isTaskArchiveReferencePayload(payload)) return payload
+      break
+    case 'taskComments':
+      if (isTaskArchiveCommentPayload(payload)) return payload
+      break
+    case 'taskActivities':
+      if (isTaskArchiveActivityPayload(payload)) return payload
+      break
+    case 'taskSuggestions':
+      if (isTaskArchiveSuggestionPayload(payload)) return payload
+      break
+    case 'taskSuggestionReferences':
+      if (isTaskArchiveSuggestionReferencePayload(payload)) return payload
+      break
+  }
+  throw new Error(`task_archive_payload_invalid:${sourceTable}`)
+}
+
+const taskExitBatchSize = 100
+const archiveSearchBackfillBatchSize = 100
+
+function taskArchiveSearchFields(
+  payload: unknown,
+  existing: {
+    taskPublicKey?: string
+    taskSearchText?: string
+  } = {},
+) {
+  const task = isTaskArchivePayload(payload) ? payload : null
+  const searchText = existing.taskSearchText ?? (task ? task.searchText : '')
+  return {
+    taskPublicKey: existing.taskPublicKey ?? (task ? task.publicKey : undefined),
+    taskSearchText: normalizeTaskText(searchText),
+  }
+}
+
+function archiveSearchPatch(
+  row: {
+    taskPublicKey?: string
+    taskSearchText?: string
+    payload: unknown
+  },
+) {
+  const fields = taskArchiveSearchFields(row.payload, row)
+  const patch: {
+    taskPublicKey?: string
+    taskSearchText?: string
+  } = {}
+  if (row.taskPublicKey !== fields.taskPublicKey) patch.taskPublicKey = fields.taskPublicKey
+  if (row.taskSearchText !== fields.taskSearchText) patch.taskSearchText = fields.taskSearchText
+  return patch
+}
+
+export async function backfillTaskArchiveSearchFieldsBatch(
+  ctx: MutationCtx,
+  input: {
+    entitlementId: Id<'projectArchiveEntitlements'>
+    cursor?: string | null
+  },
+) {
+  const result = await ctx.db
+    .query('taskArchiveSnapshots')
+    .withIndex('by_entitlement', (q) => q.eq('entitlementId', input.entitlementId))
+    .paginate({ cursor: input.cursor ?? null, numItems: archiveSearchBackfillBatchSize })
+  let patched = 0
+  for (const row of result.page) {
+    const patch = archiveSearchPatch(row)
+    if (Object.keys(patch).length === 0) continue
+    await ctx.db.patch(row._id, patch)
+    patched += 1
+  }
+  return {
+    cursor: result.isDone ? null : result.continueCursor,
+    done: result.isDone,
+    patched,
+  }
+}
+
+export async function backfillTaskExitSnapshotSearchFieldsBatch(
+  ctx: MutationCtx,
+  input: {
+    projectCompanyId: Id<'projectCompanies'>
+    operationId: string
+    cursor?: string | null
+  },
+) {
+  const result = await ctx.db
+    .query('taskExitSnapshotStaging')
+    .withIndex('by_project_company_operation', (q) =>
+      q.eq('projectCompanyId', input.projectCompanyId).eq('operationId', input.operationId),
+    )
+    .paginate({ cursor: input.cursor ?? null, numItems: archiveSearchBackfillBatchSize })
+  let patched = 0
+  for (const row of result.page) {
+    const patch = archiveSearchPatch(row)
+    if (Object.keys(patch).length === 0) continue
+    await ctx.db.patch(row._id, patch)
+    patched += 1
+  }
+  return {
+    cursor: result.isDone ? null : result.continueCursor,
+    done: result.isDone,
+    patched,
+  }
+}
 
 export async function deleteTaskProjectData(
   ctx: MutationCtx,
@@ -184,17 +357,379 @@ export async function removeTaskMemberFromScope(
   }
 }
 
+type TaskPage =
+  | { table: 'taskBoards'; page: Array<Doc<'taskBoards'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskWorkflowStates'; page: Array<Doc<'taskWorkflowStates'>>; isDone: boolean; continueCursor: string }
+  | { table: 'tasks'; page: Array<Doc<'tasks'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskLabels'; page: Array<Doc<'taskLabels'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskLabelLinks'; page: Array<Doc<'taskLabelLinks'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskReferences'; page: Array<Doc<'taskReferences'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskComments'; page: Array<Doc<'taskComments'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskActivities'; page: Array<Doc<'taskActivities'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskSuggestions'; page: Array<Doc<'taskSuggestions'>>; isDone: boolean; continueCursor: string }
+  | { table: 'taskSuggestionReferences'; page: Array<Doc<'taskSuggestionReferences'>>; isDone: boolean; continueCursor: string }
+
+function encodeTaskCursor(cursor: TaskCaptureCursor) {
+  return JSON.stringify(cursor)
+}
+
+function isSnapshotTable(value: unknown): value is SnapshotTable {
+  return (
+    value === 'taskBoards' ||
+    value === 'taskWorkflowStates' ||
+    value === 'tasks' ||
+    value === 'taskLabels' ||
+    value === 'taskLabelLinks' ||
+    value === 'taskReferences' ||
+    value === 'taskComments' ||
+    value === 'taskActivities' ||
+    value === 'taskSuggestions' ||
+    value === 'taskSuggestionReferences'
+  )
+}
+
+function isTaskCaptureCursor(value: unknown): value is TaskCaptureCursor {
+  if (typeof value !== 'object' || value === null) return false
+  if (!('table' in value) || !('cursor' in value)) return false
+  const table = value.table
+  const cursor = value.cursor
+  return (
+    isSnapshotTable(table) &&
+    (cursor === null || typeof cursor === 'string')
+  )
+}
+
+function decodeTaskCursor(value: string | null | undefined): TaskCaptureCursor {
+  if (!value) return { table: snapshotTables[0], cursor: null }
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (isTaskCaptureCursor(parsed)) {
+      return parsed
+    }
+  } catch {
+    return { table: snapshotTables[0], cursor: null }
+  }
+  return { table: snapshotTables[0], cursor: null }
+}
+
+async function taskPage(
+  ctx: MutationCtx,
+  projectId: Id<'projects'>,
+  state: TaskCaptureCursor,
+): Promise<TaskPage> {
+  const options = { cursor: state.cursor, numItems: taskExitBatchSize }
+  switch (state.table) {
+    case 'taskBoards': {
+      const result = await ctx.db.query('taskBoards')
+        .withIndex('by_project_archived', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskWorkflowStates': {
+      const result = await ctx.db.query('taskWorkflowStates')
+        .withIndex('by_project_category', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'tasks': {
+      const result = await ctx.db.query('tasks')
+        .withIndex('by_project_archived', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskLabels': {
+      const result = await ctx.db.query('taskLabels')
+        .withIndex('by_project_archived', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskLabelLinks': {
+      const result = await ctx.db.query('taskLabelLinks')
+        .withIndex('by_project_created_at', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskReferences': {
+      const result = await ctx.db.query('taskReferences')
+        .withIndex('by_project_created_at', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskComments': {
+      const result = await ctx.db.query('taskComments')
+        .withIndex('by_project_created_at', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskActivities': {
+      const result = await ctx.db.query('taskActivities')
+        .withIndex('by_project_created_at', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskSuggestions': {
+      const result = await ctx.db.query('taskSuggestions')
+        .withIndex('by_project_status', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+    case 'taskSuggestionReferences': {
+      const result = await ctx.db.query('taskSuggestionReferences')
+        .withIndex('by_project_created_at', (q) => q.eq('projectId', projectId))
+        .paginate(options)
+      return { table: state.table, ...result }
+    }
+  }
+  throw new Error('task_capture_table_invalid')
+}
+
+function nextTaskState(
+  state: TaskCaptureCursor,
+  result: TaskPage,
+): { done: boolean; cursor: string | null } {
+  if (!result.isDone) {
+    return {
+      done: false,
+      cursor: encodeTaskCursor({ table: state.table, cursor: result.continueCursor }),
+    }
+  }
+  const index = snapshotTables.indexOf(state.table)
+  if (index === snapshotTables.length - 1) return { done: true, cursor: null }
+  return {
+    done: false,
+    cursor: encodeTaskCursor({ table: snapshotTables[index + 1], cursor: null }),
+  }
+}
+
+type RelatedTaskRows = {
+  taskGroups: ReadonlyMap<Id<'tasks'>, Id<'groups'> | undefined>
+  suggestionGroups: ReadonlyMap<Id<'taskSuggestions'>, Id<'groups'> | undefined>
+  boardGroups: ReadonlyMap<Id<'taskBoards'>, Id<'groups'> | undefined>
+}
+
+async function relatedTaskRows(
+  ctx: MutationCtx,
+  items: ReadonlyArray<SnapshotRow>,
+): Promise<RelatedTaskRows> {
+  const taskIds = new Set<Id<'tasks'>>()
+  const suggestionIds = new Set<Id<'taskSuggestions'>>()
+  const boardIds = new Set<Id<'taskBoards'>>()
+  for (const item of items) {
+    switch (item.table) {
+      case 'taskWorkflowStates':
+        boardIds.add(item.row.boardId)
+        break
+      case 'taskLabelLinks':
+      case 'taskReferences':
+      case 'taskComments':
+      case 'taskActivities':
+        taskIds.add(item.row.taskId)
+        break
+      case 'taskSuggestionReferences':
+        suggestionIds.add(item.row.suggestionId)
+        break
+      case 'taskBoards':
+      case 'taskLabels':
+      case 'taskSuggestions':
+      case 'tasks':
+        break
+    }
+  }
+  const [tasks, suggestions, boards] = await Promise.all([
+    Promise.all(Array.from(taskIds, (taskId) => ctx.db.get(taskId))),
+    Promise.all(Array.from(suggestionIds, (suggestionId) => ctx.db.get(suggestionId))),
+    Promise.all(Array.from(boardIds, (boardId) => ctx.db.get(boardId))),
+  ])
+  return {
+    taskGroups: new Map(tasks.filter((task): task is Doc<'tasks'> => task !== null)
+      .map((task) => [task._id, task.groupId])),
+    suggestionGroups: new Map(suggestions.filter((suggestion): suggestion is Doc<'taskSuggestions'> => suggestion !== null)
+      .map((suggestion) => [suggestion._id, suggestion.groupId])),
+    boardGroups: new Map(boards.filter((board): board is Doc<'taskBoards'> => board !== null)
+      .map((board) => [board._id, board.groupId])),
+  }
+}
+
+function stageMetadata(item: SnapshotRow, related: RelatedTaskRows): TaskStageMetadata {
+  switch (item.table) {
+    case 'tasks':
+      return {
+        taskId: item.row._id,
+        taskPublicKey: item.row.publicKey,
+        taskSearchText: item.row.searchText,
+        groupId: item.row.groupId,
+      }
+    case 'taskWorkflowStates':
+      return { groupId: related.boardGroups.get(item.row.boardId) }
+    case 'taskLabelLinks':
+      return { taskId: item.row.taskId, groupId: related.taskGroups.get(item.row.taskId) }
+    case 'taskReferences':
+      return {
+        taskId: item.row.taskId,
+        groupId: item.row.groupId ?? related.taskGroups.get(item.row.taskId),
+        messageId: item.row.messageId,
+        attachmentId: item.row.attachmentId,
+        assistantStreamId: item.row.assistantStreamId,
+      }
+    case 'taskComments':
+      return { taskId: item.row.taskId, groupId: item.row.originalGroupId ?? related.taskGroups.get(item.row.taskId) }
+    case 'taskActivities':
+      return { taskId: item.row.taskId, groupId: item.row.originalGroupId ?? related.taskGroups.get(item.row.taskId) }
+    case 'taskSuggestionReferences':
+      return {
+        groupId: item.row.groupId ?? related.suggestionGroups.get(item.row.suggestionId),
+        messageId: item.row.messageId,
+        attachmentId: item.row.attachmentId,
+      }
+    case 'taskBoards':
+      return { groupId: item.row.groupId }
+    case 'taskSuggestions':
+      return { groupId: item.row.groupId }
+    case 'taskLabels':
+      return {}
+  }
+  throw new Error('task_stage_metadata_invalid')
+}
+
+function rowForStage(result: TaskPage): Array<SnapshotRow> {
+  switch (result.table) {
+    case 'taskBoards': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskWorkflowStates': return result.page.map((row) => ({ table: result.table, row }))
+    case 'tasks': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskLabels': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskLabelLinks': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskReferences': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskComments': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskActivities': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskSuggestions': return result.page.map((row) => ({ table: result.table, row }))
+    case 'taskSuggestionReferences': return result.page.map((row) => ({ table: result.table, row }))
+  }
+  throw new Error('task_stage_table_invalid')
+}
+
+async function legacyTaskRows(
+  ctx: MutationCtx,
+  projectId: Id<'projects'>,
+): Promise<Array<SnapshotRow>> {
+  const [boards, workflowStates, tasks, labels, labelLinks, references, comments, activities, suggestions, suggestionReferences] = await Promise.all([
+    ctx.db.query('taskBoards').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskWorkflowStates').withIndex('by_project_category', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskLabels').withIndex('by_project_archived', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskLabelLinks').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskReferences').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskComments').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskActivities').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskSuggestions').withIndex('by_project_status', (q) => q.eq('projectId', projectId)).collect(),
+    ctx.db.query('taskSuggestionReferences').withIndex('by_project_created_at', (q) => q.eq('projectId', projectId)).collect(),
+  ])
+  return [
+    ...boards.map((row) => ({ table: 'taskBoards' as const, row })),
+    ...workflowStates.map((row) => ({ table: 'taskWorkflowStates' as const, row })),
+    ...tasks.map((row) => ({ table: 'tasks' as const, row })),
+    ...labels.map((row) => ({ table: 'taskLabels' as const, row })),
+    ...labelLinks.map((row) => ({ table: 'taskLabelLinks' as const, row })),
+    ...references.map((row) => ({ table: 'taskReferences' as const, row })),
+    ...comments.map((row) => ({ table: 'taskComments' as const, row })),
+    ...activities.map((row) => ({ table: 'taskActivities' as const, row })),
+    ...suggestions.map((row) => ({ table: 'taskSuggestions' as const, row })),
+    ...suggestionReferences.map((row) => ({ table: 'taskSuggestionReferences' as const, row })),
+  ]
+}
+
+async function stageTaskRows(
+  ctx: MutationCtx,
+  input: {
+    projectCompanyId: Id<'projectCompanies'>
+    projectId: Id<'projects'>
+    operationId?: string
+    cutoff: number
+  },
+  items: ReadonlyArray<SnapshotRow>,
+) {
+  const related = await relatedTaskRows(ctx, items)
+  let stagedCount = 0
+  for (const item of items) {
+    if (item.row.createdAt > input.cutoff) continue
+    const metadata = stageMetadata(item, related)
+    const existing = input.operationId
+      ? await ctx.db.query('taskExitSnapshotStaging').withIndex('by_project_company_operation_source', (q) =>
+          q.eq('projectCompanyId', input.projectCompanyId)
+            .eq('operationId', input.operationId)
+            .eq('sourceTable', item.table)
+            .eq('sourceId', String(item.row._id)),
+        ).unique()
+      : null
+    if (existing) continue
+    await ctx.db.insert('taskExitSnapshotStaging', {
+      projectCompanyId: input.projectCompanyId,
+      projectId: input.projectId,
+      operationId: input.operationId,
+      ...metadata,
+      taskSearchText: normalizeTaskText(metadata.taskSearchText ?? ''),
+      sourceTable: item.table,
+      sourceId: String(item.row._id),
+      payload: item.row,
+      cutoff: input.cutoff,
+      createdAt: Date.now(),
+    })
+    stagedCount += 1
+  }
+  return stagedCount
+}
+
+export async function clearTaskExitStagingBatch(
+  ctx: MutationCtx,
+  input: {
+    projectCompanyId: Id<'projectCompanies'>
+    operationId?: string
+    cursor?: string | null
+  },
+) {
+  const source = input.operationId
+    ? ctx.db.query('taskExitSnapshotStaging').withIndex('by_project_company_operation', (q) =>
+        q.eq('projectCompanyId', input.projectCompanyId).eq('operationId', input.operationId),
+      )
+    : ctx.db.query('taskExitSnapshotStaging').withIndex('by_project_company', (q) =>
+        q.eq('projectCompanyId', input.projectCompanyId),
+      )
+  const result = await source.paginate({ cursor: input.cursor ?? null, numItems: taskExitBatchSize })
+  for (const row of result.page) await ctx.db.delete(row._id)
+  return { cursor: result.isDone ? null : result.continueCursor, done: result.isDone }
+}
+
 export async function clearTaskExitStaging(
   ctx: MutationCtx,
   projectCompanyId: Id<'projectCompanies'>,
+  operationId?: string,
 ) {
-  const rows = await ctx.db
-    .query('taskExitSnapshotStaging')
-    .withIndex('by_project_company', (q) =>
-      q.eq('projectCompanyId', projectCompanyId),
-    )
-    .collect()
+  const rows = operationId
+    ? await ctx.db.query('taskExitSnapshotStaging')
+      .withIndex('by_project_company_operation', (q) =>
+        q.eq('projectCompanyId', projectCompanyId).eq('operationId', operationId),
+      )
+      .collect()
+    : await ctx.db.query('taskExitSnapshotStaging')
+      .withIndex('by_project_company', (q) => q.eq('projectCompanyId', projectCompanyId))
+      .collect()
   for (const row of rows) await ctx.db.delete(row._id)
+}
+
+export async function captureTaskExitStagingBatch(
+  ctx: MutationCtx,
+  input: {
+    projectCompanyId: Id<'projectCompanies'>
+    projectId: Id<'projects'>
+    operationId?: string
+    cutoff: number
+    cursor?: string | null
+  },
+) {
+  const state = decodeTaskCursor(input.cursor)
+  const result = await taskPage(ctx, input.projectId, state)
+  const items = rowForStage(result)
+  const stagedCount = await stageTaskRows(ctx, input, items)
+  return { ...nextTaskState(state, result), stagedCount }
 }
 
 export async function captureTaskExitStaging(
@@ -202,167 +737,68 @@ export async function captureTaskExitStaging(
   input: {
     projectCompanyId: Id<'projectCompanies'>
     projectId: Id<'projects'>
+    operationId?: string
     cutoff: number
   },
 ) {
-  await clearTaskExitStaging(ctx, input.projectCompanyId)
-  const boards = await ctx.db
-    .query('taskBoards')
-    .withIndex('by_project_archived', (q) => q.eq('projectId', input.projectId))
-    .collect()
-  const boardGroups = new Map(
-    boards.map((board) => [String(board._id), board.groupId]),
-  )
-  const tasks = await ctx.db
-    .query('tasks')
-    .withIndex('by_project_archived', (q) => q.eq('projectId', input.projectId))
-    .collect()
-  const taskGroups = new Map(
-    tasks.map((task) => [String(task._id), task.groupId]),
-  )
-  const suggestions = await ctx.db
-    .query('taskSuggestions')
-    .withIndex('by_project_status', (q) => q.eq('projectId', input.projectId))
-    .collect()
-  const suggestionGroups = new Map(
-    suggestions.map((suggestion) => [
-      String(suggestion._id),
-      suggestion.groupId,
-    ]),
-  )
-  const rows = {
-    taskBoards: boards,
-    taskWorkflowStates: (
-      await Promise.all(
-        boards.map((board) =>
-          ctx.db
-            .query('taskWorkflowStates')
-            .withIndex('by_board_rank', (q) => q.eq('boardId', board._id))
-            .collect(),
-        ),
-      )
-    ).flat(),
-    tasks,
-    taskLabels: await ctx.db
-      .query('taskLabels')
-      .withIndex('by_project_archived', (q) =>
-        q.eq('projectId', input.projectId),
-      )
-      .collect(),
-    taskLabelLinks: (
-      await Promise.all(
-        tasks.map((task) =>
-          ctx.db
-            .query('taskLabelLinks')
-            .withIndex('by_task', (q) => q.eq('taskId', task._id))
-            .collect(),
-        ),
-      )
-    ).flat(),
-    taskReferences: (
-      await Promise.all(
-        tasks.map((task) =>
-          ctx.db
-            .query('taskReferences')
-            .withIndex('by_task_rank', (q) => q.eq('taskId', task._id))
-            .collect(),
-        ),
-      )
-    ).flat(),
-    taskComments: (
-      await Promise.all(
-        tasks.map((task) =>
-          ctx.db
-            .query('taskComments')
-            .withIndex('by_task_created_at', (q) => q.eq('taskId', task._id))
-            .collect(),
-        ),
-      )
-    ).flat(),
-    taskActivities: (
-      await Promise.all(
-        tasks.map((task) =>
-          ctx.db
-            .query('taskActivities')
-            .withIndex('by_task_created_at', (q) => q.eq('taskId', task._id))
-            .collect(),
-        ),
-      )
-    ).flat(),
-    taskSuggestions: suggestions,
-    taskSuggestionReferences: (
-      await Promise.all(
-        suggestions.map((suggestion) =>
-          ctx.db
-            .query('taskSuggestionReferences')
-            .withIndex('by_suggestion_rank', (q) =>
-              q.eq('suggestionId', suggestion._id),
-            )
-            .collect(),
-        ),
-      )
-    ).flat(),
-  }
-  for (const table of snapshotTables) {
-    for (const row of rows[table]) {
-      if (row.createdAt > input.cutoff) continue
-      const groupId = groupForSnapshot(
-        table,
-        row as never,
-        boardGroups,
-        taskGroups,
-        suggestionGroups,
-      )
-      await ctx.db.insert('taskExitSnapshotStaging', {
-        projectCompanyId: input.projectCompanyId,
-        projectId: input.projectId,
-        sourceTable: table,
-        sourceId: String(row._id),
-        groupId,
-        payload: row,
-        cutoff: input.cutoff,
-        createdAt: Date.now(),
-      })
-    }
-  }
+  await clearTaskExitStaging(ctx, input.projectCompanyId, input.operationId)
+  await stageTaskRows(ctx, input, await legacyTaskRows(ctx, input.projectId))
 }
 
-function groupForSnapshot(
-  table: SnapshotTable,
-  row: Record<string, unknown>,
-  boardGroups: ReadonlyMap<string, Id<'groups'> | undefined>,
-  taskGroups: ReadonlyMap<string, Id<'groups'> | undefined>,
-  suggestionGroups: ReadonlyMap<string, Id<'groups'> | undefined>,
+export async function materializeTaskArchiveSnapshotsBatch(
+  ctx: MutationCtx,
+  input: {
+    entitlementId: Id<'projectArchiveEntitlements'>
+    projectCompanyId: Id<'projectCompanies'>
+    projectId: Id<'projects'>
+    channelIds: ReadonlyArray<Id<'groups'>>
+    operationId?: string
+    cursor?: string | null
+  },
 ) {
-  if (
-    table === 'taskBoards' ||
-    table === 'tasks' ||
-    table === 'taskSuggestions'
-  ) {
-    return row.groupId as Id<'groups'> | undefined
+  const allowed = new Set(input.channelIds)
+  const source = input.operationId
+    ? ctx.db.query('taskExitSnapshotStaging').withIndex('by_project_company_operation', (q) =>
+        q.eq('projectCompanyId', input.projectCompanyId).eq('operationId', input.operationId),
+      )
+    : ctx.db.query('taskExitSnapshotStaging').withIndex('by_project_company', (q) =>
+        q.eq('projectCompanyId', input.projectCompanyId),
+      )
+  const result = await source.paginate({ cursor: input.cursor ?? null, numItems: taskExitBatchSize })
+  for (const row of result.page) {
+    if (row.groupId && !allowed.has(row.groupId)) continue
+    const searchFields = taskArchiveSearchFields(row.payload, row)
+    const existing = await ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_source', (q) =>
+      q.eq('entitlementId', input.entitlementId)
+        .eq('sourceTable', row.sourceTable)
+        .eq('sourceId', row.sourceId),
+    ).unique()
+    if (existing) {
+      const patch: {
+        taskPublicKey?: string
+        taskSearchText?: string
+      } = {}
+      if (existing.taskPublicKey !== searchFields.taskPublicKey) patch.taskPublicKey = searchFields.taskPublicKey
+      if (existing.taskSearchText !== searchFields.taskSearchText) patch.taskSearchText = searchFields.taskSearchText
+      if (Object.keys(patch).length > 0) await ctx.db.patch(existing._id, patch)
+      continue
+    }
+    await ctx.db.insert('taskArchiveSnapshots', {
+      entitlementId: input.entitlementId,
+      projectId: input.projectId,
+      sourceTable: row.sourceTable,
+      sourceId: row.sourceId,
+      taskId: row.taskId,
+      ...searchFields,
+      groupId: row.groupId,
+      messageId: row.messageId,
+      attachmentId: row.attachmentId,
+      assistantStreamId: row.assistantStreamId,
+      payload: decodeTaskArchivePayload(row.sourceTable, row.payload),
+      createdAt: Date.now(),
+    })
   }
-  if (table === 'taskWorkflowStates')
-    return boardGroups.get(String(row.boardId))
-  if (table === 'taskLabelLinks') return taskGroups.get(String(row.taskId))
-  if (table === 'taskReferences') {
-    return (
-      (row.groupId as Id<'groups'> | undefined) ??
-      taskGroups.get(String(row.taskId))
-    )
-  }
-  if (table === 'taskComments' || table === 'taskActivities') {
-    return (
-      (row.originalGroupId as Id<'groups'> | undefined) ??
-      taskGroups.get(String(row.taskId))
-    )
-  }
-  if (table === 'taskSuggestionReferences') {
-    return (
-      (row.groupId as Id<'groups'> | undefined) ??
-      suggestionGroups.get(String(row.suggestionId))
-    )
-  }
-  return undefined
+  return { cursor: result.isDone ? null : result.continueCursor, done: result.isDone }
 }
 
 export async function materializeTaskArchiveSnapshots(
@@ -372,32 +808,49 @@ export async function materializeTaskArchiveSnapshots(
     projectCompanyId: Id<'projectCompanies'>
     projectId: Id<'projects'>
     channelIds: ReadonlyArray<Id<'groups'>>
+    operationId?: string
   },
 ) {
-  const allowed = new Set(input.channelIds.map(String))
-  const staged = await ctx.db
-    .query('taskExitSnapshotStaging')
-    .withIndex('by_project_company', (q) =>
-      q.eq('projectCompanyId', input.projectCompanyId),
-    )
-    .collect()
+  const allowed = new Set(input.channelIds)
+  const staged = input.operationId
+    ? await ctx.db.query('taskExitSnapshotStaging')
+      .withIndex('by_project_company_operation', (q) =>
+        q.eq('projectCompanyId', input.projectCompanyId).eq('operationId', input.operationId),
+      )
+      .collect()
+    : await ctx.db.query('taskExitSnapshotStaging')
+      .withIndex('by_project_company', (q) => q.eq('projectCompanyId', input.projectCompanyId))
+      .collect()
   for (const row of staged) {
-    if (row.groupId && !allowed.has(String(row.groupId))) continue
-    const payload = row.payload as {
-      messageId?: Id<'messages'>
-      attachmentId?: Id<'attachments'>
-      assistantStreamId?: Id<'assistantStreams'>
+    if (row.groupId && !allowed.has(row.groupId)) continue
+    const searchFields = taskArchiveSearchFields(row.payload, row)
+    const existing = await ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_source', (q) =>
+      q.eq('entitlementId', input.entitlementId)
+        .eq('sourceTable', row.sourceTable)
+        .eq('sourceId', row.sourceId),
+    ).unique()
+    if (existing) {
+      const patch: {
+        taskPublicKey?: string
+        taskSearchText?: string
+      } = {}
+      if (existing.taskPublicKey !== searchFields.taskPublicKey) patch.taskPublicKey = searchFields.taskPublicKey
+      if (existing.taskSearchText !== searchFields.taskSearchText) patch.taskSearchText = searchFields.taskSearchText
+      if (Object.keys(patch).length > 0) await ctx.db.patch(existing._id, patch)
+      continue
     }
     await ctx.db.insert('taskArchiveSnapshots', {
       entitlementId: input.entitlementId,
       projectId: input.projectId,
       sourceTable: row.sourceTable,
       sourceId: row.sourceId,
+      taskId: row.taskId,
+      ...searchFields,
       groupId: row.groupId,
-      messageId: payload.messageId,
-      attachmentId: payload.attachmentId,
-      assistantStreamId: payload.assistantStreamId,
-      payload,
+      messageId: row.messageId,
+      attachmentId: row.attachmentId,
+      assistantStreamId: row.assistantStreamId,
+      payload: decodeTaskArchivePayload(row.sourceTable, row.payload),
       createdAt: Date.now(),
     })
   }

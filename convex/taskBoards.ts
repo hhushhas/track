@@ -5,6 +5,14 @@ import type { MutationCtx } from './_generated/server'
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
+import {
+  isTaskArchiveBoardPayload,
+  isTaskArchiveStatePayload,
+  taskArchiveGroupIsVisible,
+  taskArchiveRowsPage,
+  taskArchiveSourceForEntitlement,
+} from './lib/taskData'
 import { resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskStateCategory } from './schema/taskValidators'
 import { rescheduleTaskReminders } from './taskReminders'
@@ -13,6 +21,8 @@ const identityArgs = {
   actingCompanyId: v.optional(v.id('companies')),
   projectMemberId: v.optional(v.id('projectMembers')),
 }
+
+const boardPageLimit = 100
 
 const standardWorkflow = [
   { name: 'Backlog', category: 'backlog', token: 'neutral' },
@@ -114,17 +124,27 @@ export const list = query({
     const actor = await requireAuthenticatedActor(ctx)
     const projectAccess = await resolveTaskRequestContext(ctx, actor, args.projectId, args)
     if (projectAccess.capabilities.accessMode === 'archive' && projectAccess.entitlement) {
+      const archiveSource = taskArchiveSourceForEntitlement(projectAccess.entitlement)
       const [boardRows, stateRows] = await Promise.all([
-        ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_table', (q) =>
-          q.eq('entitlementId', projectAccess.entitlement!._id).eq('sourceTable', 'taskBoards'),
-        ).collect(),
-        ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_table', (q) =>
-          q.eq('entitlementId', projectAccess.entitlement!._id).eq('sourceTable', 'taskWorkflowStates'),
-        ).collect(),
+        taskArchiveRowsPage(ctx, archiveSource, 'taskBoards', { cursor: null, numItems: boardPageLimit }),
+        taskArchiveRowsPage(ctx, archiveSource, 'taskWorkflowStates', { cursor: null, numItems: boardPageLimit }),
       ])
-      const states = stateRows.map((row) => row.payload as Doc<'taskWorkflowStates'>)
-      return boardRows.map((row) => row.payload as Doc<'taskBoards'>)
-        .filter((board) => args.includeArchived || !board.archivedAt)
+      const states = stateRows.page.flatMap((row) =>
+        isTaskArchiveStatePayload(row.payload) ? [row.payload] : [])
+      const boards = boardRows.page.flatMap((row) =>
+        isTaskArchiveBoardPayload(row.payload) ? [row.payload] : [])
+      const visibleBoards = []
+      for (const board of boards) {
+        if (board.projectId !== args.projectId || (board.archivedAt && !args.includeArchived)) continue
+        if (board.groupId && !await taskArchiveGroupIsVisible(
+          ctx,
+          projectAccess.entitlement,
+          projectAccess.projectMember._id,
+          board.groupId,
+        )) continue
+        visibleBoards.push(board)
+      }
+      return visibleBoards
         .map((board) => ({
           board,
           states: states.filter((state) => state.boardId === board._id && !state.archivedAt),
@@ -168,6 +188,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args, args.groupId)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     if (!access.capabilities.canManageProject || (args.groupId && !access.capabilities.canReadChannel)) {
       throw new Error('task_board_manage_forbidden')
     }
@@ -212,6 +233,7 @@ export const update = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     await ctx.db.patch(board._id, {
       name: validBoardName(args.name),
@@ -229,6 +251,7 @@ export const reorder = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     const boards = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     boards.sort((left, right) => (left.rank ?? String(left.createdAt)).localeCompare(right.rank ?? String(right.createdAt)))
@@ -260,6 +283,7 @@ export const configureWorkflow = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board || board.archivedAt) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     if (args.states.length < 2 || args.defaultIndex < 0 || args.defaultIndex >= args.states.length) {
       throw new Error('task_workflow_invalid')
@@ -374,6 +398,7 @@ export const setDefault = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board || board.archivedAt) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     const now = Date.now()
@@ -391,6 +416,7 @@ export const archive = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     if (board.archivedAt) return board._id
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
@@ -420,6 +446,7 @@ export const restore = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     const active = await activeBoardsForScope(ctx, board.projectId, board.groupId)
     const now = Date.now()
@@ -439,6 +466,7 @@ export const addWorkflowState = mutation({
     const board = await ctx.db.get(args.boardId)
     if (!board || board.archivedAt) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     const states = await ctx.db.query('taskWorkflowStates')
       .withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).collect()
@@ -463,6 +491,7 @@ export const removeWorkflowState = mutation({
     const board = await ctx.db.get(state.boardId)
     if (!board) throw new Error('task_destination_invalid')
     const access = await resolveTaskRequestContext(ctx, actor, board.projectId, args, board.groupId)
+    await assertProjectSnapshotWritable(ctx, board.projectId)
     requireBoardManagement(access.capabilities, board.groupId)
     const tasks = await ctx.db.query('tasks')
       .withIndex('by_board_state_rank', (q) => q.eq('boardId', board._id).eq('workflowStateId', state._id))

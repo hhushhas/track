@@ -9,6 +9,14 @@ const openRouterAppUrl = process.env.OPENROUTER_APP_URL ?? process.env.SITE_URL 
 const openRouterAppTitle = process.env.OPENROUTER_APP_TITLE ?? "Track";
 const openRouterAppCategories = process.env.OPENROUTER_APP_CATEGORIES ?? "general-chat";
 
+/** Provider calls must terminate so an assistant stream can reach a terminal state. */
+export const assistantProviderTimeoutMs = 45_000;
+export const documentReaderProviderTimeoutMs = 30_000;
+
+export function providerTimeoutMessage(model: string, timeoutMs: number) {
+	return `Provider request timed out after ${timeoutMs}ms for ${model}. Please try again.`;
+}
+
 function getOpenRouterAttributionHeaders() {
 	return {
 		"HTTP-Referer": openRouterAppUrl,
@@ -37,7 +45,10 @@ function compactModelText(text: string, maxLength = 1600) {
 	return compacted.length > maxLength ? `${compacted.slice(0, maxLength - 3).trim()}...` : compacted;
 }
 
-function normalizeProviderError(error: unknown, model: string): never {
+function normalizeProviderError(error: unknown, model: string, timeoutMs: number): never {
+	if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+		throw new Error(providerTimeoutMessage(model, timeoutMs));
+	}
 	if (APICallError.isInstance(error)) {
 		const message = error.message ? ` message=${compactModelText(error.message, 300)}` : "";
 		const status = error.statusCode ? ` status=${error.statusCode}` : "";
@@ -69,6 +80,7 @@ async function generateOpenRouterText(prompt: string) {
 			model: modelName,
 			reasoning: { effort: "high" },
 		}),
+		signal: AbortSignal.timeout(assistantProviderTimeoutMs),
 	});
 	const rawBody = await response.text();
 	let body: {
@@ -111,6 +123,8 @@ export async function generateTrackText(prompt: string | ModelMessage[]) {
 		const { text } = await generateText({
 			model: openrouter.chat(modelName),
 			messages: prompt,
+			maxRetries: 0,
+			timeout: assistantProviderTimeoutMs,
 			providerOptions: {
 				openrouter: {
 					reasoning: { effort: "high" },
@@ -119,7 +133,7 @@ export async function generateTrackText(prompt: string | ModelMessage[]) {
 		});
 		return { model: modelName, text };
 	} catch (error) {
-		normalizeProviderError(error, modelName);
+		normalizeProviderError(error, modelName, assistantProviderTimeoutMs);
 	}
 }
 
@@ -170,6 +184,8 @@ export async function generateTrackDocumentNotes(input: {
 					],
 				},
 			],
+			maxRetries: 0,
+			timeout: documentReaderProviderTimeoutMs,
 			providerOptions: {
 				openrouter: {
 					reasoning: { effort: "high" },
@@ -179,6 +195,6 @@ export async function generateTrackDocumentNotes(input: {
 
 		return { model: documentReaderModelName, text: compactModelText(text) };
 	} catch (error) {
-		normalizeProviderError(error, documentReaderModelName);
+		normalizeProviderError(error, documentReaderModelName, documentReaderProviderTimeoutMs);
 	}
 }

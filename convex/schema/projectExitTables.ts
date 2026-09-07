@@ -1,0 +1,179 @@
+import { defineTable } from 'convex/server'
+import { v } from 'convex/values'
+
+import { companyProjectRole, projectMemberStatus } from './companyValidators'
+
+export const exitSnapshotStatus = v.union(
+  v.literal('capturing'),
+  v.literal('failed'),
+  v.literal('verified'),
+  v.literal('cancelled'),
+)
+
+export const exitSnapshotPhase = v.union(
+  v.literal('members'),
+  v.literal('channels'),
+  v.literal('threads'),
+  v.literal('tasks'),
+  v.literal('memory'),
+  v.literal('complete'),
+)
+
+export const exitSnapshotScope = v.union(
+  v.literal('member'),
+  v.literal('channel'),
+  v.literal('thread'),
+  v.literal('memory'),
+)
+
+const memberSnapshot = v.object({
+  membership: v.object({
+    _id: v.id('projectMembers'),
+    companyId: v.optional(v.id('companies')),
+    role: companyProjectRole,
+    status: v.optional(projectMemberStatus),
+    userId: v.id('users'),
+    userDisplayNameSnapshot: v.optional(v.string()),
+    companyDisplayNameSnapshot: v.optional(v.string()),
+  }),
+  user: v.object({
+    _id: v.id('users'),
+    displayName: v.string(),
+  }),
+  company: v.optional(v.object({
+    _id: v.id('companies'),
+    displayName: v.string(),
+  })),
+})
+
+const channelSnapshot = v.object({
+  _id: v.id('groups'),
+  createdAt: v.number(),
+  kind: v.string(),
+  name: v.string(),
+  status: v.optional(v.string()),
+})
+
+const threadSnapshot = v.object({
+  _id: v.id('channelThreads'),
+  createdAt: v.number(),
+  groupId: v.id('groups'),
+  name: v.string(),
+  status: v.union(v.literal('active'), v.literal('archived')),
+  revision: v.number(),
+  sourceAvailable: v.boolean(),
+  following: v.boolean(),
+  lastReadChannelSequence: v.number(),
+  replyCount: v.optional(v.number()),
+  latestReplyAt: v.optional(v.number()),
+  latestChannelSequence: v.optional(v.number()),
+})
+
+export const exitSnapshotPayload = v.union(
+  v.object({
+    kind: v.literal('member'),
+    snapshot: memberSnapshot,
+  }),
+  v.object({
+    kind: v.literal('channel'),
+    snapshot: channelSnapshot,
+  }),
+  v.object({
+    kind: v.literal('thread'),
+    snapshot: threadSnapshot,
+  }),
+  v.object({
+    kind: v.literal('memory'),
+    snapshot: v.object({
+      scope: v.union(v.literal('project'), v.literal('channel')),
+      groupId: v.optional(v.id('groups')),
+      sourceKind: v.string(),
+      sourceIdentifier: v.string(),
+      sourceRevision: v.optional(v.number()),
+      contentHash: v.string(),
+      contentLength: v.number(),
+      snapshotIdentifier: v.string(),
+    }),
+  }),
+)
+
+export const projectExitTables = {
+  projectExitOperations: defineTable({
+    projectCompanyId: v.id('projectCompanies'),
+    projectId: v.id('projects'),
+    operationId: v.string(),
+    cutoff: v.number(),
+    status: exitSnapshotStatus,
+    phase: exitSnapshotPhase,
+    cursor: v.optional(v.string()),
+    stagedCount: v.number(),
+    error: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_project_company_operation', [
+      'projectCompanyId',
+      'operationId',
+    ])
+    .index('by_project_status', ['projectId', 'status'])
+    .index('by_operation_status', ['operationId', 'status']),
+
+  projectExitSnapshotStaging: defineTable({
+    projectCompanyId: v.id('projectCompanies'),
+    projectId: v.id('projects'),
+    operationId: v.string(),
+    scope: exitSnapshotScope,
+    projectMemberId: v.optional(v.id('projectMembers')),
+    groupId: v.optional(v.id('groups')),
+    threadId: v.optional(v.id('channelThreads')),
+    sourceKind: exitSnapshotScope,
+    sourceId: v.string(),
+    searchText: v.optional(v.string()),
+    cutoff: v.number(),
+    payload: exitSnapshotPayload,
+    createdAt: v.number(),
+  })
+    .index('by_operation', ['operationId'])
+    .index('by_operation_member', ['operationId', 'projectMemberId'])
+    .index('by_operation_member_scope', [
+      'operationId',
+      'projectMemberId',
+      'scope',
+    ])
+    .index('by_operation_member_thread', [
+      'operationId',
+      'projectMemberId',
+      'threadId',
+    ])
+    .index('by_operation_scope', ['operationId', 'scope', 'sourceId'])
+    .searchIndex('search_name_by_operation', {
+      searchField: 'searchText',
+      filterFields: ['operationId', 'scope', 'projectMemberId'],
+    })
+    .index('by_operation_source', [
+      'operationId',
+      'sourceKind',
+      'sourceId',
+      'projectMemberId',
+    ]),
+
+  projectExitChannelVisibility: defineTable({
+    projectCompanyId: v.id('projectCompanies'),
+    projectId: v.id('projects'),
+    operationId: v.string(),
+    projectMemberId: v.id('projectMembers'),
+    groupId: v.id('groups'),
+    createdAt: v.number(),
+  })
+    .index('by_operation_member', [
+      'operationId',
+      'projectMemberId',
+      'groupId',
+    ])
+    .index('by_operation_group', ['operationId', 'groupId'])
+    .index('by_project_company_operation', [
+      'projectCompanyId',
+      'operationId',
+    ]),
+} as const

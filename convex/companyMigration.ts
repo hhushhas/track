@@ -142,7 +142,7 @@ export const initiate = mutation({
   handler: async (ctx, args) => {
     requireCompanyModelEnabled()
     const actor = await requireAuthenticatedActor(ctx)
-    await requireProjectOwner(ctx, args.projectId, actor.userId)
+    const legacyOwner = await requireProjectOwner(ctx, args.projectId, actor.userId)
     await requireCompanyAdmin(ctx, actor, args.initiatingCompanyId)
     const project = await ctx.db.get(args.projectId)
     if (!project || resolveProjectAccessProfile(project.accessProfile) !== 'legacy') throw new Error('legacy_project_required')
@@ -160,6 +160,12 @@ export const initiate = mutation({
     if (mappingIds.size !== members.length || members.some((member) => !mappingIds.has(member._id))) {
       throw new Error('every_project_member_must_be_mapped')
     }
+    const owningCompanyMapping = args.mappings.find((mapping) =>
+      mapping.projectMemberId === legacyOwner._id &&
+      mapping.companyId === args.initiatingCompanyId &&
+      mapping.neutralRole === 'manager',
+    )
+    if (!owningCompanyMapping) throw new Error('owning_company_manager_mapping_required')
     const companyIds = Array.from(new Set(args.mappings.map((mapping) => mapping.companyId)))
     if (!companyIds.includes(args.initiatingCompanyId)) throw new Error('initiating_company_mapping_required')
     if (companyIds.length > 1 && !args.relationshipId) throw new Error('relationship_required')
@@ -289,7 +295,7 @@ export const activate = mutation({
     if (!upgrade) throw new Error('upgrade_unavailable')
     if (upgrade.status === 'activated') return upgrade.projectId
     if (upgrade.status !== 'ready') throw new Error('upgrade_not_ready')
-    await requireProjectOwner(ctx, upgrade.projectId, actor.userId)
+    const legacyOwner = await requireProjectOwner(ctx, upgrade.projectId, actor.userId)
     const project = await ctx.db.get(upgrade.projectId)
     if (
       !project ||
@@ -308,6 +314,12 @@ export const activate = mutation({
     const currentGroupMemberships = (await Promise.all(currentGroups.map((group) =>
       ctx.db.query('groupMembers').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect(),
     ))).flat()
+    const owningCompanyMapping = mappings.find((mapping) =>
+      mapping.legacyProjectMemberId === legacyOwner._id &&
+      mapping.companyId === upgrade.initiatingCompanyId &&
+      mapping.neutralRole === 'manager',
+    )
+    if (!owningCompanyMapping) throw new Error('owning_company_manager_mapping_required')
     const sameIds = (left: Array<unknown>, right: Array<unknown>) =>
       left.map(String).sort().join('|') === right.map(String).sort().join('|')
     if (
@@ -401,6 +413,7 @@ export const activate = mutation({
     }
     await ctx.db.patch(project._id, {
       accessProfile: 'company',
+      owningCompanyId: upgrade.initiatingCompanyId,
       relationshipId: upgrade.relationshipId,
       proposingCompanyId: upgrade.initiatingCompanyId,
       origin: confirmations.length === 1 ? 'single_company' : 'shared',

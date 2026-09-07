@@ -1,54 +1,37 @@
 import { Fragment } from 'react'
-import type { ComponentProps } from 'react'
 import type { ClipboardEvent, RefObject } from 'react'
-import { AtSign, Bot, ChevronDown, CornerUpLeft, Import, MessagesSquare, Paperclip, Smile, X } from 'lucide-react'
+import { ChevronDown, MessagesSquare } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
-import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
-import { Textarea } from '#/components/ui/textarea'
-import { AttachmentTypeIcon, formatFileSize } from '#/features/workspace/attachment-ui'
 import type { createPendingAttachment } from '#/features/workspace/attachments/pending-attachments'
-import { getInitials } from '#/features/workspace/identity'
+import {
+  ConversationComposer,
+  type ConversationComposerProps,
+} from '#/features/workspace/components/ConversationComposer'
 import { formatThreadDayLabel, getThreadDayKey } from '#/features/workspace/lib/thread-date'
 import { AssistantAnswer, MessageRow } from '#/features/workspace/thread-items'
 import type { GroupMessageItem, MessageCitationPreview } from '#/features/workspace/thread-items'
+import type { GroupReference } from '#/features/workspace/group-types'
 import { ThreadDaySeparator } from '#/features/workspace/components/ThreadDaySeparator'
-import { TypingIndicatorLine } from '#/features/workspace/typing-indicators'
-import {
-  VoiceNoteReview,
-  VoiceRecorder,
-  formatVoiceDuration,
-  isVoiceNoteAttachment,
-} from '#/features/workspace/voice-notes'
 import type { ChatSearchMatch } from '#/features/workspace/search/chat-search'
 import type { WorkspaceThreadItem } from '#/features/workspace/search/chat-thread-data'
 import { ChannelTaskPanel } from '#/features/tasks/ConversationTaskActions'
+import { TaskLinkBatchProvider } from '#/features/tasks/task-link-context'
 import { ChannelThreadBrowser } from '#/features/threads/ChannelThreadBrowser'
 import { useReleaseConfig } from '#/lib/release-config'
 
 type PendingAttachment = ReturnType<typeof createPendingAttachment>
-type ActiveTypingIndicator = ComponentProps<typeof TypingIndicatorLine>['indicators'][number]
-
-type MentionOption = {
-  id: string
-  kind: 'assistant' | 'group' | 'member'
-  label: string
-  sublabel: string
-  handle: string
-  tone: string
-}
-
-type MentionSection = {
-  label: string
-  options: Array<MentionOption>
-}
+type ActiveTypingIndicator = NonNullable<ConversationComposerProps['activeTypingIndicators']>[number]
+type MentionOption = ConversationComposerProps['filteredMentionOptions'][number]
+type MentionSection = ConversationComposerProps['mentionSections'][number]
 
 type GroupChatPageProps = {
   activeGroup: Doc<'groups'> | undefined
   activeGroupId: Id<'groups'> | null
   activeProjectId: Id<'projects'> | null
   activeTypingIndicators: Array<ActiveTypingIndicator>
+  assistantRetryPending?: boolean
   busyAction: string | null
   chatSearchMatchKeys: Set<string>
   chatSearchMatches: Array<ChatSearchMatch>
@@ -64,7 +47,9 @@ type GroupChatPageProps = {
   fileInputRef: RefObject<HTMLInputElement | null>
   filteredMentionOptions: Array<MentionOption>
   flashingMessageId: string | null
-  mentionGroups: Map<string, Doc<'groups'>>
+  hasMoreMessages: boolean
+  loadingOlderMessages: boolean
+  mentionGroups: Map<string, GroupReference>
   mentionIndex: number
   mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
   mentionSections: Array<MentionSection>
@@ -92,6 +77,7 @@ type GroupChatPageProps = {
   onOpenGroup: (groupId: Id<'groups'>) => void
   onOpenMessageCitation: (messageId: Id<'messages'> | string) => void
   onOpenMessageSource: (groupId: Id<'groups'>, messageId: Id<'messages'>) => void
+  onLoadOlderMessages: () => void
   onRecordingChange: (recording: boolean) => void
   onReplyMessage: (item: GroupMessageItem) => void
   onReplyToMessageChange: (item: GroupMessageItem | null) => void
@@ -119,6 +105,7 @@ export function GroupChatPage({
   activeGroupId,
   activeProjectId,
   activeTypingIndicators,
+  assistantRetryPending = false,
   busyAction,
   chatSearchMatchKeys,
   chatSearchMatches,
@@ -131,6 +118,8 @@ export function GroupChatPage({
   fileInputRef,
   filteredMentionOptions,
   flashingMessageId,
+  hasMoreMessages,
+  loadingOlderMessages,
   mentionGroups,
   mentionIndex,
   mentionOptionRefs,
@@ -155,6 +144,7 @@ export function GroupChatPage({
   onOpenGroup,
   onOpenMessageCitation,
   onOpenMessageSource,
+  onLoadOlderMessages,
   onRecordingChange,
   onReplyMessage,
   onReplyToMessageChange,
@@ -177,7 +167,10 @@ export function GroupChatPage({
   voiceRecordingActive,
 }: GroupChatPageProps) {
   const releaseConfig = useReleaseConfig()
-  return (
+  const readOnly = activeGroup?.status === 'archived'
+  const taskLinkMessageIds = threadItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : [])
+  const taskLinkAssistantStreamIds = threadItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.stream._id] : [])
+  const content = (
     <>
       <div className="track-chat-mobile-context">
         {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} variant="rail" /> : null}
@@ -198,6 +191,16 @@ export function GroupChatPage({
         ref={threadScrollRef}
       >
         <div className="track-thread">
+          {hasMoreMessages ? (
+            <button
+              className="track-button"
+              disabled={loadingOlderMessages}
+              onClick={onLoadOlderMessages}
+              type="button"
+            >
+              {loadingOlderMessages ? 'Loading older messages…' : 'Load older messages'}
+            </button>
+          ) : null}
           {activeGroup && messagesLoaded && visibleMessages.length === 0 ? (
             <div className="track-empty-conversation">
               <span className="track-empty-conversation-icon">
@@ -234,7 +237,10 @@ export function GroupChatPage({
                     activeGroupId={activeGroupId}
                     avatarUrl={messageAuthorAvatarUrlById.get(threadItem.item.author?._id ?? '')}
                     busyAction={busyAction}
-                    canDeleteMessages={activeGroup?.status !== 'archived'}
+                    canCreateTasks={!readOnly}
+                    canDeleteMessages={!readOnly}
+                    canForwardMessages={!readOnly}
+                    canReply={!readOnly}
                     currentUserId={currentUserId}
                     groups={visibleGroups}
                     isFlashing={flashingMessageId === threadItem.item.message._id}
@@ -288,286 +294,66 @@ export function GroupChatPage({
         ) : null}
       </div>
 
-      <div className="track-composer-wrap">
-        <TypingIndicatorLine indicators={activeTypingIndicators} />
-        <div className={voiceRecordingActive ? 'track-composer recording' : 'track-composer'}>
-          {!voiceRecordingActive && replyToMessage ? (
-            <div className="track-composer-quote" aria-label="Replying to message">
-              <CornerUpLeft size={14} />
-              <span>
-                <strong>Replying to {replyToMessage.author?.displayName ?? 'Unknown Member'}</strong>
-                <small>{replyToMessage.message.body || 'Attachment message'}</small>
-              </span>
-              <button
-                aria-label="Cancel reply"
-                onClick={() => onReplyToMessageChange(null)}
-                type="button"
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ) : null}
-          {!voiceRecordingActive && pendingAttachments.length > 0 ? (
-            <div className="track-composer-attachments" aria-label="Pending attachments">
-              {pendingAttachments.map((attachment) => (
-                <div
-                  className={
-                    attachment.kind === 'voice_note'
-                      ? 'track-composer-attachment voice'
-                      : 'track-composer-attachment'
-                  }
-                  key={attachment.id}
-                >
-                  {attachment.kind === 'voice_note' && attachment.previewUrl ? (
-                    <VoiceNoteReview
-                      durationMs={attachment.durationMs}
-                      file={attachment.file}
-                      onRemove={() => removePendingAttachment(attachment.id)}
-                      previewUrl={attachment.previewUrl}
-                    />
-                  ) : attachment.previewUrl ? (
-                    <img alt="" src={attachment.previewUrl} />
-                  ) : (
-                    <span className="track-composer-file-icon">
-                      <AttachmentTypeIcon
-                        contentType={attachment.file.type}
-                        filename={attachment.file.name}
-                        size={18}
-                      />
-                    </span>
-                  )}
-                  {attachment.kind === 'voice_note' ? null : (
-                    <>
-                      <span className="track-composer-attachment-meta">
-                        <strong>{attachment.file.name}</strong>
-                        <small>
-                          {isVoiceNoteAttachment({
-                            contentType: attachment.file.type,
-                            filename: attachment.file.name,
-                            kind: attachment.kind,
-                          })
-                            ? formatVoiceDuration(attachment.durationMs)
-                            : formatFileSize(attachment.file.size)}
-                        </small>
-                      </span>
-                      <button
-                        aria-label={`Remove ${attachment.file.name}`}
-                        className="track-composer-attachment-remove"
-                        onClick={() => removePendingAttachment(attachment.id)}
-                        type="button"
-                      >
-                        <X size={13} />
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {!voiceRecordingActive ? (
-            <Textarea
-              aria-label={`Message ${activeGroup?.name ?? 'Group'}`}
-              disabled={!activeGroupId || busyAction === 'send-message'}
-              onBlur={onComposerBlur}
-              onChange={(event) => {
-                onComposerChange(event.currentTarget.value, event.currentTarget.selectionStart)
-                onEmojiPickerOpenChange(false)
-              }}
-              onFocus={onComposerFocus}
-              onKeyDown={(event) => {
-                if (emojiPickerOpen && event.key === 'Escape') {
-                  event.preventDefault()
-                  onEmojiPickerOpenChange(false)
-                  return
-                }
-                if (showMentionMenu) {
-                  if (event.key === 'ArrowDown') {
-                    event.preventDefault()
-                    onMentionIndexChange((index) => (index + 1) % filteredMentionOptions.length)
-                    return
-                  }
-                  if (event.key === 'ArrowUp') {
-                    event.preventDefault()
-                    onMentionIndexChange((index) => (index - 1 + filteredMentionOptions.length) % filteredMentionOptions.length)
-                    return
-                  }
-                  if (event.key === 'Enter' || event.key === 'Tab') {
-                    event.preventDefault()
-                    const option = filteredMentionOptions[mentionIndex] ?? filteredMentionOptions[0]
-                    if (option) onMentionSelect(option)
-                    return
-                  }
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    onShowMentionMenuClose()
-                    return
-                  }
-                }
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  onSendMessage()
-                }
-              }}
-              onKeyUp={onComposerKeyUp}
-              onPaste={onComposerPaste}
-              onSelect={onComposerSelect}
-              placeholder={composerPlaceholder}
-              ref={composerRef}
-              autoFocus
-              value={composer}
-            />
-          ) : null}
-          {!voiceRecordingActive && showMentionMenu ? (
-            <div className="track-mention-menu" role="listbox" aria-label="Mention someone">
-              {mentionSections.map((section) => (
-                <div className="track-mention-section" key={section.label}>
-                  <p className="track-mention-section-label">{section.label}</p>
-                  {section.options.map((option) => {
-                    const index = filteredMentionOptions.findIndex((item) => item.id === option.id)
-                    return (
-                      <button
-                        aria-selected={index === mentionIndex}
-                        className={index === mentionIndex ? 'track-mention-option active' : 'track-mention-option'}
-                        key={option.id}
-                        onMouseDown={(event) => {
-                          event.preventDefault()
-                          onMentionSelect(option)
-                        }}
-                        ref={(element) => {
-                          mentionOptionRefs.current[index] = element
-                        }}
-                        role="option"
-                        type="button"
-                      >
-                        <Avatar className={option.tone === 'bot' ? 'track-mention-avatar bot' : `track-mention-avatar ${option.tone}`}>
-                          <AvatarFallback>
-                            {option.kind === 'assistant' ? (
-                              <Bot size={13} />
-                            ) : option.kind === 'group' ? (
-                              <MessagesSquare size={13} />
-                            ) : (
-                              getInitials(option.label)
-                            )}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span>
-                          <strong>@{option.handle}</strong>
-                          <small>{option.label} · {option.sublabel}</small>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {!voiceRecordingActive && emojiPickerOpen ? (
-            <div className="track-emoji-picker" role="dialog" aria-label="Emoji picker">
-              {emojiGroups.map((group) => (
-                <div className="track-emoji-group" key={group.label}>
-                  <p className="mono-label m-0">{group.label}</p>
-                  <div className="track-emoji-grid">
-                    {group.emojis.map((emoji) => (
-                      <button
-                        aria-label={`Insert ${emoji}`}
-                        className="track-emoji-option"
-                        key={`${group.label}-${emoji}`}
-                        onMouseDown={(event) => {
-                          event.preventDefault()
-                          onInsertComposerText(emoji)
-                          onEmojiPickerOpenChange(false)
-                        }}
-                        type="button"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="track-composer-bar">
-            {!voiceRecordingActive ? (
-              <Button
-                className="icon-button"
-                disabled={!activeGroupId || busyAction === 'memory-import'}
-                onClick={onOpenMemoryImport}
-                title="Import project memory"
-                type="button"
-              >
-                <Import size={15} />
-              </Button>
-            ) : null}
-            {!voiceRecordingActive ? (
-              <Button
-                className="icon-button"
-                disabled={!activeGroupId || busyAction === 'send-message'}
-                onClick={() => fileInputRef.current?.click()}
-                title="Add attachment"
-                type="button"
-              >
-                <Paperclip size={15} />
-              </Button>
-            ) : null}
-            <VoiceRecorder
-              disabled={!activeGroupId || busyAction === 'send-message'}
-              onRecordingChange={onRecordingChange}
-              onRecorded={onVoiceNoteRecorded}
-            />
-            {!voiceRecordingActive ? (
-              <>
-                <Button
-                  className="icon-button"
-                  disabled={!activeGroupId || busyAction === 'send-message'}
-                  onClick={() => {
-                    onEmojiPickerOpenChange(false)
-                    const cursor = composerRef.current?.selectionStart ?? composer.length
-                    const spacer = cursor > 0 && !/\s$/.test(composer.slice(0, cursor)) ? ' @' : '@'
-                    const nextComposer = `${composer.slice(0, cursor)}${spacer}${composer.slice(cursor)}`
-                    const nextCursor = cursor + spacer.length
-                    onComposerChange(nextComposer, nextCursor)
-                    requestAnimationFrame(() => {
-                      composerRef.current?.focus()
-                      composerRef.current?.setSelectionRange(nextCursor, nextCursor)
-                    })
-                  }}
-                  title="Mention"
-                  type="button"
-                >
-                  <AtSign size={15} />
-                </Button>
-                <Button
-                  className="icon-button"
-                  disabled={!activeGroupId}
-                  onClick={() => {
-                    setComposerCursorFromRef()
-                    onEmojiPickerOpenChange(!emojiPickerOpen)
-                  }}
-                  title="Emoji"
-                  type="button"
-                >
-                  <Smile size={15} />
-                </Button>
-                <span className="track-composer-spacer" />
-                <Button
-                  className="track-button track-button-primary"
-                  disabled={
-                    (!composer.trim() && pendingAttachments.length === 0) ||
-                    !activeGroupId ||
-                    busyAction === 'send-message'
-                  }
-                  onClick={onSendMessage}
-                  type="button"
-                >
-                  Send
-                  <span className="track-send-key">↵</span>
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      {readOnly ? (
+        <output className="track-thread-archived">This Channel is archived and read-only.</output>
+      ) : (
+        <ConversationComposer
+          activeTypingIndicators={activeTypingIndicators}
+          ariaLabel={`Message ${activeGroup?.name ?? 'Group'}`}
+          available={Boolean(activeGroupId)}
+          busyAction={busyAction}
+          composer={composer}
+          composerRef={composerRef}
+          contentLocked={assistantRetryPending}
+          emojiGroups={emojiGroups}
+          emojiPickerOpen={emojiPickerOpen}
+          filteredMentionOptions={filteredMentionOptions}
+          mentionIndex={mentionIndex}
+          mentionOptionRefs={mentionOptionRefs}
+          mentionSections={mentionSections}
+          onAddAttachment={() => fileInputRef.current?.click()}
+          onComposerBlur={onComposerBlur}
+          onComposerChange={onComposerChange}
+          onComposerFocus={onComposerFocus}
+          onComposerKeyUp={onComposerKeyUp}
+          onComposerPaste={onComposerPaste}
+          onComposerSelect={onComposerSelect}
+          onEmojiPickerOpenChange={onEmojiPickerOpenChange}
+          onInsertComposerText={onInsertComposerText}
+          onMentionIndexChange={onMentionIndexChange}
+          onMentionSelect={onMentionSelect}
+          onOpenMemoryImport={onOpenMemoryImport}
+          onRecordingChange={onRecordingChange}
+          onReplyChange={(reply) => {
+            if (!reply) onReplyToMessageChange(null)
+          }}
+          onSendMessage={onSendMessage}
+          onShowMentionMenuClose={onShowMentionMenuClose}
+          onVoiceNoteRecorded={onVoiceNoteRecorded}
+          pendingAttachments={assistantRetryPending ? [] : pendingAttachments}
+          placeholder={composerPlaceholder}
+          removePendingAttachment={removePendingAttachment}
+          replyTo={assistantRetryPending ? null : replyToMessage
+              ? {
+                  authorName: replyToMessage.author?.displayName ?? 'Unknown Member',
+                  body: replyToMessage.message.body || 'Attachment message',
+                  messageId: replyToMessage.message._id,
+              }
+              : null}
+          sendLabel={assistantRetryPending ? 'Retry Assistant' : 'Send'}
+          setComposerCursorFromRef={setComposerCursorFromRef}
+          showMentionMenu={showMentionMenu}
+          voiceRecordingActive={voiceRecordingActive}
+        />
+      )}
     </>
   )
+  return releaseConfig.tasks ? (
+    <TaskLinkBatchProvider
+      assistantStreamIds={taskLinkAssistantStreamIds}
+      messageIds={taskLinkMessageIds}
+    >
+      {content}
+    </TaskLinkBatchProvider>
+  ) : content
 }

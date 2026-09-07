@@ -1,3 +1,4 @@
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
@@ -53,6 +54,7 @@ export const create = mutation({
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.invitedBy)
     await requireProjectManager(ctx, args.projectId, args.invitedBy)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const email = normalizeEmail(args.email)
     if (!email.includes('@')) throw new Error('invalid_email')
 

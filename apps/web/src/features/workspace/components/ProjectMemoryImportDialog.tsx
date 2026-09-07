@@ -28,9 +28,11 @@ import { Textarea } from '#/components/ui/textarea'
 import { useReleaseConfig } from '#/lib/release-config'
 import { cn } from '#/lib/utils'
 
+import { isUploadResponse } from '../chat/message-send'
 import { IMPORT_SOURCES } from './import-source-logos'
 
 type ProjectMemoryImportDialogProps = {
+  actingCompanyId?: Id<'companies'>
   actorId: Id<'users'> | null
   groupId: Id<'groups'> | null
   groupName?: string
@@ -38,6 +40,7 @@ type ProjectMemoryImportDialogProps = {
   onError?: (error: unknown) => void
   onOpenChange: (open: boolean) => void
   open: boolean
+  projectMemberId?: Id<'projectMembers'>
   projectId: Id<'projects'> | null
 }
 
@@ -53,6 +56,7 @@ function formatBytes(bytes: number) {
 }
 
 export function ProjectMemoryImportDialog({
+  actingCompanyId,
   actorId,
   groupId,
   groupName,
@@ -60,10 +64,12 @@ export function ProjectMemoryImportDialog({
   onError,
   onOpenChange,
   open,
+  projectMemberId,
   projectId,
 }: ProjectMemoryImportDialogProps) {
   const release = useReleaseConfig()
   const generateGroupUploadUrl = useMutation(api.messages.generateUploadUrl)
+  const claimGroupUploadIntent = useMutation(api.messages.claimUploadIntent)
   const startMemoryImport = useAction((api as any).memoryActions.startImport)
   const extractTasks = useAction(api.taskMemoryExtractionNode.request)
   const fileInputId = useId()
@@ -111,16 +117,40 @@ export function ProjectMemoryImportDialog({
       }> = []
       for (const [index, file] of files.entries()) {
         setStatus({ kind: 'working', message: `Uploading ${file.name} (${index + 1}/${files.length})` })
-        const uploadUrl = await generateGroupUploadUrl({ groupId, userId: actorId })
-        const response = await fetch(uploadUrl, {
-          body: file,
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          method: 'POST',
+        const contentType = file.type || 'application/octet-stream'
+        const intent = await generateGroupUploadUrl({
+          actingCompanyId,
+          contentType,
+          groupId,
+          intentKey: `memory-import:${projectId}:${actorId}:${index}:${file.name}:${file.size}`,
+          filename: file.name,
+          kind: 'file',
+          projectMemberId,
+          size: file.size,
+          userId: actorId,
         })
-        if (!response.ok) throw new Error(`upload_failed:${file.name}`)
-        const { storageId } = await response.json() as { storageId: Id<'_storage'> }
+        let storageId = intent.storageId
+        if (!storageId) {
+          if (!intent.uploadUrl) throw new Error(`upload_intent_unavailable:${file.name}`)
+          const response = await fetch(intent.uploadUrl, {
+            body: file,
+            headers: { 'Content-Type': contentType },
+            method: 'POST',
+          })
+          if (!response.ok) throw new Error(`upload_failed:${file.name}`)
+          const payload: unknown = await response.json()
+          if (!isUploadResponse(payload)) throw new Error(`upload_response_invalid:${file.name}`)
+          storageId = payload.storageId
+          await claimGroupUploadIntent({
+            actingCompanyId,
+            intentId: intent.intentId,
+            projectMemberId,
+            storageId,
+            userId: actorId,
+          })
+        }
         sourceFiles.push({
-          contentType: file.type || 'application/octet-stream',
+          contentType,
           filename: file.name,
           size: file.size,
           storageId,
@@ -128,10 +158,12 @@ export function ProjectMemoryImportDialog({
       }
       setStatus({ kind: 'working', message: 'Reading your context into project memory…' })
       const result = await startMemoryImport({
+        actingCompanyId,
         actorId,
         groupId,
         pastedText: pastedText || undefined,
         projectId,
+        projectMemberId,
         sourceFiles,
         sourceStorageIds: sourceFiles.map((file) => file.storageId),
         sourceUrls,
@@ -140,7 +172,11 @@ export function ProjectMemoryImportDialog({
       if (findTasks && release.tasks) {
         setStatus({ kind: 'working', message: 'Finding grounded task suggestions in this import…' })
         try {
-          const extraction = await extractTasks({ importId: result.importId })
+          const extraction = await extractTasks({
+            actingCompanyId,
+            importId: result.importId,
+            projectMemberId,
+          })
           taskMessage = ` ${extraction.created} task suggestion${extraction.created === 1 ? '' : 's'} added to Inbox.`
         } catch (error) {
           taskMessage = ' Memory imported, but task extraction failed; retry from task administration.'

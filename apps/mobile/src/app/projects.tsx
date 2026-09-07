@@ -2,9 +2,9 @@ import { FlatList, Linking, Platform, Pressable, StyleSheet, View, Alert } from 
 import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 
 import { api } from '../../../../convex/_generated/api';
-import type { Doc } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useCompany } from '@/contexts/company-context';
 import { useThemeOverride } from '@/contexts/theme-override-context';
@@ -20,12 +20,7 @@ import { hapticLight, hapticDestructive } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { projectChannelsHref } from '@/lib/company-navigation';
 
-type MobileProject = {
-  project: Doc<'projects'>;
-  membership: Doc<'projectMembers'>;
-  groupCount: number;
-  unreadCount: number;
-};
+type MobileProject = FunctionReturnType<typeof api.mobile.listProjects>[number];
 
 export default function ProjectsScreen() {
   const theme = useTheme();
@@ -45,7 +40,7 @@ export default function ProjectsScreen() {
   const requestAccountDeletion = useMutation(api.auth.requestAccountDeletion);
 
   const projects = useQuery(api.mobile.listProjects, trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip');
-  const projectItems = (projects ?? []) as MobileProject[];
+  const projectItems = projects ?? [];
 
   function openTools() {
     hapticLight();

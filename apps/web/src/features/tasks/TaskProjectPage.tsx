@@ -1,25 +1,30 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { Bell, Columns3, Inbox, ListTodo, Plus, Settings2, UserRoundCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
+import TrackLoader from '#/components/TrackLoader'
 import { Button } from '#/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
-import { useReleaseConfig } from '#/lib/release-config'
+import { CompanyProjectNavigation } from '#/features/company/CompanyProjectNavigation'
+import { useReleaseConfigState } from '#/lib/release-config'
 import { TaskAdminDialog } from './TaskAdminDialog'
 import { TaskBoard } from './TaskBoard'
 import { TaskCreateDialog } from './TaskCreateDialog'
 import { TaskDetailDrawer } from './TaskDetailDrawer'
 import { TaskInbox } from './TaskInbox'
-import { taskIdentity, type TaskBoardView, type TaskView } from './task-types'
+import { groupTaskListItems } from './task-list-groups'
+import { taskIdentity, type TaskListItem } from './task-types'
 import { StateRing, TaskDenseRow } from './ui/TaskVisuals'
+import './task-views.css'
 
 type TaskSearch = {
   actingCompanyId?: string
+  groupId?: string
   projectMemberId?: string
   task?: string
   view?: 'inbox' | 'my' | 'all' | 'board'
@@ -39,27 +44,32 @@ const taskViews: Array<[NonNullable<TaskSearch['view']>, string, LucideIcon]> = 
 ]
 
 export function TaskProjectPage({ projectId, search }: { projectId: string; search: TaskSearch }) {
-  const release = useReleaseConfig()
+  const releaseState = useReleaseConfigState()
+  const release = releaseState.config
   const navigate = useNavigate()
+  const incompleteRepresentedContext = Boolean(search.actingCompanyId) !== Boolean(search.projectMemberId)
+  const usesLegacyContext = !search.actingCompanyId && !search.projectMemberId
   const identity = useMemo(() => taskIdentity(search), [search])
   const project = projectId as Id<'projects'>
   const currentUser = useQuery(api.auth.getCurrentUser)
-  const labels = useQuery(api.taskLabels.list, release.tasks ? { projectId: project, ...identity } : 'skip')
-  const boards = useQuery(api.taskBoards.list, release.tasks ? { projectId: project, ...identity } : 'skip') as
-    | Array<TaskBoardView>
-    | undefined
+  const legacyProjects = useQuery(
+    api.projects.list,
+    release.tasks && usesLegacyContext && currentUser ? { userId: currentUser._id } : 'skip',
+  )
+  const labels = useQuery(api.taskLabels.list, release.tasks && !incompleteRepresentedContext ? { projectId: project, ...identity } : 'skip')
+  const boards = useQuery(api.taskBoards.list, release.tasks && !incompleteRepresentedContext ? { projectId: project, ...identity } : 'skip')
   const eligibleAssignees = useQuery(
     api.tasks.listEligibleAssignees,
-    release.tasks ? { projectId: project, ...identity } : 'skip',
+    release.tasks && !incompleteRepresentedContext ? { projectId: project, ...identity } : 'skip',
   )
   const selectedBoard = boards?.find((item) => item.board._id === search.board) ??
     boards?.find((item) => item.board.isDefault) ?? boards?.[0]
   const currentProjectMemberId = identity.projectMemberId ?? eligibleAssignees?.find(
     (item) => item.user._id === currentUser?._id,
   )?.member._id
-  const taskRows = useQuery(
-    api.tasks.list,
-    release.tasks && search.view !== 'inbox'
+  const taskPage = usePaginatedQuery(
+    api.tasks.listPage,
+    release.tasks && !incompleteRepresentedContext && search.view !== 'inbox'
       ? {
           projectId: project,
           boardId: search.view === 'board' ? selectedBoard?.board._id : undefined,
@@ -74,14 +84,16 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
           ...identity,
         }
       : 'skip',
-  ) as Array<TaskView> | undefined
+    { initialNumItems: 50 },
+  )
   const [createOpen, setCreateOpen] = useState(false)
   const [createWorkflowStateId, setCreateWorkflowStateId] = useState<Id<'taskWorkflowStates'>>()
   const [adminOpen, setAdminOpen] = useState(false)
   const [announcement, setAnnouncement] = useState('')
 
-  const visibleTasks = taskRows ?? []
+  const visibleTasks = taskPage.results
   const view = search.view ?? 'board'
+  const legacyProject = legacyProjects?.find((item) => item.project._id === project)
 
   useEffect(() => {
     if (!search.board && selectedBoard && view === 'board') {
@@ -94,13 +106,48 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
     }
   }, [navigate, projectId, search, search.board, selectedBoard, view])
 
+  if (releaseState.status === 'loading') {
+    return <TrackLoader label="Loading Project tasks" />
+  }
+
   if (!release.tasks) {
     return <main className="task-page task-unavailable"><h1>Tasks are unavailable</h1><p>This Project keeps its conversation workflow while the task release is disabled.</p></main>
   }
 
-  const conversationHref = identity.projectMemberId
-    ? `/workspace/company-projects/${projectId}?companyId=${identity.actingCompanyId}&membershipId=${identity.projectMemberId}`
+  if (incompleteRepresentedContext) {
+    return <main className="task-page task-unavailable"><h1>Project task context unavailable</h1><p>Return to the Company Project and open Tasks again to restore its represented membership.</p></main>
+  }
+
+  if (currentUser === null) {
+    return <main className="task-page task-unavailable"><h1>Project unavailable</h1><p>Sign in to open this Project.</p></main>
+  }
+
+  if (
+    currentUser === undefined ||
+    labels === undefined ||
+    boards === undefined ||
+    eligibleAssignees === undefined ||
+    (usesLegacyContext && legacyProjects === undefined) ||
+    (view !== 'inbox' && taskPage.status === 'LoadingFirstPage')
+  ) {
+    return <TrackLoader label="Loading Project tasks" />
+  }
+
+  if (usesLegacyContext && !legacyProject) {
+    return <main className="task-page task-unavailable"><h1>Project unavailable</h1><p>This Project does not exist or your membership cannot access it.</p></main>
+  }
+
+  const conversationHref = search.groupId
+    ? `/workspace/projects/${projectId}?groupId=${encodeURIComponent(search.groupId)}`
     : `/workspace/projects/${projectId}`
+  const representedProject = identity.actingCompanyId && identity.projectMemberId ? {
+    actingCompanyId: identity.actingCompanyId,
+    project: {
+      groupId: search.groupId,
+      projectId: project,
+      projectMemberId: identity.projectMemberId,
+    },
+  } : null
   const pageTitle = view === 'board'
     ? selectedBoard?.board.name ?? 'Board'
     : view === 'my'
@@ -109,36 +156,48 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
         ? 'Suggestion inbox'
         : 'All tasks'
 
+  const taskViewNavigation = <>
+    <span className="task-route-label">Work</span>
+    <nav aria-label="Task views" className="task-view-tabs">
+      {taskViews.map(([value, label, Icon]) => (
+        <Button
+          aria-current={view === value ? 'page' : undefined}
+          className={view === value ? 'active' : ''}
+          key={String(value)}
+          onClick={() => void navigate({
+            to: '/workspace/projects/$projectId/tasks', params: { projectId },
+            search: { ...search, view: value },
+          })}
+          variant="ghost"
+        >
+          <Icon size={14} /> {label}
+        </Button>
+      ))}
+    </nav>
+  </>
+
   return (
-    <main className="task-page">
-      <aside className="task-route-sidebar">
+    <main className={representedProject ? 'task-page company-task-shell' : 'task-page'}>
+      {representedProject ? (
+        <CompanyProjectNavigation
+          actingCompanyId={representedProject.actingCompanyId}
+          activeArea="tasks"
+          activeProject={representedProject.project}
+          secondaryNavigation={taskViewNavigation}
+          tasksEnabled={release.tasks}
+        />
+      ) : <aside className="task-route-sidebar">
         <a className="task-route-brand" href="/workspace">
           <img alt="" height="21" src="/track-mark.svg" width="30" />
           <strong>Track</strong>
         </a>
         <a className="task-route-project" href={conversationHref}>
-          <span className="task-route-project-glyph">P</span>
-          <span><strong>Project workspace</strong><small>Conversation and work</small></span>
+          <span aria-hidden="true" className="task-route-project-glyph">{legacyProject?.project.name.slice(0, 1).toUpperCase()}</span>
+          <span><strong>{legacyProject?.project.name}</strong><small>Standalone Project · Conversation and work</small></span>
         </a>
-        <span className="task-route-label">Work</span>
-        <nav aria-label="Task views" className="task-view-tabs">
-        {taskViews.map(([value, label, Icon]) => (
-          <Button
-            aria-current={view === value ? 'page' : undefined}
-            className={view === value ? 'active' : ''}
-            key={String(value)}
-            onClick={() => void navigate({
-              to: '/workspace/projects/$projectId/tasks', params: { projectId },
-              search: { ...search, view: value },
-            })}
-            variant="ghost"
-          >
-            <Icon size={14} /> {label}
-          </Button>
-        ))}
-        </nav>
+        {taskViewNavigation}
         <a className="task-route-conversation" href={conversationHref}>← Project conversation</a>
-      </aside>
+      </aside>}
 
       <section className="task-page-main">
         <header className="task-page-header">
@@ -149,7 +208,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
           <div className="task-header-actions">
             <Button onClick={() => { setCreateWorkflowStateId(undefined); setCreateOpen(true) }}><Plus size={14} /> New task</Button>
             <Button aria-label="Task settings" onClick={() => setAdminOpen(true)} variant="outline"><Settings2 size={14} /></Button>
-            <TaskNotificationButton identity={identity} projectId={project} />
+            <TaskNotificationButton groupId={search.groupId} identity={identity} projectId={project} />
           </div>
         </header>
 
@@ -194,7 +253,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
             </NativeSelect>
             <label className="task-archive-filter"><input checked={Boolean(search.archived)} onChange={(event) => void navigate({ to: '/workspace/projects/$projectId/tasks', params: { projectId }, search: { ...search, archived: event.target.checked } })} type="checkbox" /> Archived</label>
           </div>
-          {boards === undefined || taskRows === undefined ? <TaskLoading /> : !boards.length ? (
+          {taskPage.status === 'LoadingFirstPage' ? <TaskLoading /> : !boards.length ? (
             <TaskEmpty title="No accessible boards" body="Create the first task to provision a standard board, or ask a task administrator to create one." />
           ) : view === 'board' && selectedBoard ? (
             <TaskBoard
@@ -218,6 +277,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
               })}
             />
           ) : <TaskEmpty title="No task matches" body="Change the current filters or create a task." />}
+          {taskPage.status === 'CanLoadMore' || taskPage.status === 'LoadingMore' ? <div className="task-load-more"><Button disabled={taskPage.status === 'LoadingMore'} onClick={() => taskPage.loadMore(50)} variant="outline">{taskPage.status === 'LoadingMore' ? 'Loading more…' : 'Load more tasks'}</Button></div> : null}
           </section>
         )}
 
@@ -260,7 +320,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
   )
 }
 
-function TaskNotificationButton({ identity, projectId }: { identity: ReturnType<typeof taskIdentity>; projectId: Id<'projects'> }) {
+function TaskNotificationButton({ groupId, identity, projectId }: { groupId?: string; identity: ReturnType<typeof taskIdentity>; projectId: Id<'projects'> }) {
   const notifications = useQuery(api.taskNotifications.list, { projectId, ...identity })
   const preference = useQuery(api.taskNotifications.getPreference, { projectId, ...identity })
   const markRead = useMutation(api.taskNotifications.markRead)
@@ -269,11 +329,12 @@ function TaskNotificationButton({ identity, projectId }: { identity: ReturnType<
   const unread = notifications?.filter((item) => !item.readAt).length ?? 0
   const identityQuery = identity.actingCompanyId && identity.projectMemberId
     ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}` : ''
+  const groupQuery = groupId ? `&groupId=${encodeURIComponent(groupId)}` : ''
   return <Popover><PopoverTrigger render={<Button aria-label={`${unread} unread task notifications`} variant="outline" />}><Bell size={14} />{unread ? <span>{unread}</span> : null}</PopoverTrigger><PopoverContent align="end" className="task-notification-feed">
     <PopoverHeader><PopoverTitle>Task notifications</PopoverTitle><PopoverDescription>Private to this Project membership.</PopoverDescription></PopoverHeader>
     <NativeSelect aria-label="Task push preference" onChange={(event) => void setPreference({ projectId, mode: event.target.value as 'important' | 'all_followed' | 'muted', ...identity })} value={preference ?? 'important'}>{['important', 'all_followed', 'muted'].map((mode) => <NativeSelectOption key={mode} value={mode}>{mode.replaceAll('_', ' ')}</NativeSelectOption>)}</NativeSelect>
     {unread ? <Button onClick={() => void markAllRead({ projectId, ...identity })} size="sm" variant="ghost">Mark all read</Button> : null}
-    <div>{notifications?.map((item) => <a className={item.readAt ? '' : 'unread'} href={`/workspace/projects/${projectId}/tasks?view=all&task=${encodeURIComponent(String(item.payload?.publicKey ?? ''))}${identityQuery}`} key={item._id} onClick={() => void markRead({ notificationId: item._id, ...identity })}><strong>{item.eventType.replaceAll('_', ' ')}</strong><span>{new Date(item.createdAt).toLocaleString()}</span></a>)}</div>
+    <div>{notifications?.map((item) => <a className={item.readAt ? '' : 'unread'} href={`/workspace/projects/${projectId}/tasks?view=all&task=${encodeURIComponent(String(item.payload?.publicKey ?? ''))}${identityQuery}${groupQuery}`} key={item._id} onClick={() => void markRead({ notificationId: item._id, ...identity })}><strong>{item.eventType.replaceAll('_', ' ')}</strong><span>{new Date(item.createdAt).toLocaleString()}</span></a>)}</div>
     {!notifications?.length ? <p>No task notifications.</p> : null}
   </PopoverContent></Popover>
 }
@@ -286,18 +347,16 @@ function TaskEmpty({ title, body }: { title: string; body: string }) {
   return <div className="task-empty"><ListTodo aria-hidden="true" size={26} /><h2>{title}</h2><p>{body}</p></div>
 }
 
-function TaskGroupedList({ items, omitAssignee, onOpen }: { items: Array<TaskView>; omitAssignee: boolean; onOpen: (publicKey: string) => void }) {
-  const groups = Array.from(items.reduce((result, item) => {
-    const key = item.state?._id ?? 'unavailable'
-    const current = result.get(key) ?? { state: item.state, items: [] as Array<TaskView> }
-    current.items.push(item)
-    result.set(key, current)
-    return result
-  }, new Map<string, { state: TaskView['state']; items: Array<TaskView> }>()).values())
+function TaskGroupedList({ items, omitAssignee, onOpen }: { items: Array<TaskListItem>; omitAssignee: boolean; onOpen: (publicKey: string) => void }) {
+  const groups = groupTaskListItems(items, (item) => item.state ? {
+    boardName: item.board?.name ?? null,
+    category: item.state.category,
+    name: item.state.name,
+  } : null)
 
   return <div className="task-dense-list">{groups.map((group) => (
-    <section className="task-list-group" key={group.state?._id ?? 'unavailable'}>
-      <header><StateRing category={group.state?.category ?? 'backlog'} /><h2>{group.state?.name ?? 'Unavailable state'}</h2><span>{group.items.length}</span></header>
+    <section className="task-list-group" key={group.key}>
+      <header><StateRing category={group.category} /><h2>{group.label}</h2><span>{group.items.length}</span></header>
       {group.items.map((item) => <TaskDenseRow item={item} key={item.task._id} omitAssignee={omitAssignee} onOpen={() => onOpen(item.task.publicKey)} />)}
     </section>
   ))}</div>

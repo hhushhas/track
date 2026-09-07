@@ -6,6 +6,7 @@ import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 
 import type { AuthenticatedActor } from './actorContext'
+import { hasArchivedChannelVisibility } from './projectExitArchive'
 
 type PolicyCtx = QueryCtx | MutationCtx
 
@@ -169,7 +170,14 @@ async function resolveCompanyContext(
       groupMember.status === 'active',
   )
   const archivedChannelMember = Boolean(
-    groupId && entitlement?.channelIds.includes(groupId),
+    groupId && entitlement && (
+      entitlement.channelIds.includes(groupId) ||
+      (entitlement.snapshotOperationId && await hasArchivedChannelVisibility(ctx, {
+        operationId: entitlement.snapshotOperationId,
+        projectMemberId: projectMember._id,
+        groupId,
+      }))
+    ),
   )
   const channelMember = archivedMembership ? archivedChannelMember : activeChannelMember
   const accessMode = archivedMembership || project.status === 'archived' ? 'archive' : 'active'

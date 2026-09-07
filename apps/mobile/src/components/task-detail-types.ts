@@ -1,23 +1,8 @@
-import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import type { FunctionReturnType } from 'convex/server';
 
-export type MobileTaskDetail = {
-  task: Doc<'tasks'>;
-  board: Doc<'taskBoards'> | null;
-  state: Doc<'taskWorkflowStates'> | null;
-  assignee: Doc<'projectMembers'> | null;
-  creator: Doc<'projectMembers'> | null;
-  references: Array<Doc<'taskReferences'>>;
-  labels: Array<Doc<'taskLabels'>>;
-  comments: Array<Doc<'taskComments'>>;
-  activities: Array<Doc<'taskActivities'>>;
-  following: boolean;
-  restrictedEarlierContext: boolean;
-  capabilities: {
-    canArchive: boolean;
-    canComment: boolean;
-    canEdit: boolean;
-  };
-};
+import type { api } from '../../../../convex/_generated/api';
+
+export type MobileTaskDetail = NonNullable<FunctionReturnType<typeof api.tasks.getByKey>>;
 
 export type TaskEditField =
   | 'assignee'
@@ -28,38 +13,14 @@ export type TaskEditField =
   | 'priority'
   | 'status';
 
-export type MobileTaskBoard = {
-  board: Doc<'taskBoards'>;
-  states: Array<Doc<'taskWorkflowStates'>>;
-};
+export type MobileTaskBoard = FunctionReturnType<typeof api.taskBoards.list>[number];
 
-export type MobileTaskAssignee = {
-  member: Doc<'projectMembers'>;
-  user: { _id: Id<'users'>; displayName: string };
-  company: Doc<'companies'> | null;
-};
+export type MobileTaskAssignee = FunctionReturnType<typeof api.tasks.listEligibleAssignees>[number];
 
-export type MobileTaskListItem = {
-  task: Doc<'tasks'>;
-  state: Doc<'taskWorkflowStates'> | null;
-};
+export type MobileTaskListItem = FunctionReturnType<typeof api.tasks.listChildren>['page'][number];
 
-export type MobileTaskView = {
-  task: Doc<'tasks'>;
-  state: Doc<'taskWorkflowStates'> | null;
-  assignee: Doc<'projectMembers'> | null;
-  references: Array<Doc<'taskReferences'>>;
-};
+export type MobileTaskView = FunctionReturnType<typeof api.tasks.listPage>['page'][number];
 
-export type MobileBoardView = {
-  board: Doc<'taskBoards'>;
-  states: Array<Doc<'taskWorkflowStates'>>;
-};
+export type MobileBoardView = FunctionReturnType<typeof api.taskBoards.list>[number];
 
-export type MobileSuggestionView = {
-  suggestion: Doc<'taskSuggestions'>;
-  references: Array<Doc<'taskSuggestionReferences'>>;
-  canDismiss: boolean;
-  possibleDuplicateTask: { _id: Id<'tasks'>; publicKey: string; title: string } | null;
-  proposedAssignee: { user: { displayName: string }; company: Doc<'companies'> | null } | null;
-};
+export type MobileSuggestionView = FunctionReturnType<typeof api.taskSuggestions.list>[number];

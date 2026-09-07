@@ -6,10 +6,17 @@ import { AttachmentTypeIcon } from '../attachment-ui'
 import { AvatarNameTooltip } from '../avatar-tooltip'
 import { MarkdownText } from '../markdown'
 import { MentionInline } from '../thread-item-components'
+import type { GroupReference } from '../group-types'
 import type { MessageCitationPreview } from '../thread-item-components'
 import { AssistantInlineTasks, CreateTaskFromAssistant } from '#/features/tasks/ConversationTaskActions'
+import type { TaskIdentity } from '#/features/tasks/task-types'
+import { MediaPreview } from './MediaPreview'
+import type { MediaPreviewAttachment } from './MediaPreview'
+
+import './assistant-answer.css'
 
 export function AssistantAnswer({
+  identity = {},
   messageCitations,
   mentionGroups,
   onOpenGroup,
@@ -18,16 +25,19 @@ export function AssistantAnswer({
   stream,
   threadItemKey,
 }: {
+  identity?: TaskIdentity
   messageCitations: Map<string, MessageCitationPreview>
-  mentionGroups: Map<string, Doc<'groups'>>
+  mentionGroups: Map<string, GroupReference>
   onOpenGroup: (groupId: Id<'groups'>) => void
   onOpenMessageCitation: (messageId: Id<'messages'> | string) => void
   searchQuery?: string
   stream: Doc<'assistantStreams'>
   threadItemKey: string
 }) {
-  const isThinking = stream.status === 'running' && !stream.answer
-  const answer = stream.answer || stream.status
+  const progress = getAssistantProgress(stream)
+  const isThinking = (stream.status === 'queued' || stream.status === 'running') && !stream.answer
+  const isFailed = stream.status === 'failed'
+  const answer = isFailed ? '' : stream.answer
   const sources = buildAssistantSourcePreviews(stream.evidence, messageCitations)
   return (
     <article className="track-assistant-row" data-thread-item-key={threadItemKey}>
@@ -48,11 +58,13 @@ export function AssistantAnswer({
         <div className="track-message-meta">
           <strong>Track Assistant</strong>
           <time>{new Date(stream.createdAt).toLocaleTimeString()}</time>
-          <CreateTaskFromAssistant stream={stream} />
+          <CreateTaskFromAssistant identity={identity} stream={stream} />
         </div>
-        {isThinking ? (
-          <TextShimmer>Thinking</TextShimmer>
-        ) : (
+        {isFailed ? (
+          <AssistantFailure errorCode={progress.errorCode} />
+        ) : isThinking ? (
+          <TextShimmer>{progress.label}</TextShimmer>
+        ) : answer ? (
           <MarkdownText
             className="track-markdown"
             highlightQuery={searchQuery}
@@ -76,16 +88,74 @@ export function AssistantAnswer({
             )}
             text={answer}
           />
+        ) : (
+          <span className="track-assistant-empty">Track returned no answer.</span>
         )}
-        {!isThinking && sources.length > 0 ? (
+        {!isThinking && !isFailed && sources.length > 0 ? (
           <AssistantSourceList
             onOpen={onOpenMessageCitation}
             sources={sources}
           />
         ) : null}
-        <AssistantInlineTasks stream={stream} />
+        <AssistantInlineTasks identity={identity} stream={stream} />
       </div>
     </article>
+  )
+}
+
+type AssistantProgressStage =
+  | 'completed'
+  | 'failed'
+  | 'finalizing'
+  | 'loading_context'
+  | 'queued'
+  | 'reading_attachments'
+  | 'running'
+  | 'waiting_provider'
+
+type AssistantProgressStream = Pick<Doc<'assistantStreams'>, 'status'> & {
+  errorCode?: 'attachment' | 'provider' | 'timeout' | 'unavailable' | 'unknown'
+  stage?: AssistantProgressStage
+}
+
+function getAssistantProgress(stream: AssistantProgressStream) {
+  const stage = stream.stage ?? stream.status
+  return {
+    errorCode: stream.errorCode,
+    label: progressLabel(stage),
+  }
+}
+
+function progressLabel(stage: AssistantProgressStage) {
+  switch (stage) {
+    case 'completed':
+      return 'Done'
+    case 'failed':
+      return 'Could not finish'
+    case 'finalizing':
+      return 'Finishing with grounded sources'
+    case 'loading_context':
+      return 'Loading project context'
+    case 'queued':
+      return 'Starting'
+    case 'reading_attachments':
+      return 'Reading attached evidence'
+    case 'running':
+      return 'Thinking'
+    case 'waiting_provider':
+      return 'Waiting for Track AI'
+  }
+  return 'Thinking'
+}
+
+function AssistantFailure({ errorCode }: { errorCode?: AssistantProgressStream['errorCode'] }) {
+  const hint = errorCode === 'unavailable'
+    ? 'This channel is no longer available. Check access and try again.'
+    : 'The answer did not finish. Use Retry Assistant in the composer to try again.'
+  return (
+    <div aria-live="polite" className="track-assistant-failure" role="alert">
+      <strong>Track Assistant could not finish.</strong> <span>{hint}</span>
+    </div>
   )
 }
 
@@ -94,7 +164,20 @@ type AssistantSourcePreview = {
   key: string
   title: string
   meta: string
-  attachment?: MessageCitationPreview['attachments'][number]
+  attachment?: AssistantSourceAttachment
+}
+
+type AssistantSourceAttachment = MessageCitationPreview['attachments'][number] & MediaPreviewAttachment
+
+function toMediaPreviewAttachment(
+  attachment: MessageCitationPreview['attachments'][number],
+): AssistantSourceAttachment {
+  return {
+    ...attachment,
+    dimensions: { kind: 'unknown' },
+    originalUrl: null,
+    previewUrl: null,
+  }
 }
 
 function buildAssistantSourcePreviews(
@@ -110,11 +193,12 @@ function buildAssistantSourcePreviews(
     const message = messageCitations.get(item.messageId)
     if (!message) continue
 
-    const attachment = item.attachmentId
+    const citationAttachment = item.attachmentId
       ? message.attachments.find((candidate) => candidate.id === item.attachmentId)
       : message.body
         ? undefined
         : message.attachments[0]
+    const attachment = citationAttachment ? toMediaPreviewAttachment(citationAttachment) : undefined
     const key = `${item.messageId}:${attachment?.id ?? 'message'}`
     if (seen.has(key)) continue
     seen.add(key)
@@ -177,7 +261,13 @@ function AssistantSourceList({
             type="button"
           >
             <span className="track-assistant-source-icon">
-              {source.attachment ? (
+              {source.attachment?.previewUrl || source.attachment?.originalUrl ? (
+                <MediaPreview
+                  attachment={source.attachment}
+                  className="track-assistant-source-media"
+                  linkToOriginal={false}
+                />
+              ) : source.attachment ? (
                 <AttachmentTypeIcon
                   contentType={source.attachment.contentType}
                   filename={source.attachment.filename}

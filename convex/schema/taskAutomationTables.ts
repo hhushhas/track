@@ -60,6 +60,7 @@ export const taskAutomationTables = {
     updatedAt: v.number(),
   })
     .index('by_suggestion_rank', ['suggestionId', 'rank'])
+    .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_message', ['messageId'])
     .index('by_attachment', ['attachmentId']),
 
@@ -120,6 +121,9 @@ export const taskAutomationTables = {
     projectId: v.id('projects'),
     sourceTable: v.string(),
     sourceId: v.string(),
+    taskId: v.optional(v.id('tasks')),
+    taskPublicKey: v.optional(v.string()),
+    taskSearchText: v.optional(v.string()),
     groupId: v.optional(v.id('groups')),
     messageId: v.optional(v.id('messages')),
     attachmentId: v.optional(v.id('attachments')),
@@ -128,7 +132,16 @@ export const taskAutomationTables = {
     redactedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
+    .index('by_entitlement', ['entitlementId'])
     .index('by_entitlement_table', ['entitlementId', 'sourceTable'])
+    .index('by_entitlement_task', ['entitlementId', 'taskId', 'sourceTable'])
+    .index('by_entitlement_task_key', ['entitlementId', 'sourceTable', 'taskPublicKey'])
+    .searchIndex('search_task_text', {
+      searchField: 'taskSearchText',
+      filterFields: ['entitlementId', 'sourceTable'],
+    })
+    .index('by_entitlement_message', ['entitlementId', 'messageId'])
+    .index('by_entitlement_assistant', ['entitlementId', 'assistantStreamId'])
     .index('by_entitlement_source', [
       'entitlementId',
       'sourceTable',
@@ -142,6 +155,13 @@ export const taskAutomationTables = {
   taskExitSnapshotStaging: defineTable({
     projectCompanyId: v.id('projectCompanies'),
     projectId: v.id('projects'),
+    operationId: v.optional(v.string()),
+    taskId: v.optional(v.id('tasks')),
+    taskPublicKey: v.optional(v.string()),
+    taskSearchText: v.optional(v.string()),
+    messageId: v.optional(v.id('messages')),
+    attachmentId: v.optional(v.id('attachments')),
+    assistantStreamId: v.optional(v.id('assistantStreams')),
     sourceTable: v.string(),
     sourceId: v.string(),
     groupId: v.optional(v.id('groups')),
@@ -150,6 +170,35 @@ export const taskAutomationTables = {
     createdAt: v.number(),
   })
     .index('by_project_company', ['projectCompanyId'])
+    .index('by_project_company_operation', ['projectCompanyId', 'operationId'])
+    .index('by_project_company_operation_table', ['projectCompanyId', 'operationId', 'sourceTable'])
+    .index('by_project_company_operation_source', ['projectCompanyId', 'operationId', 'sourceTable', 'sourceId'])
+    .index('by_project_company_operation_task_key', [
+      'projectCompanyId',
+      'operationId',
+      'sourceTable',
+      'taskPublicKey',
+    ])
+    .index('by_project_company_operation_table_task', [
+      'projectCompanyId',
+      'operationId',
+      'sourceTable',
+      'taskId',
+    ])
+    .index('by_project_company_operation_message', [
+      'projectCompanyId',
+      'operationId',
+      'messageId',
+    ])
+    .index('by_project_company_operation_assistant', [
+      'projectCompanyId',
+      'operationId',
+      'assistantStreamId',
+    ])
+    .searchIndex('search_task_text', {
+      searchField: 'taskSearchText',
+      filterFields: ['projectCompanyId', 'operationId', 'sourceTable'],
+    })
     .index('by_project_company_table', ['projectCompanyId', 'sourceTable'])
     .index('by_project', ['projectId']),
 } as const

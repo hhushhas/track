@@ -1,8 +1,8 @@
 import type { TaskPriority } from '@track/shared/tasks';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useNetworkState } from 'expo-network';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
@@ -15,7 +15,6 @@ import type { TaskMoveInput } from '@/components/task-board';
 import {
   SuggestionInbox,
   TaskCollection,
-  type MobileBoardView,
   type MobileSuggestionView,
   type MobileTaskView,
 } from '@/components/task-list-content';
@@ -28,12 +27,6 @@ import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
 import { groupMobileTasksByState, taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { taskPriorityLabel } from '@/lib/task-presentation';
-
-type AssigneeView = {
-  member: Doc<'projectMembers'>;
-  user: { _id: Id<'users'>; displayName: string };
-  company: Doc<'companies'> | null;
-};
 
 type PrimaryTaskTab = 'board' | 'my' | 'all';
 type TaskTab = PrimaryTaskTab | 'inbox';
@@ -78,11 +71,11 @@ export default function TasksScreen() {
   const boards = useQuery(api.taskBoards.list, release.tasks ? {
     projectId: project,
     ...queryIdentity,
-  } : 'skip') as MobileBoardView[] | undefined;
+  } : 'skip');
   const assignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && !readOnly ? {
     projectId: project,
     ...queryIdentity,
-  } : 'skip') as AssigneeView[] | undefined;
+  } : 'skip');
   const currentMemberId = identity?.membershipId
     ?? assignees?.find((item) => item.user._id === currentUser?._id)?.member._id;
   const [tab, setTab] = useState<TaskTab>('board');
@@ -95,18 +88,19 @@ export default function TasksScreen() {
     projectId: project,
     groupId: selectedBoard.board.groupId,
     ...queryIdentity,
-  } : 'skip') as AssigneeView[] | undefined;
-  const tasks = useQuery(api.tasks.list, release.tasks && tab !== 'inbox'
+  } : 'skip');
+  const taskPage = usePaginatedQuery(api.tasks.listPage, release.tasks && tab !== 'inbox'
     && (tab !== 'my' || currentMemberId) ? {
     projectId: project,
     boardId: tab === 'board' ? selectedBoard?.board._id : undefined,
     assigneeProjectMemberId: tab === 'my' ? currentMemberId : undefined,
     ...queryIdentity,
-  } : 'skip') as MobileTaskView[] | undefined;
+  } : 'skip', { initialNumItems: 50 });
+  const tasks = taskPage.results;
   const suggestions = useQuery(api.taskSuggestions.list, release.tasks && tab === 'inbox' && !readOnly ? {
     projectId: project,
     ...queryIdentity,
-  } : 'skip') as MobileSuggestionView[] | undefined;
+  } : 'skip');
   const createTask = useMutation(api.tasks.create);
   const moveTask = useMutation(api.tasks.moveTask);
   const acceptSuggestion = useMutation(api.taskSuggestions.accept);
@@ -123,6 +117,10 @@ export default function TasksScreen() {
   const [assigneeId, setAssigneeId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const createIntentRef = useRef(crypto.randomUUID());
+  const createPendingRef = useRef(false);
+  const suggestionAcceptIntentsRef = useRef(new Map<string, string>());
+  const suggestionAcceptPendingRef = useRef(new Set<string>());
   const currentMember = assignees?.find((item) => item.member._id === currentMemberId);
   const canAssignOthers = currentMember
     ? ['owner', 'admin', 'staff', 'manager'].includes(currentMember.member.role)
@@ -138,7 +136,7 @@ export default function TasksScreen() {
     if (!selectedBoard) return [];
     const grouped = groupMobileTasksByState(
       selectedBoard.states.map((state) => state._id),
-      tasks ?? [],
+      tasks,
     );
     return selectedBoard.states.map((state, index) => ({
       state,
@@ -177,7 +175,8 @@ export default function TasksScreen() {
   }
 
   async function create() {
-    if (!title.trim()) return;
+    if (!title.trim() || createPendingRef.current) return;
+    createPendingRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -191,7 +190,7 @@ export default function TasksScreen() {
         assigneeProjectMemberId: selectedCreateAssigneeId
           ? selectedCreateAssigneeId as Id<'projectMembers'>
           : undefined,
-        idempotencyKey: `${Date.now()}-${Math.random()}`,
+        idempotencyKey: createIntentRef.current,
         ...queryIdentity,
       });
       hapticMedium();
@@ -201,10 +200,12 @@ export default function TasksScreen() {
       setPriority('none');
       setDueDate(null);
       setAssigneeId('');
+      createIntentRef.current = crypto.randomUUID();
       router.push(taskDetailHref(project, result.publicKey, identity));
     } catch (failure) {
       setError(readableError(failure));
     } finally {
+      createPendingRef.current = false;
       setBusy(false);
     }
   }
@@ -214,8 +215,10 @@ export default function TasksScreen() {
     try {
       await action();
       hapticMedium();
+      return true;
     } catch (failure) {
       setError(readableError(failure));
+      return false;
     }
   }
 
@@ -224,13 +227,18 @@ export default function TasksScreen() {
     return compatible.find((item) => item.board.isDefault) ?? compatible[0];
   }
 
-  function accept(row: MobileSuggestionView) {
+  async function accept(row: MobileSuggestionView) {
     const destination = suggestionDestination(row);
     if (!destination) {
       setError('No compatible board is available for this suggestion.');
       return;
     }
-    void runSuggestion(() => acceptSuggestion({
+    const suggestionKey = String(row.suggestion._id);
+    if (suggestionAcceptPendingRef.current.has(suggestionKey)) return;
+    suggestionAcceptPendingRef.current.add(suggestionKey);
+    const idempotencyKey = suggestionAcceptIntentsRef.current.get(suggestionKey) ?? crypto.randomUUID();
+    suggestionAcceptIntentsRef.current.set(suggestionKey, idempotencyKey);
+    const succeeded = await runSuggestion(() => acceptSuggestion({
       suggestionId: row.suggestion._id,
       boardId: destination.board._id,
       title: row.suggestion.proposedTitle,
@@ -239,9 +247,11 @@ export default function TasksScreen() {
       dueDate: row.suggestion.proposedDueDate,
       assigneeProjectMemberId: row.suggestion.proposedAssigneeProjectMemberId,
       duplicateOverride: Boolean(row.possibleDuplicateTask),
-      idempotencyKey: `${Date.now()}-${row.suggestion._id}`,
+      idempotencyKey,
       ...queryIdentity,
     }));
+    if (succeeded) suggestionAcceptIntentsRef.current.delete(suggestionKey);
+    suggestionAcceptPendingRef.current.delete(suggestionKey);
   }
 
   if (!release.tasks) {
@@ -267,7 +277,7 @@ export default function TasksScreen() {
                   : tab === 'my' ? 'My tasks' : 'All project tasks'}
               </ThemedText>
               <ThemedText themeColor="textSecondary" type="small">
-                {tasks ? `${tasks.length} task${tasks.length === 1 ? '' : 's'}` : 'Loading work…'}
+                {taskPage.status === 'LoadingFirstPage' ? 'Loading work…' : `${tasks.length} task${tasks.length === 1 ? '' : 's'}`}
               </ThemedText>
             </View>
             {tab === 'board' && boards && boards.length > 1 ? (
@@ -324,7 +334,9 @@ export default function TasksScreen() {
       readOnly={readOnly}
       selectedBoard={selectedBoard}
       tab={tab === 'inbox' ? 'all' : tab}
-      tasks={boards === undefined ? undefined : tasks}
+      tasks={boards === undefined || taskPage.status === 'LoadingFirstPage' ? undefined : tasks}
+      loadMore={taskPage.status === 'CanLoadMore' ? () => taskPage.loadMore(50) : undefined}
+      loadingMore={taskPage.status === 'LoadingMore'}
     />
   );
 
@@ -371,7 +383,7 @@ export default function TasksScreen() {
           {heading}
           {tab === 'inbox'
             ? <SuggestionInbox
-                onAccept={accept}
+                onAccept={(row) => void accept(row)}
                 onDismiss={(row) => void runSuggestion(() => dismissSuggestion({
                   suggestionId: row.suggestion._id,
                   reason: 'not_actionable',

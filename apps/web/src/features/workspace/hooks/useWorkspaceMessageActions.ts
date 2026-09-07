@@ -1,4 +1,5 @@
 import { useAction, useMutation } from 'convex/react'
+import { useRef, useState } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
 import type { Id } from '../../../../../../convex/_generated/dataModel'
@@ -6,8 +7,14 @@ import { parseMentions } from '@track/shared'
 import {
   getAttachmentNotificationPreview,
   resolveMentionedUserIds,
-  uploadPendingAttachments,
+  type UploadedPendingAttachment,
+  uploadPendingAttachment,
 } from '#/features/workspace/chat/message-send'
+import {
+  createMessageSendAttempt,
+  runMessageSendAttempt,
+  type MessageSendAttempt,
+} from '#/features/workspace/chat/message-send-retry'
 import type { WorkspaceMentionOption } from '#/features/workspace/lib/mentions'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import type { PendingWorkspaceAttachment } from '#/features/workspace/hooks/usePendingAttachments'
@@ -45,8 +52,11 @@ export function useWorkspaceMessageActions({
   const forwardMessageMutation = useMutation(api.messages.forwardMessage)
   const deleteMessageMutation = useMutation(api.messages.remove)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
+  const claimUploadIntent = useMutation(api.messages.claimUploadIntent)
   const attachFileMutation = useMutation(api.messages.attachFile)
   const askTrackAction = useAction(api.assistant.ask)
+  const sendAttemptRef = useRef<MessageSendAttempt<Id<'messages'>, UploadedPendingAttachment> | null>(null)
+  const [assistantRetryPending, setAssistantRetryPending] = useState(false)
 
   async function withMessageBusy(label: string, action: () => Promise<void>) {
     onBusyChange(label)
@@ -67,47 +77,90 @@ export function useWorkspaceMessageActions({
     await withMessageBusy('send-message', async () => {
       const mentionHandles = parseMentions(body)
       const mentionedUserIds = resolveMentionedUserIds(mentionHandles, mentionOptions)
-      const uploadedAttachments = await uploadPendingAttachments({
+      const sendSignature = JSON.stringify({
         activeGroupId,
-        generateUploadUrl,
-        pendingAttachments,
+        activeProjectId,
+        attachmentIds: pendingAttachments.map((attachment) => attachment.id),
+        body,
+        replyToMessageId: replyToMessage?.message._id ?? null,
         trackUserId,
       })
-      const messageId = await sendMessageMutation({
-        projectId: activeProjectId,
-        groupId: activeGroupId,
-        authorId: trackUserId,
-        body,
-        mentions: mentionedUserIds,
-        replyToMessageId: replyToMessage?.message._id,
-        notificationPreview: getAttachmentNotificationPreview({
-          body,
-          pendingAttachments,
-        }),
+      let attempt = sendAttemptRef.current
+      if (!attempt || attempt.signature !== sendSignature) {
+        attempt = createMessageSendAttempt<Id<'messages'>, UploadedPendingAttachment>(
+          sendSignature,
+          crypto.randomUUID(),
+        )
+        sendAttemptRef.current = attempt
+      }
+      const result = await runMessageSendAttempt({
+        askAssistant: mentionHandles.includes('track')
+          ? async (messageId) => {
+              await askTrackAction({
+                projectId: activeProjectId,
+                groupId: activeGroupId,
+                requesterId: trackUserId,
+                promptMessageId: messageId,
+                question: body,
+              })
+            }
+          : undefined,
+        attach: async (messageId, attachment) => {
+          await attachFileMutation({
+            projectId: activeProjectId,
+            groupId: activeGroupId,
+            messageId,
+            userId: trackUserId,
+            uploadIntentId: attachment.uploadIntentId,
+            storageId: attachment.storageId,
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            size: attachment.size,
+            kind: attachment.kind,
+            durationMs: attachment.durationMs,
+          })
+        },
+        attempt,
+        pendingAttachments,
+        send: async (idempotencyKey) =>
+          await sendMessageMutation({
+            projectId: activeProjectId,
+            groupId: activeGroupId,
+            authorId: trackUserId,
+            body,
+            idempotencyKey,
+            mentions: mentionedUserIds,
+            replyToMessageId: replyToMessage?.message._id,
+            notificationPreview: getAttachmentNotificationPreview({
+              body,
+              pendingAttachments,
+            }),
+          }),
+        upload: async (pendingAttachment) =>
+          await uploadPendingAttachment({
+            activeGroupId,
+            claimUploadIntent: async (input) =>
+              await claimUploadIntent({
+                ...input,
+                actingCompanyId: undefined,
+                projectMemberId: undefined,
+              }),
+            generateUploadUrl: async (input) =>
+              await generateUploadUrl(input),
+            intentKey: attempt.idempotencyKey,
+            pendingAttachment,
+            trackUserId,
+          }),
       })
-      for (const attachment of uploadedAttachments) {
-        await attachFileMutation({
-          projectId: activeProjectId,
-          groupId: activeGroupId,
-          messageId,
-          userId: trackUserId,
-          storageId: attachment.storageId,
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          size: attachment.size,
-          kind: attachment.kind,
-          durationMs: attachment.durationMs,
-        })
+      if (result.assistantError) {
+        setAssistantRetryPending(true)
+        onError(new Error('Message sent, but Track Assistant failed. Retry the assistant response.', {
+          cause: result.assistantError,
+        }))
+        return
       }
-      if (mentionHandles.includes('track')) {
-        await askTrackAction({
-          projectId: activeProjectId,
-          groupId: activeGroupId,
-          requesterId: trackUserId,
-          promptMessageId: messageId,
-          question: body,
-        })
-      }
+      sendAttemptRef.current = null
+      setAssistantRetryPending(false)
       onAfterSend()
     })
   }
@@ -167,6 +220,7 @@ export function useWorkspaceMessageActions({
   }
 
   return {
+    assistantRetryPending,
     handleDeleteMessage,
     handleForwardMessage,
     handleSendMessage,

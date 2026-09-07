@@ -1,10 +1,16 @@
 .DS_Store
 node_modules/
 .turbo/
+.worktrees/
 coverage/
 dist/
 build/
+*.tsbuildinfo
 .output/
+artifacts/
+playwright-report/
+test-results/
+gate.report.json
 .expo/
 .eas/
 .wrangler/

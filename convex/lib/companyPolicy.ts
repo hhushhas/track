@@ -8,6 +8,7 @@ import type { Doc, Id } from '../_generated/dataModel'
 import type { MutationCtx, QueryCtx } from '../_generated/server'
 
 import type { AuthenticatedActor } from './actorContext'
+import { hasArchivedChannelVisibility } from './projectExitArchive'
 
 type PolicyCtx = QueryCtx | MutationCtx
 
@@ -126,7 +127,9 @@ export async function resolveCompanyProjectAccess(
     !projectCompany ||
     projectCompany.projectId !== project._id ||
     projectCompany.companyId !== input.actingCompanyId ||
-    (archiveMode ? projectCompany.status !== 'exited' : projectCompany.status !== 'active')
+    (archiveMode
+      ? projectCompany.status !== 'exited'
+      : projectCompany.status !== 'active' && projectCompany.status !== 'exit_pending')
   ) {
     throw new Error('project_unavailable')
   }
@@ -154,13 +157,23 @@ export async function resolveCompanyProjectAccess(
         )
         .unique()
     : null
-  const channelMember = archiveMode
-    ? Boolean(groupId && entitlement?.channelIds.includes(groupId))
-    : channelMembership?.status === 'active'
+  let channelMember = channelMembership?.status === 'active'
+  if (archiveMode) {
+    channelMember = false
+    if (groupId && entitlement) {
+      channelMember = entitlement.snapshotOperationId
+        ? await hasArchivedChannelVisibility(ctx, {
+            operationId: entitlement.snapshotOperationId,
+            projectMemberId: projectMember._id,
+            groupId,
+          })
+        : entitlement.channelIds.includes(groupId)
+    }
+  }
   const capabilities = resolveProjectChannelCapabilities({
     accessProfile: 'company',
     accessMode: archiveMode || project.status === 'archived' ? 'archive' : 'active',
-    projectRole: projectMember.role as 'manager' | 'member',
+    projectRole: projectMember.role,
     channelMember,
     channelActive: !group?.status || group.status === 'active',
     channelSteward: channelMembership?.isSteward === true,

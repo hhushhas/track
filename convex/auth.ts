@@ -12,6 +12,7 @@ import { mutation, query } from './_generated/server'
 import authConfig from './auth.config'
 import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContext'
 import { devAuthBypassUser, isDevAuthBypassEnabled } from './lib/devAuth'
+import { cancelProjectSnapshotForSourceRemoval } from './lib/projectSnapshotLock'
 
 const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
 const trustedOrigins = [
@@ -265,16 +266,26 @@ export const syncGoogleUser = mutation({
   },
 })
 
+async function getDevAuthSubject(ctx: WriteCtx) {
+  const identity = await ctx.auth.getUserIdentity()
+  if (identity && normalizeEmail(identity.email ?? '') === devAuthBypassUser.email) {
+    return identity.subject
+  }
+
+  const authUser = await authComponent.safeGetAuthUser(ctx)
+  if (!authUser || normalizeEmail(authUser.email) !== devAuthBypassUser.email) {
+    throw new Error('dev_auth_identity_required')
+  }
+  return authUser._id
+}
+
 export const syncDevUser = mutation({
   args: {},
   handler: async (ctx) => {
     if (!isDevAuthBypassEnabled()) {
       throw new Error('dev_auth_bypass_disabled')
     }
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity || normalizeEmail(identity.email ?? '') !== devAuthBypassUser.email) {
-      throw new Error('dev_auth_identity_required')
-    }
+    const authUserId = await getDevAuthSubject(ctx)
 
     const now = Date.now()
     const existing = await ctx.db
@@ -286,7 +297,7 @@ export const syncDevUser = mutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        authUserId: identity.subject,
+        authUserId,
         normalizedEmail: normalizeEmail(devAuthBypassUser.email),
         email: devAuthBypassUser.email,
         displayName: devAuthBypassUser.displayName,
@@ -301,7 +312,7 @@ export const syncDevUser = mutation({
 
     return await ctx.db.insert('users', {
       googleSubject: devAuthBypassUser.googleSubject,
-      authUserId: identity.subject,
+      authUserId,
       normalizedEmail: normalizeEmail(devAuthBypassUser.email),
       email: devAuthBypassUser.email,
       displayName: devAuthBypassUser.displayName,
@@ -581,6 +592,12 @@ export const requestAccountDeletion = mutation({
       .first()
     const retentionNote =
       'Shared project messages, attachments, and audit events are retained where needed for other members and project integrity; personal profile fields and push subscriptions are removed.'
+
+    const projectMemberships = await ctx.db.query('projectMembers')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId)).collect()
+    for (const projectId of new Set(projectMemberships.map((membership) => membership.projectId))) {
+      await cancelProjectSnapshotForSourceRemoval(ctx, projectId)
+    }
 
     if (existing) {
       await ctx.db.patch(existing._id, {

@@ -3,10 +3,11 @@ import { v } from 'convex/values'
 
 import type { Id } from './_generated/dataModel'
 import { query } from './_generated/server'
-import { requireAuthenticatedActor } from './lib/actorContext'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
-import { resolveTaskRequestContext } from './lib/taskPolicy'
+import { createTaskRequestScope } from './lib/taskPolicy'
 import { threadsEnabled } from './lib/channelThreadPolicy'
+import { searchArchivedTasks } from './lib/taskData'
+import { archivedTaskSearchHit, searchNormalizedProjectArchive } from './lib/archivedProjectSearch'
 
 const searchScope = v.union(
   v.literal('all'),
@@ -77,6 +78,14 @@ export const project = query({
         tasks: [],
         threads: [],
       }
+    }
+
+    if (access.companyAccess?.entitlement?.snapshotOperationId) {
+      return await searchNormalizedProjectArchive(ctx, {
+        entitlement: access.companyAccess.entitlement,
+        projectMember: access.companyAccess.projectMember,
+        term, filter, limit: perSectionLimit,
+      })
     }
 
     const groupMemberships = access.companyAccess
@@ -255,43 +264,43 @@ export const project = query({
           title: group.name,
         }))
 
-    const taskCandidates = resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED) && enabled(filter, 'tasks')
-      ? access.companyAccess?.projectMember.status === 'archived' && access.companyAccess.entitlement
-        ? (await ctx.db.query('taskArchiveSnapshots').withIndex('by_entitlement_table', (q) =>
-            q.eq('entitlementId', access.companyAccess!.entitlement!._id).eq('sourceTable', 'tasks'),
-          ).collect()).map((row) => row.payload as {
-            _id: string; archivedAt?: number; boardId: string; dueDate?: string; groupId?: Id<'groups'>;
-            priority: string; publicKey: string; searchText: string; title: string; workflowStateId: string; createdAt: number
-          }).filter((task) => task.searchText.toLowerCase().includes(term.toLowerCase())).slice(0, perSectionLimit)
-        : await ctx.db.query('tasks').withSearchIndex('search_tasks', (q) =>
-            q.search('searchText', term).eq('projectId', args.projectId),
-          ).take(perSectionLimit * 4)
+    const tasksIncluded = resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED) && enabled(filter, 'tasks')
+    const entitlement = access.companyAccess?.entitlement
+    const archivedTaskViews = tasksIncluded && entitlement && access.companyAccess
+      ? await searchArchivedTasks(ctx, {
+          entitlement, projectMember: access.companyAccess.projectMember,
+        }, term, perSectionLimit)
       : []
-    const actor = taskCandidates.length ? await requireAuthenticatedActor(ctx) : null
-    const taskResults = []
+    const taskCandidates = tasksIncluded && !entitlement
+      ? await ctx.db.query('tasks').withSearchIndex('search_tasks', (q) =>
+          q.search('searchText', term).eq('projectId', args.projectId),
+        ).take(perSectionLimit * 4)
+      : []
+    const taskScope = taskCandidates.length
+      ? await createTaskRequestScope(ctx, access.actor, args.projectId, args)
+      : null
+    const taskResults = archivedTaskViews.map(archivedTaskSearchHit)
     for (const task of taskCandidates) {
-      if (task.archivedAt) continue
-      if (!access.companyAccess?.entitlement) {
-        try {
-          const taskAccess = await resolveTaskRequestContext(ctx, actor!, args.projectId, args, task.groupId)
-          if (task.groupId && !taskAccess.capabilities.canReadChannel) continue
-        } catch {
-          continue
-        }
+      if (task.archivedAt || !taskScope) continue
+      if (task.groupId) {
+        if (!visibleGroupIds.has(String(task.groupId))) continue
+        const taskAccess = await taskScope.forGroup(task.groupId)
+        if (!taskAccess.capabilities.canReadChannel) continue
       }
-      const archived = Boolean(access.companyAccess?.entitlement)
-      const board = archived ? null : await ctx.db.get(task.boardId as Id<'taskBoards'>)
-      const state = archived ? null : await ctx.db.get(task.workflowStateId as Id<'taskWorkflowStates'>)
-      const assignee = archived || !('assigneeProjectMemberId' in task) || !task.assigneeProjectMemberId
-        ? null : await ctx.db.get(task.assigneeProjectMemberId as Id<'projectMembers'>)
+      const [board, state, assignee] = await Promise.all([
+        ctx.db.get(task.boardId),
+        ctx.db.get(task.workflowStateId),
+        task.assigneeProjectMemberId ? ctx.db.get(task.assigneeProjectMemberId) : null,
+      ])
+      if (!board || !state) continue
       taskResults.push({
         createdAt: task.createdAt,
         groupId: task.groupId,
         groupName: task.groupId ? 'Channel task' : 'Project task',
         id: String(task._id),
         kind: 'task' as const,
-        preview: `${state?.name ?? 'Archived status'} · ${task.priority}${task.dueDate ? ` · due ${task.dueDate}` : ''}`,
-        subtitle: `${board?.name ?? 'Archived board'}${assignee ? ' · assigned' : ''}`,
+        preview: `${state.name} · ${task.priority}${task.dueDate ? ` · due ${task.dueDate}` : ''}`,
+        subtitle: `${board.name}${assignee ? ' · assigned' : ''}`,
         taskKey: task.publicKey,
         title: task.title,
       })

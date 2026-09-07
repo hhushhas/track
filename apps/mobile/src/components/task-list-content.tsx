@@ -19,6 +19,8 @@ export type { MobileBoardView, MobileSuggestionView, MobileTaskView };
 export function TaskCollection({
   assigneeName,
   columns,
+  loadMore,
+  loadingMore,
   onCreate,
   onMove,
   onOpen,
@@ -31,6 +33,8 @@ export function TaskCollection({
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
+  loadMore?: () => void;
+  loadingMore?: boolean;
   onCreate: () => void;
   onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
@@ -55,38 +59,45 @@ export function TaskCollection({
   }
   if (!tasks.length) {
     return (
-      <TaskEmptyState
-        body={tab === 'my'
-          ? 'Tasks assigned to you will appear here.'
-          : 'Create a task or turn a conversation into action.'}
-        buttonLabel={tab === 'my' ? 'View all tasks' : readOnly ? undefined : 'Create task'}
-        icon="check-box-outline"
-        onPress={tab === 'my' ? onViewAll : onCreate}
-        title={tab === 'my' ? 'Nothing assigned to you' : 'No tasks yet'}
-      />
+      <>
+        <TaskEmptyState
+          body={tab === 'my'
+            ? 'Tasks assigned to you will appear here.'
+            : 'Create a task or turn a conversation into action.'}
+          buttonLabel={tab === 'my' ? 'View all tasks' : readOnly ? undefined : 'Create task'}
+          icon="check-box-outline"
+          onPress={tab === 'my' ? onViewAll : onCreate}
+          title={tab === 'my' ? 'Nothing assigned to you' : 'No tasks yet'}
+        />
+        <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
+      </>
     );
   }
 
   if (tab === 'board') {
     return (
-      <TaskBoard
-        assigneeName={assigneeName}
-        columns={columns}
-        onMove={onMove}
-        onOpen={onOpen}
-        readOnly={readOnly}
-      />
+      <>
+        <TaskBoard
+          assigneeName={assigneeName}
+          columns={columns}
+          onMove={onMove}
+          onOpen={onOpen}
+          readOnly={readOnly}
+        />
+        <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
+      </>
     );
   }
 
   return (
-    <View style={styles.list}>
-      {tasks.map((item) => (
+    <>
+      <View style={styles.list}>
+        {tasks.map((item) => (
         <TaskCard
           assignee={assigneeName(item)}
           category={item.state?.category}
           dueDate={item.task.dueDate}
-          evidence={item.references.length > 0}
+          evidence={false}
           key={item.task._id}
           onPress={() => onOpen(item)}
           onStatusPress={readOnly ? undefined : () => onStatusPress(item)}
@@ -95,9 +106,16 @@ export function TaskCollection({
           stateName={item.state?.name ?? 'Unknown'}
           title={item.task.title}
         />
-      ))}
-    </View>
+        ))}
+      </View>
+      <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
+    </>
   );
+}
+
+function TaskLoadMore({ loadMore, loading }: { loadMore?: () => void; loading?: boolean }) {
+  if (!loadMore && !loading) return null;
+  return <TaskAction disabled={loading} label={loading ? 'Loading more…' : 'Load more tasks'} onPress={() => loadMore?.()} />;
 }
 
 export function SuggestionInbox({

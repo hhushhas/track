@@ -34,11 +34,17 @@ export function TaskDetailsTab({
   onAddSubtask,
   onEditField,
   onOpenReference,
+  onLoadMoreReferences,
   onSubtaskChange,
   onToggleSubtask,
   readOnly,
   subtask,
   subtasks,
+  references,
+  referencesLoading,
+  referencesLoadingMore,
+  onLoadMoreSubtasks,
+  subtasksLoadingMore,
 }: {
   assigneeName: string;
   busy: boolean;
@@ -47,14 +53,21 @@ export function TaskDetailsTab({
   onAddSubtask: () => void;
   onEditField: (field: TaskEditField) => void;
   onOpenReference: (reference: Doc<'taskReferences'>) => void;
+  onLoadMoreReferences?: () => void;
   onSubtaskChange: (value: string) => void;
   onToggleSubtask: (item: MobileTaskListItem) => void;
   readOnly: boolean;
   subtask: string;
   subtasks: MobileTaskListItem[];
+  references: Doc<'taskReferences'>[];
+  referencesLoading: boolean;
+  referencesLoadingMore: boolean;
+  onLoadMoreSubtasks?: () => void;
+  subtasksLoadingMore: boolean;
 }) {
   const theme = useTheme();
   const due = taskDueDisplay(detail.task.dueDate, undefined, detail.state?.category);
+  const labels = detail.labels.filter((label): label is NonNullable<typeof label> => label !== null);
   return (
     <>
       <Surface title="Overview">
@@ -93,10 +106,10 @@ export function TaskDetailsTab({
         </Pressable>
       </TaskSection>
 
-      {detail.labels.length || !readOnly ? (
+      {labels.length || !readOnly ? (
         <TaskSection title="Labels">
           <View style={styles.chips}>
-            {detail.labels.map((label) => (
+            {labels.map((label) => label && (
               <View key={label._id} style={[styles.label, { backgroundColor: theme.backgroundElement }]}>
                 <View style={[styles.labelDot, { backgroundColor: taskLabelColor(label.colorToken, theme.accent) }]} />
                 <ThemedText type="smallBold">{label.name}</ThemedText>
@@ -110,7 +123,7 @@ export function TaskDetailsTab({
                 style={[styles.label, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
                 <PlatformIcon color={theme.textSecondary} name="tag" size={15} />
                 <ThemedText themeColor="textSecondary" type="smallBold">
-                  {detail.labels.length ? 'Edit' : 'Add labels'}
+                  {labels.length ? 'Edit' : 'Add labels'}
                 </ThemedText>
               </Pressable>
             ) : null}
@@ -155,6 +168,7 @@ export function TaskDetailsTab({
             </View>
           </>
         ) : <ThemedText themeColor="textSecondary" type="small">No checklist items yet.</ThemedText>}
+        {onLoadMoreSubtasks || subtasksLoadingMore ? <LoadMoreButton label="checklist items" loading={subtasksLoadingMore} onPress={onLoadMoreSubtasks} /> : null}
         {!readOnly && !detail.task.parentTaskId ? (
           <View style={styles.addSubtask}>
             <TextInput
@@ -185,13 +199,14 @@ export function TaskDetailsTab({
       </TaskSection>
 
       <TaskSection title="Linked context">
-        {detail.references.length ? detail.references.map((reference) => (
+        {references.length ? references.map((reference) => (
           <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
-        )) : (
+        )) : referencesLoading ? <ThemedText themeColor="textSecondary" type="small">Loading linked context…</ThemedText> : (
           <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
             <ThemedText themeColor="textSecondary" type="small">No linked conversation or evidence.</ThemedText>
           </View>
         )}
+        {onLoadMoreReferences || referencesLoadingMore ? <LoadMoreButton label="linked context" loading={referencesLoadingMore} onPress={onLoadMoreReferences} /> : null}
       </TaskSection>
     </>
   );
@@ -244,16 +259,22 @@ function ReferenceRow({
 
 export function TaskDiscussionTab({
   assignees,
-  detail,
+  comments,
+  loading,
+  loadingMore,
+  onLoadMore,
 }: {
   assignees?: MobileTaskAssignee[];
-  detail: MobileTaskDetail;
+  comments: Array<Doc<'taskComments'>>;
+  loading: boolean;
+  loadingMore: boolean;
+  onLoadMore?: () => void;
 }) {
   const theme = useTheme();
-  const comments = detail.comments.filter((item) => !item.archivedAt);
+  const visibleComments = comments.filter((item) => !item.archivedAt);
   return (
-    <TaskSection title={`${comments.length} comments`}>
-      {comments.length ? comments.map((item) => {
+    <TaskSection title={`${visibleComments.length} comments`}>
+      {visibleComments.length ? visibleComments.map((item) => {
         const author = assignees?.find((candidate) => candidate.member._id === item.authorProjectMemberId)?.user.displayName
           ?? 'Project member';
         return (
@@ -268,27 +289,34 @@ export function TaskDiscussionTab({
             </View>
           </View>
         );
-      }) : <EmptyState icon="forum-outline" title="Start the discussion" body="Keep decisions and implementation notes attached to the task." />}
+      }) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading discussion…</ThemedText> : <EmptyState icon="forum-outline" title="Start the discussion" body="Keep decisions and implementation notes attached to the task." />}
+      {onLoadMore || loadingMore ? <LoadMoreButton label="comments" loading={loadingMore} onPress={onLoadMore} /> : null}
     </TaskSection>
   );
 }
 
-export function TaskActivityTab({ detail }: { detail: MobileTaskDetail }) {
+export function TaskActivityTab({ activities, loading, loadingMore, onLoadMore }: {
+  activities: Array<Doc<'taskActivities'>>;
+  loading: boolean;
+  loadingMore: boolean;
+  onLoadMore?: () => void;
+}) {
   const theme = useTheme();
   return (
     <TaskSection title="Recent activity">
-      {detail.activities.length ? detail.activities.map((item, index) => (
+      {activities.length ? activities.map((item, index) => (
         <View key={item._id} style={styles.timelineRow}>
           <View style={styles.timelineRail}>
             <View style={[styles.timelineDot, { backgroundColor: theme.accent }]} />
-            {index < detail.activities.length - 1 ? <View style={[styles.timelineLine, { backgroundColor: theme.hairline }]} /> : null}
+            {index < activities.length - 1 ? <View style={[styles.timelineLine, { backgroundColor: theme.hairline }]} /> : null}
           </View>
           <View style={styles.timelineBody}>
             <ThemedText type="smallBold">{taskActivityLabel(item.action as TaskActivityAction)}</ThemedText>
             <ThemedText themeColor="textSecondary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
           </View>
         </View>
-      )) : <ThemedText themeColor="textSecondary" type="small">No activity recorded yet.</ThemedText>}
+      )) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading activity…</ThemedText> : <ThemedText themeColor="textSecondary" type="small">No activity recorded yet.</ThemedText>}
+      {onLoadMore || loadingMore ? <LoadMoreButton label="activity" loading={loadingMore} onPress={onLoadMore} /> : null}
     </TaskSection>
   );
 }
@@ -379,6 +407,26 @@ export function TaskCommentComposer({
         </Pressable>
       </View>
     </View>
+  );
+}
+
+function LoadMoreButton({
+  label,
+  loading,
+  onPress,
+}: {
+  label: string;
+  loading: boolean;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={loading}
+      onPress={onPress}
+      style={styles.loadMoreButton}>
+      <ThemedText type="smallBold">{loading ? `Loading more ${label}…` : `Load more ${label}`}</ThemedText>
+    </Pressable>
   );
 }
 
@@ -481,6 +529,7 @@ const styles = StyleSheet.create({
   inlineInput: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, fontSize: 14, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   label: { alignItems: 'center', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   labelDot: { borderRadius: 4, height: 8, width: 8 },
+  loadMoreButton: { alignItems: 'center', borderRadius: Radius.medium, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   metadataLabel: { flex: 1 },
   metadataRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   metadataValue: { maxWidth: '48%' },

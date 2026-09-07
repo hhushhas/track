@@ -7,31 +7,55 @@ import {
   normalizeTaskText,
   resolveTaskCapabilities,
 } from '@track/shared/tasks'
+import { paginationOptsValidator, type PaginationOptions } from 'convex/server'
 import { v } from 'convex/values'
 
 import type { Doc, Id } from './_generated/dataModel'
-import type { MutationCtx } from './_generated/server'
+import type { MutationCtx, QueryCtx } from './_generated/server'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { threadsEnabled } from './lib/channelThreadPolicy'
 import { createTaskNotification, notifyTaskFollowers } from './lib/taskNotifications'
 import { invalidateTaskEvidence } from './lib/taskEvidence'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import {
   appendTaskActivity,
-  archivedTaskViews,
   createUniqueTaskPublicKey,
   getDefaultWorkflowState,
+  isTaskArchiveBoardPayload,
+  isTaskArchiveActivityPayload,
+  isTaskArchiveCommentPayload,
+  isTaskArchiveLabelLinkPayload,
+  isTaskArchiveLabelPayload,
+  isTaskArchiveReferencePayload,
+  isTaskArchiveStatePayload,
   rankBetween,
   rankForIndex,
+  taskArchiveAssistantRowsPage,
+  taskArchiveGroupIsVisible,
+  taskArchiveHasEvidence,
+  taskArchiveHasLabel,
+  taskArchiveMessageRowsPage,
+  taskArchiveRowsPage,
+  taskArchiveSourceForEntitlement,
+  taskArchiveSourceRow,
+  taskArchiveTaskByPublicKey,
+  taskArchiveTaskRowsPage,
+  taskArchiveSummary,
+  taskFromArchiveRow,
+  taskSummaryPage,
   taskView,
 } from './lib/taskData'
+import type { TaskArchiveSnapshotRow } from './lib/taskData'
 import {
   assertCanAssignTaskMember,
+  createTaskRequestScope,
   requireEligibleTaskMember,
   requireTaskAccess,
   requireTaskBoardAccess,
   resolveTaskRequestContext,
+  type TaskRequestIdentity,
 } from './lib/taskPolicy'
 import { taskPriority, taskStateCategory } from './schema/taskValidators'
 import { getOrCreateDefaultBoard } from './taskBoards'
@@ -63,6 +87,33 @@ type ReferenceInput = {
   memoryImportId?: Id<'memoryImports'>
   sourceIdentifier?: string
   isPrimary?: boolean
+}
+
+type TaskListFilters = {
+  projectId: Id<'projects'>
+  boardId?: Id<'taskBoards'>
+  groupId?: Id<'groups'>
+  assigneeProjectMemberId?: Id<'projectMembers'>
+  creatorProjectMemberId?: Id<'projectMembers'>
+  workflowStateId?: Id<'taskWorkflowStates'>
+  stateCategory?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
+  priority?: 'none' | 'urgent' | 'high' | 'medium' | 'low'
+  dueState?: 'none' | 'upcoming' | 'due_today' | 'overdue'
+  localDate?: string
+  labelId?: Id<'taskLabels'>
+  openOnly?: boolean
+  includeArchived?: boolean
+}
+
+const taskPageLimit = 100
+const taskNeighborScanLimit = 256
+
+function expectedReadFailure(error: unknown) {
+  return error instanceof Error && (
+    error.message === 'task_access_changed' ||
+    error.message === 'project_unavailable' ||
+    error.message === 'channel_unavailable'
+  )
 }
 
 function validateTaskFields(input: { title: string; description?: string; dueDate?: string }) {
@@ -111,7 +162,8 @@ async function assertOpenSubtasksConfirmed(
 ) {
   if (confirmed || task.parentTaskId) return
   const subtasks = await ctx.db.query('tasks')
-    .withIndex('by_parent', (q) => q.eq('parentTaskId', task._id)).collect()
+    .withIndex('by_parent', (q) => q.eq('parentTaskId', task._id)).take(taskNeighborScanLimit + 1)
+  if (subtasks.length > taskNeighborScanLimit) throw new Error('task_open_subtasks_confirmation_required')
   for (const subtask of subtasks) {
     if (subtask.archivedAt) continue
     const state = await ctx.db.get(subtask.workflowStateId)
@@ -185,6 +237,316 @@ async function insertReference(
   })
 }
 
+function taskListQuery(ctx: QueryCtx, filters: TaskListFilters) {
+  const includeArchived = filters.includeArchived === true
+  const boardId = filters.boardId
+  const workflowStateId = filters.workflowStateId
+  const assigneeProjectMemberId = filters.assigneeProjectMemberId
+  const groupId = filters.groupId
+  if (boardId && workflowStateId) {
+    return ctx.db.query('tasks').withIndex('by_board_state_archived_rank', (q) => {
+      const indexed = q.eq('boardId', boardId).eq('workflowStateId', workflowStateId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (boardId) {
+    return ctx.db.query('tasks').withIndex('by_board_archived_rank', (q) => {
+      const indexed = q.eq('boardId', boardId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (assigneeProjectMemberId) {
+    return ctx.db.query('tasks').withIndex('by_assignee_archived', (q) => {
+      const indexed = q.eq('assigneeProjectMemberId', assigneeProjectMemberId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (groupId) {
+    return ctx.db.query('tasks').withIndex('by_project_scope_archived', (q) => {
+      const indexed = q.eq('projectId', filters.projectId).eq('groupId', groupId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  return ctx.db.query('tasks').withIndex('by_project_archived', (q) => {
+    const indexed = q.eq('projectId', filters.projectId)
+    // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+    return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+  })
+}
+
+async function filterTaskRows(
+  ctx: QueryCtx,
+  scope: Awaited<ReturnType<typeof createTaskRequestScope>>,
+  filters: TaskListFilters,
+  rows: Array<Doc<'tasks'>>,
+) {
+  const labelId = filters.labelId
+  const boardIds = Array.from(new Set(rows.map((task) => task.boardId)))
+  const stateIds = Array.from(new Set(rows.map((task) => task.workflowStateId)))
+  const [boards, states] = await Promise.all([
+    Promise.all(boardIds.map((boardId) => ctx.db.get(boardId))),
+    Promise.all(stateIds.map((stateId) => ctx.db.get(stateId))),
+  ])
+  const boardsById = new Map<Id<'taskBoards'>, Doc<'taskBoards'>>()
+  for (const [index, board] of boards.entries()) {
+    if (board) boardsById.set(boardIds[index], board)
+  }
+  const statesById = new Map<Id<'taskWorkflowStates'>, Doc<'taskWorkflowStates'>>()
+  for (const [index, state] of states.entries()) {
+    if (state) statesById.set(stateIds[index], state)
+  }
+  const channelAccess = new Map<string, boolean>()
+  const visible: Array<Doc<'tasks'>> = []
+  for (const task of rows) {
+    if (task.projectId !== filters.projectId) continue
+    if (!filters.includeArchived && task.archivedAt) continue
+    if (filters.boardId && task.boardId !== filters.boardId) continue
+    if (filters.groupId && task.groupId !== filters.groupId) continue
+    if (filters.creatorProjectMemberId && task.createdByProjectMemberId !== filters.creatorProjectMemberId) continue
+    if (filters.workflowStateId && task.workflowStateId !== filters.workflowStateId) continue
+    if (filters.priority && task.priority !== filters.priority) continue
+    const board = boardsById.get(task.boardId)
+    if (!board || board.projectId !== filters.projectId || (!filters.includeArchived && board.archivedAt)) continue
+    const state = statesById.get(task.workflowStateId)
+    if (!state || (filters.stateCategory && state.category !== filters.stateCategory)) continue
+    if (filters.openOnly && isTerminalTaskState(state.category)) continue
+    if (filters.dueState && getTaskDueState(
+      task.dueDate,
+      filters.localDate ?? new Date().toISOString().slice(0, 10),
+      isTerminalTaskState(state.category),
+    ) !== filters.dueState) continue
+    if (labelId) {
+      const link = await ctx.db.query('taskLabelLinks')
+        .withIndex('by_task_label', (q) => q.eq('taskId', task._id).eq('labelId', labelId))
+        .unique()
+      if (!link) continue
+    }
+    if (!task.groupId) {
+      if (!scope.project.capabilities.canReadProject) continue
+    } else {
+      const key = String(task.groupId)
+      let canRead = channelAccess.get(key)
+      if (canRead === undefined) {
+        try {
+          const channel = await scope.forGroup(task.groupId)
+          canRead = channel.capabilities.canReadChannel
+        } catch (error) {
+          if (!expectedReadFailure(error)) throw error
+          canRead = false
+        }
+        channelAccess.set(key, canRead)
+      }
+      if (!canRead) continue
+    }
+    visible.push(task)
+  }
+  return visible
+}
+
+async function collectTaskListPage(
+  ctx: QueryCtx,
+  scope: Awaited<ReturnType<typeof createTaskRequestScope>>,
+  filters: TaskListFilters,
+  paginationOpts: PaginationOptions,
+) {
+  const pageSize = Math.min(Math.max(Math.trunc(paginationOpts.numItems), 1), taskPageLimit)
+  const source = taskListQuery(ctx, filters)
+  const result = await source.paginate({ ...paginationOpts, numItems: pageSize })
+  const tasks = await filterTaskRows(ctx, scope, filters, result.page)
+  const page = await taskSummaryPage(ctx, tasks)
+  return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+}
+
+async function archivedTaskListPage(
+  ctx: QueryCtx,
+  scope: Awaited<ReturnType<typeof createTaskRequestScope>>,
+  filters: TaskListFilters,
+  paginationOpts: PaginationOptions,
+) {
+  const entitlement = scope.project.entitlement
+  if (!entitlement) return { page: [], isDone: true, continueCursor: paginationOpts.cursor ?? '' }
+  const pageSize = Math.min(Math.max(Math.trunc(paginationOpts.numItems), 1), taskPageLimit)
+  const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+  const result = await taskArchiveRowsPage(ctx, archiveSource, 'tasks', {
+    ...paginationOpts,
+    numItems: pageSize,
+  })
+  const page: Array<ReturnType<typeof taskArchiveSummary>> = []
+  for (const row of result.page) {
+    const task = taskFromArchiveRow(row)
+    if (!task || (task.groupId && !await taskArchiveGroupIsVisible(
+      ctx,
+      entitlement,
+      scope.project.projectMember._id,
+      task.groupId,
+    ))) continue
+    if (!filters.includeArchived && task.archivedAt) continue
+    if (filters.boardId && task.boardId !== filters.boardId) continue
+    if (filters.groupId && task.groupId !== filters.groupId) continue
+    if (filters.assigneeProjectMemberId && task.assigneeProjectMemberId !== filters.assigneeProjectMemberId) continue
+    if (filters.creatorProjectMemberId && task.createdByProjectMemberId !== filters.creatorProjectMemberId) continue
+    if (filters.workflowStateId && task.workflowStateId !== filters.workflowStateId) continue
+    if (filters.priority && task.priority !== filters.priority) continue
+
+    const [boardRow, stateRow] = await Promise.all([
+      taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(task.boardId)),
+      taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(task.workflowStateId)),
+    ])
+    const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
+    const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
+    if (!board || !state || (!filters.includeArchived && board.archivedAt)) continue
+    if (filters.stateCategory && state.category !== filters.stateCategory) continue
+    if (filters.openOnly && isTerminalTaskState(state.category)) continue
+    if (filters.dueState && getTaskDueState(
+      task.dueDate,
+      filters.localDate ?? new Date().toISOString().slice(0, 10),
+      isTerminalTaskState(state.category),
+    ) !== filters.dueState) continue
+    if (filters.labelId) {
+      if (!await taskArchiveHasLabel(ctx, archiveSource, task._id, filters.labelId)) continue
+    }
+    page.push(taskArchiveSummary(
+      task,
+      board,
+      state,
+      await taskArchiveHasEvidence(ctx, archiveSource, task._id),
+    ))
+    if (page.length >= pageSize) break
+  }
+  return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+}
+
+export const listPage = query({
+  args: {
+    projectId: v.id('projects'),
+    boardId: v.optional(v.id('taskBoards')),
+    groupId: v.optional(v.id('groups')),
+    assigneeProjectMemberId: v.optional(v.id('projectMembers')),
+    creatorProjectMemberId: v.optional(v.id('projectMembers')),
+    workflowStateId: v.optional(v.id('taskWorkflowStates')),
+    stateCategory: v.optional(taskStateCategory),
+    priority: v.optional(taskPriority),
+    dueState: v.optional(v.union(v.literal('none'), v.literal('upcoming'), v.literal('due_today'), v.literal('overdue'))),
+    localDate: v.optional(v.string()),
+    labelId: v.optional(v.id('taskLabels')),
+    openOnly: v.optional(v.boolean()),
+    includeArchived: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const scope = await createTaskRequestScope(ctx, actor, args.projectId, args)
+    if (scope.project.capabilities.accessMode === 'archive') {
+      return await archivedTaskListPage(ctx, scope, args, args.paginationOpts)
+    }
+    if (!scope.project.capabilities.canReadProject && !args.groupId) {
+      return { page: [], isDone: true, continueCursor: args.paginationOpts.cursor ?? '' }
+    }
+    return await collectTaskListPage(ctx, scope, args, args.paginationOpts)
+  },
+})
+
+async function archivedTaskDetailByKey(
+  ctx: QueryCtx,
+  entitlement: Doc<'projectArchiveEntitlements'>,
+  publicKey: string,
+  currentProjectMemberId: Id<'projectMembers'>,
+) {
+  const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+  const taskRow = await taskArchiveTaskByPublicKey(ctx, archiveSource, publicKey)
+  const task = taskRow ? taskFromArchiveRow(taskRow) : null
+  if (!task || (task.groupId && !await taskArchiveGroupIsVisible(
+    ctx,
+    entitlement,
+    currentProjectMemberId,
+    task.groupId,
+  ))) return null
+  const hasTaskIdentity = Boolean(taskRow?.taskId)
+  const [boardRow, stateRow] = await Promise.all([
+    taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(task.boardId)),
+    taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(task.workflowStateId)),
+  ])
+  const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
+  const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
+  if (!board || !state) return null
+
+  let linkRows: TaskArchiveSnapshotRow[] = []
+  let referenceRows: TaskArchiveSnapshotRow[] = []
+  let commentRows: TaskArchiveSnapshotRow[] = []
+  let activityRows: TaskArchiveSnapshotRow[] = []
+  if (hasTaskIdentity) {
+    const pages = await Promise.all([
+      taskArchiveTaskRowsPage(ctx, archiveSource, task._id, 'taskLabelLinks', { cursor: null, numItems: taskPageLimit }),
+      taskArchiveTaskRowsPage(ctx, archiveSource, task._id, 'taskReferences', { cursor: null, numItems: taskPageLimit }),
+      taskArchiveTaskRowsPage(ctx, archiveSource, task._id, 'taskComments', { cursor: null, numItems: taskPageLimit }),
+      taskArchiveTaskRowsPage(ctx, archiveSource, task._id, 'taskActivities', { cursor: null, numItems: taskPageLimit }),
+    ])
+    linkRows = pages[0].page
+    referenceRows = pages[1].page
+    commentRows = pages[2].page
+    activityRows = pages[3].page
+  }
+  const visibleRows = async (rows: TaskArchiveSnapshotRow[]) => {
+    const visible = await Promise.all(rows.map(async (row) =>
+      !row.groupId || await taskArchiveGroupIsVisible(ctx, entitlement, currentProjectMemberId, row.groupId)
+        ? row
+        : null,
+    ))
+    return visible.filter((row): row is TaskArchiveSnapshotRow => row !== null)
+  }
+  const [visibleLinkRows, visibleReferenceRows, visibleCommentRows, visibleActivityRows] = await Promise.all([
+    visibleRows(linkRows),
+    visibleRows(referenceRows),
+    visibleRows(commentRows),
+    visibleRows(activityRows),
+  ])
+  const labelLinks = visibleLinkRows.flatMap((row) =>
+    isTaskArchiveLabelLinkPayload(row.payload) ? [row.payload] : [])
+  const labelRows = await Promise.all(labelLinks.map((link) =>
+    taskArchiveSourceRow(ctx, archiveSource, 'taskLabels', String(link.labelId)),
+  ))
+  const labels = labelRows.flatMap((row) =>
+    row && isTaskArchiveLabelPayload(row.payload) ? [row.payload] : [])
+  const references = visibleReferenceRows.flatMap((row) => {
+    if (row.sourceTable !== 'taskReferences' || !isTaskArchiveReferencePayload(row.payload)) return []
+    return [{
+      ...row.payload,
+      availability: row.payload.channelThreadId && !threadsEnabled() ? 'unavailable' as const : row.payload.availability,
+      quote: row.payload.channelThreadId && !threadsEnabled() ? undefined : row.payload.quote,
+    }]
+  })
+  const comments = visibleCommentRows.flatMap((row) =>
+    row.sourceTable === 'taskComments' && isTaskArchiveCommentPayload(row.payload) ? [row.payload] : [])
+  const activities = visibleActivityRows.flatMap((row) =>
+    row.sourceTable === 'taskActivities' && isTaskArchiveActivityPayload(row.payload) ? [row.payload] : [])
+  return {
+    ...taskArchiveSummary(task, board, state, referenceRows.length > 0),
+    // Detail consumers need the complete archived task payload. Keep list and
+    // link projections compact, but do not drop description from getByKey.
+    task,
+    board,
+    state,
+    creator: null,
+    labels,
+    references,
+    comments,
+    activities,
+    following: false,
+    capabilities: {
+      canView: true, canCreate: false, canEdit: false, canAssignOthers: false,
+      canTransfer: false, canManage: false, canChangeScope: false,
+      canArchive: false, canComment: false,
+    },
+    currentProjectMemberId,
+    restrictedEarlierContext: !hasTaskIdentity,
+  }
+}
+
 export const list = query({
   args: {
     projectId: v.id('projects'),
@@ -204,23 +566,12 @@ export const list = query({
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
-    const access = await resolveTaskRequestContext(ctx, actor, args.projectId, args)
-    if (access.capabilities.accessMode === 'archive' && access.entitlement) {
-      const archived = await archivedTaskViews(ctx, access.entitlement._id)
-      return archived.filter((view) =>
-        (args.includeArchived || !view.task.archivedAt) &&
-        (!args.boardId || view.task.boardId === args.boardId) &&
-        (!args.groupId || view.task.groupId === args.groupId) &&
-        (!args.assigneeProjectMemberId || view.task.assigneeProjectMemberId === args.assigneeProjectMemberId) &&
-        (!args.creatorProjectMemberId || view.task.createdByProjectMemberId === args.creatorProjectMemberId) &&
-        (!args.workflowStateId || view.task.workflowStateId === args.workflowStateId) &&
-        (!args.stateCategory || view.state?.category === args.stateCategory) &&
-        (!args.priority || view.task.priority === args.priority) &&
-        (!args.openOnly || !view.state || !isTerminalTaskState(view.state.category)) &&
-        (!args.dueState || getTaskDueState(view.task.dueDate, args.localDate ?? new Date().toISOString().slice(0, 10), Boolean(view.state && isTerminalTaskState(view.state.category))) === args.dueState) &&
-        (!args.labelId || view.labels.some((label) => label._id === args.labelId)),
-      )
+    const scope = await createTaskRequestScope(ctx, actor, args.projectId, args)
+    if (scope.project.capabilities.accessMode === 'archive') {
+      const archived = await archivedTaskListPage(ctx, scope, args, { cursor: null, numItems: taskPageLimit })
+      return archived.page
     }
+    const access = scope.project
     const rows = args.assigneeProjectMemberId
       ? await ctx.db.query('tasks')
           .withIndex('by_assignee_archived', (q) => q.eq('assigneeProjectMemberId', args.assigneeProjectMemberId))
@@ -269,8 +620,12 @@ export const getByKey = query({
     const actor = await requireAuthenticatedActor(ctx)
     const projectAccess = await resolveTaskRequestContext(ctx, actor, args.projectId, args)
     if (projectAccess.capabilities.accessMode === 'archive' && projectAccess.entitlement) {
-      const archived = await archivedTaskViews(ctx, projectAccess.entitlement._id)
-      return archived.find((view) => view.task.publicKey === args.publicKey) ?? null
+      return await archivedTaskDetailByKey(
+        ctx,
+        projectAccess.entitlement,
+        args.publicKey,
+        projectAccess.projectMember._id,
+      )
     }
     const task = await ctx.db.query('tasks')
       .withIndex('by_project_key', (q) => q.eq('projectId', args.projectId).eq('publicKey', args.publicKey))
@@ -279,12 +634,12 @@ export const getByKey = query({
     try {
       const access = await requireTaskAccess(ctx, actor, task._id, args)
       const [comments, activities, follow, references] = await Promise.all([
-        ctx.db.query('taskComments').withIndex('by_task_created_at', (q) => q.eq('taskId', task._id)).collect(),
-        ctx.db.query('taskActivities').withIndex('by_task_created_at', (q) => q.eq('taskId', task._id)).collect(),
+        ctx.db.query('taskComments').withIndex('by_task_created_at', (q) => q.eq('taskId', task._id)).order('desc').take(taskPageLimit),
+        ctx.db.query('taskActivities').withIndex('by_task_created_at', (q) => q.eq('taskId', task._id)).order('desc').take(taskPageLimit),
         ctx.db.query('taskFollowers').withIndex('by_task_member', (q) =>
           q.eq('taskId', task._id).eq('projectMemberId', access.projectMember._id),
         ).unique(),
-        ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', task._id)).collect(),
+        ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', task._id)).take(taskPageLimit),
       ])
       const originalGroups = new Set<string>()
       for (const groupId of new Set([
@@ -299,7 +654,7 @@ export const getByKey = query({
           continue
         }
       }
-      const view = await taskView(ctx, task, originalGroups)
+      const view = await taskView(ctx, task, originalGroups, { includeReferences: true, maxReferences: taskPageLimit })
       const visibleComments = comments.filter((comment) => !comment.originalGroupId ||
         comment.originalGroupId === task.groupId || originalGroups.has(String(comment.originalGroupId)))
       const visibleActivities = activities.filter((activity) => !activity.originalGroupId ||
@@ -311,12 +666,273 @@ export const getByKey = query({
         following: follow?.enabled ?? false,
         capabilities: access.taskCapabilities,
         currentProjectMemberId: access.projectMember._id,
-        restrictedEarlierContext: comments.length !== visibleComments.length ||
-          activities.length !== visibleActivities.length || references.length !== view.references.length,
+        restrictedEarlierContext: comments.length >= taskPageLimit || activities.length >= taskPageLimit ||
+          references.length >= taskPageLimit ||
+          comments.length !== visibleComments.length || activities.length !== visibleActivities.length,
       }
     } catch {
       return null
     }
+  },
+})
+
+async function canReadOriginalTaskGroup(
+  ctx: QueryCtx,
+  actor: Awaited<ReturnType<typeof requireAuthenticatedActor>>,
+  task: Doc<'tasks'>,
+  identity: TaskRequestIdentity,
+  originalGroupId: Id<'groups'> | undefined,
+) {
+  if (!originalGroupId || originalGroupId === task.groupId) return true
+  try {
+    const access = await resolveTaskRequestContext(ctx, actor, task.projectId, identity, originalGroupId)
+    return access.capabilities.canReadChannel
+  } catch (error) {
+    if (!expectedReadFailure(error)) throw error
+    return false
+  }
+}
+
+export const listChildren = query({
+  args: {
+    parentTaskId: v.id('tasks'),
+    includeArchived: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await requireTaskAccess(ctx, actor, args.parentTaskId, args)
+    const pageSize = Math.min(Math.max(Math.trunc(args.paginationOpts.numItems), 1), taskPageLimit)
+    const entitlement = access.entitlement
+    if (entitlement) {
+      const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+      const page: Array<ReturnType<typeof taskArchiveSummary>> = []
+      const result = await taskArchiveRowsPage(ctx, archiveSource, 'tasks', {
+        ...args.paginationOpts,
+        numItems: pageSize,
+      })
+      for (const row of result.page) {
+        const child = taskFromArchiveRow(row)
+        if (!child || child.parentTaskId !== access.task._id || (!args.includeArchived && child.archivedAt)) continue
+        if (child.groupId && !await taskArchiveGroupIsVisible(
+          ctx,
+          entitlement,
+          access.projectMember._id,
+          child.groupId,
+        )) continue
+        const [boardRow, stateRow] = await Promise.all([
+          taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(child.boardId)),
+          taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(child.workflowStateId)),
+        ])
+        const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
+        const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
+        if (!board || !state) continue
+        page.push(taskArchiveSummary(
+          child,
+          board,
+          state,
+          await taskArchiveHasEvidence(ctx, archiveSource, child._id),
+        ))
+      }
+      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+    }
+    const source = ctx.db.query('tasks').withIndex('by_parent_rank', (q) => q.eq('parentTaskId', access.task._id))
+    const result = await source.paginate({ ...args.paginationOpts, numItems: pageSize })
+    const tasks = result.page.filter((task) => args.includeArchived === true || !task.archivedAt)
+    return {
+      page: await taskSummaryPage(ctx, tasks),
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+    }
+  },
+})
+
+export const listHistory = query({
+  args: {
+    taskId: v.id('tasks'),
+    kind: v.optional(v.union(v.literal('comments'), v.literal('activities'))),
+    paginationOpts: paginationOptsValidator,
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    const kind = args.kind ?? 'comments'
+    const pageSize = Math.min(Math.max(Math.trunc(args.paginationOpts.numItems), 1), taskPageLimit)
+    const entitlement = access.entitlement
+    if (entitlement) {
+      const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+      const result = await taskArchiveTaskRowsPage(
+        ctx,
+        archiveSource,
+        access.task._id,
+        kind === 'comments' ? 'taskComments' : 'taskActivities',
+        { ...args.paginationOpts, numItems: pageSize },
+      )
+      const page: Array<Doc<'taskComments'> | Doc<'taskActivities'>> = []
+      for (const row of result.page) {
+        const item = kind === 'comments'
+          ? isTaskArchiveCommentPayload(row.payload) ? row.payload : null
+          : isTaskArchiveActivityPayload(row.payload) ? row.payload : null
+        if (item && (!row.groupId || await taskArchiveGroupIsVisible(
+          ctx,
+          entitlement,
+          access.projectMember._id,
+          row.groupId,
+        ))) page.push(item)
+      }
+      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+    }
+    if (kind === 'comments') {
+      const result = await ctx.db.query('taskComments')
+        .withIndex('by_task_created_at', (q) => q.eq('taskId', access.task._id))
+        .order('desc')
+        .paginate({ ...args.paginationOpts, numItems: pageSize })
+      const page = []
+      for (const comment of result.page) {
+        if (await canReadOriginalTaskGroup(ctx, actor, access.task, args, comment.originalGroupId)) page.push(comment)
+      }
+      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+    }
+    const result = await ctx.db.query('taskActivities')
+      .withIndex('by_task_created_at', (q) => q.eq('taskId', access.task._id))
+      .order('desc')
+      .paginate({ ...args.paginationOpts, numItems: pageSize })
+    const page = []
+    for (const activity of result.page) {
+      if (await canReadOriginalTaskGroup(ctx, actor, access.task, args, activity.originalGroupId)) page.push(activity)
+    }
+    return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+  },
+})
+
+export const listReferences = query({
+  args: {
+    taskId: v.id('tasks'),
+    paginationOpts: paginationOptsValidator,
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    const pageSize = Math.min(Math.max(Math.trunc(args.paginationOpts.numItems), 1), taskPageLimit)
+    const entitlement = access.entitlement
+    if (entitlement) {
+      const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+      const result = await taskArchiveTaskRowsPage(
+        ctx,
+        archiveSource,
+        access.task._id,
+        'taskReferences',
+        { ...args.paginationOpts, numItems: pageSize },
+      )
+      const page: Array<Doc<'taskReferences'>> = []
+      for (const row of result.page) {
+        if (isTaskArchiveReferencePayload(row.payload) &&
+          (!row.groupId || await taskArchiveGroupIsVisible(
+            ctx,
+            entitlement,
+            access.projectMember._id,
+            row.groupId,
+          ))) {
+          page.push(row.payload)
+        }
+      }
+      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+    }
+    const source = ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', access.task._id))
+    const result = await source.paginate({ ...args.paginationOpts, numItems: pageSize })
+    const page: Array<Doc<'taskReferences'>> = []
+    for (const reference of result.page) {
+      if (await canReadOriginalTaskGroup(ctx, actor, access.task, args, reference.groupId)) page.push(reference)
+    }
+    return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+  },
+})
+
+type TaskLinkSummary = Awaited<ReturnType<typeof taskSummaryPage>>[number]
+
+async function taskLinksForMessage(
+  ctx: QueryCtx,
+  actor: Awaited<ReturnType<typeof requireAuthenticatedActor>>,
+  messageId: Id<'messages'>,
+  identity: TaskRequestIdentity,
+) {
+  const message = await ctx.db.get(messageId)
+  if (!message || (message.channelThreadId && !threadsEnabled())) return null
+  const access = await resolveTaskRequestContext(ctx, actor, message.projectId, identity, message.groupId)
+  const canRead = message.groupId
+    ? access.capabilities.canReadChannel
+    : access.capabilities.canReadProject
+  if (!canRead) return null
+  const entitlement = access.entitlement
+  if (entitlement) {
+    const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+    const referencePage = await taskArchiveMessageRowsPage(
+      ctx,
+      archiveSource,
+      message._id,
+      { cursor: null, numItems: taskPageLimit },
+    )
+    const referenceRows = referencePage.page
+    const taskIds = Array.from(new Set((await Promise.all(referenceRows.map(async (row) =>
+      row.sourceTable === 'taskReferences' && row.taskId &&
+      (!row.groupId || await taskArchiveGroupIsVisible(ctx, entitlement, access.projectMember._id, row.groupId))
+        ? row.taskId : null,
+    ))).filter((taskId): taskId is Id<'tasks'> => taskId !== null)))
+    const summaries: Array<TaskLinkSummary> = []
+    for (const taskId of taskIds) {
+      const taskPage = await taskArchiveTaskRowsPage(
+        ctx,
+        archiveSource,
+        taskId,
+        'tasks',
+        { cursor: null, numItems: 1 },
+      )
+      const task = taskPage.page[0] ? taskFromArchiveRow(taskPage.page[0]) : null
+      if (!task || task.archivedAt || (task.groupId && !await taskArchiveGroupIsVisible(
+        ctx,
+        entitlement,
+        access.projectMember._id,
+        task.groupId,
+      ))) continue
+      const related = await Promise.all([
+        taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(task.boardId)),
+        taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(task.workflowStateId)),
+      ])
+      const board = related[0] && isTaskArchiveBoardPayload(related[0].payload) ? related[0].payload : null
+      const state = related[1] && isTaskArchiveStatePayload(related[1].payload) ? related[1].payload : null
+      if (board && state) summaries.push(taskArchiveSummary(task, board, state, true))
+    }
+    return summaries
+  }
+  const references = await ctx.db.query('taskReferences')
+    .withIndex('by_message', (q) => q.eq('messageId', message._id)).take(taskPageLimit)
+  const taskIds = Array.from(new Set(references.flatMap((reference) =>
+    reference.availability === 'available' ? [reference.taskId] : [])))
+  const tasks = (await Promise.all(taskIds.map((taskId) => ctx.db.get(taskId))))
+    .filter((task): task is Doc<'tasks'> => Boolean(task && !task.archivedAt && task.groupId === message.groupId))
+  return await taskSummaryPage(ctx, tasks)
+}
+
+export const listForMessages = query({
+  args: {
+    messageIds: v.array(v.id('messages')),
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    if (args.messageIds.length > taskPageLimit) throw new Error('task_batch_limit')
+    const actor = await requireAuthenticatedActor(ctx)
+    const results: Array<{ messageId: Id<'messages'>; tasks: Array<TaskLinkSummary> }> = []
+    const uniqueIds = Array.from(new Set(args.messageIds.map(String)))
+    for (const messageId of uniqueIds) {
+      const parsed = args.messageIds.find((candidate) => String(candidate) === messageId)
+      if (!parsed) continue
+      const tasks = await taskLinksForMessage(ctx, actor, parsed, args)
+      if (tasks) results.push({ messageId: parsed, tasks })
+    }
+    return results
   },
 })
 
@@ -352,65 +968,99 @@ export const listForMessage = query({
   args: { messageId: v.id('messages'), ...identityArgs },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
-    const message = await ctx.db.get(args.messageId)
-    if (!message) return []
-    if (message.channelThreadId && !threadsEnabled()) return []
-    const access = await resolveTaskRequestContext(ctx, actor, message.projectId, args, message.groupId)
-    if (!access.capabilities.canReadChannel) return []
-    if (access.capabilities.accessMode === 'archive' && access.entitlement) {
-      return (await archivedTaskViews(ctx, access.entitlement._id))
-        .filter((view) => !view.task.archivedAt && view.task.groupId === message.groupId &&
-          view.references.some((reference) => reference.messageId === message._id &&
-            reference.availability === 'available'))
-        .map(({ task, state, assignee }) => ({ task, state, assignee }))
-    }
-    const references = await ctx.db.query('taskReferences')
-      .withIndex('by_message', (q) => q.eq('messageId', message._id)).collect()
-    const cards = []
-    for (const reference of references) {
-      if (reference.availability !== 'available') continue
-      const task = await ctx.db.get(reference.taskId)
-      if (!task || task.archivedAt || task.groupId !== message.groupId) continue
-      const [state, assignee] = await Promise.all([
-        ctx.db.get(task.workflowStateId),
-        task.assigneeProjectMemberId ? ctx.db.get(task.assigneeProjectMemberId) : null,
-      ])
-      cards.push({ task, state, assignee })
-    }
-    return cards
+    return await taskLinksForMessage(ctx, actor, args.messageId, args) ?? []
   },
 })
+
+async function taskLinksForAssistant(
+  ctx: QueryCtx,
+  actor: Awaited<ReturnType<typeof requireAuthenticatedActor>>,
+  assistantStreamId: Id<'assistantStreams'>,
+  identity: TaskRequestIdentity,
+) {
+  const stream = await ctx.db.get(assistantStreamId)
+  if (!stream || stream.status !== 'completed' || (stream.channelThreadId && !threadsEnabled())) return null
+  const access = await resolveTaskRequestContext(ctx, actor, stream.projectId, identity, stream.groupId)
+  const canRead = stream.groupId
+    ? access.capabilities.canReadChannel
+    : access.capabilities.canReadProject
+  if (!canRead) return null
+  const entitlement = access.entitlement
+  if (entitlement) {
+    const archiveSource = taskArchiveSourceForEntitlement(entitlement)
+    const referencePage = await taskArchiveAssistantRowsPage(
+      ctx,
+      archiveSource,
+      stream._id,
+      { cursor: null, numItems: taskPageLimit },
+    )
+    const referenceRows = referencePage.page
+    const taskIds = Array.from(new Set((await Promise.all(referenceRows.map(async (row) =>
+      row.sourceTable === 'taskReferences' && row.taskId &&
+      (!row.groupId || await taskArchiveGroupIsVisible(ctx, entitlement, access.projectMember._id, row.groupId))
+        ? row.taskId : null,
+    ))).filter((taskId): taskId is Id<'tasks'> => taskId !== null)))
+    const summaries: Array<TaskLinkSummary> = []
+    for (const taskId of taskIds) {
+      const taskPage = await taskArchiveTaskRowsPage(
+        ctx,
+        archiveSource,
+        taskId,
+        'tasks',
+        { cursor: null, numItems: 1 },
+      )
+      const task = taskPage.page[0] ? taskFromArchiveRow(taskPage.page[0]) : null
+      if (!task || task.archivedAt || task.groupId !== stream.groupId ||
+        (task.groupId && !await taskArchiveGroupIsVisible(
+          ctx,
+          entitlement,
+          access.projectMember._id,
+          task.groupId,
+        ))) continue
+      const [boardRow, stateRow] = await Promise.all([
+        taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(task.boardId)),
+        taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(task.workflowStateId)),
+      ])
+      const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
+      const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
+      if (board && state) summaries.push(taskArchiveSummary(task, board, state, true))
+    }
+    return summaries
+  }
+  const references = await ctx.db.query('taskReferences')
+    .withIndex('by_assistant_stream', (q) => q.eq('assistantStreamId', stream._id)).take(taskPageLimit)
+  const taskIds = Array.from(new Set(references.flatMap((reference) =>
+    reference.availability === 'available' ? [reference.taskId] : [])))
+  const tasks = (await Promise.all(taskIds.map((taskId) => ctx.db.get(taskId))))
+    .filter((task): task is Doc<'tasks'> => Boolean(task && !task.archivedAt && task.groupId === stream.groupId))
+  return await taskSummaryPage(ctx, tasks)
+}
 
 export const listForAssistant = query({
   args: { assistantStreamId: v.id('assistantStreams'), ...identityArgs },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
-    const stream = await ctx.db.get(args.assistantStreamId)
-    if (!stream || stream.status !== 'completed') return []
-    if (stream.channelThreadId && !threadsEnabled()) return []
-    const access = await resolveTaskRequestContext(ctx, actor, stream.projectId, args, stream.groupId)
-    if (!access.capabilities.canReadChannel) return []
-    if (access.capabilities.accessMode === 'archive' && access.entitlement) {
-      return (await archivedTaskViews(ctx, access.entitlement._id))
-        .filter((view) => !view.task.archivedAt && view.task.groupId === stream.groupId &&
-          view.references.some((reference) => reference.assistantStreamId === stream._id &&
-            reference.availability === 'available'))
-        .map(({ task, state, assignee }) => ({ task, state, assignee }))
+    return await taskLinksForAssistant(ctx, actor, args.assistantStreamId, args) ?? []
+  },
+})
+
+export const listForAssistantStreams = query({
+  args: {
+    assistantStreamIds: v.array(v.id('assistantStreams')),
+    ...identityArgs,
+  },
+  handler: async (ctx, args) => {
+    if (args.assistantStreamIds.length > taskPageLimit) throw new Error('task_batch_limit')
+    const actor = await requireAuthenticatedActor(ctx)
+    const results: Array<{ assistantStreamId: Id<'assistantStreams'>; tasks: Array<TaskLinkSummary> }> = []
+    const uniqueIds = Array.from(new Set(args.assistantStreamIds.map(String)))
+    for (const streamKey of uniqueIds) {
+      const streamId = args.assistantStreamIds.find((candidate) => String(candidate) === streamKey)
+      if (!streamId) continue
+      const tasks = await taskLinksForAssistant(ctx, actor, streamId, args)
+      if (tasks) results.push({ assistantStreamId: streamId, tasks })
     }
-    const references = await ctx.db.query('taskReferences')
-      .withIndex('by_assistant_stream', (q) => q.eq('assistantStreamId', stream._id)).collect()
-    const cards = []
-    for (const reference of references) {
-      if (reference.availability !== 'available') continue
-      const task = await ctx.db.get(reference.taskId)
-      if (!task || task.archivedAt || task.groupId !== stream.groupId) continue
-      const [state, assignee] = await Promise.all([
-        ctx.db.get(task.workflowStateId),
-        task.assigneeProjectMemberId ? ctx.db.get(task.assigneeProjectMemberId) : null,
-      ])
-      cards.push({ task, state, assignee })
-    }
-    return cards
+    return results
   },
 })
 
@@ -433,6 +1083,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     validateTaskFields(args)
     const existing = await ctx.db.query('tasks')
       .withIndex('by_project_idempotency', (q) =>
@@ -494,9 +1145,10 @@ export const create = mutation({
         throw new Error('task_parent_invalid')
       }
     }
-    const stateTasks = await ctx.db.query('tasks')
+    const lastStateTask = await ctx.db.query('tasks')
       .withIndex('by_board_state_rank', (q) => q.eq('boardId', board._id).eq('workflowStateId', state._id))
-      .collect()
+      .order('desc')
+      .first()
     const now = Date.now()
     const taskId = await ctx.db.insert('tasks', {
       projectId: args.projectId,
@@ -505,7 +1157,7 @@ export const create = mutation({
       groupId,
       parentTaskId: parent?._id,
       workflowStateId: state._id,
-      rank: rankForIndex(stateTasks.length),
+      rank: rankBetween(lastStateTask?.rank) ?? rankForIndex(0),
       title: normalizeTaskText(args.title),
       description: args.description?.trim() || undefined,
       searchText: `${normalizeTaskText(args.title)} ${args.description?.trim() ?? ''} `,
@@ -567,6 +1219,7 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canEdit) throw new Error('task_edit_forbidden')
     if (access.task.revision !== args.expectedRevision) {
       throw new Error(`task_conflict:${access.task.revision}`)
@@ -658,13 +1311,6 @@ export const update = mutation({
   },
 })
 
-function taskNeighbour(siblings: Array<Doc<'tasks'>>, taskId: Id<'tasks'> | undefined) {
-  if (!taskId) return undefined
-  const neighbour = siblings.find((task) => task._id === taskId)
-  if (!neighbour) throw new Error('task_destination_invalid')
-  return neighbour
-}
-
 /** Rewrites a column into evenly spaced ranks and returns the moved task's rank. */
 async function reindexTaskColumn(
   ctx: MutationCtx,
@@ -679,6 +1325,78 @@ async function reindexTaskColumn(
     }
   }
   return rankForIndex(input.index)
+}
+
+async function taskNeighbour(
+  ctx: MutationCtx,
+  taskId: Id<'tasks'> | undefined,
+  input: { taskId: Id<'tasks'>; boardId: Id<'taskBoards'>; workflowStateId: Id<'taskWorkflowStates'> },
+) {
+  if (!taskId) return undefined
+  const neighbour = await ctx.db.get(taskId)
+  if (!neighbour || neighbour._id === input.taskId || neighbour.archivedAt ||
+    neighbour.boardId !== input.boardId || neighbour.workflowStateId !== input.workflowStateId) {
+    throw new Error('task_destination_invalid')
+  }
+  return neighbour
+}
+
+async function resolveTaskMoveRank(
+  ctx: MutationCtx,
+  input: {
+    task: Doc<'tasks'>
+    boardId: Id<'taskBoards'>
+    workflowStateId: Id<'taskWorkflowStates'>
+    beforeTaskId?: Id<'tasks'>
+    afterTaskId?: Id<'tasks'>
+    targetIndex?: number
+    now: number
+  },
+) {
+  const neighbourContext = {
+    taskId: input.task._id,
+    boardId: input.boardId,
+    workflowStateId: input.workflowStateId,
+  }
+  let below = await taskNeighbour(ctx, input.beforeTaskId, neighbourContext)
+  let above = await taskNeighbour(ctx, input.afterTaskId, neighbourContext)
+  if (!below && !above && input.targetIndex !== undefined) {
+    const targetIndex = Math.trunc(input.targetIndex)
+    if (targetIndex < 0 || targetIndex > taskNeighborScanLimit) {
+      throw new Error('task_move_target_too_deep')
+    }
+    const candidates = (await ctx.db.query('tasks')
+      .withIndex('by_board_state_rank', (q) =>
+        q.eq('boardId', input.boardId).eq('workflowStateId', input.workflowStateId),
+      )
+      .order('asc')
+      .take(taskNeighborScanLimit + 1))
+      .filter((task) => task._id !== input.task._id && !task.archivedAt)
+    below = candidates[targetIndex]
+    above = targetIndex > 0 ? candidates[targetIndex - 1] : undefined
+  }
+  if (!below && !above) {
+    above = await ctx.db.query('tasks')
+      .withIndex('by_board_state_rank', (q) =>
+        q.eq('boardId', input.boardId).eq('workflowStateId', input.workflowStateId),
+      )
+      .order('desc')
+      .first() ?? undefined
+    if (above?._id === input.task._id || above?.archivedAt) above = undefined
+  }
+  const rank = rankBetween(above?.rank, below?.rank)
+  if (rank) return rank
+  const siblings = (await ctx.db.query('tasks')
+    .withIndex('by_board_state_rank', (q) =>
+      q.eq('boardId', input.boardId).eq('workflowStateId', input.workflowStateId),
+    )
+    .collect())
+    .filter((task) => task._id !== input.task._id && !task.archivedAt)
+  const index = below ? siblings.findIndex((task) => task._id === below._id) : above
+    ? siblings.findIndex((task) => task._id === above._id) + 1
+    : siblings.length
+  if (index < 0) throw new Error('task_destination_invalid')
+  return await reindexTaskColumn(ctx, { index, moved: input.task, now: input.now, siblings })
 }
 
 /**
@@ -701,6 +1419,7 @@ export const moveTask = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canEdit) throw new Error('task_edit_forbidden')
     if (access.task.revision !== args.expectedRevision) {
       throw new Error(`task_conflict:${access.task.revision}`)
@@ -713,21 +1432,14 @@ export const moveTask = mutation({
     if (stateChanged && isTerminalTaskState(state.category)) {
       await assertOpenSubtasksConfirmed(ctx, access.task, args.confirmOpenSubtasks)
     }
-    const siblings = (await ctx.db.query('tasks')
-      .withIndex('by_board_state_rank', (q) =>
-        q.eq('boardId', access.task.boardId).eq('workflowStateId', state._id),
-      ).collect())
-      .filter((task) => task._id !== access.task._id && !task.archivedAt)
-    const below = taskNeighbour(siblings, args.beforeTaskId)
-    // Naming no neighbour means "append", so the card lands after the last sibling.
-    const above = taskNeighbour(siblings, args.afterTaskId)
-      ?? (below ? undefined : siblings[siblings.length - 1])
     const now = Date.now()
-    const rank = rankBetween(above?.rank, below?.rank) ?? await reindexTaskColumn(ctx, {
-      index: below ? siblings.indexOf(below) : above ? siblings.indexOf(above) + 1 : siblings.length,
-      moved: access.task,
+    const rank = await resolveTaskMoveRank(ctx, {
+      task: access.task,
+      boardId: access.task.boardId,
+      workflowStateId: state._id,
+      beforeTaskId: args.beforeTaskId,
+      afterTaskId: args.afterTaskId,
       now,
-      siblings,
     })
     await ctx.db.patch(access.task._id, {
       workflowStateId: state._id,
@@ -750,15 +1462,15 @@ export const moveTask = mutation({
         before: access.task.workflowStateId,
         after: state._id,
       })
-      await notifyTaskFollowers(ctx, {
-        task: updated,
-        actorProjectMemberId: access.projectMember._id,
-        eventType: 'task_changed',
-        payload: { publicKey: updated.publicKey },
-        idempotencyKey: `changed:${updated._id}:${updated.revision}`,
-      })
-      await rescheduleTaskReminders(ctx, updated)
     }
+    await notifyTaskFollowers(ctx, {
+      task: updated,
+      actorProjectMemberId: access.projectMember._id,
+      eventType: 'task_changed',
+      payload: { publicKey: updated.publicKey },
+      idempotencyKey: `changed:${updated._id}:${updated.revision}`,
+    })
+    await rescheduleTaskReminders(ctx, updated)
     return { rank: updated.rank, revision: updated.revision, workflowStateId: updated.workflowStateId }
   },
 })
@@ -766,37 +1478,55 @@ export const moveTask = mutation({
 export const move = mutation({
   args: {
     taskId: v.id('tasks'), destinationBoardId: v.id('taskBoards'),
-    workflowStateId: v.optional(v.id('taskWorkflowStates')), targetIndex: v.number(),
-    expectedRevision: v.number(), ...identityArgs,
+    workflowStateId: v.optional(v.id('taskWorkflowStates')),
+    beforeTaskId: v.optional(v.id('tasks')),
+    afterTaskId: v.optional(v.id('tasks')),
+    targetIndex: v.optional(v.number()),
+    expectedRevision: v.number(),
+    confirmOpenSubtasks: v.optional(v.boolean()),
+    ...identityArgs,
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
-    if (!access.taskCapabilities.canTransfer) throw new Error('task_move_forbidden')
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (access.task.revision !== args.expectedRevision) throw new Error(`task_conflict:${access.task.revision}`)
     const board = await ctx.db.get(args.destinationBoardId)
     if (!board || board.archivedAt || board.projectId !== access.task.projectId || board.groupId !== access.task.groupId) {
       throw new Error('task_destination_invalid')
+    }
+    if (board._id === access.task.boardId) {
+      if (!access.taskCapabilities.canEdit) throw new Error('task_edit_forbidden')
+    } else if (!access.taskCapabilities.canTransfer) {
+      throw new Error('task_move_forbidden')
     }
     if (access.task.parentTaskId && board._id !== access.task.boardId) {
       throw new Error('task_destination_invalid')
     }
     const state = args.workflowStateId ? await ctx.db.get(args.workflowStateId) : await getDefaultWorkflowState(ctx, board._id)
     if (!state || state.boardId !== board._id || state.archivedAt) throw new Error('task_destination_invalid')
-    const rows = (await ctx.db.query('tasks')
-      .withIndex('by_board_state_rank', (q) => q.eq('boardId', board._id).eq('workflowStateId', state._id))
-      .collect()).filter((task) => task._id !== access.task._id)
-    const targetIndex = Math.max(0, Math.min(Math.trunc(args.targetIndex), rows.length))
-    rows.splice(targetIndex, 0, access.task)
     const now = Date.now()
-    for (const [index, task] of rows.entries()) {
-      await ctx.db.patch(task._id, {
-        boardId: board._id, workflowStateId: state._id, rank: rankForIndex(index),
-        terminalAt: isTerminalTaskState(state.category) ? task.terminalAt ?? now : undefined,
-        revision: task._id === access.task._id ? task.revision + 1 : task.revision,
-        updatedAt: now,
-      })
+    const stateChanged = state._id !== access.task.workflowStateId
+    if (stateChanged && isTerminalTaskState(state.category)) {
+      await assertOpenSubtasksConfirmed(ctx, access.task, args.confirmOpenSubtasks)
     }
+    const rank = await resolveTaskMoveRank(ctx, {
+      task: access.task,
+      boardId: board._id,
+      workflowStateId: state._id,
+      beforeTaskId: args.beforeTaskId,
+      afterTaskId: args.afterTaskId,
+      targetIndex: args.targetIndex,
+      now,
+    })
+    await ctx.db.patch(access.task._id, {
+      boardId: board._id,
+      workflowStateId: state._id,
+      rank,
+      terminalAt: isTerminalTaskState(state.category) ? access.task.terminalAt ?? now : undefined,
+      revision: access.task.revision + 1,
+      updatedAt: now,
+    })
     if (access.task.parentTaskId === undefined && board._id !== access.task.boardId) {
       const subtasks = await ctx.db.query('tasks').withIndex('by_parent', (q) => q.eq('parentTaskId', access.task._id)).collect()
       const defaultState = await getDefaultWorkflowState(ctx, board._id)
@@ -813,12 +1543,19 @@ export const move = mutation({
           revision: updatedSubtask.revision,
           updatedAt: updatedSubtask.updatedAt,
         })
+        await notifyTaskFollowers(ctx, {
+          task: updatedSubtask,
+          actorProjectMemberId: access.projectMember._id,
+          eventType: 'task_changed',
+          payload: { publicKey: updatedSubtask.publicKey },
+          idempotencyKey: `changed:${updatedSubtask._id}:${updatedSubtask.revision}`,
+        })
         await rescheduleTaskReminders(ctx, updatedSubtask)
       }
     }
     const updated = await ctx.db.get(access.task._id)
     if (!updated) throw new Error('task_access_changed')
-    if (board._id !== access.task.boardId || state._id !== access.task.workflowStateId) {
+    if (board._id !== access.task.boardId || stateChanged) {
       await appendTaskActivity(ctx, {
         task: updated, action: board._id !== access.task.boardId ? 'board_changed' : 'state_changed',
         actorProjectMemberId: access.projectMember._id, actingCompanyId: access.actingCompanyId,
@@ -826,8 +1563,15 @@ export const move = mutation({
         after: { boardId: board._id, stateId: state._id },
       })
     }
+    await notifyTaskFollowers(ctx, {
+      task: updated,
+      actorProjectMemberId: access.projectMember._id,
+      eventType: 'task_changed',
+      payload: { publicKey: updated.publicKey },
+      idempotencyKey: `changed:${updated._id}:${updated.revision}`,
+    })
     await rescheduleTaskReminders(ctx, updated)
-    return await taskView(ctx, updated)
+    return await taskView(ctx, updated, new Set(), { includeReferences: false })
   },
 })
 
@@ -836,6 +1580,7 @@ export const setFollowing = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canComment) throw new Error('task_access_changed')
     const existing = await ctx.db.query('taskFollowers').withIndex('by_task_member', (q) =>
       q.eq('taskId', access.task._id).eq('projectMemberId', access.projectMember._id),
@@ -856,6 +1601,7 @@ export const setArchived = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canArchive) throw new Error('task_archive_forbidden')
     const now = Date.now()
     const archivedAt = args.archived ? access.task.archivedAt ?? now : undefined
@@ -890,6 +1636,7 @@ export const changeScope = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canChangeScope || access.task.parentTaskId) {
       throw new Error('task_scope_change_forbidden')
     }

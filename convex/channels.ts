@@ -1,3 +1,6 @@
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
+import { decodeLegacyArchivedChannel } from './lib/legacyArchiveSnapshot'
+import { getArchivedChannelSnapshot } from './lib/projectExitArchive'
 import { hasUnanimousApproval } from '@track/shared/company'
 import { v } from 'convex/values'
 
@@ -69,10 +72,22 @@ export const list = query({
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
     if (access.projectMember.status === 'archived') {
-      return await Promise.all((access.entitlement?.channelIds ?? []).map(async (groupId) => {
-        const snapshot = access.entitlement?.channelSnapshots.find((item: { _id?: string }) => item._id === groupId)
-        return snapshot ?? null
-      })).then((channels) => channels.filter((channel) => channel !== null))
+      const operationId = access.entitlement?.snapshotOperationId
+      if (operationId) {
+        const visibility = await ctx.db.query('projectExitChannelVisibility')
+          .withIndex('by_operation_member', (q) =>
+            q.eq('operationId', operationId).eq('projectMemberId', access.projectMember._id)).collect()
+        const snapshots = await Promise.all(visibility.map((row) =>
+          getArchivedChannelSnapshot(ctx, operationId, row.groupId)))
+        return snapshots.filter((snapshot) => snapshot !== null)
+      }
+      const snapshots = new Map((access.entitlement?.channelSnapshots ?? []).map((value: unknown) => {
+        const snapshot = decodeLegacyArchivedChannel(ctx, value)
+        return [snapshot._id, snapshot] as const
+      }))
+      return (access.entitlement?.channelIds ?? [])
+        .map((groupId) => snapshots.get(groupId) ?? null)
+        .filter((channel) => channel !== null)
     }
     const memberships = await ctx.db
       .query('groupMembers')
@@ -99,6 +114,7 @@ export const create = mutation({
     requireCompanyModelEnabled()
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireCompanyProjectManager(ctx, actor, args)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const name = args.name.trim()
     if (!name) throw new Error('channel_name_required')
     const memberIds = Array.from(new Set([access.projectMember._id, ...args.ownCompanyMemberIds]))
@@ -161,6 +177,7 @@ export const requestParticipation = mutation({
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
     if (!access.capabilities.canStewardChannel) throw new Error('channel_steward_required')
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const target = await ctx.db.get(args.targetProjectCompanyId)
     if (!target || target.projectId !== access.project._id || target.status !== 'active' || target.companyId === access.company._id) {
       throw new Error('target_project_company_unavailable')
@@ -269,6 +286,7 @@ export const decideParticipation = mutation({
       request.groupId !== args.groupId ||
       request.targetProjectCompanyId !== access.projectCompany._id
     ) return request?._id ?? null
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const now = Date.now()
     const previousParticipantIds = await activeChannelParticipantIds(ctx, args.groupId)
     if (args.decision === 'decline') {
@@ -336,6 +354,7 @@ export const updateOwnCompanyMember = mutation({
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
     if (!access.capabilities.canStewardChannel) throw new Error('channel_steward_required')
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const target = await ctx.db.get(args.targetProjectMemberId)
     if (!target || target.projectId !== access.project._id || target.companyId !== access.company._id || target.status !== 'active') {
       throw new Error('channel_member_unavailable')
@@ -404,6 +423,7 @@ export const requestArchive = mutation({
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
     const isSteward = access.projectMember.role === 'manager' && access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const existing = await ctx.db
       .query('channelArchiveRequests')
       .withIndex('by_group_idempotency', (q) => q.eq('groupId', args.groupId).eq('idempotencyKey', args.idempotencyKey))
@@ -462,6 +482,7 @@ export const approveArchive = mutation({
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
     const isSteward = access.projectMember.role === 'manager' && access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const request = await ctx.db.get(args.requestId)
     if (!request || request.status !== 'pending') return request?._id ?? null
     if (request.projectId !== args.projectId || request.groupId !== args.groupId) {
@@ -519,6 +540,7 @@ export const cancelArchive = mutation({
     const isSteward = access.projectMember.role === 'manager' &&
       access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const request = await ctx.db.get(args.requestId)
     if (!request || request.status !== 'pending') return request?._id ?? null
     if (request.projectId !== args.projectId || request.groupId !== args.groupId) {

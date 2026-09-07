@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from 'convex/react'
 import { EyeOff, GitMerge, Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
@@ -65,6 +65,9 @@ function SuggestionCard({
   const [title, setTitle] = useState(row.suggestion.proposedTitle)
   const [boardId, setBoardId] = useState<string>(defaultBoard?.board._id ?? '')
   const [error, setError] = useState('')
+  const [accepting, setAccepting] = useState(false)
+  const acceptIntentRef = useRef(crypto.randomUUID())
+  const acceptPendingRef = useRef(false)
   const accept = useMutation(api.taskSuggestions.accept)
   const dismiss = useMutation(api.taskSuggestions.dismiss)
   const hide = useMutation(api.taskSuggestions.hide)
@@ -75,9 +78,32 @@ function SuggestionCard({
     try {
       await action()
       onAnnounce(message)
+      return true
     } catch (failure) {
       setError(taskError(failure))
+      return false
     }
+  }
+
+  async function acceptSuggestion() {
+    if (!boardId || !title.trim() || acceptPendingRef.current) return
+    acceptPendingRef.current = true
+    setAccepting(true)
+    const succeeded = await run(() => accept({
+      suggestionId: row.suggestion._id,
+      boardId: boardId as Id<'taskBoards'>,
+      title,
+      description: row.suggestion.proposedDescription,
+      priority: row.suggestion.proposedPriority,
+      dueDate: row.suggestion.proposedDueDate,
+      assigneeProjectMemberId: row.suggestion.proposedAssigneeProjectMemberId,
+      duplicateOverride: Boolean(row.possibleDuplicateTask),
+      idempotencyKey: acceptIntentRef.current,
+      ...identity,
+    }), 'Suggestion accepted and task created.')
+    if (succeeded) acceptIntentRef.current = crypto.randomUUID()
+    acceptPendingRef.current = false
+    setAccepting(false)
   }
 
   return <article className="task-suggestion-card">
@@ -93,18 +119,7 @@ function SuggestionCard({
       <NativeSelect aria-label="Destination board" disabled={!compatibleBoards.length} onChange={(event) => setBoardId(event.target.value)} value={boardId}>
         {compatibleBoards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}
       </NativeSelect>
-      <Button disabled={!boardId || !title.trim()} onClick={() => void run(() => accept({
-        suggestionId: row.suggestion._id,
-        boardId: boardId as Id<'taskBoards'>,
-        title,
-        description: row.suggestion.proposedDescription,
-        priority: row.suggestion.proposedPriority,
-        dueDate: row.suggestion.proposedDueDate,
-        assigneeProjectMemberId: row.suggestion.proposedAssigneeProjectMemberId,
-        duplicateOverride: Boolean(row.possibleDuplicateTask),
-        idempotencyKey: crypto.randomUUID(),
-        ...identity,
-      }), 'Suggestion accepted and task created.')}>Accept{row.possibleDuplicateTask ? ' separately' : ''}</Button>
+      <Button disabled={accepting || !boardId || !title.trim()} onClick={() => void acceptSuggestion()}>{accepting ? 'Accepting…' : 'Accept'}{row.possibleDuplicateTask ? ' separately' : ''}</Button>
       {row.possibleDuplicateTask ? <Button onClick={() => void run(() => link({
         suggestionId: row.suggestion._id,
         taskId: row.possibleDuplicateTask!._id,

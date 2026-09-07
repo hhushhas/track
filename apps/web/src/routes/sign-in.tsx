@@ -154,7 +154,10 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     try {
       const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
+        callbackURL: new URL(
+          mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
+          window.location.origin,
+        ).toString(),
       })
       if (result.error) {
         setMessage(getPasswordMessage(result.error))
@@ -215,7 +218,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           email: normalizedEmail,
           password: passwordValue,
           name: normalizedEmail.split('@')[0] || 'Track User',
-          callbackURL: '/workspace',
+          callbackURL: new URL('/workspace', window.location.origin).toString(),
         })
         if (result.error) {
           setMessage(getPasswordMessage(result.error))
@@ -244,7 +247,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
       const result = await authClient.signIn.email({
         email: normalizedEmail,
         password: passwordValue,
-        callbackURL: '/workspace',
+        callbackURL: new URL('/workspace', window.location.origin).toString(),
       })
       if (result.error) {
         setMessage('Email or password is incorrect.')

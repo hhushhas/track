@@ -71,10 +71,15 @@ export const taskCoreTables = {
   })
     .index('by_project_key', ['projectId', 'publicKey'])
     .index('by_project_archived', ['projectId', 'archivedAt'])
+    .index('by_project_scope_archived', ['projectId', 'groupId', 'archivedAt'])
     .index('by_board', ['boardId'])
+    .index('by_board_archived', ['boardId', 'archivedAt'])
+    .index('by_board_archived_rank', ['boardId', 'archivedAt', 'rank'])
     .index('by_board_state_rank', ['boardId', 'workflowStateId', 'rank'])
+    .index('by_board_state_archived_rank', ['boardId', 'workflowStateId', 'archivedAt', 'rank'])
     .index('by_assignee_archived', ['assigneeProjectMemberId', 'archivedAt'])
     .index('by_parent', ['parentTaskId'])
+    .index('by_parent_rank', ['parentTaskId', 'rank'])
     .index('by_project_idempotency', ['projectId', 'createIdempotencyKey'])
     .searchIndex('search_tasks', {
       searchField: 'searchText',
@@ -100,6 +105,7 @@ export const taskCoreTables = {
     createdAt: v.number(),
   })
     .index('by_task', ['taskId'])
+    .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_label', ['labelId'])
     .index('by_task_label', ['taskId', 'labelId']),
 
@@ -124,6 +130,7 @@ export const taskCoreTables = {
     updatedAt: v.number(),
   })
     .index('by_task_rank', ['taskId', 'rank'])
+    .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_message', ['messageId'])
     .index('by_attachment', ['attachmentId'])
     .index('by_assistant_stream', ['assistantStreamId']),
@@ -143,6 +150,7 @@ export const taskCoreTables = {
     updatedAt: v.number(),
   })
     .index('by_task_created_at', ['taskId', 'createdAt'])
+    .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_task_idempotency', ['taskId', 'idempotencyKey']),
 
   taskFollowers: defineTable({

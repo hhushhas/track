@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { FolderKanban, ListTodo, LoaderCircle, MessagesSquare, Paperclip, Search, X } from 'lucide-react'
 
 import { Button } from '#/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
 import { useReleaseConfig } from '#/lib/release-config'
@@ -37,8 +44,10 @@ export function ProjectSearchDialog({
   open,
   projectName,
   query,
+  returnFocusRef,
   sections,
   total,
+  updating = false,
 }: {
   filter: ProjectSearchFilter
   loading: boolean
@@ -49,8 +58,10 @@ export function ProjectSearchDialog({
   open: boolean
   projectName: string
   query: string
+  returnFocusRef?: RefObject<HTMLElement | null>
   sections: Array<{ key: string; label: string; results: ProjectSearchResult[] }>
   total: number
+  updating?: boolean
 }) {
   const releaseConfig = useReleaseConfig()
   const resultButtonsRef = useRef<Array<HTMLButtonElement | null>>([])
@@ -59,38 +70,6 @@ export function ProjectSearchDialog({
     [sections],
   )
   const [activeResultIndex, setActiveResultIndex] = useState(0)
-
-  useEffect(() => {
-    if (!open) return
-    function handleKeyboard(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
-        return
-      }
-      if (event.key === 'ArrowDown') {
-        event.preventDefault()
-        setActiveResultIndex((index) =>
-          flatResults.length > 0 ? (index + 1) % flatResults.length : 0,
-        )
-        return
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault()
-        setActiveResultIndex((index) =>
-          flatResults.length > 0 ? (index - 1 + flatResults.length) % flatResults.length : 0,
-        )
-        return
-      }
-      if (event.key === 'Enter' && flatResults[activeResultIndex]) {
-        event.preventDefault()
-        onOpenResult(flatResults[activeResultIndex])
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyboard)
-    return () => window.removeEventListener('keydown', handleKeyboard)
-  }, [activeResultIndex, flatResults, onClose, onOpenResult, open])
 
   useEffect(() => {
     setActiveResultIndex(0)
@@ -107,8 +86,6 @@ export function ProjectSearchDialog({
     })
   }, [activeResultIndex])
 
-  if (!open) return null
-
   const filters: Array<{ Icon: typeof Search; label: string; value: ProjectSearchFilter }> = [
     { Icon: Search, label: 'All', value: 'all' },
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
@@ -120,19 +97,47 @@ export function ProjectSearchDialog({
   const hasQuery = query.trim().length >= 2
   let resultIndex = -1
 
+  function handleScopedKeyboard(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onClose()
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveResultIndex((index) =>
+        flatResults.length > 0 ? (index + 1) % flatResults.length : 0,
+      )
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveResultIndex((index) =>
+        flatResults.length > 0 ? (index - 1 + flatResults.length) % flatResults.length : 0,
+      )
+      return
+    }
+    if (event.key === 'Enter' && flatResults[activeResultIndex]) {
+      event.preventDefault()
+      onOpenResult(flatResults[activeResultIndex])
+    }
+  }
+
   return (
-    <div className="track-project-search-overlay" role="presentation" onMouseDown={onClose}>
-      <section
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+      {open ? <DialogContent
         aria-label="Project search"
-        aria-modal="true"
-        className="track-project-search"
-        onMouseDown={(event) => event.stopPropagation()}
-        role="dialog"
+        className="track-project-search z-[80] p-0"
+        finalFocus={returnFocusRef}
+        showCloseButton={false}
       >
         <header className="track-project-search-header">
           <div>
             <span className="mono-label">Current project search</span>
-            <h2>{projectName}</h2>
+            <DialogTitle>{projectName}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Search messages, files, groups, threads, and tasks in the current project.
+            </DialogDescription>
           </div>
           <Button aria-label="Close project search" className="icon-button" onClick={onClose} type="button">
             <X size={15} />
@@ -144,6 +149,7 @@ export function ProjectSearchDialog({
             autoFocus
             className="track-project-search-input"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
+            onKeyDown={handleScopedKeyboard}
             placeholder={releaseConfig.tasks && releaseConfig.threads
               ? 'Search messages, files, threads, groups, and tasks...'
               : releaseConfig.tasks
@@ -153,7 +159,7 @@ export function ProjectSearchDialog({
                   : 'Search messages, files, and groups...'}
             value={query}
           />
-          <span>{total} results</span>
+          <span aria-live="polite">{updating ? 'Updating…' : `${total} results`}</span>
         </div>
         <div className="track-project-search-filters" role="list" aria-label="Search filters">
           {filters.map((item) => (
@@ -169,7 +175,7 @@ export function ProjectSearchDialog({
             </button>
           ))}
         </div>
-        <div className="track-project-search-results" role={total > 0 ? 'listbox' : undefined}>
+        <div className="track-project-search-results">
           {!hasQuery ? (
             <div className="track-project-search-state">
               <Search size={18} />
@@ -179,7 +185,7 @@ export function ProjectSearchDialog({
           ) : loading ? (
             <div className="track-project-search-state">
               <LoaderCircle className="spin" size={18} />
-              <p>Searching project...</p>
+              <p>{updating ? 'Updating results…' : 'Searching project...'}</p>
             </div>
           ) : total === 0 ? (
             <div className="track-project-search-state">
@@ -197,14 +203,13 @@ export function ProjectSearchDialog({
                     const isActive = currentResultIndex === activeResultIndex
                     return (
                       <button
-                        aria-selected={isActive}
                         className={isActive ? 'track-project-search-result active' : 'track-project-search-result'}
                         key={`${result.kind}-${result.id}`}
                         onClick={() => onOpenResult(result)}
+                        onKeyDown={handleScopedKeyboard}
                         ref={(element) => {
                           resultButtonsRef.current[currentResultIndex] = element
                         }}
-                        role="option"
                         type="button"
                       >
                         <span className={`track-project-search-icon ${result.kind}`}>
@@ -235,7 +240,7 @@ export function ProjectSearchDialog({
             )
           )}
         </div>
-      </section>
-    </div>
+      </DialogContent> : null}
+    </Dialog>
   )
 }

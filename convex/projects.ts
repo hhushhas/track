@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { canAdministerCompany } from '@track/shared/company'
 
 import { mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
@@ -7,12 +8,43 @@ import { assertActorMatches, requireAuthenticatedActor } from './lib/actorContex
 import { canRoleJoinDefaultGroup, requireProjectManager, requireProjectMember, requireProjectOwner } from './lib/permissions'
 import { invalidateTaskEvidence } from './lib/taskEvidence'
 import { deleteTaskProjectData } from './lib/taskLifecycle'
+import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { assertProjectSnapshotWritable, readProjectSnapshotState } from './lib/projectSnapshotLock'
 
 const defaultGroups = [
   { kind: 'general', name: 'General' },
   { kind: 'internal', name: 'Internal' },
   { kind: 'commercials', name: 'Commercials' },
 ] as const
+
+export const getSnapshotState = query({
+  args: {
+    projectId: v.id('projects'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await authorizeScopedRequest(ctx, {
+      ...args,
+      claimedUserId: actor.userId,
+    }, 'readProject')
+    if (access.companyAccess?.entitlement) return null
+    const operation = await readProjectSnapshotState(ctx, args.projectId)
+    if (!operation) return null
+    const participation = await ctx.db.get(operation.projectCompanyId)
+    return {
+      status: operation.status === 'failed' ? 'failed' as const : 'capturing' as const,
+      phase: operation.phase,
+      stagedCount: operation.stagedCount,
+      canManageCapture: Boolean(
+        access.companyAccess &&
+        participation?.companyId === access.companyAccess.company._id &&
+        canAdministerCompany(access.companyAccess.companyMember.role),
+      ),
+    }
+  },
+})
 
 export const list = query({
   args: {
@@ -158,6 +190,7 @@ export const update = mutation({
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.userId)
     await requireProjectManager(ctx, args.projectId, args.userId)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const project = await ctx.db.get(args.projectId)
     if (!project) throw new Error('project_not_found')
     const name = args.name.trim()
@@ -191,6 +224,7 @@ export const remove = mutation({
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.userId)
     await requireProjectOwner(ctx, args.projectId, args.userId)
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const project = await ctx.db.get(args.projectId)
     if (!project) throw new Error('project_not_found')
 

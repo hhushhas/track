@@ -18,7 +18,8 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "incremental": true
   },
   "include": ["./**/*"],
   "exclude": ["./_generated"]

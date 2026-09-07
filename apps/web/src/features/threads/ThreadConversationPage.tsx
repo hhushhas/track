@@ -1,12 +1,20 @@
 import { parseMentions } from '@track/shared'
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
+import TrackLoader from '#/components/TrackLoader'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
+import { CompanyProjectNavigation } from '#/features/company/CompanyProjectNavigation'
+import {
+  getComposerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from '#/features/workspace/chat/composer-drafts'
+import { isUploadResponse } from '#/features/workspace/chat/message-send'
 import { getMentionHandle } from '#/features/workspace/identity'
 import { MarkdownText } from '#/features/workspace/markdown'
 import {
@@ -15,8 +23,10 @@ import {
   CreateTaskFromMessage,
   MessageInlineTasks,
 } from '#/features/tasks/ConversationTaskActions'
-import { useReleaseConfig } from '#/lib/release-config'
+import { TaskLinkBatchProvider } from '#/features/tasks/task-link-context'
+import { useReleaseConfigState } from '#/lib/release-config'
 import type { RepresentedThreadContext } from './thread-navigation'
+import './thread-workspace.css'
 
 export function ThreadConversationPage({
   context,
@@ -29,7 +39,8 @@ export function ThreadConversationPage({
   projectId: Id<'projects'>
   threadId: Id<'channelThreads'>
 }) {
-  const releaseConfig = useReleaseConfig()
+  const releaseState = useReleaseConfigState()
+  const releaseConfig = releaseState.config
   const currentUser = useQuery(api.auth.getCurrentUser)
   const navigation = useQuery(
     api.mobile.resolveNavigation,
@@ -64,9 +75,22 @@ export function ThreadConversationPage({
     scopedArgs ? { ...scopedArgs, targetMessageId } : 'skip',
     { initialNumItems: 50 },
   )
-  const assistantStreams = useQuery(api.assistant.listForThread, scopedArgs ? { ...scopedArgs, limit: 40 } : 'skip')
-  const projectMembers = useQuery(
-    api.mobile.listProjectMembers,
+  const assistantPage = usePaginatedQuery(
+    api.assistant.listForThreadPage,
+    scopedArgs ? { ...scopedArgs, targetMessageId } : 'skip',
+    { initialNumItems: 50 },
+  )
+  const assistantStreams = assistantPage.status === 'LoadingFirstPage' ? undefined : assistantPage.results
+  const combinedMessagePageStatus =
+    messagePageStatus === 'LoadingFirstPage' || assistantPage.status === 'LoadingFirstPage'
+      ? 'LoadingFirstPage'
+      : messagePageStatus === 'LoadingMore' || assistantPage.status === 'LoadingMore'
+        ? 'LoadingMore'
+        : messagePageStatus === 'CanLoadMore' || assistantPage.status === 'CanLoadMore'
+          ? 'CanLoadMore'
+          : 'Exhausted'
+  const projectMembersPage = usePaginatedQuery(
+    api.mobile.listProjectMembersPage,
     currentUser && navigation?.available
       ? {
           projectId,
@@ -75,30 +99,81 @@ export function ThreadConversationPage({
           projectMemberId: context?.projectMemberId,
         }
       : 'skip',
+    { initialNumItems: 100 },
   )
+  const projectMembers = projectMembersPage.status === 'LoadingFirstPage'
+    ? undefined
+    : projectMembersPage.results
   const sendMessage = useMutation(api.messages.send)
   const setFollowing = useMutation(api.channelThreads.setFollowing)
   const markRead = useMutation(api.channelThreads.markRead)
   const setStatus = useMutation(api.channelThreads.setStatus)
   const rename = useMutation(api.channelThreads.rename)
   const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
+  const claimUploadIntent = useMutation(api.messages.claimUploadIntent)
   const attachFile = useMutation(api.messages.attachFile)
   const deleteMessage = useMutation(api.messages.remove)
   const createReport = useMutation(api.reports.create)
   const askTrack = useAction(api.assistant.ask)
-  const [composer, setComposer] = useState('')
+  const [composerState, setComposerState] = useState<{ scopeKey: string | null; value: string }>({ scopeKey: null, value: '' })
   const [renameValue, setRenameValue] = useState('')
   const [attachment, setAttachment] = useState<File | null>(null)
-  const [replyTo, setReplyTo] = useState<Id<'messages'> | null>(null)
+  const [replyState, setReplyState] = useState<{ scopeKey: string | null; messageId: Id<'messages'> | null }>({ scopeKey: null, messageId: null })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const sendKey = useRef<string | null>(null)
-
+  const messageListRef = useRef<HTMLElement | null>(null)
+  const historyAnchorRef = useRef<{ height: number; top: number; count: number } | null>(null)
+  const viewedSequenceRef = useRef(0)
+  const acknowledgedSequenceRef = useRef(0)
+  const acknowledgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [tabVisible, setTabVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState === 'visible',
+  )
+  const composerDraftScope = useMemo(() => currentUser && navigation?.available
+    ? {
+        actorId: currentUser._id,
+        actingCompanyId: context?.actingCompanyId,
+        projectMemberId: context?.projectMemberId,
+        projectId,
+        groupId,
+        threadId,
+      }
+    : null, [context?.actingCompanyId, context?.projectMemberId, currentUser, groupId, navigation?.available, projectId, threadId])
+  const composerScopeKey = composerDraftScope ? getComposerDraftKey(composerDraftScope) : null
+  const composerDraft = useMemo(
+    () => composerDraftScope ? readComposerDraft(composerDraftScope) : null,
+    [composerDraftScope],
+  )
+  const composer = composerState.scopeKey === composerScopeKey
+    ? composerState.value
+    : composerDraft?.composer ?? ''
+  const setComposer = useCallback((nextComposer: string) => {
+    setComposerState({ scopeKey: composerScopeKey, value: nextComposer })
+  }, [composerScopeKey])
+  const draftReplyToMessageId = composerDraft?.replyToMessageId
+    ? messages.find((item) => item.message._id === composerDraft.replyToMessageId)?.message._id ?? null
+    : null
+  const replyTo = replyState.scopeKey === composerScopeKey
+    ? replyState.messageId
+    : draftReplyToMessageId
+  const setReplyTo = useCallback((nextMessageId: Id<'messages'> | null) => {
+    setReplyState({ scopeKey: composerScopeKey, messageId: nextMessageId })
+  }, [composerScopeKey])
   useEffect(() => {
-    if (!scopedArgs || !messages || navigation?.readStateImmutable) return
-    void markRead(scopedArgs).catch(() => undefined)
-  }, [markRead, messages, navigation?.readStateImmutable, scopedArgs])
+    if (!composerDraftScope || !composerScopeKey) return
+    writeComposerDraft(composerDraftScope, {
+      composer,
+      replyToMessageId: replyTo,
+    })
+  }, [composer, composerDraftScope, composerScopeKey, replyTo])
+  useEffect(() => {
+    if (typeof document === 'undefined') return () => {}
+    const handleVisibility = () => setTabVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
   useEffect(() => {
     if (thread) setRenameValue(thread.thread.name)
   }, [thread])
@@ -126,23 +201,90 @@ export function ThreadConversationPage({
     }
     return handles
   }, [projectMembers])
-  const streamItems = useMemo(() => [
-    ...[...new Map(
-      ((messages ?? []) as Array<ThreadMessageDetail>)
-        .map((item) => [item.message._id, item] as const),
-    ).values()].map((item) => ({
-      at: item.message.createdAt,
-      id: item.message._id,
-      kind: 'message' as const,
-      item,
-    })),
-    ...((assistantStreams ?? []) as Array<Doc<'assistantStreams'>>).map((item) => ({
-      at: item.createdAt,
-      id: item._id,
-      kind: 'assistant' as const,
-      item,
-    })),
-  ].sort((a, b) => a.at - b.at), [assistantStreams, messages])
+  const streamItems = useMemo(() => {
+    const items = [
+      ...[...new Map(
+        ((messages ?? []) as Array<ThreadMessageDetail>)
+          .map((item) => [item.message._id, item] as const),
+      ).values()].map((item) => ({
+        at: item.message.createdAt,
+        id: item.message._id,
+        kind: 'message' as const,
+        item,
+      })),
+      ...((assistantStreams ?? []) as Array<Doc<'assistantStreams'>>).map((item) => ({
+        at: item.createdAt,
+        id: item._id,
+        kind: 'assistant' as const,
+        item,
+      })),
+    ]
+    // eslint-disable-next-line unicorn/no-array-sort -- reason: Sort a newly copied array while supporting the web ES2022 target.
+    items.sort((a, b) => a.at - b.at)
+    return items
+  }, [assistantStreams, messages])
+
+  const acknowledgeViewedSequence = useCallback((sequence: number) => {
+    if (!scopedArgs || !tabVisible || navigation?.readStateImmutable || sequence <= acknowledgedSequenceRef.current) return
+    viewedSequenceRef.current = Math.max(viewedSequenceRef.current, sequence)
+    if (acknowledgeTimeoutRef.current) return
+    acknowledgeTimeoutRef.current = setTimeout(() => {
+      acknowledgeTimeoutRef.current = null
+      const nextSequence = viewedSequenceRef.current
+      if (
+        nextSequence <= acknowledgedSequenceRef.current ||
+        (typeof document !== 'undefined' && document.visibilityState !== 'visible')
+      ) return
+      acknowledgedSequenceRef.current = nextSequence
+      void markRead({ ...scopedArgs, viewedChannelSequence: nextSequence }).catch(() => {
+        acknowledgedSequenceRef.current = Math.min(acknowledgedSequenceRef.current, nextSequence - 1)
+      })
+    }, 150)
+  }, [markRead, navigation?.readStateImmutable, scopedArgs, tabVisible])
+
+  useEffect(() => {
+    const list = messageListRef.current
+    const messageCount = streamItems.length
+    if (!list || !tabVisible || messageCount === 0) return () => {}
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const sequenceValue = entry.target.getAttribute('data-channel-sequence')
+        const sequence = sequenceValue ? Number(sequenceValue) : 0
+        if (Number.isInteger(sequence) && sequence > 0) acknowledgeViewedSequence(sequence)
+      }
+    }, { threshold: 0.6 })
+    for (const message of list.querySelectorAll<HTMLElement>('[data-channel-sequence]')) {
+      observer.observe(message)
+    }
+    return () => observer.disconnect()
+  }, [acknowledgeViewedSequence, streamItems.length, tabVisible])
+
+  const loadMoreThreadMessages = useCallback(() => {
+    const list = messageListRef.current
+    if (!list || combinedMessagePageStatus !== 'CanLoadMore' || historyAnchorRef.current) return
+    historyAnchorRef.current = {
+      count: streamItems.length,
+      height: list.scrollHeight,
+      top: list.scrollTop,
+    }
+    if (messagePageStatus === 'CanLoadMore') loadMoreMessages(50)
+    if (assistantPage.status === 'CanLoadMore') assistantPage.loadMore(50)
+  }, [assistantPage, combinedMessagePageStatus, loadMoreMessages, messagePageStatus, streamItems.length])
+
+  useEffect(() => {
+    const anchor = historyAnchorRef.current
+    if (!anchor || combinedMessagePageStatus === 'LoadingMore' || streamItems.length <= anchor.count) return
+    historyAnchorRef.current = null
+    requestAnimationFrame(() => {
+      const list = messageListRef.current
+      if (list) list.scrollTop = anchor.top + (list.scrollHeight - anchor.height)
+    })
+  }, [combinedMessagePageStatus, streamItems.length])
+
+  useEffect(() => () => {
+    if (acknowledgeTimeoutRef.current) clearTimeout(acknowledgeTimeoutRef.current)
+  }, [])
 
   const backHref = context
     ? `/workspace/company-projects/${projectId}?companyId=${context.actingCompanyId}&membershipId=${context.projectMemberId}&groupId=${groupId}`
@@ -201,20 +343,41 @@ export function ThreadConversationPage({
 
   async function uploadAttachment(messageId: Id<'messages'>, file: File) {
     if (!currentUser) return
-    const uploadUrl = await generateUploadUrl({
+    const contentType = file.type || 'application/octet-stream'
+    const kind = file.type.startsWith('audio/') ? 'voice_note' : 'file'
+    const intent = await generateUploadUrl({
+      contentType,
+      durationMs: undefined,
       groupId,
       channelThreadId: threadId,
+      intentKey: `${sendKey.current ?? 'thread-message'}:attachment:${file.name}`,
+      filename: file.name,
       userId: currentUser._id,
       actingCompanyId: context?.actingCompanyId,
+      kind,
       projectMemberId: context?.projectMemberId,
+      size: file.size,
     })
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
-    })
-    if (!response.ok) throw new Error('upload_failed')
-    const { storageId } = await response.json() as { storageId: Id<'_storage'> }
+    let storageId = intent.storageId
+    if (!storageId) {
+      if (!intent.uploadUrl) throw new Error('upload_intent_unavailable')
+      const response = await fetch(intent.uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body: file,
+      })
+      if (!response.ok) throw new Error('upload_failed')
+      const payload: unknown = await response.json()
+      if (!isUploadResponse(payload)) throw new Error('upload_response_invalid')
+      storageId = payload.storageId
+      await claimUploadIntent({
+        intentId: intent.intentId,
+        storageId,
+        userId: currentUser._id,
+        actingCompanyId: context?.actingCompanyId,
+        projectMemberId: context?.projectMemberId,
+      })
+    }
     await attachFile({
       projectId,
       groupId,
@@ -222,11 +385,12 @@ export function ThreadConversationPage({
       userId: currentUser._id,
       actingCompanyId: context?.actingCompanyId,
       projectMemberId: context?.projectMemberId,
+      uploadIntentId: intent.intentId,
       storageId,
       filename: file.name,
-      contentType: file.type || 'application/octet-stream',
+      contentType,
       size: file.size,
-      kind: file.type.startsWith('audio/') ? 'voice_note' : 'file',
+      kind,
     })
   }
 
@@ -296,17 +460,20 @@ export function ThreadConversationPage({
     }
   }
 
+  if (releaseState.status === 'loading') return <TrackLoader label="Loading thread" />
   if (!releaseConfig.threads) return <Unavailable backHref={backHref} />
   if (typeof navigator !== 'undefined' && !navigator.onLine && thread === undefined) {
     return <Unavailable backHref={backHref} detail="You're offline and this thread isn't available on this device." retry />
   }
   if (!currentUser || navigation === undefined || (navigation.available && thread === undefined)) {
-    return <main className="track-thread-route"><p role="status">Opening thread…</p></main>
+    return <TrackLoader label="Loading thread" />
   }
   if (!navigation.available || !thread) return <Unavailable backHref={backHref} />
 
   const archived = thread.thread.status === 'archived' || navigation.archived
-  return (
+  const taskLinkMessageIds = streamItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : [])
+  const taskLinkAssistantStreamIds = streamItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.item._id] : [])
+  const conversationContent = (
     <main className="track-thread-route" aria-busy={busy}>
       <header className="track-thread-route-header">
         <a href={backHref}>← Back to Channel</a>
@@ -353,9 +520,14 @@ export function ThreadConversationPage({
       {notice ? <p className="track-thread-notice" role="status">{notice}</p> : null}
       {error ? <p className="track-error" role="alert">{error}. Your unsent reply is still here.</p> : null}
       {archived ? <p className="track-thread-archived" role="status">This thread is read-only.</p> : null}
-      <section className="track-thread-message-list" role="log" aria-label="Thread messages">
+      <section
+        className="track-thread-message-list"
+        ref={(element) => { messageListRef.current = element }}
+        role="log"
+        aria-label="Thread messages"
+      >
         {messagePageStatus === 'CanLoadMore' ? (
-          <Button onClick={() => loadMoreMessages(50)} variant="outline">Load older replies</Button>
+          <Button onClick={loadMoreThreadMessages} variant="outline">Load older replies</Button>
         ) : null}
         {streamItems.length === 0 ? <p>{messagePageStatus === 'LoadingFirstPage' ? 'Loading replies…' : 'No replies yet.'}</p> : streamItems.map((entry) => entry.kind === 'assistant' ? (
           <article className="track-thread-message assistant" key={entry.id}>
@@ -377,7 +549,13 @@ export function ThreadConversationPage({
             ) : null}
           </article>
         ) : (
-          <article className="track-thread-message" id={`message-${entry.id}`} key={entry.id} tabIndex={-1}>
+          <article
+            className="track-thread-message"
+            data-channel-sequence={entry.item.message.channelSequence}
+            id={`message-${entry.id}`}
+            key={entry.id}
+            tabIndex={-1}
+          >
             <header>
               <strong>{entry.item.author?.displayName ?? 'Unknown member'}</strong>
               <time>{new Date(entry.at).toLocaleString()}</time>
@@ -432,6 +610,16 @@ export function ThreadConversationPage({
       </section>
       {!archived ? (
         <form className="track-thread-composer" onSubmit={(event) => void submitMessage(event)}>
+          {projectMembersPage.status === 'CanLoadMore' || projectMembersPage.status === 'LoadingMore' ? (
+            <Button
+              disabled={projectMembersPage.status === 'LoadingMore'}
+              onClick={() => projectMembersPage.status === 'CanLoadMore' && projectMembersPage.loadMore(100)}
+              type="button"
+              variant="outline"
+            >
+              {projectMembersPage.status === 'LoadingMore' ? 'Loading more members…' : 'Load more members'}
+            </Button>
+          ) : null}
           {replyTo ? <p>Reply selected. <button onClick={() => setReplyTo(null)} type="button">Cancel</button></p> : null}
           <Textarea aria-label={`Reply in ${thread.thread.name}`} onChange={(event) => setComposer(event.target.value)} placeholder="Reply in thread" value={composer} />
           <input aria-label="Attach a file" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} type="file" />
@@ -439,6 +627,30 @@ export function ThreadConversationPage({
         </form>
       ) : null}
     </main>
+  )
+
+  const conversation = releaseConfig.tasks ? (
+    <TaskLinkBatchProvider
+      assistantStreamIds={taskLinkAssistantStreamIds}
+      identity={{ actingCompanyId: context?.actingCompanyId, projectMemberId: context?.projectMemberId }}
+      messageIds={taskLinkMessageIds}
+    >
+      {conversationContent}
+    </TaskLinkBatchProvider>
+  ) : conversationContent
+
+  if (!context) return conversation
+
+  return (
+    <div className="track-company-thread-workspace">
+      <CompanyProjectNavigation
+        actingCompanyId={context.actingCompanyId}
+        activeArea="conversation"
+        activeProject={{ projectId, projectMemberId: context.projectMemberId, groupId }}
+        tasksEnabled={releaseConfig.tasks}
+      />
+      {conversation}
+    </div>
   )
 }
 

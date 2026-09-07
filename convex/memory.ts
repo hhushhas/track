@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 
 import { internalMutation, internalQuery, query } from './_generated/server'
 import { authorizeScopedRequest } from './lib/requestAuthorization'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { initialContextTemplate, type BoxAccessScope } from './lib/memoryPolicy'
 
 const memorySchemaVersion = 1
@@ -184,6 +185,7 @@ export const createImportJob = internalMutation({
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const importId = await ctx.db.insert('memoryImports', {
       ...args,
       scope: args.scope ?? 'channel',
@@ -319,6 +321,7 @@ export const beginMemoryBoxContextWrite = internalMutation({
     boxId: v.string(),
   },
   handler: async (ctx, args) => {
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const row = await ctx.db
       .query('projectMemoryBoxes')
       .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
@@ -340,7 +343,7 @@ export const completeMemoryBoxContextWrite = internalMutation({
   args: {
     projectId: v.id('projects'),
     boxId: v.string(),
-    contextLength: v.number(),
+    contextLength: v.optional(v.number()),
     revision: v.number(),
   },
   handler: async (ctx, args) => {
@@ -354,7 +357,7 @@ export const completeMemoryBoxContextWrite = internalMutation({
       row.contextWritePendingRevision !== args.revision
     ) throw new Error('memory_context_write_superseded')
     await ctx.db.patch(row._id, {
-      contextLength: args.contextLength,
+      ...(args.contextLength === undefined ? {} : { contextLength: args.contextLength }),
       contextWritePendingRevision: undefined,
       lastContextUpdatedAt: args.revision,
       lastUsedAt: Date.now(),
@@ -434,6 +437,7 @@ export const acquireMemoryPathLock = internalMutation({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const existing = await ctx.db
       .query('memoryPathLocks')
       .withIndex('by_project_path', (q) => q.eq('projectId', args.projectId).eq('path', args.path))

@@ -1,15 +1,22 @@
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { Button } from "#/components/ui/button";
-import { Input } from "#/components/ui/input";
-import { useReleaseConfig } from "#/lib/release-config";
-import { ChannelTaskPanel, CreateTaskFromMessage, MessageInlineTasks } from "#/features/tasks/ConversationTaskActions";
-import { ChannelThreadBrowser } from "#/features/threads/ChannelThreadBrowser";
-import { threadHref } from "#/features/threads/thread-navigation";
+import TrackLoader from "#/components/TrackLoader";
+import { useReleaseConfigState } from "#/lib/release-config";
+import type { ConversationComposerReply } from "#/features/workspace/components/ConversationComposer";
+import type { GroupMessageItem } from "#/features/workspace/thread-items";
+import { CompanyProjectAdministration } from "./CompanyProjectAdministration";
+import { CompanyProjectConversation } from "./CompanyProjectConversation";
+import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
+import { formatCompanyError } from "./company-errors";
+import {
+  getCompanyProjectScopeKey,
+  getMessageIdFromHash,
+} from "./company-project-context";
+import { resolveActiveActingCompanyId } from "./company-query-scope";
 
 type Props = {
   actingCompanyId: Id<"companies">;
@@ -24,83 +31,159 @@ export function CompanyProjectPage({
   projectId,
   projectMemberId,
 }: Props) {
-  const releaseConfig = useReleaseConfig();
+  const releaseState = useReleaseConfigState();
+  const releaseConfig = releaseState.config;
   const currentUser = useQuery(api.auth.getCurrentUser);
+  const companies = useQuery(
+    api.companies.listMine,
+    releaseConfig.companyModel ? {} : "skip",
+  );
+  const actingCompany = companies?.find(
+    (candidate) => candidate.company?._id === actingCompanyId,
+  );
+  const activeActingCompanyId = resolveActiveActingCompanyId(
+    companies,
+    actingCompanyId,
+  );
   const projects = useQuery(
     api.sharedProjects.listForActingCompany,
-    releaseConfig.companyModel ? { actingCompanyId } : "skip",
+    releaseConfig.companyModel && activeActingCompanyId
+      ? { actingCompanyId: activeActingCompanyId }
+      : "skip",
   );
   const item = projects?.find(
     (candidate) =>
       candidate.project._id === projectId &&
       candidate.membership._id === projectMemberId,
   );
-  const exitStatus = useQuery(
-    api.projectExit.getStatus,
-    releaseConfig.companyModel
-      ? { actingCompanyId, projectId, projectMemberId }
+  const snapshotState = useQuery(
+    api.projects.getSnapshotState,
+    activeActingCompanyId && item
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          projectId,
+          projectMemberId,
+        }
       : "skip",
   );
-  const canReadChannels =
-    exitStatus != null && exitStatus.status !== "exit_pending";
+  const exitStatus = useQuery(
+    api.projectExit.getStatus,
+    releaseConfig.companyModel && activeActingCompanyId
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          projectId,
+          projectMemberId,
+        }
+      : "skip",
+  );
+  const canReadChannels = exitStatus !== null && exitStatus !== undefined;
   const canManageActiveProject =
     exitStatus?.status === "active" &&
     item?.membership.role === "manager" &&
     item.membership.status === "active";
   const channels = useQuery(
     api.channels.list,
-    canReadChannels
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canReadChannels
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const projectMembers = useQuery(
     api.sharedProjects.listMembers,
-    canManageActiveProject
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canManageActiveProject
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const companyMembers = useQuery(
     api.companies.getAdministration,
-    canManageActiveProject
-      ? { companyId: actingCompanyId }
+    activeActingCompanyId && item?.membership.status === "active"
+      ? { companyId: activeActingCompanyId }
+      : "skip",
+  );
+  const canManageExit =
+    item?.membership.status === "active" &&
+    (companyMembers?.membership.role === "owner" ||
+      companyMembers?.membership.role === "admin");
+  const canConfirmProjectOwnership =
+    canManageActiveProject &&
+    (companyMembers?.membership.role === "owner" ||
+      companyMembers?.membership.role === "admin");
+  const canInvitePartnerCompanies =
+    canManageActiveProject &&
+    item?.participationRole === "owner" &&
+    (item.project.status === "active" || item.project.status === "proposed");
+  const collaborationOptions = useQuery(
+    api.sharedProjects.getCollaborationOptions,
+    activeActingCompanyId && canInvitePartnerCompanies
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const pendingProjectArchives = useQuery(
     api.projectArchives.listPending,
-    canManageActiveProject
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canManageActiveProject
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const channelParticipationInvitations = useQuery(
     api.channels.listParticipationInvitations,
-    canManageActiveProject
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canManageActiveProject
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const [activeChannelId, setActiveChannelId] = useState<Id<"groups"> | null>(
     initialGroupId ?? null,
   );
-  const [composer, setComposer] = useState("");
   const [channelName, setChannelName] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const messages = useQuery(
-    api.messages.listDetailed,
-    activeChannelId && currentUser
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [replyToMessageByScope, setReplyToMessageByScope] = useState<
+    Map<string, ConversationComposerReply>
+  >(() => new Map());
+  const targetMessageId =
+    typeof window === "undefined"
+      ? undefined
+      : getMessageIdFromHash(window.location.hash);
+  const readableActiveChannelId =
+    activeActingCompanyId &&
+    canReadChannels &&
+    activeActingCompanyId &&
+    activeChannelId &&
+    channels?.some(
+      (entry) =>
+        ("channel" in entry ? entry.channel._id : entry._id) ===
+        activeChannelId,
+    )
+      ? activeChannelId
+      : null;
+  const {
+    results: pagedMessages,
+    status: messagePageStatus,
+    loadMore: loadMoreMessages,
+  } = usePaginatedQuery(
+    api.messages.listPage,
+    activeActingCompanyId && readableActiveChannelId && currentUser
       ? {
-          actingCompanyId,
-          groupId: activeChannelId,
-          limit: 80,
+          actingCompanyId: activeActingCompanyId,
+          groupId: readableActiveChannelId,
           projectMemberId,
+          targetMessageId,
           userId: currentUser._id,
         }
       : "skip",
+    { initialNumItems: 50 },
   );
+  const messages = useMemo(() => {
+    const uniqueMessages = new Map<Id<"messages">, GroupMessageItem>();
+    for (const message of pagedMessages) {
+      uniqueMessages.set(message.message._id, message);
+    }
+    return [...uniqueMessages.values()];
+  }, [pagedMessages]);
   const threadUnread = useQuery(
     api.channelThreads.listGroupUnread,
-    releaseConfig.threads && currentUser && canReadChannels
+    releaseConfig.threads && currentUser && activeActingCompanyId && canReadChannels
       ? {
-          actingCompanyId,
+          actingCompanyId: activeActingCompanyId,
           projectId,
           projectMemberId,
           userId: currentUser._id,
@@ -108,7 +191,10 @@ export function CompanyProjectPage({
       : "skip",
   );
   const threadUnreadByChannel = useMemo(
-    () => new Map((threadUnread ?? []).map((entry) => [entry.groupId, entry.unreadCount])),
+    () =>
+      new Map(
+        (threadUnread ?? []).map((entry) => [entry.groupId, entry.unreadCount]),
+      ),
     [threadUnread],
   );
   const createChannel = useMutation(api.channels.create);
@@ -123,7 +209,7 @@ export function CompanyProjectPage({
   const requestChannelArchive = useMutation(api.channels.requestArchive);
   const approveChannelArchive = useMutation(api.channels.approveArchive);
   const cancelChannelArchive = useMutation(api.channels.cancelArchive);
-  const sendMessage = useMutation(api.messages.send);
+  const forwardMessage = useMutation(api.messages.forwardMessage);
   const deleteMessage = useMutation(api.messages.remove);
   const requestProjectArchive = useMutation(api.projectArchives.request);
   const approveProjectArchive = useMutation(api.projectArchives.approve);
@@ -148,19 +234,19 @@ export function CompanyProjectPage({
       first
         ? "channel" in first
           ? first.channel._id
-          : (first._id as Id<"groups">)
+          : first._id
         : null,
     );
   }, [activeChannelId, channels]);
   useEffect(() => {
-    if (!messages || typeof window === "undefined" || !window.location.hash.startsWith("#message-")) return;
+    if (typeof window === "undefined" || !targetMessageId || messages.length === 0)
+      return;
     requestAnimationFrame(() => {
-      const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+      const target = document.getElementById(`message-${targetMessageId}`);
       target?.scrollIntoView({ block: "center" });
       target?.focus({ preventScroll: true });
     });
-  }, [messages]);
-
+  }, [messages, targetMessageId]);
   const channelItems = useMemo(
     () =>
       (channels ?? []).map((entry) =>
@@ -171,6 +257,16 @@ export function CompanyProjectPage({
   const activeChannel = channelItems.find(
     (channel) => channel._id === activeChannelId,
   );
+  const projectContext = useMemo(
+    () => ({ actingCompanyId, projectId, projectMemberId }),
+    [actingCompanyId, projectId, projectMemberId],
+  );
+  const activeConversationScopeKey = getCompanyProjectScopeKey(
+    projectContext,
+    activeChannelId ?? undefined,
+  );
+  const replyToMessage =
+    replyToMessageByScope.get(activeConversationScopeKey) ?? null;
   const activeChannelEntry = channels?.find(
     (entry) =>
       ("channel" in entry ? entry.channel._id : entry._id) === activeChannelId,
@@ -182,12 +278,13 @@ export function CompanyProjectPage({
   );
   const participationOptions = useQuery(
     api.channels.getParticipationOptions,
-    activeChannelId &&
+    activeActingCompanyId &&
+      activeChannelId &&
       isChannelSteward &&
       exitStatus?.status === "active" &&
       activeChannel?.status === "active"
       ? {
-          actingCompanyId,
+          actingCompanyId: activeActingCompanyId,
           groupId: activeChannelId,
           projectId,
           projectMemberId,
@@ -196,9 +293,9 @@ export function CompanyProjectPage({
   );
   const pendingChannelArchives = useQuery(
     api.channels.listPendingArchive,
-    activeChannelId && isChannelSteward
+    activeActingCompanyId && activeChannelId && isChannelSteward
       ? {
-          actingCompanyId,
+          actingCompanyId: activeActingCompanyId,
           groupId: activeChannelId,
           projectId,
           projectMemberId,
@@ -208,70 +305,298 @@ export function CompanyProjectPage({
   const readOnly =
     item?.membership.status === "archived" ||
     item?.project.status === "archived" ||
+    exitStatus?.status === "exit_pending" ||
     Boolean(activeChannel && activeChannel.status !== "active");
 
-  async function run(action: () => Promise<unknown>) {
+  async function run(action: () => Promise<unknown>, actionLabel?: string) {
     setBusy(true);
+    if (actionLabel) setBusyAction(actionLabel);
     setNotice(null);
     try {
       await action();
       setNotice("Saved.");
       return true;
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message.replaceAll("_", " ")
-          : "The action failed.",
-      );
+      setNotice(formatCompanyError(error));
       return false;
     } finally {
       setBusy(false);
+      if (actionLabel) setBusyAction(null);
     }
   }
 
-  async function submitMessage(event: FormEvent) {
-    event.preventDefault();
-    if (!activeChannelId || !currentUser || !composer.trim()) return;
-    const saved = await run(() =>
-      sendMessage({
-        actingCompanyId,
-        authorId: currentUser._id,
-        body: composer.trim(),
-        groupId: activeChannelId,
-        projectId,
-        projectMemberId,
-      }),
+  async function deleteAuthoredMessage(messageId: Id<"messages">) {
+    if (!currentUser) return false;
+    return await run(
+      () =>
+        deleteMessage({
+          actingCompanyId,
+          actorId: currentUser._id,
+          messageId,
+          projectMemberId,
+        }),
+      `delete-${messageId}`,
     );
-    if (saved) setComposer("");
   }
 
-  async function deleteAuthoredMessage(messageId: Id<"messages">) {
-    if (!currentUser || !window.confirm("Delete this message? This can’t be undone.")) return;
-    await run(() =>
-      deleteMessage({
-        actingCompanyId,
-        actorId: currentUser._id,
-        messageId,
-        projectMemberId,
-      }),
-    );
+  async function forwardChannelMessage(input: {
+    sourceMessageId: Id<"messages">;
+    targetGroupId: Id<"groups">;
+    body: string;
+  }) {
+    if (!currentUser) return false;
+    const actionLabel = `forward-${input.sourceMessageId}`;
+    const request = {
+      actingCompanyId,
+      actorId: currentUser._id,
+      body: input.body.trim() || undefined,
+      idempotencyKey: crypto.randomUUID(),
+      projectId,
+      projectMemberId,
+      sourceMessageId: input.sourceMessageId,
+      targetGroupId: input.targetGroupId,
+    };
+    setBusy(true);
+    setBusyAction(actionLabel);
+    setNotice(null);
+    try {
+      try {
+        await forwardMessage(request);
+      } catch (error) {
+        const audienceExpanded =
+          error instanceof Error &&
+          error.message.includes("audience_expansion_confirmation_required");
+        if (!audienceExpanded) throw error;
+        const confirmed = window.confirm(
+          "This target Channel includes Project members who cannot read the source Channel. Forward a copied snapshot to the larger audience?",
+        );
+        if (!confirmed) return false;
+        await forwardMessage({
+          ...request,
+          audienceExpansionConfirmed: true,
+        });
+      }
+      setNotice("Saved.");
+      return true;
+    } catch (error) {
+      setNotice(formatCompanyError(error));
+      return false;
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
   }
+
+  function openMessageSource(groupId: Id<"groups">, messageId: Id<"messages">) {
+    setActiveChannelId(groupId);
+    window.history.replaceState(null, "", `#message-${messageId}`);
+  }
+
+  async function createProjectChannel() {
+    await createChannel({
+      actingCompanyId,
+      name: channelName.trim(),
+      ownCompanyMemberIds: [],
+      projectId,
+      projectMemberId,
+    });
+    setChannelName("");
+  }
+
+  async function addProjectMemberToProject(userId: Id<"users">) {
+    return await addProjectMember({
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+      role: "member",
+      userId,
+    });
+  }
+
+  async function updateProjectMemberStatus(
+    targetProjectMemberId: Id<"projectMembers">,
+    status: "active" | "suspended",
+  ) {
+    return await updateProjectMember({
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+      status,
+      targetProjectMemberId,
+    });
+  }
+
+  async function decideProjectChannelParticipation(input: {
+    decision: "accept" | "decline";
+    groupId: Id<"groups">;
+    requestId: Id<"channelParticipationRequests">;
+    selectedProjectMemberIds: Array<Id<"projectMembers">>;
+  }) {
+    return await decideChannelParticipation({
+      actingCompanyId,
+      decision: input.decision,
+      groupId: input.groupId,
+      projectId,
+      projectMemberId,
+      requestId: input.requestId,
+      selectedProjectMemberIds: input.selectedProjectMemberIds,
+    });
+  }
+
+  async function requestProjectChannelParticipation(input: {
+    selectedProjectMemberIds: Array<Id<"projectMembers">>;
+    targetProjectCompanyId: Id<"projectCompanies">;
+  }) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await requestChannelParticipation({
+      actingCompanyId,
+      groupId: activeChannelId,
+      idempotencyKey: crypto.randomUUID(),
+      projectId,
+      projectMemberId,
+      selectedProjectMemberIds: input.selectedProjectMemberIds,
+      targetProjectCompanyId: input.targetProjectCompanyId,
+    });
+  }
+
+  async function requestProjectChannelArchive(
+    operation: "archive" | "restore",
+  ) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await requestChannelArchive({
+      actingCompanyId,
+      groupId: activeChannelId,
+      idempotencyKey: crypto.randomUUID(),
+      operation,
+      projectId,
+      projectMemberId,
+    });
+  }
+
+  async function approveProjectChannelArchive(
+    requestId: Id<"channelArchiveRequests">,
+  ) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await approveChannelArchive({
+      actingCompanyId,
+      groupId: activeChannelId,
+      projectId,
+      projectMemberId,
+      requestId,
+    });
+  }
+
+  async function cancelProjectChannelArchive(
+    requestId: Id<"channelArchiveRequests">,
+  ) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await cancelChannelArchive({
+      actingCompanyId,
+      groupId: activeChannelId,
+      projectId,
+      projectMemberId,
+      requestId,
+    });
+  }
+
+  async function requestProjectLifecycleArchive(operation: "archive" | "restore") {
+    return await requestProjectArchive({
+      actingCompanyId,
+      idempotencyKey: crypto.randomUUID(),
+      operation,
+      projectId,
+      projectMemberId,
+    });
+  }
+
+  async function approveProjectLifecycleArchive(
+    requestId: Id<"projectArchiveRequests">,
+  ) {
+    return await approveProjectArchive({
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+      requestId,
+    });
+  }
+
+  async function prepareProjectExit() {
+    return await prepareExit({ actingCompanyId, projectId });
+  }
+
+  async function retryProjectExitSnapshot() {
+    return await retryExit({ actingCompanyId, projectId });
+  }
+
+  async function retryProjectExitCleanup() {
+    return await retryExitCleanup({ actingCompanyId, projectId });
+  }
+
+  async function finalizeProjectExit() {
+    return await finalizeExit({ actingCompanyId, projectId });
+  }
+
+  async function cancelProjectExit() {
+    return await cancelExit({ actingCompanyId, projectId });
+  }
+
+  if (releaseState.status === "loading")
+    return <TrackLoader label="Loading Company Project" />;
 
   if (!releaseConfig.companyModel)
     return (
       <main className="company-hub">
         <h1>Company Project unavailable</h1>
-        <p>This capability is currently disabled by the server release configuration.</p>
+        <p>
+          This capability is currently disabled by the server release
+          configuration.
+        </p>
         <Link to="/workspace">Return to Projects</Link>
       </main>
     );
 
-  if (projects === undefined)
+  if (companies === undefined)
+    return <TrackLoader label="Loading Company Project" />;
+
+  if (actingCompany?.company?.status === "suspended")
     return (
-      <main className="company-hub">
-        <p>Loading Project…</p>
+      <main className="company-hub-shell company-unified-shell">
+        <CompanyProjectNavigation
+          actingCompanyId={actingCompanyId}
+          activeArea="company"
+          tasksEnabled={releaseConfig.tasks}
+        />
+        <section className="company-hub">
+          <header className="company-hub-header">
+            <div>
+              <span className="company-eyebrow">
+                {actingCompany.company.displayName}
+              </span>
+              <h1>Company suspended</h1>
+              <p>
+                Project and Channel access is paused. Open the Company workspace
+                to reactivate it if you are an owner.
+              </p>
+            </div>
+            <Link className="company-header-link" to="/workspace/company">
+              Open Company workspace
+            </Link>
+          </header>
+        </section>
       </main>
     );
+
+  if (!activeActingCompanyId)
+    return (
+      <main className="company-hub">
+        <h1>Project unavailable</h1>
+        <p>This Company representation is no longer available.</p>
+        <Link to="/workspace/company">Return to Company workspace</Link>
+      </main>
+    );
+
+  if (projects === undefined)
+    return <TrackLoader label="Loading Company Project" />;
   if (!item)
     return (
       <main className="company-hub">
@@ -281,511 +606,123 @@ export function CompanyProjectPage({
       </main>
     );
 
+  if (exitStatus === null)
+    return (
+      <main className="company-hub">
+        <h1>Project unavailable</h1>
+        <p>This represented Project membership is no longer available.</p>
+        <Link to="/workspace/company">Return to Company hub</Link>
+      </main>
+    );
+
+  if (
+    currentUser === undefined ||
+    exitStatus === undefined ||
+    (canReadChannels && channels === undefined)
+  )
+    return <TrackLoader label="Loading Company Project" />;
+
+  if (!currentUser)
+    return (
+      <main className="company-hub">
+        <h1>Sign in required</h1>
+        <p>Sign in again to open this Company Project.</p>
+        <Link to="/">Return to sign in</Link>
+      </main>
+    );
+
   return (
-    <main aria-busy={busy} className="company-project-shell">
-      <aside className="company-channel-sidebar">
-        <Link to="/workspace/company">← Company hub</Link>
-        <h1>{item.project.name}</h1>
-        <span className="company-badge">
-          {item.membership.companyDisplayNameSnapshot} · {item.membership.role}
-        </span>
-        {item.membership.status === "archived" ? (
-          <p className="company-read-only">Read-only exit archive</p>
-        ) : null}
-        {releaseConfig.tasks ? (
-          <Link
-            params={{ projectId }}
-            search={{
-              actingCompanyId,
-              projectMemberId,
-              view: "board",
-            }}
-            to="/workspace/projects/$projectId/tasks"
-          >
-            Tasks
-          </Link>
-        ) : null}
-        <nav aria-label="Channels">
-          <h2>Channels</h2>
-          {channelItems.map((channel) => (
-            <button
-              aria-current={
-                channel._id === activeChannelId ? "page" : undefined
-              }
-              className={channel._id === activeChannelId ? "active" : ""}
-              key={channel._id}
-              onClick={() => setActiveChannelId(channel._id)}
-              type="button"
-            >
-              # {channel.name}
-              {channel.status === "archived" ? " · archived" : ""}
-              {threadUnreadByChannel.get(channel._id)
-                ? ` · ${threadUnreadByChannel.get(channel._id)} unread ${threadUnreadByChannel.get(channel._id) === 1 ? "thread" : "threads"}`
-                : ""}
-            </button>
-          ))}
-        </nav>
-        {item.membership.role === "manager" &&
-        item.membership.status === "active" ? (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void run(async () => {
-                await createChannel({
-                  actingCompanyId,
-                  name: channelName,
-                  ownCompanyMemberIds: [],
-                  projectId,
-                  projectMemberId,
-                });
-                setChannelName("");
-              });
-            }}
-          >
-            <Input
-              aria-label="New Channel name"
-              onChange={(event) => setChannelName(event.target.value)}
-              placeholder="New Channel"
-              required
-              value={channelName}
-            />
-            <Button type="submit">Create Channel</Button>
-          </form>
-        ) : null}
-      </aside>
-
-      <section className="company-conversation">
-        <header>
-          <div>
-            <span className="company-eyebrow">Channel</span>
-            <h2>{activeChannel?.name ?? "Select a Channel"}</h2>
-          </div>
-          {readOnly ? (
-            <span className="company-read-only">Read only</span>
-          ) : null}
-        </header>
-        {notice ? (
-          <p aria-live="polite" className="company-notice">
-            {notice}
-          </p>
-        ) : null}
-        {activeChannel && releaseConfig.tasks ? <ChannelTaskPanel group={activeChannel} identity={{ actingCompanyId, projectMemberId }} /> : null}
-        {releaseConfig.threads && activeChannelId && currentUser ? (
-          <ChannelThreadBrowser
-            context={{ actingCompanyId, projectMemberId }}
-            groupId={activeChannelId}
-            projectId={projectId}
-            readOnly={readOnly}
-            timelineMessages={messages ?? []}
-            userId={currentUser._id}
-          />
-        ) : null}
-        <div className="company-message-list" role="log">
-          {messages === undefined && activeChannelId ? (
-            <p>Loading messages…</p>
-          ) : messages?.length === 0 ? (
-            <p>No messages yet.</p>
-          ) : (
-            messages
-              ?.slice()
-              .reverse()
-              .map((detail) => (
-                <article id={`message-${detail.message._id}`} key={detail.message._id} tabIndex={-1}>
-                  <div>
-                    <strong>
-                      {detail.author?.displayName ?? "Unknown member"}
-                    </strong>
-                    {detail.authorCompany ? (
-                      <span className="company-badge">
-                        {detail.authorCompany.displayName}
-                      </span>
-                    ) : null}
-                    <time>
-                      {new Date(detail.message.createdAt).toLocaleString()}
-                    </time>
-                  </div>
-                  <p>{detail.message.body || "Attachment message"}</p>
-                  {!readOnly &&
-                  (detail.message.authorProjectMemberId
-                    ? detail.message.authorProjectMemberId === projectMemberId
-                    : detail.message.authorId === currentUser?._id) ? (
-                    <Button
-                      disabled={busy}
-                      onClick={() => void deleteAuthoredMessage(detail.message._id)}
-                      variant="destructive"
-                    >
-                      Delete
-                    </Button>
-                  ) : null}
-                  {releaseConfig.tasks && !readOnly ? (
-                    <CreateTaskFromMessage
-                      identity={{ actingCompanyId, projectMemberId }}
-                      message={detail.message}
-                    />
-                  ) : null}
-                  {releaseConfig.tasks ? (
-                    <MessageInlineTasks
-                      identity={{ actingCompanyId, projectMemberId }}
-                      message={detail.message}
-                    />
-                  ) : null}
-                  {releaseConfig.threads && detail.channelThread ? (
-                    <a href={threadHref(projectId, activeChannelId!, detail.channelThread.threadId, {
-                      actingCompanyId,
-                      projectMemberId,
-                    })}>
-                      {detail.channelThread.name} · {detail.channelThread.replyCount} replies
-                    </a>
-                  ) : null}
-                </article>
-              ))
-          )}
-        </div>
-        {activeChannelId && !readOnly ? (
-          <form
-            className="company-composer"
-            onSubmit={(event) => void submitMessage(event)}
-          >
-            <label className="sr-only" htmlFor="company-message">
-              Message
-            </label>
-            <Input
-              id="company-message"
-              onChange={(event) => setComposer(event.target.value)}
-              placeholder={`Message #${activeChannel?.name ?? "Channel"}`}
-              value={composer}
-            />
-            <Button disabled={!composer.trim()} type="submit">
-              Send
-            </Button>
-          </form>
-        ) : null}
-      </section>
-
-      <aside className="company-project-admin">
-        <h2>Project controls</h2>
-        {projectMembers ? (
-          <>
-            <h3>Your Company members</h3>
-            <ul>
-              {projectMembers.map(({ membership, user }) => (
-                <li key={membership._id}>
-                  {user?.displayName} <span>{membership.role}</span>
-                  {membership._id !== projectMemberId ? (
-                    <Button
-                      onClick={() =>
-                        void run(() =>
-                          updateProjectMember({
-                            actingCompanyId,
-                            projectId,
-                            projectMemberId,
-                            targetProjectMemberId: membership._id,
-                            status:
-                              membership.status === "active"
-                                ? "suspended"
-                                : "active",
-                          }),
-                        )
-                      }
-                      variant="outline"
-                    >
-                      {membership.status === "active"
-                        ? "Suspend"
-                        : "Reactivate"}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            <h3>Add your Company members</h3>
-            {companyMembers?.members
-              .filter(
-                ({ membership }) =>
-                  membership.status === "active" &&
-                  !projectMembers.some(
-                    (row) => row.membership.userId === membership.userId,
-                  ),
-              )
-              .map(({ membership, user }) => (
-                <Button
-                  key={membership._id}
-                  onClick={() =>
-                    void run(() =>
-                      addProjectMember({
-                        actingCompanyId,
-                        projectId,
-                        projectMemberId,
-                        role: "member",
-                        userId: membership.userId,
-                      }),
-                    )
-                  }
-                  variant="outline"
-                >
-                  Add {user?.displayName ?? membership.userDisplayNameSnapshot}
-                </Button>
-              ))}
-          </>
-        ) : null}
-        {channelParticipationInvitations?.map((request) => (
-          <div className="company-admin-card" key={request._id}>
-            <strong>Channel participation requested</strong>
-            <p>
-              The requesting Company selected{" "}
-              {request.selectedProjectMemberIds.length} member(s).
-            </p>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  decideChannelParticipation({
-                    actingCompanyId,
-                    decision: "accept",
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                    selectedProjectMemberIds: request.selectedProjectMemberIds,
-                  }),
-                )
-              }
-            >
-              Accept for Company
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  decideChannelParticipation({
-                    actingCompanyId,
-                    decision: "decline",
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                    selectedProjectMemberIds: [],
-                  }),
-                )
-              }
-              variant="outline"
-            >
-              Decline
-            </Button>
-          </div>
-        ))}
-        {participationOptions?.map((option) => (
-          <div className="company-admin-card" key={option.projectCompany._id}>
-            <strong>
-              Add {option.company?.displayName} to #{activeChannel?.name}
-            </strong>
-            <p>
-              {option.members.length} Project member(s) will be selected for
-              their manager to confirm.
-            </p>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  requestChannelParticipation({
-                    actingCompanyId,
-                    groupId: activeChannelId!,
-                    idempotencyKey: crypto.randomUUID(),
-                    projectId,
-                    projectMemberId,
-                    selectedProjectMemberIds: option.members.map(
-                      ({ membership }) => membership._id,
-                    ),
-                    targetProjectCompanyId: option.projectCompany._id,
-                  }),
-                )
-              }
-              variant="outline"
-            >
-              Request participation
-            </Button>
-          </div>
-        ))}
-        {pendingChannelArchives?.map((request) => (
-          <div className="company-admin-card" key={request._id}>
-            <strong>
-              {request.operation === "archive"
-                ? "Channel archive"
-                : "Channel restore"}{" "}
-              requested
-            </strong>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  approveChannelArchive({
-                    actingCompanyId,
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                  }),
-                )
-              }
-            >
-              Approve for Company
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  cancelChannelArchive({
-                    actingCompanyId,
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                  }),
-                )
-              }
-              variant="outline"
-            >
-              Cancel request
-            </Button>
-          </div>
-        ))}
-        {activeChannelId &&
-        isChannelSteward &&
-        activeChannel?.kind !== "general" &&
-        (activeChannel.status === "active" ||
-          activeChannel.status === "archived") &&
-        !pendingChannelArchives?.length ? (
-          <Button
-            onClick={() =>
-              void run(async () => {
-                const requestId = await requestChannelArchive({
-                  actingCompanyId,
-                  groupId: activeChannelId,
-                  idempotencyKey: crypto.randomUUID(),
-                  operation:
-                    activeChannel.status === "archived" ? "restore" : "archive",
-                  projectId,
-                  projectMemberId,
-                });
-                await approveChannelArchive({
-                  actingCompanyId,
-                  groupId: activeChannelId,
-                  projectId,
-                  projectMemberId,
-                  requestId,
-                });
-              })
-            }
-            variant="outline"
-          >
-            Request Channel{" "}
-            {activeChannel.status === "archived" ? "restore" : "archive"}
-          </Button>
-        ) : null}
-        {pendingProjectArchives?.map((request) => (
-          <div className="company-admin-card" key={request._id}>
-            <strong>
-              {request.operation === "archive" ? "Archive" : "Restore"} approval
-              requested
-            </strong>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  approveProjectArchive({
-                    actingCompanyId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                  }),
-                )
-              }
-            >
-              Approve for Company
-            </Button>
-          </div>
-        ))}
-        {item.membership.role === "manager" &&
-        item.membership.status === "active" ? (
-          <Button
-            onClick={() =>
-              void run(async () => {
-                const requestId = await requestProjectArchive({
-                  actingCompanyId,
-                  idempotencyKey: crypto.randomUUID(),
-                  operation:
-                    item.project.status === "archived" ? "restore" : "archive",
-                  projectId,
-                  projectMemberId,
-                });
-                await approveProjectArchive({
-                  actingCompanyId,
-                  projectId,
-                  projectMemberId,
-                  requestId,
-                });
-              })
-            }
-            variant="outline"
-          >
-            Request Project{" "}
-            {item.project.status === "archived" ? "restore" : "archive"}
-          </Button>
-        ) : null}
-        {item.project.origin === "shared" &&
-        item.membership.status === "active" &&
-        exitStatus?.status === "active" ? (
-          <Button
-            onClick={() =>
-              void run(() => prepareExit({ actingCompanyId, projectId }))
-            }
-            variant="destructive"
-          >
-            Start Company exit
-          </Button>
-        ) : null}
-        {exitStatus?.status === "active" &&
-        exitStatus.snapshotError?.startsWith("snapshot_cleanup") ? (
-          <div className="company-admin-card">
-            <strong>Exit snapshot cleanup needs attention</strong>
-            <p>{exitStatus.snapshotError}</p>
-            <Button
-              onClick={() =>
-                void run(() => retryExitCleanup({ actingCompanyId, projectId }))
-              }
-              variant="outline"
-            >
-              Retry cleanup
-            </Button>
-          </div>
-        ) : null}
-        {exitStatus?.status === "exit_pending" ? (
-          <div className="company-admin-card">
-            <strong>Company exit prepared</strong>
-            <p>Snapshot: {exitStatus.snapshotStatus ?? "pending"}</p>
-            {exitStatus.snapshotError ? (
-              <p>{exitStatus.snapshotError}</p>
-            ) : null}
-            <Button
-              disabled={exitStatus.snapshotStatus !== "verified"}
-              onClick={() =>
-                void run(() => finalizeExit({ actingCompanyId, projectId }))
-              }
-            >
-              Finalize exit
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() => retryExit({ actingCompanyId, projectId }))
-              }
-              variant="outline"
-            >
-              Retry snapshot
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() => cancelExit({ actingCompanyId, projectId }))
-              }
-              variant="outline"
-            >
-              Cancel safely
-            </Button>
-          </div>
-        ) : null}
-      </aside>
+    <main
+      aria-busy={busy}
+      className="company-project-shell company-unified-shell"
+    >
+      <CompanyProjectConversation
+        actingCompanyId={actingCompanyId}
+        activeChannel={activeChannel}
+        activeChannelId={activeChannelId}
+        busyAction={busyAction}
+        channelItems={channelItems}
+        channelName={channelName}
+        currentUser={currentUser}
+        item={item}
+        messages={messages}
+        messagePageStatus={messagePageStatus}
+        notice={notice}
+        onBusyActionChange={setBusyAction}
+        onChannelNameChange={setChannelName}
+        onCreateChannel={() => run(createProjectChannel, "create-channel")}
+        onDeleteMessage={deleteAuthoredMessage}
+        onForwardMessage={forwardChannelMessage}
+        onNotice={setNotice}
+        onOpenGroup={setActiveChannelId}
+        onOpenMessageSource={openMessageSource}
+        onLoadMoreMessages={loadMoreMessages}
+        onReplyChange={(reply) => {
+          setReplyToMessageByScope((previous) => {
+            const next = new Map(previous);
+            if (reply) next.set(activeConversationScopeKey, reply);
+            else next.delete(activeConversationScopeKey);
+            return next;
+          });
+        }}
+        onReplyMessage={(message) => {
+          setReplyToMessageByScope((previous) => {
+            const next = new Map(previous);
+            next.set(activeConversationScopeKey, {
+              authorName: message.author?.displayName ?? "Unknown Member",
+              body: message.message.body || "Attachment message",
+              messageId: message.message._id,
+            });
+            return next;
+          });
+        }}
+        projectId={projectId}
+        projectMemberId={projectMemberId}
+        readOnly={readOnly}
+        releaseConfig={{
+          tasks: releaseConfig.tasks,
+          threads: releaseConfig.threads,
+        }}
+        replyToMessage={replyToMessage}
+        snapshotState={snapshotState}
+        targetMessageId={targetMessageId}
+        threadUnreadByChannel={threadUnreadByChannel}
+      />
+      <CompanyProjectAdministration
+        actingCompanyId={actingCompanyId}
+        activeChannel={activeChannel}
+        activeChannelId={activeChannelId}
+        canConfirmProjectOwnership={canConfirmProjectOwnership}
+        canInvitePartnerCompanies={canInvitePartnerCompanies}
+        channelParticipationInvitations={channelParticipationInvitations}
+        collaborationOptions={collaborationOptions}
+        companyMembers={companyMembers}
+        exitStatus={exitStatus}
+        item={item}
+        isChannelSteward={isChannelSteward}
+        canManageExit={canManageExit}
+        participationOptions={participationOptions}
+        pendingChannelArchives={pendingChannelArchives}
+        pendingProjectArchives={pendingProjectArchives}
+        projectId={projectId}
+        projectMemberId={projectMemberId}
+        projectMembers={projectMembers}
+        run={run}
+        onAddProjectMember={addProjectMemberToProject}
+        onApproveChannelArchive={approveProjectChannelArchive}
+        onApproveProjectArchive={approveProjectLifecycleArchive}
+        onCancelChannelArchive={cancelProjectChannelArchive}
+        onCancelExit={cancelProjectExit}
+        onDecideChannelParticipation={decideProjectChannelParticipation}
+        onFinalizeExit={finalizeProjectExit}
+        onPrepareExit={prepareProjectExit}
+        onRequestChannelArchive={requestProjectChannelArchive}
+        onRequestChannelParticipation={requestProjectChannelParticipation}
+        onRequestProjectArchive={requestProjectLifecycleArchive}
+        onRetryExit={retryProjectExitSnapshot}
+        onRetryExitCleanup={retryProjectExitCleanup}
+        onUpdateProjectMember={updateProjectMemberStatus}
+      />
     </main>
   );
 }
