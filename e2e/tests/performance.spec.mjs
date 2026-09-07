@@ -47,12 +47,22 @@ test('real app operation timings and resource bytes stay inside budgets', async 
   // has its own unchanged performance budget below.
   test.setTimeout(120_000)
   const browserErrors = []
+  const expectedSetupErrors = []
+  let signingIn = true
   page.on('pageerror', (error) => browserErrors.push(error.message))
   page.on('console', (message) => {
-    if (message.type() === 'error') browserErrors.push(message.text())
+    if (message.type() !== 'error') return
+    const signInUrl = `${new URL(page.url()).origin}/api/auth/sign-in/email`
+    if (signingIn && message.location().url === signInUrl && message.text().includes('401 (Unauthorized)')) {
+      // A new isolated account is created by the demo sign-in's sign-up fallback.
+      expectedSetupErrors.push({ url: signInUrl, message: message.text() })
+      return
+    }
+    browserErrors.push(message.text())
   })
   await resetFixture()
   await signIn(page)
+  signingIn = false
 
   const conversationUrl = page.url()
   const routeNavigationMs = []
@@ -97,7 +107,8 @@ test('real app operation timings and resource bytes stay inside budgets', async 
     let changedSteps = 0
     const started = performance.now()
     for (let index = 0; index < 12; index += 1) {
-      root.scrollTop = range * (index % 2 === 0 ? 0.2 : 0.8)
+      // Restarting CSS smooth scrolling each frame can prevent any movement.
+      root.scrollTo({ top: range * (index % 2 === 0 ? 0.2 : 0.8), behavior: 'instant' })
       await new Promise((resolveFrame) => requestAnimationFrame(resolveFrame))
       if (Math.abs(root.scrollTop - previousTop) > 1) changedSteps += 1
       previousTop = root.scrollTop
@@ -139,6 +150,7 @@ test('real app operation timings and resource bytes stay inside budgets', async 
     },
     scroll,
     browserErrors,
+    expectedSetupErrors,
     resources: {
       bytes: resourceBytes,
       count: appResources.length,
