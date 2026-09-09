@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -15,16 +16,19 @@ import { useEffect, useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 
+import { ActionButton } from '@/components/action-button';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { authClient } from '@/lib/auth-client';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
 import { requiresTwoFactor, validateEmailSignIn, validateEmailSignUp } from '@/lib/email-auth';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
-import { PlatformIcon } from '@/components/platform-icon';
+import { IconButton } from '@/components/icon-button';
 import { SignInHero } from '@/components/sign-in-hero';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { accountErrorMessage } from '@/lib/user-facing-error';
 
 import googleMarkImage from '@/assets/images/google-g.png';
 
@@ -33,16 +37,18 @@ export default function SignInScreen() {
   const router = useRouter();
   const devAuthBypass = useDevAuthBypass();
   const session = authClient.useSession();
-  const [busy, setBusy] = useState(false);
-  const [emailMode, setEmailMode] = useState(false);
+  const [busyAction, setBusyAction] = useState<'apple' | 'dev' | 'email' | 'google' | null>(null);
   const [emailIntent, setEmailIntent] = useState<'signIn' | 'signUp'>('signIn');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryAction, setRetryAction] = useState<'apple' | 'dev' | 'email' | 'google' | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const signedIn = Boolean(session.data);
+  const busy = busyAction !== null;
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -62,8 +68,9 @@ export default function SignInScreen() {
   }, [router, signedIn]);
 
   async function signIn(provider: 'google' | 'apple') {
-    setBusy(true);
+    setBusyAction(provider);
     setError(null);
+    setRetryAction(null);
     hapticMedium();
     try {
       const result =
@@ -81,9 +88,11 @@ export default function SignInScreen() {
       if (isAppleCancel(e)) {
         return;
       }
-      setError(e instanceof Error ? e.message : 'Sign-in failed');
+      const message = accountErrorMessage(e);
+      setError(message);
+      if (message.includes('connect')) setRetryAction(provider);
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -91,11 +100,13 @@ export default function SignInScreen() {
     const input = validateEmailSignIn(email, password);
     if (!input.ok) {
       setError(input.error);
+      setRetryAction(null);
       return;
     }
 
-    setBusy(true);
+    setBusyAction('email');
     setError(null);
+    setRetryAction(null);
     hapticMedium();
     try {
       const result = await authClient.signIn.email({
@@ -113,9 +124,11 @@ export default function SignInScreen() {
       router.replace('/');
     } catch (e) {
       hapticLight();
-      setError(e instanceof Error ? e.message : 'Sign-in failed');
+      const message = accountErrorMessage(e);
+      setError(message);
+      if (message.includes('connect')) setRetryAction('email');
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -123,11 +136,13 @@ export default function SignInScreen() {
     const input = validateEmailSignUp(name, email, password);
     if (!input.ok) {
       setError(input.error);
+      setRetryAction(null);
       return;
     }
 
-    setBusy(true);
+    setBusyAction('email');
     setError(null);
+    setRetryAction(null);
     hapticMedium();
     try {
       const result = await authClient.signUp.email({
@@ -142,9 +157,11 @@ export default function SignInScreen() {
       router.replace('/');
     } catch (e) {
       hapticLight();
-      setError(e instanceof Error ? e.message : 'Could not create the account.');
+      const message = accountErrorMessage(e, 'Track could not create the account. Check your details and try again.');
+      setError(message);
+      if (message.includes('connect')) setRetryAction('email');
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -153,8 +170,9 @@ export default function SignInScreen() {
   }
 
   async function signInWithDevBypass() {
-    setBusy(true);
+    setBusyAction('dev');
     setError(null);
+    setRetryAction(null);
     hapticMedium();
     try {
       await devAuthBypass.enable();
@@ -164,7 +182,7 @@ export default function SignInScreen() {
       hapticLight();
       setError('Development sign-in failed. Check the development auth configuration.');
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -181,129 +199,110 @@ export default function SignInScreen() {
           >
             {!keyboardVisible ? <SignInHero /> : null}
 
-            {/* Auth panel */}
+            <ConnectivityBanner message="You’re offline. Reconnect to sign in or create an account." />
+
             <View style={styles.panel}>
               {error ? (
-                <View style={[styles.errorBox, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}>
+                <View accessibilityRole="alert" style={[styles.errorBox, { backgroundColor: theme.dangerSoft, borderColor: theme.danger }]}>
                   <ThemedText style={{ color: theme.danger }} type="small">
                     {error}
                   </ThemedText>
+                  {retryAction ? (
+                    <ActionButton
+                      label="Try again"
+                      onPress={() => retryAction === 'email'
+                        ? submitEmail()
+                        : retryAction === 'dev'
+                          ? void signInWithDevBypass()
+                          : void signIn(retryAction)}
+                      variant="secondary"
+                    />
+                  ) : null}
                 </View>
               ) : null}
 
-              {/* Google */}
-              <Pressable
-                android_ripple={{ color: theme.background }}
-                disabled={busy}
-                onPress={() => void signIn('google')}
-                style={[
-                  styles.authButton,
-                  styles.authButtonPrimary,
-                  { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 },
-                ]}
-              >
-                <Image accessibilityIgnoresInvertColors source={googleMarkImage} style={styles.authIcon} />
-                <ThemedText style={[styles.authLabel, { color: theme.background }]}>Continue with Google</ThemedText>
-              </Pressable>
-
-              {/* Apple */}
-              {showApple ? (
-                <Pressable
-                  android_ripple={{ color: theme.hairline }}
-                  disabled={busy}
-                  onPress={() => void signIn('apple')}
-                  style={[
-                    styles.authButton,
-                    {
-                      backgroundColor: theme.backgroundElement,
-                      opacity: busy ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <PlatformIcon color={theme.text} name="apple" size={20} />
-                  <ThemedText style={[styles.authLabel, { color: theme.text }]}>Continue with Apple</ThemedText>
-                </Pressable>
-              ) : null}
-
-              {emailMode ? (
-                <View style={styles.emailFields}>
+              <View style={styles.emailFields}>
                   {emailIntent === 'signUp' ? (
-                    <TextInput
-                      accessibilityLabel="Full name"
-                      autoCapitalize="words"
-                      autoComplete="name"
-                      editable={!busy}
-                      onChangeText={setName}
-                      placeholder="Full name"
-                      placeholderTextColor={theme.textSecondary}
-                      returnKeyType="next"
-                      style={[
-                        styles.input,
-                        {
-                          backgroundColor: theme.backgroundElement,
-                          borderColor: theme.hairline,
-                          color: theme.text,
-                        },
-                      ]}
-                      textContentType="name"
-                      value={name}
-                    />
+                    <View style={styles.field}>
+                      <ThemedText themeColor="textSecondary" type="captionBold">Full name</ThemedText>
+                      <TextInput
+                        accessibilityLabel="Full name"
+                        autoCapitalize="words"
+                        autoComplete="name"
+                        editable={!busy}
+                        maxLength={100}
+                        maxFontSizeMultiplier={MaxFontScale}
+                        onChangeText={setName}
+                        placeholder="Zohaib Raja"
+                        placeholderTextColor={theme.textTertiary}
+                        returnKeyType="next"
+                        style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text }]}
+                        textContentType="name"
+                        value={name}
+                      />
+                    </View>
                   ) : null}
-                  <TextInput
-                    accessibilityLabel="Email address"
-                    autoCapitalize="none"
-                    autoComplete="email"
-                    editable={!busy}
-                    keyboardType="email-address"
-                    onChangeText={setEmail}
-                    placeholder="Email address"
-                    placeholderTextColor={theme.textSecondary}
-                    returnKeyType="next"
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: theme.backgroundElement,
-                        borderColor: theme.hairline,
-                        color: theme.text,
-                      },
-                    ]}
-                    textContentType="emailAddress"
-                    value={email}
-                  />
-                  <TextInput
-                    accessibilityLabel="Password"
-                    autoCapitalize="none"
-                    autoComplete={emailIntent === 'signUp' ? 'new-password' : 'current-password'}
-                    editable={!busy}
-                    onChangeText={setPassword}
-                    onSubmitEditing={submitEmail}
-                    placeholder="Password"
-                    placeholderTextColor={theme.textSecondary}
-                    returnKeyType="done"
-                    secureTextEntry
-                    style={[
-                      styles.input,
-                      {
-                        backgroundColor: theme.backgroundElement,
-                        borderColor: theme.hairline,
-                        color: theme.text,
-                      },
-                    ]}
-                    textContentType={emailIntent === 'signUp' ? 'newPassword' : 'password'}
-                    value={password}
-                  />
-                  <Pressable
-                    android_ripple={{ color: theme.background }}
-                    disabled={busy}
-                    onPress={submitEmail}
-                    style={[styles.authButton, { backgroundColor: theme.text, opacity: busy ? 0.7 : 1 }]}
-                  >
-                    <PlatformIcon color={theme.background} name="email-outline" size={20} />
-                    <ThemedText style={[styles.authLabel, { color: theme.background }]}>
-                      {emailIntent === 'signUp' ? 'Create account' : 'Sign in with email'}
+                  <View style={styles.field}>
+                    <ThemedText themeColor="textSecondary" type="captionBold">Email address</ThemedText>
+                    <TextInput
+                      accessibilityLabel="Email address"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      editable={!busy}
+                      keyboardType="email-address"
+                      maxLength={254}
+                      maxFontSizeMultiplier={MaxFontScale}
+                      onChangeText={setEmail}
+                      placeholder="name@company.com"
+                      placeholderTextColor={theme.textTertiary}
+                      returnKeyType="next"
+                      style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text }]}
+                      textContentType="emailAddress"
+                      value={email}
+                    />
+                  </View>
+                  <View style={styles.field}>
+                    <ThemedText themeColor="textSecondary" type="captionBold">Password</ThemedText>
+                    <View style={[styles.passwordField, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+                      <TextInput
+                        accessibilityLabel="Password"
+                        autoCapitalize="none"
+                        autoComplete={emailIntent === 'signUp' ? 'new-password' : 'current-password'}
+                        editable={!busy}
+                        maxLength={128}
+                        maxFontSizeMultiplier={MaxFontScale}
+                        onChangeText={setPassword}
+                        onSubmitEditing={submitEmail}
+                        placeholder="Enter your password"
+                        placeholderTextColor={theme.textTertiary}
+                        returnKeyType="done"
+                        secureTextEntry={!passwordVisible}
+                        style={[styles.passwordInput, { color: theme.text }]}
+                        textContentType={emailIntent === 'signUp' ? 'newPassword' : 'password'}
+                        value={password}
+                      />
+                      <IconButton
+                        accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+                        disabled={busy}
+                        icon={passwordVisible ? 'eye-off' : 'eye'}
+                        onPress={() => setPasswordVisible((visible) => !visible)}
+                        size={20}
+                      />
+                    </View>
+                    <ThemedText themeColor="textTertiary" type="caption">
+                      {emailIntent === 'signUp' ? 'Use at least 8 characters.' : 'Your password is encrypted in transit.'}
                     </ThemedText>
-                  </Pressable>
+                  </View>
+                  <ActionButton
+                    icon="email-outline"
+                    label={emailIntent === 'signUp' ? 'Create account' : 'Continue with email'}
+                    loading={busyAction === 'email'}
+                    disabled={busy && busyAction !== 'email'}
+                    onPress={submitEmail}
+                  />
                   <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: busy }}
                     disabled={busy}
                     hitSlop={8}
                     onPress={() => {
@@ -311,7 +310,7 @@ export default function SignInScreen() {
                       setError(null);
                       setEmailIntent(emailIntent === 'signUp' ? 'signIn' : 'signUp');
                     }}
-                    style={styles.emailLink}
+                    style={({ pressed }) => [styles.emailLink, { opacity: pressed ? 0.62 : 1 }]}
                   >
                     <ThemedText style={{ color: theme.textSecondary }} type="small">
                       {emailIntent === 'signUp'
@@ -319,35 +318,44 @@ export default function SignInScreen() {
                         : 'New to Track? Create an account'}
                     </ThemedText>
                   </Pressable>
-                </View>
-              ) : (
-                <Pressable
-                  disabled={busy}
-                  hitSlop={8}
-                  onPress={() => {
-                    hapticLight();
-                    setError(null);
-                    setEmailMode(true);
-                  }}
-                  style={styles.emailLink}
-                >
-                  <ThemedText style={{ color: theme.textSecondary }} type="smallBold">
-                    Continue with email
-                  </ThemedText>
-                </Pressable>
-              )}
+              </View>
+
+              <View accessibilityRole="text" style={styles.divider}>
+                <View style={[styles.dividerLine, { backgroundColor: theme.hairline }]} />
+                <ThemedText themeColor="textTertiary" type="caption">or</ThemedText>
+                <View style={[styles.dividerLine, { backgroundColor: theme.hairline }]} />
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busy }}
+                disabled={busy}
+                onPress={() => void signIn('google')}
+                style={({ pressed }) => [styles.socialButton, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, opacity: busy && busyAction !== 'google' ? 0.5 : pressed ? 0.82 : 1 }]}>
+                {busyAction === 'google' ? <ActivityIndicator color={theme.textSecondary} size="small" /> : <Image accessibilityIgnoresInvertColors source={googleMarkImage} style={styles.authIcon} />}
+                <ThemedText type="smallBold">{busyAction === 'google' ? 'Connecting…' : 'Continue with Google'}</ThemedText>
+              </Pressable>
+
+              {showApple ? (
+                <ActionButton
+                  disabled={busy && busyAction !== 'apple'}
+                  icon="apple"
+                  label="Continue with Apple"
+                  loading={busyAction === 'apple'}
+                  onPress={() => void signIn('apple')}
+                  variant="secondary"
+                />
+              ) : null}
 
               {/* Dev bypass */}
               {devAuthBypass.allowed ? (
-                <Pressable
-                  disabled={busy}
+                <ActionButton
+                  disabled={busy && busyAction !== 'dev'}
+                  label="Development sign-in"
+                  loading={busyAction === 'dev'}
                   onPress={() => void signInWithDevBypass()}
-                  style={styles.devBypass}
-                >
-                  <ThemedText style={{ color: theme.textSecondary }} type="small">
-                    Dev bypass
-                  </ThemedText>
-                </Pressable>
+                  variant="secondary"
+                />
               ) : null}
             </View>
 
@@ -448,35 +456,12 @@ function isAppleCancel(error: unknown) {
 }
 
 const styles = StyleSheet.create({
-  authButton: {
-    alignItems: 'center',
-    borderRadius: 14,
-    flexDirection: 'row',
-    gap: Spacing.three,
-    justifyContent: 'center',
-    minHeight: 50,
-    overflow: 'hidden',
-    paddingHorizontal: Spacing.four,
-  },
-  authButtonPrimary: {
-    // slightly elevated appearance via shadow on iOS
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   authIcon: { height: 20, width: 20 },
-  authLabel: { fontSize: 15, fontWeight: '600', letterSpacing: 0 },
   content: {
     flexGrow: 1,
   },
-  devBypass: {
-    alignItems: 'center',
-    paddingVertical: Spacing.two,
-  },
   errorBox: {
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
@@ -484,6 +469,7 @@ const styles = StyleSheet.create({
   emailFields: {
     gap: Spacing.three,
   },
+  field: { gap: Spacing.one },
   emailLink: {
     alignItems: 'center',
     paddingVertical: Spacing.three,
@@ -497,12 +483,24 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   input: {
-    borderRadius: 12,
+    borderCurve: 'continuous',
+    borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     fontSize: 16,
     minHeight: 52,
     paddingHorizontal: Spacing.four,
   },
+  passwordField: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: Radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 52,
+    overflow: 'hidden',
+    paddingLeft: Spacing.four,
+  },
+  passwordInput: { flex: 1, fontSize: 16, minWidth: 0, paddingVertical: Spacing.two },
   keyboard: {
     flex: 1,
   },
@@ -511,6 +509,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingBottom: Spacing.four,
   },
+  socialButton: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: Radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: Spacing.three,
+    justifyContent: 'center',
+    minHeight: 48,
+    overflow: 'hidden',
+    paddingHorizontal: Spacing.four,
+  },
+  divider: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
   safe: { flex: 1 },
   screen: { flex: 1 },
 });

@@ -1,9 +1,7 @@
 import type { ChangeEvent, RefObject } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { Columns3, Menu, MessageSquare, MessageSquarePlus, Search } from 'lucide-react'
+import { Menu, MessageSquarePlus, PanelRight, Search } from 'lucide-react'
 
-import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { Avatar, AvatarFallback, AvatarImage } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
@@ -32,8 +30,9 @@ type WorkspaceHeaderProps = {
   onFileSelected: (event: ChangeEvent<HTMLInputElement>) => void
   onInvite: () => void
   onMobileNavOpen: () => void
+  onMobileRailOpen: () => void
   onSearchToggle: () => void
-  view: 'home' | 'project' | 'group' | 'settings'
+  view: 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 }
 
 export function WorkspaceHeader({
@@ -50,26 +49,11 @@ export function WorkspaceHeader({
   onFileSelected,
   onInvite,
   onMobileNavOpen,
+  onMobileRailOpen,
   onSearchToggle,
   view,
 }: WorkspaceHeaderProps) {
   const releaseConfig = useReleaseConfig()
-  const channelTasks = useQuery(
-    api.tasks.list,
-    releaseConfig.tasks && activeGroup
-      ? { projectId: activeGroup.projectId, groupId: activeGroup._id }
-      : 'skip',
-  ) as Array<{ terminal: boolean }> | undefined
-  const channelBoards = useQuery(
-    api.taskBoards.list,
-    releaseConfig.tasks && activeGroup
-      ? { projectId: activeGroup.projectId }
-      : 'skip',
-  ) as Array<{ board: Doc<'taskBoards'> }> | undefined
-  const activeChannelBoard = channelBoards?.find(
-    (item) => item.board.groupId === activeGroup?._id && item.board.isDefault,
-  ) ?? channelBoards?.find((item) => item.board.groupId === activeGroup?._id)
-  const openChannelTaskCount = channelTasks?.filter((item) => !item.terminal).length ?? 0
   return (
     <header className="track-thread-header">
       <Button
@@ -82,12 +66,18 @@ export function WorkspaceHeader({
       </Button>
       <div className="track-header-title">
         <h1>
-          {view === 'group' && activeGroup
+          {view === 'home'
+            ? 'Workspace'
+            : view === 'group' && activeGroup
             ? `#${activeGroup.name}`
               : view === 'settings' && activeProject
-                ? `${activeProject.project.name} Settings`
-                : activeProject
-                  ? `${activeProject.project.name} Channels`
+                ? `${activeProject.project.name} settings`
+                : view === 'evidence' && activeProject
+                  ? `${activeProject.project.name} evidence`
+                  : view === 'channels' && activeProject
+                    ? `${activeProject.project.name} channels`
+                    : activeProject
+                      ? activeProject.project.name
                   : 'Select a Project'}
         </h1>
         {view === 'group' && activeProject ? (
@@ -96,18 +86,14 @@ export function WorkspaceHeader({
           </span>
         ) : null}
       </div>
-      {view === 'group' && activeProjectId && releaseConfig.tasks ? (
-        <nav aria-label="Channel views" className="track-header-view-tabs">
-          <span aria-current="page" className="active">
-            <MessageSquare size={13} /> Conversation
-          </span>
-          <Link
-            params={{ projectId: activeProjectId }}
-            search={{ board: activeChannelBoard?.board._id, view: 'board' }}
-            to="/workspace/projects/$projectId/tasks"
-          >
-            <Columns3 size={13} /> Board <span className="track-header-tab-count">{openChannelTaskCount}</span>
-          </Link>
+      {activeProjectId ? (
+        <nav aria-label="Project views" className="track-header-view-tabs">
+          <Link aria-current={view === 'project' ? 'page' : undefined} className={view === 'project' ? 'active' : ''} params={{ projectId: activeProjectId }} to="/workspace/projects/$projectId">Overview</Link>
+          {releaseConfig.tasks ? <Link params={{ projectId: activeProjectId }} search={{ view: 'board' }} to="/workspace/projects/$projectId/tasks">Board</Link> : null}
+          {releaseConfig.tasks ? <Link params={{ projectId: activeProjectId }} search={{ view: 'all' }} to="/workspace/projects/$projectId/tasks">List</Link> : null}
+          <Link aria-current={view === 'channels' || view === 'group' ? 'page' : undefined} className={view === 'channels' || view === 'group' ? 'active' : ''} params={{ projectId: activeProjectId }} to="/workspace/projects/$projectId/channels">Channels</Link>
+          <Link aria-current={view === 'evidence' ? 'page' : undefined} className={view === 'evidence' ? 'active' : ''} params={{ projectId: activeProjectId }} to="/workspace/projects/$projectId/evidence">Evidence</Link>
+          <Link aria-current={view === 'settings' ? 'page' : undefined} className={view === 'settings' ? 'active' : ''} params={{ projectId: activeProjectId }} to="/workspace/projects/$projectId/settings">Settings</Link>
         </nav>
       ) : null}
       <div className="track-header-actions">
@@ -147,6 +133,7 @@ export function WorkspaceHeader({
         </div>
         {view === 'group' ? (
           <>
+            <Button aria-label="Open project controls" className="icon-button track-mobile-controls-button" onClick={onMobileRailOpen} title="Project controls" type="button"><PanelRight size={15} /></Button>
             <Button
               aria-label="Search this chat"
               className="icon-button"
@@ -175,7 +162,7 @@ export function WorkspaceHeader({
             Invite
           </Button>
         ) : null}
-        {view === 'group' ? null : view === 'project' ? (
+        {view === 'group' ? null : view === 'channels' ? (
           <Button
             className="track-button track-button-accent"
             disabled={!activeProjectId || busyAction === 'create-group'}

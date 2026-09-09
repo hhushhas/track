@@ -7,6 +7,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
+import { Textarea } from "#/components/ui/textarea";
 
 type AsyncAction = (action: () => Promise<unknown>) => Promise<void>;
 
@@ -26,7 +27,7 @@ export function CreateCompanyForm({ run }: { run: AsyncAction }) {
 
   return (
     <form
-      className="company-inline-form"
+      className="company-inline-form company-form-create"
       onSubmit={(event) => void submit(event)}
     >
       <div>
@@ -48,7 +49,7 @@ export function CreateCompanyForm({ run }: { run: AsyncAction }) {
           value={handle}
         />
       </div>
-      <Button type="submit">Create Company</Button>
+      <Button type="submit">Create company</Button>
     </form>
   );
 }
@@ -65,7 +66,7 @@ export function InviteMemberForm({
   const [role, setRole] = useState<"admin" | "member">("member");
   return (
     <form
-      className="company-inline-form"
+      className="company-inline-form company-form-invite"
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -102,28 +103,99 @@ export function InviteMemberForm({
   );
 }
 
+export function CompanyProjectForm({
+  actingCompanyId,
+  run,
+}: {
+  actingCompanyId: Id<"companies">;
+  run: AsyncAction;
+}) {
+  const createProject = useMutation(api.sharedProjects.createCompanyProject);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  return (
+    <form
+      className="company-inline-form company-form-project"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void run(async () => {
+          await createProject({ actingCompanyId, name, description });
+          setName("");
+          setDescription("");
+        });
+      }}
+    >
+      <div>
+        <Label htmlFor="company-project-name">Project name</Label>
+        <Input id="company-project-name" maxLength={120} onChange={(event) => setName(event.target.value)} required value={name} />
+      </div>
+      <div>
+        <Label htmlFor="company-project-description">Description</Label>
+        <Textarea id="company-project-description" maxLength={2000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
+      </div>
+      <Button type="submit">Create project</Button>
+    </form>
+  );
+}
+
 export function CompanyProfileForm({
   actingCompanyId,
   displayName: initialDisplayName,
+  description: initialDescription,
+  handle: initialHandle,
   run,
 }: {
   actingCompanyId: Id<"companies">;
   displayName: string;
+  description?: string;
+  handle: string;
   run: AsyncAction;
 }) {
   const updateProfile = useMutation(api.companies.updateProfile);
+  const generateLogoUploadUrl = useMutation(api.companies.generateLogoUploadUrl);
   const [displayName, setDisplayName] = useState(initialDisplayName);
+  const [description, setDescription] = useState(initialDescription ?? "");
+  const [handle, setHandle] = useState(initialHandle);
   return (
     <form
-      className="company-inline-form"
+      className="company-inline-form company-form-profile"
       onSubmit={(event) => {
         event.preventDefault();
-        void run(() => updateProfile({ companyId: actingCompanyId, displayName }));
+        void run(() => updateProfile({ companyId: actingCompanyId, displayName, description, handle }));
       }}
     >
       <div>
         <Label htmlFor="company-profile-name">Company display name</Label>
         <Input id="company-profile-name" onChange={(event) => setDisplayName(event.target.value)} required value={displayName} />
+      </div>
+      <div>
+        <Label htmlFor="company-profile-handle">Company handle</Label>
+        <Input autoCapitalize="none" id="company-profile-handle" onChange={(event) => setHandle(event.target.value)} required value={handle} />
+      </div>
+      <div>
+        <Label htmlFor="company-profile-description">Description</Label>
+        <Textarea id="company-profile-description" maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
+      </div>
+      <div>
+        <Label htmlFor="company-profile-logo">Company logo</Label>
+        <Input
+          accept="image/*"
+          id="company-profile-logo"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            void run(async () => {
+              if (!file.type.startsWith("image/") || file.size > 5_000_000) throw new Error("Choose an image smaller than 5 MB");
+              const uploadUrl = await generateLogoUploadUrl({ companyId: actingCompanyId });
+              const response = await fetch(uploadUrl, { body: file, headers: { "Content-Type": file.type }, method: "POST" });
+              if (!response.ok) throw new Error("Company logo upload failed");
+              const { storageId } = await response.json() as { storageId: Id<"_storage"> };
+              await updateProfile({ companyId: actingCompanyId, logoStorageId: storageId });
+            });
+            event.target.value = "";
+          }}
+          type="file"
+        />
       </div>
       <Button type="submit">Save profile</Button>
     </form>
@@ -146,7 +218,7 @@ export function RelationshipForm({
   );
   return (
     <form
-      className="company-inline-form"
+      className="company-inline-form company-form-relationship"
       onSubmit={(event) => {
         event.preventDefault();
         if (!match) return;
@@ -171,7 +243,7 @@ export function RelationshipForm({
         />
       </div>
       <div>
-        <Label htmlFor="target-handle">Exact Company handle</Label>
+        <Label htmlFor="target-handle">Exact company handle</Label>
         <Input
           autoCapitalize="none"
           id="target-handle"
@@ -183,12 +255,12 @@ export function RelationshipForm({
           {match
             ? `${match.displayName} · @${match.normalizedHandle}`
             : handle.length >= 3
-              ? "No exact active Company match."
-              : "Track has no public Company directory."}
+              ? "No exact active company match."
+              : "Enter the exact handle. Company search is private."}
         </span>
       </div>
       <Button disabled={!match} type="submit">
-        Create Relationship
+        Create relationship
       </Button>
     </form>
   );
@@ -211,7 +283,7 @@ export function RelationshipParticipantForm({
   );
   return (
     <form
-      className="company-inline-form"
+      className="company-inline-form company-form-relationship-participant"
       onSubmit={(event) => {
         event.preventDefault();
         if (!match) return;
@@ -227,7 +299,7 @@ export function RelationshipParticipantForm({
     >
       <div>
         <Label htmlFor={`relationship-participant-${relationshipId}`}>
-          Add exact Company handle
+          Add exact company handle
         </Label>
         <Input
           autoCapitalize="none"
@@ -238,11 +310,11 @@ export function RelationshipParticipantForm({
         <span className="company-field-hint">
           {match
             ? `${match.displayName} · @${match.normalizedHandle}`
-            : "No public directory is exposed."}
+            : "Enter the exact handle to invite a company."}
         </span>
       </div>
       <Button disabled={!match} type="submit">
-        Invite Company
+        Invite company
       </Button>
     </form>
   );
@@ -276,7 +348,7 @@ export function SharedProjectForm({
     ) ?? [];
   return (
     <form
-      className="company-inline-form"
+      className="company-inline-form company-form-shared-project"
       onSubmit={(event) => {
         event.preventDefault();
         if (!relationshipId || targets.length === 0) return;
@@ -311,7 +383,7 @@ export function SharedProjectForm({
           required
           value={relationshipId}
         >
-          <NativeSelectOption value="">Select Relationship</NativeSelectOption>
+          <NativeSelectOption value="">Select relationship</NativeSelectOption>
           {relationships.map((item) => (
             <NativeSelectOption key={item.relationship._id} value={item.relationship._id}>
               {item.relationship.name}
@@ -321,11 +393,11 @@ export function SharedProjectForm({
         <span className="company-field-hint">
           {targets.length
             ? `Invites ${targets.map((company) => company.displayName).join(", ")}`
-            : "Choose an active multi-Company Relationship."}
+            : "Choose an active relationship with another company."}
         </span>
       </div>
       <Button disabled={!relationshipId || targets.length === 0} type="submit">
-        Propose shared Project
+        Propose shared project
       </Button>
     </form>
   );

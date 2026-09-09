@@ -9,6 +9,24 @@ export type DetailedMessage = {
   authorRole?: Doc<'projectMembers'>['role'] | null;
   authorCompany?: { companyId: Id<'companies'>; displayName: string } | null;
   attachments: AttachmentWithUrl[];
+  forwardedFrom?: {
+    originalAuthorName: string;
+    originalBody: string;
+    originalCreatedAt: number;
+    attachmentSnapshots: Array<{
+      filename: string;
+      contentType: string;
+      size: number;
+      kind: Doc<'attachments'>['kind'];
+      durationMs?: number;
+    }>;
+    forwardedAt: number;
+    canOpenSource: boolean;
+    sourceGroupId: Id<'groups'> | null;
+    sourceMessageId: Id<'messages'> | null;
+    sourceChannelThreadId: Id<'channelThreads'> | null;
+    sourceGroupName: string | null;
+  } | null;
   replyTo?: { messageId: Id<'messages'>; authorName: string; body: string; createdAt: number } | null;
   channelThread?: {
     threadId: Id<'channelThreads'>;

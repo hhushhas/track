@@ -47,7 +47,11 @@ async function resolveLegacyContext(
       q.eq('projectId', project._id).eq('userId', input.actor.userId),
     )
     .unique()
-  if (!projectMember || !isLegacyRole(projectMember.role)) {
+  if (
+    !projectMember ||
+    !isLegacyRole(projectMember.role) ||
+    (projectMember.status !== undefined && projectMember.status !== 'active')
+  ) {
     throw new Error('project_unavailable')
   }
 
@@ -78,6 +82,7 @@ async function resolveLegacyContext(
       accessProfile: 'legacy',
       accessMode,
       projectRole: projectMember.role,
+      projectStatus: project.status,
       channelMember,
       channelActive,
       channelSteward: channelMember,
@@ -101,7 +106,8 @@ async function resolveCompanyContext(
     ctx.db.get(actingCompanyId),
   ])
   if (
-    (project.status !== 'active' &&
+    (project.status !== 'proposed' &&
+      project.status !== 'active' &&
       project.status !== 'archive_pending' &&
       project.status !== 'archived') ||
     !projectMember ||
@@ -185,6 +191,7 @@ async function resolveCompanyContext(
       accessProfile: 'company',
       accessMode,
       projectRole: projectMember.role,
+      projectStatus: project.status,
       channelMember,
       channelActive,
       channelSteward: activeChannelMember && groupMember?.isSteward === true,

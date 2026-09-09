@@ -123,6 +123,7 @@ export const taskCoreTables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index('by_project_created_at', ['projectId', 'createdAt'])
     .index('by_task_rank', ['taskId', 'rank'])
     .index('by_message', ['messageId'])
     .index('by_attachment', ['attachmentId'])
@@ -197,6 +198,7 @@ export const taskCoreTables = {
     createdAt: v.number(),
   })
     .index('by_member_read', ['recipientProjectMemberId', 'readAt'])
+    .index('by_member_task_read', ['recipientProjectMemberId', 'taskId', 'readAt'])
     .index('by_member_created_at', ['recipientProjectMemberId', 'createdAt'])
     .index('by_member_idempotency', ['recipientProjectMemberId', 'idempotencyKey'])
     .index('by_project', ['projectId']),

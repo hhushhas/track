@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
 
 import { mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
@@ -13,6 +14,148 @@ const defaultGroups = [
   { kind: 'internal', name: 'Internal' },
   { kind: 'commercials', name: 'Commercials' },
 ] as const
+const accessibleProjectLimit = 200
+const accessibleChannelMembershipLimit = 1_000
+const accessibleProjectMemberCountLimit = 500
+
+export const listAccessible = query({
+  args: {},
+  handler: async (ctx) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const [activeMemberships, archivedMemberships, legacyMemberships, activeLegacyGroupMemberships, legacyGroupMembershipsWithoutStatus] = await Promise.all([
+      ctx.db.query('projectMembers').withIndex('by_user_status', (q) => q.eq('userId', actor.userId).eq('status', 'active')).take(accessibleProjectLimit + 1),
+      ctx.db.query('projectMembers').withIndex('by_user_status', (q) => q.eq('userId', actor.userId).eq('status', 'archived')).take(accessibleProjectLimit + 1),
+      ctx.db.query('projectMembers').withIndex('by_user_status', (q) => q.eq('userId', actor.userId).eq('status', undefined)).take(accessibleProjectLimit + 1),
+      ctx.db.query('groupMembers').withIndex('by_user_status', (q) => q.eq('userId', actor.userId).eq('status', 'active')).take(accessibleChannelMembershipLimit + 1),
+      ctx.db.query('groupMembers').withIndex('by_user_status', (q) => q.eq('userId', actor.userId).eq('status', undefined)).take(accessibleChannelMembershipLimit + 1),
+    ])
+    const memberships = [...activeMemberships, ...archivedMemberships, ...legacyMemberships]
+    const legacyGroupMemberships = [...activeLegacyGroupMemberships, ...legacyGroupMembershipsWithoutStatus]
+    if (memberships.length > accessibleProjectLimit || legacyGroupMemberships.length > accessibleChannelMembershipLimit) {
+      throw new Error('accessible_project_list_limit_exceeded')
+    }
+    const items = await Promise.all(memberships.map(async (membership) => {
+      const project = await ctx.db.get(membership.projectId)
+      if (!project) return null
+      const accessProfile = resolveProjectAccessProfile(project.accessProfile)
+      if (accessProfile === 'legacy') {
+        if (membership.status !== undefined && membership.status !== 'active') return null
+        if (membership.role !== 'owner' && membership.role !== 'admin' && membership.role !== 'staff' && membership.role !== 'client') return null
+      } else {
+        if (
+          !membership.companyId || !membership.projectCompanyId ||
+          (membership.role !== 'manager' && membership.role !== 'member') ||
+          (membership.status !== 'active' && membership.status !== 'archived')
+        ) return null
+      }
+
+      const company = membership.companyId ? await ctx.db.get(membership.companyId) : null
+      const projectCompany = membership.projectCompanyId ? await ctx.db.get(membership.projectCompanyId) : null
+      let archiveEntitlement = null
+      if (accessProfile === 'company') {
+        const companyMembership = membership.companyId
+          ? await ctx.db.query('companyMembers').withIndex('by_company_user', (q) =>
+              q.eq('companyId', membership.companyId!).eq('userId', actor.userId),
+            ).unique()
+          : null
+        const archiveMode = membership.status === 'archived'
+        if (
+          !company || company.status !== 'active' ||
+          !companyMembership || companyMembership.status !== 'active' ||
+          !projectCompany || projectCompany.projectId !== project._id ||
+          projectCompany.companyId !== company._id ||
+          (archiveMode ? projectCompany.status !== 'exited' : projectCompany.status !== 'active')
+        ) return null
+        if (archiveMode) {
+          archiveEntitlement = await ctx.db.query('projectArchiveEntitlements')
+            .withIndex('by_member', (q) => q.eq('projectMemberId', membership._id)).unique()
+          if (archiveEntitlement?.retentionStatus !== 'active') return null
+        }
+        if (!archiveMode && project.origin === 'shared' && project.relationshipId) {
+          const [relationship, relationshipTerms] = await Promise.all([
+            ctx.db.get(project.relationshipId),
+            ctx.db.query('relationshipCompanies').withIndex('by_relationship_status', (q) =>
+              q.eq('relationshipId', project.relationshipId!).eq('status', 'active'),
+            ).collect(),
+          ])
+          if (
+            !relationship || relationship.status !== 'active' ||
+            !relationshipTerms.some((term) => term.companyId === company._id)
+          ) return null
+        }
+      }
+
+      const channelMembershipRows = accessProfile === 'company' && membership.status !== 'archived'
+        ? await ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) =>
+            q.eq('projectMemberId', membership._id).eq('status', membership.status === 'archived' ? 'archived' : 'active'),
+          ).take(accessibleChannelMembershipLimit + 1)
+        : legacyGroupMemberships.filter((item) =>
+            item.projectId === project._id && (!item.status || item.status === 'active'),
+          )
+      const channelMemberships = channelMembershipRows.slice(0, accessibleChannelMembershipLimit)
+      const channelCountTruncated = channelMembershipRows.length > accessibleChannelMembershipLimit
+      const [visibleGroups, activeMembers] = await Promise.all([
+        membership.status === 'archived' && archiveEntitlement
+          ? Promise.all(archiveEntitlement.channelIds.map(async (groupId) => await ctx.db.get(groupId)))
+          : Promise.all(channelMemberships.map(async (item) => await ctx.db.get(item.groupId))),
+        archiveEntitlement
+          ? Promise.resolve([])
+          : accessProfile === 'legacy'
+          ? ctx.db.query('projectMembers').withIndex('by_project', (q) =>
+              q.eq('projectId', project._id),
+            ).take(accessibleProjectMemberCountLimit + 1)
+          : ctx.db.query('projectMembers').withIndex('by_project_status', (q) =>
+              q.eq('projectId', project._id).eq('status', 'active'),
+            ).take(accessibleProjectMemberCountLimit + 1),
+      ])
+      const readableGroups = visibleGroups.filter(
+        (group): group is NonNullable<typeof group> => Boolean(group && group.projectId === project._id),
+      )
+      const readableLastMessages = await Promise.all(readableGroups.map(async (group) =>
+        await ctx.db.query('messages').withIndex('by_group_created_at', (q) =>
+          archiveEntitlement
+            ? q.eq('groupId', group._id).lte('createdAt', archiveEntitlement.exitAt)
+            : q.eq('groupId', group._id),
+        ).order('desc').first(),
+      ))
+      const channelCount = readableGroups.length
+      const lastReadableMessageAt = Math.max(0, ...readableLastMessages.map((message) => message?.createdAt ?? 0))
+      const archivedMembers = archiveEntitlement?.memberSnapshots ?? []
+      const visibleProject = archiveEntitlement?.projectSnapshot ?? project
+      return {
+        project: visibleProject,
+        membership,
+        projectCompany,
+        company: company ? {
+          _id: company._id,
+          displayName: company.displayName,
+          normalizedHandle: company.normalizedHandle,
+          logoStorageId: company.logoStorageId,
+          status: company.status,
+        } : null,
+        role: membership.role,
+        projectStatus: visibleProject.status ?? 'active',
+        projectType: accessProfile === 'legacy' ? 'legacy' as const : project.origin === 'shared' ? 'shared' as const : 'company' as const,
+        memberCount: Math.min(
+          archiveEntitlement
+            ? archivedMembers.length
+            : activeMembers.filter((item) => !item.status || item.status === 'active').length,
+          accessibleProjectMemberCountLimit,
+        ),
+        memberCountTruncated: archiveEntitlement
+          ? archivedMembers.length > accessibleProjectMemberCountLimit
+          : activeMembers.length > accessibleProjectMemberCountLimit,
+        channelCount,
+        channelCountTruncated,
+        lastActivityAt: Math.max(
+          archiveEntitlement ? Math.min(project.updatedAt, archiveEntitlement.exitAt) : project.updatedAt,
+          lastReadableMessageAt,
+        ),
+      }
+    }))
+    return items.filter((item) => item !== null)
+  },
+})
 
 export const list = query({
   args: {

@@ -9,16 +9,17 @@ import {
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import { useKeyboardState, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Animated, {
-  runOnJS,
+  cancelAnimation,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import {
   ChatAttachMenu,
@@ -30,6 +31,7 @@ import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import type { DetailedMessage } from '@/components/thread-row';
 import { Colors, MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDuration } from '@/lib/attachment-presentation';
 import type {
@@ -75,10 +77,17 @@ const AccentInk = Colors.light.text;
 const BarFactors = [0.5, 0.85, 1, 0.7, 0.45];
 
 function RecordingDot({ color }: { color: string }) {
+  const reducedMotion = useReducedMotion();
   const opacity = useSharedValue(1);
   useEffect(() => {
+    if (reducedMotion) {
+      cancelAnimation(opacity);
+      opacity.value = 1;
+      return;
+    }
     opacity.value = withRepeat(withTiming(0.25, { duration: 700 }), -1, true);
-  }, [opacity]);
+    return () => cancelAnimation(opacity);
+  }, [opacity, reducedMotion]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
   return <Animated.View style={[styles.dot, { backgroundColor: color }, style]} />;
 }
@@ -102,7 +111,8 @@ export function Composer({
   value,
 }: ComposerProps) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const bottomTabBarInset = useBottomTabBarInset();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboard = useReanimatedKeyboardAnimation();
   const inputRef = useRef<TextInput>(null);
 
@@ -131,9 +141,9 @@ export function Composer({
   const mentions = mentionRange ? filterMentionCandidates(mentionCandidates, mentionRange.query) : [];
 
   const surfaceStyle = useAnimatedStyle(() => ({
-    // Spacing.three keeps the bar off the screen edge on devices that report
-    // no bottom inset; the keyboard height wins while it is open.
-    paddingBottom: Math.max(insets.bottom + Spacing.two, Spacing.three, -keyboard.height.value),
+    // The tab navigator owns the closed-keyboard safe area. The composer owns
+    // only its visual padding and the live keyboard displacement.
+    paddingBottom: Math.max(Spacing.three, -keyboard.height.value),
   }));
   const cancelHintStyle = useAnimatedStyle(() => ({
     opacity: 1 + dragX.value / CancelDistance / 2,
@@ -211,7 +221,7 @@ export function Composer({
     .activateAfterLongPress(HoldDelay)
     .onStart(() => {
       outcome.value = 0;
-      runOnJS(voice.start)(false);
+      scheduleOnRN(voice.start, false);
     })
     .onUpdate((event) => {
       if (outcome.value !== 0) return;
@@ -219,28 +229,32 @@ export function Composer({
       dragY.value = Math.min(0, event.translationY);
       if (event.translationX <= CancelDistance) {
         outcome.value = 1;
-        runOnJS(voice.cancel)();
+        scheduleOnRN(voice.cancel);
       } else if (event.translationY <= LockDistance) {
         outcome.value = 2;
-        runOnJS(voice.lock)();
+        scheduleOnRN(voice.lock);
       }
     })
     .onFinalize(() => {
       dragX.value = withTiming(0, { duration: 140 });
       dragY.value = withTiming(0, { duration: 140 });
-      runOnJS(voice.release)(outcome.value);
+      scheduleOnRN(voice.release, outcome.value);
     });
 
   const micTap = Gesture.Tap().onEnd(() => {
     outcome.value = 2;
-    runOnJS(voice.start)(true);
+    scheduleOnRN(voice.start, true);
   });
 
   return (
     <Animated.View
       style={[
         styles.surface,
-        { backgroundColor: theme.background, borderTopColor: theme.hairline },
+        {
+          backgroundColor: theme.background,
+          borderTopColor: theme.hairline,
+          marginBottom: keyboardVisible ? 0 : bottomTabBarInset,
+        },
         surfaceStyle,
       ]}>
       <MentionSuggestions candidates={mentions} onSelect={insertMention} />
@@ -249,9 +263,12 @@ export function Composer({
         <View style={[styles.reply, { backgroundColor: theme.backgroundElement }]}>
           <View style={[styles.replyAccent, { backgroundColor: theme.accent }]} />
           <View style={styles.replyBody}>
-            <ThemedText themeColor="textSecondary" type="captionBold">
-              Replying to {replyTo.author?.displayName ?? 'Member'}
-            </ThemedText>
+            <View style={styles.replyLabelRow}>
+              <ThemedText themeColor="textSecondary" type="caption">Replying to</ThemedText>
+              <View style={[styles.replyAuthorPill, { backgroundColor: theme.backgroundSelected }]}>
+                <ThemedText numberOfLines={1} type="captionBold">{replyTo.author?.displayName ?? 'Member'}</ThemedText>
+              </View>
+            </View>
             <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
               {replyTo.message.body}
             </ThemedText>
@@ -333,6 +350,7 @@ export function Composer({
               accessibilityLabel={`Message ${activeGroupName ?? 'channel'}`}
               allowFontScaling
               cursorColor={theme.accent}
+              maxLength={10_000}
               maxFontSizeMultiplier={MaxFontScale}
               multiline
               onChangeText={(next) => {
@@ -459,7 +477,9 @@ const styles = StyleSheet.create({
     padding: Spacing.two,
   },
   replyAccent: { alignSelf: 'stretch', borderRadius: Radius.small, width: 3 },
+  replyAuthorPill: { borderRadius: Radius.pill, flexShrink: 1, paddingHorizontal: Spacing.two, paddingVertical: 3 },
   replyBody: { flex: 1, gap: 1 },
+  replyLabelRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
   row: {
     alignItems: 'flex-end',
     flexDirection: 'row',

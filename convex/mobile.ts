@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { paginationOptsValidator } from 'convex/server'
 import { resolveReleaseFeatureFlag } from '@track/shared/feature-flags'
 import { isTerminalTaskState } from '@track/shared/tasks'
 
@@ -94,6 +95,7 @@ export const listProjects = query({
   args: {
     userId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
@@ -102,18 +104,38 @@ export const listProjects = query({
       requireCompanyModelEnabled()
       await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
     }
-    const memberships = await ctx.db
+    let membershipQuery = ctx.db
       .query('projectMembers')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
-      .collect()
+    membershipQuery = args.actingCompanyId
+      ? membershipQuery.filter((q) => q.and(
+          q.eq(q.field('companyId'), args.actingCompanyId),
+          q.or(q.eq(q.field('status'), 'active'), q.eq(q.field('status'), 'archived')),
+        ))
+      : membershipQuery.filter((q) => q.or(
+          q.eq(q.field('status'), undefined),
+          q.eq(q.field('status'), 'active'),
+          q.eq(q.field('status'), 'archived'),
+        ))
+    const memberships = await membershipQuery
+      .order('desc')
+      .paginate(args.paginationOpts)
 
     const rows = await Promise.all(
-      memberships.filter((membership) => args.actingCompanyId
-        ? membership.companyId === args.actingCompanyId && (membership.status === 'active' || membership.status === 'archived')
-        : !membership.companyId,
-      ).map(async (membership) => {
+      memberships.page.map(async (membership) => {
         const project = await ctx.db.get(membership.projectId)
         if (!project) return null
+        try {
+          await authorizeScopedRequest(ctx, {
+            projectId: project._id,
+            claimedUserId: args.userId,
+            ...(membership.companyId
+              ? { actingCompanyId: membership.companyId, projectMemberId: membership._id }
+              : {}),
+          }, 'readProject')
+        } catch {
+          return null
+        }
         const groupMemberships = membership.companyId
           ? membership.status === 'archived'
             ? []
@@ -151,20 +173,36 @@ export const listProjects = query({
       }),
     )
 
-    return rows.filter((row) => row !== null)
+    // Preserve page cardinality with null placeholders. Clients filter them
+    // after pagination, so an expired archive cannot hide the continuation
+    // cursor or prevent older accessible memberships from being loaded.
+    return { ...memberships, page: rows }
   },
 })
 
 /**
- * Returns the authenticated user's unread task events across the projects
- * visible in the current mobile workspace. This is intentionally a small
- * action queue, not a second task list: each row points to the task that needs
- * attention and can be marked read from the Inbox.
+ * Returns the authenticated user's unread attention across every Project the
+ * actor can currently access. `actingCompanyId` is an explicit narrowing
+ * filter; omitting it means global scope, not legacy/independent Projects.
  */
+function attentionPriority(item: { eventType: string }) {
+  switch (item.eventType) {
+    case 'mention': return 0
+    case 'direct_reply': return 1
+    case 'overdue': return 2
+    case 'due_soon': return 3
+    case 'assignment': return 4
+    case 'task_suggestion': return 5
+    case 'company_invitation': return 6
+    default: return 7
+  }
+}
+
 export const listAttention = query({
   args: {
     userId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
@@ -175,19 +213,21 @@ export const listAttention = query({
       await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
     }
 
-    const memberships = await ctx.db
+    let membershipQuery = ctx.db
       .query('projectMembers')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
-      .take(100)
+    membershipQuery = args.actingCompanyId
+      ? membershipQuery.filter((q) => q.and(
+          q.eq(q.field('companyId'), args.actingCompanyId),
+          q.eq(q.field('status'), 'active'),
+        ))
+      : membershipQuery.filter((q) => q.eq(q.field('status'), 'active'))
+    const memberships = await membershipQuery
+      .order('desc')
+      .paginate(args.paginationOpts)
 
     const rows = tasksEnabled ? await Promise.all(
-      memberships
-        .filter((membership) =>
-          membership.status === 'active' &&
-          (args.actingCompanyId
-            ? membership.companyId === args.actingCompanyId
-            : !membership.companyId),
-        )
+      memberships.page
         .map(async (membership) => {
           const project = await ctx.db.get(membership.projectId)
           if (!project) return []
@@ -219,6 +259,7 @@ export const listAttention = query({
               projectId: project._id,
               projectName: project.name,
               companyId: membership.companyId,
+              companyName: membership.companyDisplayNameSnapshot,
               membershipId: membership._id,
               taskId: task._id,
               taskKey: task.publicKey,
@@ -232,9 +273,7 @@ export const listAttention = query({
     ) : []
 
     const suggestionRows = tasksEnabled ? await Promise.all(
-      memberships
-        .filter((membership) => membership.status === 'active' &&
-          (args.actingCompanyId ? membership.companyId === args.actingCompanyId : !membership.companyId))
+      memberships.page
         .map(async (membership) => {
           const project = await ctx.db.get(membership.projectId)
           if (!project) return []
@@ -263,6 +302,7 @@ export const listAttention = query({
                 projectId: project._id,
                 projectName: project.name,
                 companyId: membership.companyId,
+                companyName: membership.companyDisplayNameSnapshot,
                 membershipId: membership._id,
                 groupId: suggestion.groupId,
                 suggestionId: suggestion._id,
@@ -279,7 +319,7 @@ export const listAttention = query({
         }),
     ) : []
 
-    const invitationRows = !args.actingCompanyId && resolveReleaseFeatureFlag(process.env.TRACK_COMPANY_MODEL_ENABLED)
+    const invitationRows = args.paginationOpts.cursor === null && !args.actingCompanyId && resolveReleaseFeatureFlag(process.env.TRACK_COMPANY_MODEL_ENABLED)
       ? await (async () => {
           const invitations = await ctx.db.query('companyInvitations')
             .withIndex('by_email_status', (q) =>
@@ -294,6 +334,7 @@ export const listAttention = query({
               projectId: undefined,
               projectName: company.displayName,
               companyId: company._id,
+              companyName: company.displayName,
               invitationId: invitation._id,
               title: `Join ${company.displayName}`,
               preview: `You were invited as a ${invitation.role}.`,
@@ -309,22 +350,18 @@ export const listAttention = query({
       membership: Doc<'projectMembers'>
       groupMembership: Doc<'groupMembers'>
     }> = []
-    for (const membership of memberships.filter((candidate) =>
-      candidate.status === 'active' &&
-      (args.actingCompanyId
-        ? candidate.companyId === args.actingCompanyId
-        : !candidate.companyId),
-    )) {
+    for (const membership of memberships.page) {
       if (channelCandidates.length >= maxAttentionChannelScans) break
       const project = await ctx.db.get(membership.projectId)
       if (!project) continue
+      const remainingChannelScans = maxAttentionChannelScans - channelCandidates.length
       const groupMemberships = membership.companyId
         ? await ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) =>
             q.eq('projectMemberId', membership._id).eq('status', 'active'),
-          ).take(maxAttentionChannelScans)
+          ).take(remainingChannelScans)
         : (await ctx.db.query('groupMembers').withIndex('by_user', (q) =>
             q.eq('userId', args.userId),
-          ).take(maxAttentionChannelScans)).filter((item) => item.projectId === project._id)
+          ).take(maxAttentionChannelScans)).filter((item) => item.projectId === project._id).slice(0, remainingChannelScans)
       for (const groupMembership of groupMemberships) {
         if (channelCandidates.length >= maxAttentionChannelScans) break
         channelCandidates.push({ membership, groupMembership })
@@ -365,7 +402,15 @@ export const listAttention = query({
               .withIndex('by_group_created_at', (q) => q.eq('groupId', group._id))
               .order('desc')
               .take(100)
+            const followedThreadIds = new Set((await ctx.db.query('channelThreadFollowers')
+              .withIndex('by_group_project_member_preference', (q) =>
+                q.eq('groupId', group._id).eq('projectMemberId', membership._id).eq('preference', 'following'),
+              )
+              .take(100))
+              .map((follower) => String(follower.channelThreadId)))
             const rows = []
+            let channelActivityAdded = false
+            const threadActivityAdded = new Set<string>()
             for (const message of messages) {
               if (message.authorId === args.userId) continue
               const mentioned = message.mentionedProjectMemberIds
@@ -378,7 +423,6 @@ export const listAttention = query({
                 reply && reply.authorId === args.userId &&
                 (!reply.authorProjectMemberId || reply.authorProjectMemberId === membership._id),
               )
-              if (!mentioned && !directReply) continue
               const threadReadState = message.channelThreadId
                 ? await ctx.db.query('channelThreadReadStates').withIndex('by_thread_project_member', (q) =>
                     q.eq('channelThreadId', message.channelThreadId!).eq('projectMemberId', membership._id),
@@ -388,8 +432,16 @@ export const listAttention = query({
                 ? (message.channelSequence ?? 0) > (threadReadState?.lastReadChannelSequence ?? 0)
                 : !readState || message.createdAt > readState.lastReadAt
               if (!unread) continue
+              const followedThread = Boolean(message.channelThreadId && followedThreadIds.has(String(message.channelThreadId)))
+              const ordinaryChannelActivity = !message.channelThreadId && !channelActivityAdded
+              const ordinaryThreadActivity = Boolean(message.channelThreadId && followedThread && !threadActivityAdded.has(String(message.channelThreadId)))
+              if (!mentioned && !directReply && !ordinaryChannelActivity && !ordinaryThreadActivity) continue
               const author = await ctx.db.get(message.authorId)
               const thread = message.channelThreadId ? await ctx.db.get(message.channelThreadId) : null
+              if (!mentioned && !directReply) {
+                if (message.channelThreadId) threadActivityAdded.add(String(message.channelThreadId))
+                else channelActivityAdded = true
+              }
               rows.push({
                 kind: 'message' as const,
                 id: message._id,
@@ -397,6 +449,7 @@ export const listAttention = query({
                 projectName: project.name,
                 membershipId: membership._id,
                 companyId: membership.companyId,
+                companyName: membership.companyDisplayNameSnapshot,
                 groupId: group._id,
                 groupName: group.name,
                 messageId: message._id,
@@ -404,21 +457,29 @@ export const listAttention = query({
                 threadName: thread?.name,
                 senderName: author?.displayName ?? 'A teammate',
                 preview: message.body || message.notificationPreview || 'Sent an attachment.',
-                eventType: mentioned ? 'mention' : 'direct_reply',
+                eventType: mentioned
+                  ? 'mention'
+                  : directReply
+                    ? 'direct_reply'
+                    : message.channelThreadId
+                      ? 'thread_activity'
+                      : 'discussion',
                 createdAt: message.createdAt,
               })
             }
             return rows
     }))
 
-    return [
+    return {
+      ...memberships,
+      page: [
       ...rows.flat(),
       ...suggestionRows.flat(),
       ...messageRows.flat(),
       ...invitationRows,
-    ]
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 20)
+      ]
+        .sort((a, b) => attentionPriority(a) - attentionPriority(b) || b.createdAt - a.createdAt),
+    }
   },
 })
 
@@ -433,27 +494,37 @@ export const listMyTasks = query({
     userId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     openOnly: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.userId)
-    if (!resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) return []
+    if (!resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)) {
+      return { page: [], isDone: true, continueCursor: '' }
+    }
     if (args.actingCompanyId) {
       requireCompanyModelEnabled()
       await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
     }
 
-    const memberships = await ctx.db.query('projectMembers')
+    let membershipQuery = ctx.db.query('projectMembers')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
-      .take(100)
-    const visibleMemberships = memberships.filter((membership) =>
-      membership.status === 'active' && (args.actingCompanyId
-        ? membership.companyId === args.actingCompanyId
-        : !membership.companyId),
-    )
+    membershipQuery = args.actingCompanyId
+      ? membershipQuery.filter((q) => q.and(
+          q.eq(q.field('companyId'), args.actingCompanyId),
+          q.eq(q.field('status'), 'active'),
+        ))
+      : membershipQuery.filter((q) => q.eq(q.field('status'), 'active'))
+    const memberships = await membershipQuery
+      .order('desc')
+      .paginate(args.paginationOpts)
     const rows = []
+    // Membership pagination bounds the number of Projects per request. Keep
+    // each Project's assignment scan bounded as a second independent limit;
+    // 500 preserves useful deep histories without risking an unbounded read.
+    const maxAssignedTasksPerProject = 500
 
-    for (const membership of visibleMemberships) {
+    for (const membership of memberships.page) {
       const project = await ctx.db.get(membership.projectId)
       if (!project) continue
       const identity = membership.companyId
@@ -464,7 +535,7 @@ export const listMyTasks = query({
           q.eq('assigneeProjectMemberId', membership._id).eq('archivedAt', undefined),
         )
         .order('desc')
-        .take(100)
+        .take(maxAssignedTasksPerProject)
 
       for (const task of tasks) {
         if (task.projectId !== project._id || task.archivedAt) continue
@@ -477,6 +548,7 @@ export const listMyTasks = query({
             ...view,
             project: { _id: project._id, name: project.name },
             companyId: membership.companyId,
+            companyName: membership.companyDisplayNameSnapshot,
             projectMemberId: membership._id,
           })
         } catch {
@@ -486,9 +558,11 @@ export const listMyTasks = query({
       }
     }
 
-    return rows
-      .sort((a, b) => (a.task.dueDate ?? '9999-12-31').localeCompare(b.task.dueDate ?? '9999-12-31') || b.task.updatedAt - a.task.updatedAt)
-      .slice(0, 100)
+    return {
+      ...memberships,
+      page: rows
+        .sort((a, b) => (a.task.dueDate ?? '9999-12-31').localeCompare(b.task.dueDate ?? '9999-12-31') || b.task.updatedAt - a.task.updatedAt),
+    }
   }
 })
 
@@ -514,8 +588,17 @@ export const resolveNavigation = query({
         return { available: false, archived: false, readStateImmutable: false }
       }
       const readStateImmutable = access.companyAccess?.projectMember.status === 'archived'
+      const projectMember = access.companyAccess?.projectMember ?? await ctx.db
+        .query('projectMembers')
+        .withIndex('by_project_user', (q) =>
+          q.eq('projectId', args.projectId).eq('userId', args.userId),
+        )
+        .unique()
+      if (!projectMember) return { available: false, archived: false, readStateImmutable: false }
       return {
         available: true,
+        project: access.companyAccess?.entitlement?.projectSnapshot ?? access.project,
+        membership: projectMember,
         archived:
           readStateImmutable ||
           access.project.status === 'archived' ||

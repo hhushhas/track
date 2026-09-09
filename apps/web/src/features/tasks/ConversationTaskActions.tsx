@@ -1,14 +1,15 @@
+import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ListPlus } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { DatePicker } from '#/components/ui/date-picker'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
 import { useReleaseConfig } from '#/lib/release-config'
 import { Textarea } from '#/components/ui/textarea'
 import { taskError } from './TaskCreateDialog'
@@ -88,18 +89,18 @@ function TaskSourceCreate({
     }
   }
   if (!release.tasks) return null
-  return <Popover onOpenChange={setOpen} open={open}>
-    <PopoverTrigger render={<Button aria-label="Create task from this source" className="icon-button track-message-action-button" title="Create task" type="button" />}><ListPlus size={14} /></PopoverTrigger>
-    <PopoverContent align="end" className="task-source-popover" side="top">
-      <PopoverHeader><PopoverTitle>Create task</PopoverTitle><PopoverDescription>The source stays attached as Channel-scoped evidence.</PopoverDescription></PopoverHeader>
+  return <Dialog onOpenChange={setOpen} open={open}>
+    <DialogTrigger render={<Button aria-label="Create task from this source" className="icon-button track-message-action-button" title="Create task" type="button" />}><ListPlus size={14} /></DialogTrigger>
+    <DialogContent className="task-source-dialog">
+      <DialogHeader><DialogTitle>Create task</DialogTitle><DialogDescription>The source stays attached as Channel-scoped evidence.</DialogDescription></DialogHeader>
       <form className="task-form" onSubmit={(event) => void submit(event)}><label>Title<Input maxLength={180} onChange={(event) => setTitle(event.target.value)} required value={title} /></label><label>Description<Textarea onChange={(event) => setDescription(event.target.value)} value={description} /></label><div className="task-form-grid">
         <label>Board<NativeSelect onChange={(event) => setBoardId(event.target.value)} value={boardId || compatibleBoards.find((item) => item.board.isDefault)?.board._id || compatibleBoards[0]?.board._id || ''}><NativeSelectOption value="">Automatic Channel board</NativeSelectOption>{compatibleBoards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}</NativeSelect></label>
         <label>Assignee<NativeSelect onChange={(event) => setAssigneeId(event.target.value)} value={assigneeId}><NativeSelectOption value="">Unassigned</NativeSelectOption>{assignees?.map((item) => <NativeSelectOption key={item.member._id} value={item.member._id}>{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</NativeSelectOption>)}</NativeSelect></label>
         <label>Priority<NativeSelect onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}>{['none', 'urgent', 'high', 'medium', 'low'].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}</NativeSelect></label>
         <label>Due date<DatePicker aria-label="Due date" onChange={setDueDate} value={dueDate} /></label>
       </div><fieldset><legend>Labels</legend><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => setLabelIds((current) => current.includes(label._id) ? current.filter((id) => id !== label._id) : [...current, label._id])} size="sm" type="button" variant={labelIds.includes(label._id) ? 'default' : 'outline'}>{label.name}</Button>)}</div></fieldset>{error ? <p className="task-form-error" role="alert">{error}</p> : null}<Button disabled={!title.trim()} type="submit">Create task</Button></form>
-    </PopoverContent>
-  </Popover>
+    </DialogContent>
+  </Dialog>
 }
 
 export function MessageInlineTasks({ message, identity = {} }: { message: Doc<'messages'>; identity?: TaskIdentity }) {
@@ -116,14 +117,12 @@ export function AssistantInlineTasks({ stream, identity = {} }: { stream: Doc<'a
 
 function InlineCards({ cards, identity, projectId, sourceLabel }: { cards: Array<TaskCard> | undefined; identity: TaskIdentity; projectId: Id<'projects'>; sourceLabel: string }) {
   if (!cards?.length) return null
-  const identityQuery = identity.actingCompanyId && identity.projectMemberId
-    ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}` : ''
-  return <div className="task-inline-cards">{cards.map((card) => <a href={`/workspace/projects/${projectId}/tasks?view=board&task=${card.task.publicKey}${identityQuery}`} key={card.task._id}>
+  return <div className="task-inline-cards">{cards.map((card) => <TaskLink identity={identity} key={card.task._id} projectId={projectId} taskKey={card.task.publicKey}>
     <span className="task-inline-idline"><span>{card.task.publicKey}</span><StateRing category={card.state?.category ?? 'backlog'} size="dense" /></span>
     <strong>{card.task.title}</strong>
     <span className="task-inline-properties"><TaskAvatar member={card.assignee} /><span>{card.state?.name ?? 'Unavailable status'}</span><DueChip dueDate={card.task.dueDate} terminal={card.state?.category === 'completed' || card.state?.category === 'canceled'} /><PriorityGlyph priority={card.task.priority} /></span>
     <small>Linked to {sourceLabel}</small>
-  </a>)}</div>
+  </TaskLink>)}</div>
 }
 
 export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { group: Doc<'groups'>; identity?: TaskIdentity; variant?: 'panel' | 'rail' }) {
@@ -139,22 +138,19 @@ export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { 
   const [historyTo, setHistoryTo] = useState(() => new Date().toLocaleDateString('en-CA'))
   const [detectionError, setDetectionError] = useState('')
   const open = tasks?.filter((item) => !item.terminal) ?? []
-  const identityQuery = identity.actingCompanyId && identity.projectMemberId
-    ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}` : ''
   if (!release.tasks) return null
   async function run(action: () => Promise<unknown>) {
     setDetectionError('')
     try { await action() } catch (failure) { setDetectionError(taskError(failure)) }
   }
-  const boardQuery = open[0]?.task.boardId ? `&board=${open[0].task.boardId}` : ''
   if (variant === 'rail') return <section aria-label="Channel tasks" className="track-rail-task-section">
-    <header><span>Open tasks · this Channel</span><a href={`/workspace/projects/${group.projectId}/tasks?view=board${boardQuery}${identityQuery}`}>Board →</a></header>
+    <header><span>Open tasks · this Channel</span><TaskLink boardId={open[0]?.task.boardId} identity={identity} projectId={group.projectId}>Board →</TaskLink></header>
     <div className="track-rail-task-list">
-      {open.slice(0, 4).map((item) => <a href={`/workspace/projects/${group.projectId}/tasks?view=board&task=${item.task.publicKey}${identityQuery}`} key={item.task._id}>
+      {open.slice(0, 4).map((item) => <TaskLink identity={identity} key={item.task._id} projectId={group.projectId} taskKey={item.task.publicKey}>
         <StateRing category={item.state?.category ?? 'backlog'} size="dense" />
         <span><strong>{item.task.title}</strong><small>{item.task.publicKey}{item.task.dueDate ? ` · due ${formatTaskDate(item.task.dueDate)}` : ''}</small></span>
         <TaskAvatar member={item.assignee} size="rail" />
-      </a>)}
+      </TaskLink>)}
       {!open.length ? <p className="track-rail-empty">No open tasks in this Channel.</p> : null}
     </div>
     {detection?.canManage ? <details className="track-rail-task-settings"><summary>Task detection · {detection.enabled ? 'on' : 'off'} · {detection.lastRunStatus ?? 'idle'}</summary>
@@ -166,8 +162,8 @@ export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { 
   </section>
   return <aside className="task-channel-panel" aria-label="Channel tasks">
     <div><ListPlus size={14} /><strong>{open.length} open task{open.length === 1 ? '' : 's'}</strong></div>
-    <div>{open.slice(0, 3).map((item) => <a href={`/workspace/projects/${group.projectId}/tasks?view=board&task=${item.task.publicKey}${identityQuery}`} key={item.task._id}>{item.task.publicKey} · {item.task.title}</a>)}</div>
-    <a href={`/workspace/projects/${group.projectId}/tasks?view=board${identityQuery}`}>Open Channel board</a>
+    <div>{open.slice(0, 3).map((item) => <TaskLink identity={identity} key={item.task._id} projectId={group.projectId} taskKey={item.task.publicKey}>{item.task.publicKey} · {item.task.title}</TaskLink>)}</div>
+    <TaskLink identity={identity} projectId={group.projectId}>Open Channel board</TaskLink>
     {detection?.canManage ? <details className="task-detection-settings"><summary>Task detection · {detection.enabled ? 'on' : 'off'} · {detection.lastRunStatus ?? 'idle'}</summary>
       <p>Eligible Channel messages are sent to the configured AI provider. Disabling does not cancel a provider request already in flight; stale results are discarded.</p>
       <Button onClick={() => void run(() => setDetection({ projectId: group.projectId, groupId: group._id, enabled: !detection.enabled, ...identity }))} size="sm" variant="outline">Turn {detection.enabled ? 'off' : 'on'}</Button>
@@ -176,4 +172,32 @@ export function ChannelTaskPanel({ group, identity = {}, variant = 'panel' }: { 
       {detectionError ? <p role="alert">{detectionError}</p> : null}
     </details> : null}
   </aside>
+}
+
+function TaskLink({
+  boardId,
+  children,
+  identity,
+  projectId,
+  taskKey,
+}: {
+  boardId?: Id<'taskBoards'>
+  children: ReactNode
+  identity: TaskIdentity
+  projectId: Id<'projects'>
+  taskKey?: string
+}) {
+  return (
+    <Link
+      params={{ projectId }}
+      search={{
+        actingCompanyId: identity.actingCompanyId,
+        board: boardId,
+        projectMemberId: identity.projectMemberId,
+        task: taskKey,
+        view: 'board',
+      }}
+      to="/workspace/projects/$projectId/tasks"
+    >{children}</Link>
+  )
 }

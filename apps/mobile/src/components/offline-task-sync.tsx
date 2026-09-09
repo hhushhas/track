@@ -41,8 +41,8 @@ export function OfflineTaskSync() {
           const { queuedAt: _queuedAt, lastError: _lastError, ...taskInput } = item;
           await createTask(taskInput);
           await removeOfflineTask(trackUserId, item.idempotencyKey);
-        } catch (error) {
-          await markOfflineTaskFailed(trackUserId, item.idempotencyKey, error instanceof Error ? error.message : 'sync_failed');
+        } catch {
+          await markOfflineTaskFailed(trackUserId, item.idempotencyKey, 'sync_failed');
           break;
         }
       }

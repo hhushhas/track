@@ -1,6 +1,7 @@
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from 'react'
 
 import { Navigate } from '@tanstack/react-router'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '#/components/ui/sheet'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { GroupChatPage } from '#/features/workspace/components/GroupChatPage'
@@ -26,9 +27,13 @@ import { ChatSearchPopover } from '#/features/workspace/search/ChatSearchPopover
 import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
 import { ProjectSearchDialog } from '#/features/workspace/search/ProjectSearchDialog'
 import { ProjectSettingsPage } from '#/features/workspace/settings/ProjectSettingsPage'
+import { ProjectChannelsPage } from './ProjectChannelsPage'
+import { ProjectEvidencePage } from './ProjectEvidencePage'
+import { ProjectOverviewPage } from './ProjectOverviewPage'
+import { WorkspaceHomePage } from './WorkspaceHomePage'
 import { getSessionUser } from '#/features/workspace/workspace-session'
 
-type WorkspaceView = 'home' | 'project' | 'group' | 'settings'
+type WorkspaceView = 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 
 type WorkspacePageSurfaceModel = {
   attachments: ReturnType<typeof usePendingAttachments>
@@ -83,6 +88,7 @@ type WorkspacePageSurfaceModel = {
     mentionIndex: number
     mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
     mobileNavOpen: boolean
+    mobileRailOpen: boolean
     navCollapsed: boolean
     projectSearchFilter: ProjectSearchFilter
     projectSearchOpen: boolean
@@ -111,6 +117,7 @@ type WorkspacePageSurfaceModel = {
     setMemoryImportOpen: Dispatch<SetStateAction<boolean>>
     setMentionIndex: Dispatch<SetStateAction<number>>
     setMobileNavOpen: Dispatch<SetStateAction<boolean>>
+    setMobileRailOpen: Dispatch<SetStateAction<boolean>>
     setNavCollapsed: Dispatch<SetStateAction<boolean>>
     setLogoutConfirmOpen: Dispatch<SetStateAction<boolean>>
     setProjectSearchFilter: Dispatch<SetStateAction<ProjectSearchFilter>>
@@ -215,6 +222,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           onFileSelected={(event) => void attachments.handleFileSelected(event)}
           onInvite={dialogState.openInviteDialog}
           onMobileNavOpen={() => update.setMobileNavOpen(true)}
+          onMobileRailOpen={() => update.setMobileRailOpen(true)}
           onSearchToggle={update.onSearchToggle}
           view={route.view}
         />
@@ -242,7 +250,9 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           projectId={state.activeProjectId}
         />
 
-        {route.isProjectLoading || route.isGroupLoading ? (
+        {route.view === 'home' ? (
+          <WorkspaceHomePage projects={projectItems} />
+        ) : route.isProjectLoading || route.isGroupLoading ? (
           <WorkspaceRouteLoader label={route.view === 'group' ? 'Opening channel conversation' : route.view === 'settings' ? 'Loading project settings' : 'Loading project channels'} />
         ) : route.view === 'group' ? (
           <GroupChatPage
@@ -307,6 +317,17 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             visibleMessages={presentation.visibleMessages}
             voiceRecordingActive={state.voiceRecordingActive}
           />
+        ) : route.view === 'project' && activeProject ? (
+          <ProjectOverviewPage groups={visibleGroups} members={activeProjectMembers} project={activeProject.project} />
+        ) : route.view === 'channels' && activeProject ? (
+          <ProjectChannelsPage groups={visibleGroups} onCreate={dialogState.openGroupDialog} onOpen={navigation.navigateToGroup} projectName={activeProject.project.name} />
+        ) : route.view === 'evidence' && state.activeProjectId ? (
+          <ProjectEvidencePage
+            actingCompanyId={activeProject?.membership.companyId}
+            firstGroup={visibleGroups[0]}
+            projectId={state.activeProjectId}
+            projectMemberId={activeProject?.membership.companyId ? activeProject.membership._id : undefined}
+          />
         ) : route.view === 'settings' ? (
           <ProjectSettingsPage
             activeProject={activeProject?.project ?? null}
@@ -324,8 +345,6 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             onInvite={dialogState.openInviteDialog}
             onNotificationMode={notifications.handleNotificationMode}
           />
-        ) : visibleGroups.length > 0 ? (
-          <WorkspaceRouteLoader label="Opening first channel" />
         ) : (
           <div className="track-empty">
             <p className="mono-label m-0">No channels</p>
@@ -353,6 +372,33 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           userId={auth.trackUserId}
           visibleMessages={presentation.visibleMessages}
         />
+      ) : null}
+      {route.view === 'group' ? (
+        <Sheet onOpenChange={update.setMobileRailOpen} open={state.mobileRailOpen}>
+          <SheetContent className="track-mobile-controls-sheet" side="right">
+            <SheetHeader><SheetTitle>Project controls</SheetTitle><SheetDescription>Tasks, threads, references, and notifications for this channel.</SheetDescription></SheetHeader>
+            <div className="track-mobile-controls-content">
+              <WorkspaceRail
+                activeGroup={activeGroup}
+                activeProjectId={state.activeProjectId}
+                busyAction={notifications.notificationBusyAction ?? state.busyAction}
+                globalNotificationMode={notifications.globalNotificationMode}
+                groupNotificationMode={notifications.groupNotificationMode}
+                notificationPermission={notifications.notificationPermission}
+                notificationStatus={notifications.notificationStatus}
+                onCollapse={() => update.setMobileRailOpen(false)}
+                onEnableBrowserNotifications={() => void notifications.handleEnableBrowserNotifications()}
+                onExpand={() => undefined}
+                onNotificationMode={(mode) => void notifications.handleNotificationMode(mode)}
+                onSendTestNotification={() => void notifications.handleSendTestNotification()}
+                onStartResize={() => undefined}
+                railCollapsed={false}
+                userId={auth.trackUserId}
+                visibleMessages={presentation.visibleMessages}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
       ) : null}
       <ProjectSearchDialog
         filter={state.projectSearchFilter}

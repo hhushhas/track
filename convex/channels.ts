@@ -13,6 +13,28 @@ import {
 } from './lib/companyPolicy'
 import { removeTaskMemberFromScope } from './lib/taskLifecycle'
 
+const channelNameMaxLength = 80
+
+function normalizeChannelName(value: string) {
+  const name = canonicalizeChannelName(value)
+  if (!name) throw new Error('channel_name_required')
+  if (name.length > channelNameMaxLength) throw new Error('channel_name_too_long')
+  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(name)) throw new Error('channel_name_invalid')
+  return name
+}
+
+function canonicalizeChannelName(value: string) {
+  return value.trim().replace(/^#+\s*/, '').replace(/\s+/g, '-').toLowerCase()
+}
+
+async function assertUniqueChannelName(ctx: MutationCtx, projectId: Id<'projects'>, name: string, except?: Id<'groups'>) {
+  const groups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
+  // Archived channels can be restored, so their names remain reserved.
+  if (groups.some((group) => group._id !== except && canonicalizeChannelName(group.name) === name)) {
+    throw new Error('channel_name_unavailable')
+  }
+}
+
 async function activeChannelParticipantIds(ctx: MutationCtx, groupId: Id<'groups'>) {
   const memberships = await ctx.db.query('groupMembers')
     .withIndex('by_group', (q) => q.eq('groupId', groupId))
@@ -99,8 +121,8 @@ export const create = mutation({
     requireCompanyModelEnabled()
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireCompanyProjectManager(ctx, actor, args)
-    const name = args.name.trim()
-    if (!name) throw new Error('channel_name_required')
+    const name = normalizeChannelName(args.name)
+    await assertUniqueChannelName(ctx, access.project._id, name)
     const memberIds = Array.from(new Set([access.projectMember._id, ...args.ownCompanyMemberIds]))
     const members = await Promise.all(memberIds.map(async (id) => await ctx.db.get(id)))
     if (members.some((member) =>
@@ -146,6 +168,32 @@ export const create = mutation({
   },
 })
 
+export const update = mutation({
+  args: {
+    projectId: v.id('projects'), groupId: v.id('groups'),
+    actingCompanyId: v.id('companies'), projectMemberId: v.id('projectMembers'),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    requireCompanyModelEnabled()
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await resolveCompanyProjectAccess(ctx, actor, args)
+    if (!access.capabilities.canStewardChannel) throw new Error('channel_steward_required')
+    if (!access.group || access.group.status !== 'active') throw new Error('channel_unavailable')
+    const name = normalizeChannelName(args.name)
+    await assertUniqueChannelName(ctx, access.project._id, name, access.group._id)
+    const now = Date.now()
+    await ctx.db.patch(access.group._id, { name, revision: (access.group.revision ?? 0) + 1, updatedAt: now })
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: access.group._id,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channel', entityId: access.group._id,
+      action: 'channel.updated', before: { name: access.group.name }, after: { name },
+    })
+    return access.group._id
+  },
+})
+
 export const requestParticipation = mutation({
   args: {
     projectId: v.id('projects'),
@@ -175,7 +223,7 @@ export const requestParticipation = mutation({
       throw new Error('target_project_member_unavailable')
     }
     const now = Date.now()
-    return await ctx.db.insert('channelParticipationRequests', {
+    const requestId = await ctx.db.insert('channelParticipationRequests', {
       projectId: access.project._id,
       groupId: args.groupId,
       targetProjectCompanyId: target._id,
@@ -186,6 +234,40 @@ export const requestParticipation = mutation({
       createdAt: now,
       updatedAt: now,
     })
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelParticipationRequest', entityId: requestId,
+      action: 'channel_participation.requested', after: { targetProjectCompanyId: target._id, selectedProjectMemberIds: args.selectedProjectMemberIds },
+    })
+    return requestId
+  },
+})
+
+export const revokeParticipation = mutation({
+  args: {
+    projectId: v.id('projects'), groupId: v.id('groups'), actingCompanyId: v.id('companies'),
+    projectMemberId: v.id('projectMembers'), requestId: v.id('channelParticipationRequests'),
+  },
+  handler: async (ctx, args) => {
+    requireCompanyModelEnabled()
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await resolveCompanyProjectAccess(ctx, actor, args)
+    if (!access.capabilities.canStewardChannel) throw new Error('channel_steward_required')
+    const request = await ctx.db.get(args.requestId)
+    if (!request || request.projectId !== args.projectId || request.groupId !== args.groupId) throw new Error('participation_request_unavailable')
+    const requester = await ctx.db.get(request.invitedByProjectMemberId)
+    if (!requester || requester.companyId !== access.company._id) throw new Error('participation_request_unavailable')
+    if (request.status !== 'pending') return request._id
+    const now = Date.now()
+    await ctx.db.patch(request._id, { status: 'revoked', updatedAt: now })
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelParticipationRequest', entityId: request._id,
+      action: 'channel_participation.revoked', before: { status: 'pending' }, after: { status: 'revoked' },
+    })
+    return request._id
   },
 })
 
@@ -278,6 +360,12 @@ export const decideParticipation = mutation({
         decidedAt: now,
         updatedAt: now,
       })
+      await appendAuditEvent(ctx, {
+        companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+        actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+        actingCompanyId: access.company._id, entityType: 'channelParticipationRequest', entityId: request._id,
+        action: 'channel_participation.declined', before: { status: 'pending' }, after: { status: 'declined' },
+      })
       return request._id
     }
     const selectedIds = Array.from(new Set([access.projectMember._id, ...args.selectedProjectMemberIds]))
@@ -317,6 +405,12 @@ export const decideParticipation = mutation({
       updatedAt: now,
     })
     await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelParticipationRequest', entityId: request._id,
+      action: 'channel_participation.accepted', before: { status: 'pending' }, after: { status: 'accepted', selectedProjectMemberIds: selectedIds },
+    })
     return request._id
   },
 })
@@ -328,8 +422,9 @@ export const updateOwnCompanyMember = mutation({
     actingCompanyId: v.id('companies'),
     projectMemberId: v.id('projectMembers'),
     targetProjectMemberId: v.id('projectMembers'),
-    active: v.boolean(),
-    steward: v.boolean(),
+    active: v.optional(v.boolean()),
+    status: v.optional(v.union(v.literal('active'), v.literal('suspended'), v.literal('removed'))),
+    steward: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     requireCompanyModelEnabled()
@@ -346,7 +441,10 @@ export const updateOwnCompanyMember = mutation({
         q.eq('groupId', args.groupId).eq('projectMemberId', target._id),
       )
       .unique()
-    if (membership?.isSteward && (!args.active || !args.steward)) {
+    const status = args.status ?? (args.active === undefined ? membership?.status ?? 'active' : args.active ? 'active' : 'removed')
+    const steward = args.steward ?? membership?.isSteward ?? false
+    if (args.active === undefined && args.status === undefined && args.steward === undefined) throw new Error('channel_member_update_required')
+    if (membership?.isSteward && (status !== 'active' || !steward)) {
       const channelMemberships = await ctx.db
         .query('groupMembers')
         .withIndex('by_group', (q) => q.eq('groupId', args.groupId))
@@ -363,29 +461,44 @@ export const updateOwnCompanyMember = mutation({
     const previousParticipantIds = await activeChannelParticipantIds(ctx, args.groupId)
     if (membership) {
       await ctx.db.patch(membership._id, {
-        status: args.active ? 'active' : 'removed',
-        isSteward: args.active && args.steward,
-        endedAt: args.active ? undefined : now,
+        status,
+        isSteward: status === 'active' && steward,
+        endedByProjectMembership: false,
+        endedAt: status === 'active' ? undefined : now,
         updatedAt: now,
       })
-      if (!args.active) await removeTaskMemberFromScope(ctx, {
+      if (status !== 'active') await removeTaskMemberFromScope(ctx, {
         projectId: args.projectId, groupId: args.groupId, projectMemberId: target._id,
       })
       await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
+      await appendAuditEvent(ctx, {
+        companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+        actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+        actingCompanyId: access.company._id, entityType: 'channelMember', entityId: membership._id,
+        action: status === 'suspended' ? 'channel_member.suspended' : status === 'removed' ? 'channel_member.removed' : 'channel_member.updated',
+        before: { status: membership.status, channelManager: membership.isSteward === true },
+        after: { status, channelManager: status === 'active' && steward },
+      })
       return membership._id
     }
-    if (!args.active) return null
+    if (status !== 'active') return null
     const membershipId = await ctx.db.insert('groupMembers', {
       projectId: access.project._id,
       groupId: args.groupId,
       userId: target.userId,
       projectMemberId: target._id,
       status: 'active',
-      isSteward: args.steward,
+      isSteward: steward,
       createdAt: now,
       updatedAt: now,
     })
     await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelMember', entityId: membershipId,
+      action: 'channel_member.added', after: { status: 'active', channelManager: steward },
+    })
     return membershipId
   },
 })
@@ -402,7 +515,7 @@ export const requestArchive = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
-    const isSteward = access.projectMember.role === 'manager' && access.groupMember?.status === 'active' && access.groupMember.isSteward
+    const isSteward = access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
     const existing = await ctx.db
       .query('channelArchiveRequests')
@@ -416,7 +529,7 @@ export const requestArchive = mutation({
     }
     const now = Date.now()
     await ctx.db.patch(args.groupId, { status: 'archive_pending', updatedAt: now })
-    return await ctx.db.insert('channelArchiveRequests', {
+    const requestId = await ctx.db.insert('channelArchiveRequests', {
       projectId: args.projectId,
       groupId: args.groupId,
       channelRevision: access.group?.revision ?? 0,
@@ -427,6 +540,14 @@ export const requestArchive = mutation({
       createdAt: now,
       updatedAt: now,
     })
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelArchiveRequest', entityId: requestId,
+      action: `channel.${args.operation}_requested`,
+      before: { status: expectedStatus }, after: { status: 'archive_pending' },
+    })
+    return requestId
   },
 })
 
@@ -440,7 +561,7 @@ export const listPendingArchive = query({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
-    const isSteward = access.projectMember.role === 'manager' && access.groupMember?.status === 'active' && access.groupMember.isSteward
+    const isSteward = access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
     return await ctx.db
       .query('channelArchiveRequests')
@@ -460,7 +581,7 @@ export const approveArchive = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
-    const isSteward = access.projectMember.role === 'manager' && access.groupMember?.status === 'active' && access.groupMember.isSteward
+    const isSteward = access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
     const request = await ctx.db.get(args.requestId)
     if (!request || request.status !== 'pending') return request?._id ?? null
@@ -501,6 +622,14 @@ export const approveArchive = mutation({
       updatedAt: now,
     })
     await ctx.db.patch(request._id, { status: 'approved', decidedAt: now, updatedAt: now })
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelArchiveRequest', entityId: request._id,
+      action: request.operation === 'archive' ? 'channel.archived' : 'channel.restored',
+      before: { status: 'archive_pending' },
+      after: { status: request.operation === 'archive' ? 'archived' : 'active' },
+    })
     return request._id
   },
 })
@@ -516,8 +645,7 @@ export const cancelArchive = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await resolveCompanyProjectAccess(ctx, actor, args)
-    const isSteward = access.projectMember.role === 'manager' &&
-      access.groupMember?.status === 'active' && access.groupMember.isSteward
+    const isSteward = access.groupMember?.status === 'active' && access.groupMember.isSteward
     if (!isSteward || access.project.status === 'archived') throw new Error('channel_steward_required')
     const request = await ctx.db.get(args.requestId)
     if (!request || request.status !== 'pending') return request?._id ?? null
@@ -529,6 +657,12 @@ export const cancelArchive = mutation({
     await ctx.db.patch(args.groupId, {
       status: request.operation === 'archive' ? 'active' : 'archived',
       updatedAt: now,
+    })
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, groupId: args.groupId,
+      actorId: actor.userId, actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id, entityType: 'channelArchiveRequest', entityId: request._id,
+      action: 'channel_archive.cancelled', before: { status: 'pending' }, after: { status: 'cancelled' },
     })
     return request._id
   },

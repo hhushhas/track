@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { Bell, Columns3, Inbox, ListTodo, Plus, Settings2, UserRoundCheck } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -10,13 +10,13 @@ import { Button } from '#/components/ui/button'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '#/components/ui/select'
-import { useReleaseConfig } from '#/lib/release-config'
+import { resolveReleaseConfig, useReleaseConfigProjection } from '#/lib/release-config'
 import { TaskAdminDialog } from './TaskAdminDialog'
 import { TaskBoard } from './TaskBoard'
 import { TaskCreateDialog } from './TaskCreateDialog'
 import { TaskDetailDrawer } from './TaskDetailDrawer'
 import { TaskInbox } from './TaskInbox'
-import { taskIdentity, type TaskBoardView, type TaskView } from './task-types'
+import { canManageTaskProject, taskIdentity, type TaskBoardView, type TaskView } from './task-types'
 import { StateRing, TaskDenseRow } from './ui/TaskVisuals'
 
 type TaskSearch = {
@@ -40,7 +40,8 @@ const taskViews: Array<[NonNullable<TaskSearch['view']>, string, LucideIcon]> = 
 ]
 
 export function TaskProjectPage({ projectId, search }: { projectId: string; search: TaskSearch }) {
-  const release = useReleaseConfig()
+  const releaseProjection = useReleaseConfigProjection()
+  const release = resolveReleaseConfig(releaseProjection)
   const navigate = useNavigate()
   const identity = useMemo(() => taskIdentity(search), [search])
   const project = projectId as Id<'projects'>
@@ -58,6 +59,10 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
   const currentProjectMemberId = identity.projectMemberId ?? eligibleAssignees?.find(
     (item) => item.user._id === currentUser?._id,
   )?.member._id
+  const currentProjectRole = eligibleAssignees?.find(
+    (item) => item.member._id === currentProjectMemberId,
+  )?.member.role
+  const canAdministerTasks = canManageTaskProject(currentProjectRole)
   const taskRows = useQuery(
     api.tasks.list,
     release.tasks && search.view !== 'inbox'
@@ -95,13 +100,14 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
     }
   }, [navigate, projectId, search, search.board, selectedBoard, view])
 
+  if (releaseProjection === undefined) {
+    return <main className="task-page task-unavailable"><TaskLoading /></main>
+  }
+
   if (!release.tasks) {
     return <main className="task-page task-unavailable"><h1>Tasks are unavailable</h1><p>This Project keeps its conversation workflow while the task release is disabled.</p></main>
   }
 
-  const conversationHref = identity.projectMemberId
-    ? `/workspace/company-projects/${projectId}?companyId=${identity.actingCompanyId}&membershipId=${identity.projectMemberId}`
-    : `/workspace/projects/${projectId}`
   const pageTitle = view === 'board'
     ? selectedBoard?.board.name ?? 'Board'
     : view === 'my'
@@ -112,15 +118,23 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
 
   return (
     <main className="task-page">
-      <aside className="task-route-sidebar">
-        <a className="task-route-brand" href="/workspace">
+      <aside aria-label="Project task navigation" className="task-route-sidebar">
+        <Link className="task-route-brand" to="/workspace">
           <img alt="" height="21" src="/track-mark.svg" width="30" />
           <strong>Track</strong>
-        </a>
-        <a className="task-route-project" href={conversationHref}>
+        </Link>
+        {identity.projectMemberId && identity.actingCompanyId ? <Link
+          className="task-route-project"
+          params={{ projectId }}
+          search={{ companyId: identity.actingCompanyId, groupId: '', membershipId: identity.projectMemberId, view: 'channels' }}
+          to="/workspace/company-projects/$projectId"
+        >
           <span className="task-route-project-glyph">P</span>
           <span><strong>Project workspace</strong><small>Conversation and work</small></span>
-        </a>
+        </Link> : <Link className="task-route-project" params={{ projectId }} to="/workspace/projects/$projectId">
+          <span className="task-route-project-glyph">P</span>
+          <span><strong>Project workspace</strong><small>Conversation and work</small></span>
+        </Link>}
         <span className="task-route-label">Work</span>
         <nav aria-label="Task views" className="task-view-tabs">
         {taskViews.map(([value, label, Icon]) => (
@@ -138,7 +152,12 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
           </Button>
         ))}
         </nav>
-        <a className="task-route-conversation" href={conversationHref}>← Project conversation</a>
+        {identity.projectMemberId && identity.actingCompanyId ? <Link
+          className="task-route-conversation"
+          params={{ projectId }}
+          search={{ companyId: identity.actingCompanyId, groupId: '', membershipId: identity.projectMemberId, view: 'channels' }}
+          to="/workspace/company-projects/$projectId"
+        >← Project conversation</Link> : <Link className="task-route-conversation" params={{ projectId }} to="/workspace/projects/$projectId">← Project conversation</Link>}
       </aside>
 
       <section className="task-page-main">
@@ -149,7 +168,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
           </div>
           <div className="task-header-actions">
             <Button onClick={() => { setCreateWorkflowStateId(undefined); setCreateOpen(true) }}><Plus size={14} /> New task</Button>
-            <Button aria-label="Task settings" onClick={() => setAdminOpen(true)} variant="outline"><Settings2 size={14} /></Button>
+            {canAdministerTasks ? <Button aria-label="Task settings" onClick={() => setAdminOpen(true)} variant="outline"><Settings2 size={14} /></Button> : null}
             <TaskNotificationButton identity={identity} projectId={project} />
           </div>
         </header>
@@ -196,6 +215,8 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
           ) : view === 'board' && selectedBoard ? (
             <TaskBoard
               board={selectedBoard}
+              currentProjectMemberId={currentProjectMemberId}
+              currentProjectRole={currentProjectRole}
               identity={identity}
               onAnnounce={setAnnouncement}
               onCreate={(stateId) => { setCreateWorkflowStateId(stateId); setCreateOpen(true) }}
@@ -227,7 +248,6 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
         initialWorkflowStateId={createWorkflowStateId}
         onCreated={(publicKey) => {
           setCreateOpen(false)
-          setAnnouncement(`Created ${publicKey}`)
           void navigate({
             to: '/workspace/projects/$projectId/tasks', params: { projectId },
             search: { ...search, task: publicKey },
@@ -240,7 +260,7 @@ export function TaskProjectPage({ projectId, search }: { projectId: string; sear
         open={createOpen}
         projectId={project}
       />
-      <TaskAdminDialog boards={boards ?? []} identity={identity} onOpenChange={setAdminOpen} open={adminOpen} projectId={project} />
+      {canAdministerTasks ? <TaskAdminDialog boards={boards ?? []} identity={identity} onOpenChange={setAdminOpen} open={adminOpen} projectId={project} /> : null}
       <TaskDetailDrawer
         identity={identity}
         onAnnounce={setAnnouncement}
@@ -274,13 +294,23 @@ function TaskNotificationButton({ identity, projectId }: { identity: ReturnType<
   const markAllRead = useMutation(api.taskNotifications.markAllRead)
   const setPreference = useMutation(api.taskNotifications.setPreference)
   const unread = notifications?.filter((item) => !item.readAt).length ?? 0
-  const identityQuery = identity.actingCompanyId && identity.projectMemberId
-    ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}` : ''
   return <Popover><PopoverTrigger render={<Button aria-label={`${unread} unread task notifications`} variant="outline" />}><Bell size={14} />{unread ? <span>{unread}</span> : null}</PopoverTrigger><PopoverContent align="end" className="task-notification-feed">
     <PopoverHeader><PopoverTitle>Task notifications</PopoverTitle><PopoverDescription>Private to this Project membership.</PopoverDescription></PopoverHeader>
     <NativeSelect aria-label="Task push preference" onChange={(event) => void setPreference({ projectId, mode: event.target.value as 'important' | 'all_followed' | 'muted', ...identity })} value={preference ?? 'important'}>{['important', 'all_followed', 'muted'].map((mode) => <NativeSelectOption key={mode} value={mode}>{mode.replaceAll('_', ' ')}</NativeSelectOption>)}</NativeSelect>
     {unread ? <Button onClick={() => void markAllRead({ projectId, ...identity })} size="sm" variant="ghost">Mark all read</Button> : null}
-    <div>{notifications?.map((item) => <a className={item.readAt ? '' : 'unread'} href={`/workspace/projects/${projectId}/tasks?view=all&task=${encodeURIComponent(String(item.payload?.publicKey ?? ''))}${identityQuery}`} key={item._id} onClick={() => void markRead({ notificationId: item._id, ...identity })}><strong>{item.eventType.replaceAll('_', ' ')}</strong><span>{new Date(item.createdAt).toLocaleString()}</span></a>)}</div>
+    <div>{notifications?.map((item) => <Link
+      className={item.readAt ? '' : 'unread'}
+      key={item._id}
+      onClick={() => void markRead({ notificationId: item._id, ...identity })}
+      params={{ projectId }}
+      search={{
+        actingCompanyId: identity.actingCompanyId,
+        projectMemberId: identity.projectMemberId,
+        task: String(item.payload?.publicKey ?? ''),
+        view: 'all',
+      }}
+      to="/workspace/projects/$projectId/tasks"
+    ><strong>{item.eventType.replaceAll('_', ' ')}</strong><span>{new Date(item.createdAt).toLocaleString()}</span></Link>)}</div>
     {!notifications?.length ? <p>No task notifications.</p> : null}
   </PopoverContent></Popover>
 }

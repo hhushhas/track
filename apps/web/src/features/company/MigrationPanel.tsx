@@ -61,7 +61,7 @@ export function MigrationPanel({
     }))
   }
 
-  return <section className="company-panel">
+  return <div className="company-migration-panel">
     <h2>Guided legacy upgrade</h2>
     <p>Track will not infer Company identity or neutral roles. Map every person explicitly; existing Group membership is preserved exactly.</p>
     <form className="company-migration-form" onSubmit={(event) => void submit(event)}>
@@ -81,5 +81,5 @@ export function MigrationPanel({
           else next.delete(mapping.legacyProjectMemberId)
           return { ...current, [item.upgrade!._id]: next }
         })} type="checkbox" /> {user?.displayName ?? 'Unknown member'} as manager</label>)}<Button onClick={() => void run(() => confirmCompany({ actingCompanyId, managerProjectMemberIds: Array.from(managerSelections[item.upgrade!._id] ?? []) as Array<Id<'projectMembers'>>, upgradeId: item.upgrade!._id }))}>Confirm Company mapping</Button></div> : null)}
-  </section>
+  </div>
 }

@@ -14,6 +14,18 @@ export function setResolvedTrackUserId(sessionUserId: string, trackUserId: Id<'u
   resolvedTrackUserIds.set(sessionUserId, trackUserId)
 }
 
+/**
+ * Uses the cross-domain session cache only while Better Auth verifies it.
+ * The cache improves first paint but never outlives a completed server check.
+ */
+export function getSessionDataForRender(
+  sessionData: unknown,
+  sessionPending: boolean,
+  cachedSessionData: unknown,
+) {
+  return sessionData ?? (sessionPending ? cachedSessionData : null)
+}
+
 export function getSessionUser(sessionData: unknown) {
   if (!sessionData || typeof sessionData !== 'object') return null
 

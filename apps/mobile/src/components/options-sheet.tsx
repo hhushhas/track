@@ -1,22 +1,24 @@
 import { Children, Fragment, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
 import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  runOnJS,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PlatformIcon } from '@/components/platform-icon';
@@ -35,16 +37,21 @@ const SEARCH_PAGE = 30;
 type Props = {
   children: React.ReactNode;
   onClose: () => void;
+  showScrollProgress?: boolean;
   title: string;
   visible: boolean;
 };
 
-export function OptionsSheet({ children, onClose, title, visible }: Props) {
+export function OptionsSheet({ children, onClose, showScrollProgress = false, title, visible }: Props) {
   const theme = useTheme();
   const { theme: themeName } = useThemeOverride();
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(0);
   const scrim = useSharedValue(0);
+  const scrollY = useSharedValue(0);
+  const contentHeight = useSharedValue(0);
+  const viewportHeight = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     if (visible) {
@@ -52,11 +59,11 @@ export function OptionsSheet({ children, onClose, title, visible }: Props) {
       // window, so stale keyboard padding would float the sheet mid-screen.
       Keyboard.dismiss();
       translateY.value = 0;
-      scrim.value = withTiming(1, { duration: 180 });
+      scrim.value = withTiming(1, { duration: reducedMotion ? 0 : 180 });
     } else {
       scrim.value = 0;
     }
-  }, [scrim, translateY, visible]);
+  }, [reducedMotion, scrim, translateY, visible]);
 
   const pan = Gesture.Pan()
     .activeOffsetY([-12, 12])
@@ -67,24 +74,41 @@ export function OptionsSheet({ children, onClose, title, visible }: Props) {
       const shouldClose =
         event.translationY > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY;
       if (shouldClose) {
-        translateY.value = withTiming(600, { duration: 160 }, () => runOnJS(onClose)());
+        translateY.value = withTiming(600, { duration: reducedMotion ? 0 : 160 }, () => scheduleOnRN(onClose));
         return;
       }
-      translateY.value = withSpring(0, { damping: 22, stiffness: 240 });
+      translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 22, stiffness: 240 });
     });
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
   const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
+  const progressStyle = useAnimatedStyle(() => {
+    const viewport = viewportHeight.value;
+    const content = contentHeight.value;
+    if (!showScrollProgress || !viewport || content <= viewport + 1) return { opacity: 0, height: 0, transform: [{ translateY: 0 }] };
+    const thumb = Math.max(32, (viewport * viewport) / content);
+    const travel = Math.max(0, viewport - thumb - 16);
+    const offset = Math.min(Math.max(scrollY.value, 0), content - viewport);
+    return {
+      opacity: 1,
+      height: thumb,
+      transform: [{ translateY: 8 + (offset / (content - viewport)) * travel }],
+    };
+  });
 
   return (
-    <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
+    <Modal animationType="none" transparent visible={visible} onRequestClose={onClose}>
       <GestureHandlerRootView style={styles.modal}>
         <KeyboardAvoidingView behavior="padding" style={styles.modal}>
           <Animated.View style={[styles.scrimLayer, scrimStyle]}>
             <Pressable
-              accessibilityLabel="Dismiss"
+              accessibilityLabel="Dismiss options"
+              accessibilityRole="button"
               onPress={onClose}
               style={[styles.scrim, { backgroundColor: theme.overlay }]}
             />
@@ -108,6 +132,7 @@ export function OptionsSheet({ children, onClose, title, visible }: Props) {
                       <ThemedText style={styles.headerTitle} type="subtitle">{title}</ThemedText>
                       <Pressable
                         accessibilityLabel="Close"
+                        accessibilityRole="button"
                         android_ripple={{ color: theme.backgroundSelected, borderless: true }}
                         hitSlop={12}
                         onPress={() => { hapticLight(); onClose(); }}
@@ -117,15 +142,26 @@ export function OptionsSheet({ children, onClose, title, visible }: Props) {
                     </View>
                   </View>
                 </GestureDetector>
-                <ScrollView
-                  contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.four }]}
-                  indicatorStyle={themeName === 'dark' ? 'white' : 'black'}
-                  keyboardDismissMode="interactive"
-                  keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator
-                  style={styles.scroll}>
-                  {children}
-                </ScrollView>
+                <View style={styles.scrollFrame}>
+                  <Animated.ScrollView
+                    contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.four }]}
+                    indicatorStyle={themeName === 'dark' ? 'white' : 'black'}
+                    keyboardDismissMode="interactive"
+                    keyboardShouldPersistTaps="handled"
+                    onContentSizeChange={(_, height) => { contentHeight.value = height; }}
+                    onLayout={(event) => { viewportHeight.value = event.nativeEvent.layout.height; }}
+                    onScroll={scrollHandler}
+                    scrollEventThrottle={16}
+                    showsVerticalScrollIndicator={!showScrollProgress}
+                    style={styles.scroll}>
+                    {children}
+                  </Animated.ScrollView>
+                  {showScrollProgress ? (
+                    <View pointerEvents="none" style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
+                      <Animated.View style={[styles.progressThumb, { backgroundColor: theme.accentStrong }, progressStyle]} />
+                    </View>
+                  ) : null}
+                </View>
               </ThemedView>
             </Animated.View>
           </View>
@@ -157,37 +193,71 @@ export function SheetSection({ children, title }: { children: React.ReactNode; t
   );
 }
 
+/** Consistent padded copy for loading, empty, offline, and result states. */
+export function SheetNote({
+  children,
+  state = 'default',
+}: {
+  children: React.ReactNode;
+  state?: 'default' | 'success' | 'error' | 'offline';
+}) {
+  const theme = useTheme();
+  const color = state === 'error'
+    ? theme.danger
+    : state === 'success'
+      ? theme.success
+      : state === 'offline'
+        ? theme.accentStrong
+        : theme.textSecondary;
+
+  return (
+    <View accessibilityRole={state === 'error' ? 'alert' : undefined} style={styles.note}>
+      <ThemedText style={{ color }} type="caption">{children}</ThemedText>
+    </View>
+  );
+}
+
 export function SheetRow({
   destructive,
   detail,
+  disabled,
   icon,
   label,
   leading,
+  loading,
   onPress,
   selected,
+  state = 'default',
   trailing,
 }: {
   destructive?: boolean;
   detail?: string;
+  disabled?: boolean;
   icon?: React.ComponentProps<typeof PlatformIcon>['name'];
   label: string;
   leading?: React.ReactNode;
+  loading?: boolean;
   onPress?: () => void;
   selected?: boolean;
+  state?: 'default' | 'success' | 'error' | 'offline';
   trailing?: React.ReactNode;
 }) {
   const theme = useTheme();
-  const textColor = destructive ? theme.danger : theme.text;
-  const iconColor = destructive ? theme.danger : theme.textSecondary;
+  const textColor = destructive || state === 'error' ? theme.danger : state === 'success' ? theme.success : theme.text;
+  const iconColor = destructive || state === 'error' ? theme.danger : state === 'success' ? theme.success : state === 'offline' ? theme.accentStrong : theme.textSecondary;
+  const unavailable = disabled || loading;
 
   return (
     <Pressable
-      accessibilityRole={selected === undefined ? 'button' : 'radio'}
-      accessibilityState={selected === undefined ? undefined : { selected }}
+      accessibilityRole={onPress ? selected === undefined ? 'button' : 'radio' : undefined}
+      accessibilityState={{ busy: Boolean(loading), disabled: Boolean(unavailable), selected }}
       android_ripple={{ color: theme.backgroundSelected }}
+      disabled={unavailable}
       onPress={() => { if (onPress) { hapticLight(); onPress(); } }}
-      style={styles.sheetRow}>
-      {leading ?? (icon ? <PlatformIcon color={iconColor} name={icon} size={20} /> : null)}
+      style={({ pressed }) => [styles.sheetRow, { opacity: unavailable ? 0.45 : pressed ? 0.7 : 1 }]}>
+      <View style={styles.sheetRowLeading}>
+        {leading ?? (icon ? <PlatformIcon color={iconColor} name={icon} size={20} /> : state === 'offline' ? <PlatformIcon color={iconColor} name="cloud-off" size={20} /> : null)}
+      </View>
       <View style={styles.sheetRowBody}>
         <ThemedText numberOfLines={1} style={{ color: textColor }} type="small">
           {label}
@@ -196,8 +266,8 @@ export function SheetRow({
           <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{detail}</ThemedText>
         ) : null}
       </View>
-      {selected ? (
-        <PlatformIcon color={theme.accent} name="check-circle" size={19} />
+      {loading ? <ActivityIndicator color={iconColor} size="small" /> : selected ? (
+        <PlatformIcon color={theme.accentStrong} name="check-circle" size={19} />
       ) : trailing ? (
         trailing
       ) : null}
@@ -208,6 +278,7 @@ export function SheetRow({
 export function SheetInput({
   autoFocus,
   label,
+  maxLength,
   multiline,
   onChangeText,
   placeholder,
@@ -215,6 +286,7 @@ export function SheetInput({
 }: {
   autoFocus?: boolean;
   label: string;
+  maxLength?: number;
   multiline?: boolean;
   onChangeText: (v: string) => void;
   placeholder?: string;
@@ -228,6 +300,7 @@ export function SheetInput({
         accessibilityLabel={label}
         autoFocus={autoFocus}
         cursorColor={theme.accent}
+        maxLength={maxLength}
         maxFontSizeMultiplier={MaxFontScale}
         multiline={multiline}
         onChangeText={onChangeText}
@@ -289,7 +362,8 @@ export function SheetFieldButton({
         {value && onClear ? (
           <Pressable
             accessibilityLabel={`Clear ${label.toLowerCase()}`}
-            hitSlop={10}
+            accessibilityRole="button"
+            hitSlop={14}
             onPress={() => { hapticLight(); onClear(); }}>
             <PlatformIcon color={theme.textSecondary} name="close" size={17} />
           </Pressable>
@@ -351,6 +425,7 @@ export function SheetSearchList({
           autoCorrect={false}
           clearButtonMode="while-editing"
           cursorColor={theme.accent}
+          maxLength={100}
           maxFontSizeMultiplier={MaxFontScale}
           onChangeText={setQuery}
           placeholder={placeholder}
@@ -396,9 +471,9 @@ const styles = StyleSheet.create({
   closeButton: {
     alignItems: 'center',
     borderRadius: Radius.pill,
-    height: 32,
+    height: TouchTarget,
     justifyContent: 'center',
-    width: 32,
+    width: TouchTarget,
   },
   content: {
     gap: Spacing.three,
@@ -465,9 +540,28 @@ const styles = StyleSheet.create({
   scrimLayer: {
     ...StyleSheet.absoluteFillObject,
   },
+
   scroll: {
     flexGrow: 0,
     flexShrink: 1,
+  },
+  scrollFrame: {
+    flexShrink: 1,
+    position: 'relative',
+  },
+  progressTrack: {
+    borderRadius: Radius.pill,
+    bottom: 8,
+    overflow: 'hidden',
+    position: 'absolute',
+    right: 2,
+    top: 8,
+    width: 3,
+  },
+  progressThumb: {
+    borderRadius: Radius.pill,
+    position: 'absolute',
+    width: 3,
   },
   searchBar: {
     alignItems: 'center',
@@ -492,6 +586,12 @@ const styles = StyleSheet.create({
   },
   searchWrap: {
     gap: Spacing.three,
+  },
+  note: {
+    justifyContent: 'center',
+    minHeight: TouchTarget,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
   },
   section: {
     gap: Spacing.two,
@@ -532,6 +632,7 @@ const styles = StyleSheet.create({
     gap: 1,
     minWidth: 0,
   },
+  sheetRowLeading: { alignItems: 'center', justifyContent: 'center', minWidth: 24 },
   sheetWrap: {
     flexShrink: 1,
   },

@@ -1,62 +1,161 @@
 import * as React from "react"
 
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "#/components/ui/select"
 import { cn } from "#/lib/utils"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { UnfoldMoreIcon } from "@hugeicons/core-free-icons"
 
-type NativeSelectProps = Omit<React.ComponentProps<"select">, "size"> & {
+type NativeSelectChangeEvent = {
+  currentTarget: { value: string }
+  target: { value: string }
+}
+
+type NativeSelectProps = React.AriaAttributes & {
+  autoComplete?: string
+  autoFocus?: boolean
+  children: React.ReactNode
+  className?: string
+  disabled?: boolean
+  form?: string
+  id?: string
+  name?: string
+  onBlur?: React.FocusEventHandler<HTMLButtonElement>
+  onChange?: (event: NativeSelectChangeEvent) => void
+  onFocus?: React.FocusEventHandler<HTMLButtonElement>
+  required?: boolean
   size?: "sm" | "default"
+  tabIndex?: number
+  title?: string
+  value: string
+}
+
+type NativeSelectOptionProps = {
+  children: React.ReactNode
+  disabled?: boolean
+  value: string
+}
+
+type SelectOption = {
+  disabled: boolean
+  key: React.Key
+  label: React.ReactNode
+  labelText: string
+  value: string
 }
 
 function NativeSelect({
+  "aria-describedby": ariaDescribedBy,
+  "aria-errormessage": ariaErrorMessage,
+  "aria-invalid": ariaInvalid,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+  autoComplete,
+  autoFocus,
+  children,
   className,
+  disabled,
+  form,
+  id,
+  name,
+  onBlur,
+  onChange,
+  onFocus,
+  required,
   size = "default",
-  ...props
+  tabIndex,
+  title,
+  value,
 }: NativeSelectProps) {
+  const options = collectOptions(children)
+  const selectedOption = options.find((option) => option.value === value) ?? null
+
   return (
     <div
-      className={cn(
-        "group/native-select relative w-fit has-[select:disabled]:opacity-50",
-        className
-      )}
-      data-slot="native-select-wrapper"
+      className={cn("group/native-select relative w-fit", className)}
       data-size={size}
+      data-slot="native-select-wrapper"
     >
-      <select
-        data-slot="native-select"
-        data-size={size}
-        className="track-dropdown-input h-7 w-full min-w-0 appearance-none rounded-md border border-input bg-input/20 py-0.5 pr-6 pl-2 text-xs/relaxed transition-colors outline-none select-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:cursor-not-allowed aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 data-[size=sm]:h-6 data-[size=sm]:text-[0.625rem] dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
-        {...props}
-      />
-      <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={2} className="track-dropdown-input-icon pointer-events-none absolute top-1/2 right-1.5 size-3.5 -translate-y-1/2 text-muted-foreground select-none group-data-[size=sm]/native-select:size-3 group-data-[size=sm]/native-select:-translate-y-[calc(--spacing(1.25))]" aria-hidden="true" data-slot="native-select-icon" />
+      <Select
+        autoComplete={autoComplete}
+        disabled={disabled}
+        form={form}
+        id={id}
+        isItemEqualToValue={(option, selected) => option.value === selected.value}
+        itemToStringLabel={(option) => option.labelText}
+        itemToStringValue={(option) => option.value}
+        name={name}
+        onValueChange={(nextOption) => {
+          if (nextOption === null) return
+          const eventTarget = { value: nextOption.value }
+          onChange?.({ currentTarget: eventTarget, target: eventTarget })
+        }}
+        required={required}
+        value={selectedOption}
+      >
+        <SelectTrigger
+          aria-describedby={ariaDescribedBy}
+          aria-errormessage={ariaErrorMessage}
+          aria-invalid={ariaInvalid}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+          aria-required={required || undefined}
+          autoFocus={autoFocus}
+          className="w-full"
+          data-slot="native-select"
+          onBlur={onBlur}
+          onFocus={onFocus}
+          size={size}
+          tabIndex={tabIndex}
+          title={title}
+        >
+          <SelectValue>{selectedOption?.label}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="start" alignItemWithTrigger={false}>
+          <SelectGroup>
+            {options.map((option) => (
+              <SelectItem disabled={option.disabled} key={option.key} value={option}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
 
-function NativeSelectOption({
-  className,
-  ...props
-}: React.ComponentProps<"option">) {
-  return (
-    <option
-      data-slot="native-select-option"
-      className={cn("bg-[Canvas] text-[CanvasText]", className)}
-      {...props}
-    />
-  )
+function collectOptions(children: React.ReactNode): Array<SelectOption> {
+  const options: Array<SelectOption> = []
+
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    if (child.type === React.Fragment) {
+      const fragment = child as React.ReactElement<{ children?: React.ReactNode }>
+      options.push(...collectOptions(fragment.props.children))
+      return
+    }
+    if (child.type !== NativeSelectOption) return
+
+    const props = child.props as NativeSelectOptionProps
+    options.push({
+      disabled: Boolean(props.disabled),
+      key: child.key ?? props.value,
+      label: props.children,
+      labelText: typeof props.children === "string" ? props.children : props.value,
+      value: props.value,
+    })
+  })
+
+  return options
 }
 
-function NativeSelectOptGroup({
-  className,
-  ...props
-}: React.ComponentProps<"optgroup">) {
-  return (
-    <optgroup
-      data-slot="native-select-optgroup"
-      className={cn("bg-[Canvas] text-[CanvasText]", className)}
-      {...props}
-    />
-  )
+function NativeSelectOption(_props: NativeSelectOptionProps) {
+  return null
 }
 
-export { NativeSelect, NativeSelectOptGroup, NativeSelectOption }
+export { NativeSelect, NativeSelectOption }

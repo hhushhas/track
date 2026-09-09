@@ -1,24 +1,30 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { ActionButton } from '@/components/action-button';
+import { ColoredAvatar } from '@/components/colored-avatar';
 import { authClient, setTwoFactorRedirectHandler } from '@/lib/auth-client';
 import { clearStoredAuthSession } from '@/lib/auth-storage';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
 import { getStoredPushInstallationId } from '@/lib/push-installation';
-import { OptionsSheet, SheetFieldButton, SheetInput, SheetSection } from '@/components/options-sheet';
+import { OptionsSheet, SheetFieldButton, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { TimezonePicker } from '@/components/timezone-picker';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useThemeOverride } from '@/contexts/theme-override-context';
+import { hapticDestructive } from '@/lib/haptics';
 import { deviceTimezone, findTimezone } from '@/lib/timezones';
+import { withOperationTimeout } from '@/lib/promise-timeout';
 
 type TrackUserContextValue = {
   trackUserId: Id<'users'> | null;
   isAuthReady: boolean;
+  isSigningOut: boolean;
   signOut: () => Promise<void>;
   openProfileSheet: () => void;
   devAuthBypass: ReturnType<typeof useDevAuthBypass>;
@@ -40,6 +46,7 @@ export function useTrackUser() {
 
 export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const theme = useTheme();
+  const { themeOverride, setThemeOverride } = useThemeOverride();
   const router = useRouter();
   const devAuthBypass = useDevAuthBypass();
   const session = authClient.useSession();
@@ -49,6 +56,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const acceptInvites = useMutation(api.invitations.acceptPendingForCurrentUser);
   const updateProfile = useMutation(api.auth.updateProfile);
   const detachPushInstallation = useMutation(api.notifications.detachNativeInstallation);
+  const requestAccountDeletion = useMutation(api.auth.requestAccountDeletion);
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [sheet, setSheet] = useState<'profile' | 'two-factor' | null>(null);
@@ -56,7 +64,6 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const [bootstrapError, setBootstrapError] = useState<'account' | 'invites' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [syncAttempt, setSyncAttempt] = useState(0);
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
     profileDesignation: '',
@@ -65,6 +72,8 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [twoFactorMethod, setTwoFactorMethod] = useState<'totp' | 'backup_code'>('totp');
   const [timezoneOpen, setTimezoneOpen] = useState(false);
+  const [accountAction, setAccountAction] = useState<'delete' | 'sign-out' | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const trackUser = useQuery(api.auth.getCurrentUser);
   const profileStatus = useQuery(
@@ -92,7 +101,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => setBootstrapError('account'));
-  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncAttempt, syncDevUser, trackUserId]);
+  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncDevUser, trackUserId]);
 
   // Keep trackUserId in sync with the convex getCurrentUser query
   useEffect(() => {
@@ -148,7 +157,24 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
 
   async function retryBootstrap() {
     if (bootstrapError === 'account') {
-      setSyncAttempt((attempt) => attempt + 1);
+      setBusyAction('account');
+      setBootstrapError(null);
+      const syncUser = devAuthBypass.enabled && !session.data ? syncDevUser : ensureCurrentUser;
+      try {
+        const userId = await syncUser();
+        if (!userId) throw new Error('account_sync_failed');
+        setTrackUserId(userId);
+        setIsAuthReady(true);
+        try {
+          await acceptInvites({ userId });
+        } catch {
+          setBootstrapError('invites');
+        }
+      } catch {
+        setBootstrapError('account');
+      } finally {
+        setBusyAction(null);
+      }
       return;
     }
     if (!trackUserId) return;
@@ -169,7 +195,13 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
     if (trackUserId) {
       try {
         const installationId = await getStoredPushInstallationId();
-        if (installationId) await detachPushInstallation({ installationId });
+        if (installationId) {
+          await withOperationTimeout(
+            detachPushInstallation({ installationId }),
+            10_000,
+            'push_detach',
+          );
+        }
       } catch {
         setSignOutError('Could not safely disconnect this device from notifications. Check your connection and try signing out again.');
         setBusyAction(null);
@@ -177,7 +209,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
       }
     }
     try {
-      await authClient.signOut();
+      await withOperationTimeout(authClient.signOut(), 10_000, 'sign_out');
     } catch {
       const sessionAtom = authClient.$store.atoms.session;
       const currentSession = sessionAtom?.get?.();
@@ -191,6 +223,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         });
       }
     } finally {
+      devAuthBypass.disable();
       clearStoredAuthSession();
       setSheet(null);
       setTrackUserId(null);
@@ -212,6 +245,25 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
       });
       setSheet(null);
     });
+  }
+
+  async function deleteAccount() {
+    if (!trackUserId || deletingAccount) return;
+    setDeletingAccount(true);
+    try {
+      await requestAccountDeletion({ userId: trackUserId });
+      setAccountAction(null);
+      await signOut();
+    } catch (error) {
+      Alert.alert(
+        'Deletion request not completed',
+        error instanceof Error && error.message.includes('company_ownership_transfer_required')
+          ? 'Transfer sole Company ownership on the web, then try again.'
+          : 'Check your connection and try again in a moment.',
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
   }
 
   async function submitTwoFactor() {
@@ -236,6 +288,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const value: TrackUserContextValue = {
     trackUserId,
     isAuthReady,
+    isSigningOut: busyAction === 'sign-out',
     signOut,
     openProfileSheet: () => {
       setActionError(null);
@@ -256,13 +309,14 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
               : 'Your account is ready, but pending invitations could not be accepted.'}
           </ThemedText>
           <ThemedText type="small">Check your connection, then try again.</ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            disabled={busyAction === 'invites'}
+          <ActionButton
+            disabled={busyAction !== null}
+            label="Try again"
+            loading={busyAction === bootstrapError}
             onPress={() => void retryBootstrap()}
-            style={[styles.retryButton, { borderColor: theme.hairline }]}>
-            <ThemedText type="smallBold">{busyAction === 'invites' ? 'Trying…' : 'Try Again'}</ThemedText>
-          </Pressable>
+            style={styles.retryButton}
+            variant="secondary"
+          />
         </View>
       ) : null}
 
@@ -270,13 +324,14 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         <View accessibilityRole="alert" style={[styles.errorBanner, { backgroundColor: theme.backgroundElement }]}>
           <ThemedText type="smallBold">Sign out was stopped to keep notifications private.</ThemedText>
           <ThemedText type="small">{signOutError}</ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            disabled={busyAction === 'sign-out'}
+          <ActionButton
+            disabled={busyAction !== null}
+            label="Try again"
+            loading={busyAction === 'sign-out'}
             onPress={() => void signOut()}
-            style={[styles.retryButton, { borderColor: theme.hairline }]}>
-            <ThemedText type="smallBold">{busyAction === 'sign-out' ? 'Trying…' : 'Try Again'}</ThemedText>
-          </Pressable>
+            style={styles.retryButton}
+            variant="secondary"
+          />
         </View>
       ) : null}
 
@@ -287,17 +342,31 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
       */}
       <OptionsSheet
         onClose={() => profileStatus?.complete ? setSheet(null) : undefined}
-        title="Profile"
+        title="Account"
         visible={sheet === 'profile' && !timezoneOpen}>
+        {profileStatus?.user ? (
+          <View style={styles.profileSummary}>
+            <ColoredAvatar label={profileStatus.user.displayName || profileStatus.user.email} seed={profileStatus.user._id} size={48} />
+            <View style={styles.profileIdentity}>
+              <ThemedText numberOfLines={1} type="title">{profileStatus.user.displayName || 'Track member'}</ThemedText>
+              <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{profileStatus.user.email}</ThemedText>
+              <ThemedText themeColor="textSecondary" type="caption">
+                {profileStatus.user.twoFactorEnabled ? 'Two-factor authentication enabled' : 'Password-protected account'}
+              </ThemedText>
+            </View>
+          </View>
+        ) : null}
         <SheetSection>
           <View style={styles.profileInputs}>
             <SheetInput
               label="Name"
+              maxLength={100}
               onChangeText={(displayName) => setProfileDraft((d) => ({ ...d, displayName }))}
               value={profileDraft.displayName}
             />
             <SheetInput
               label="Designation"
+              maxLength={100}
               onChangeText={(profileDesignation) => setProfileDraft((d) => ({ ...d, profileDesignation }))}
               value={profileDraft.profileDesignation}
             />
@@ -311,14 +380,55 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
           </View>
         </SheetSection>
         {actionError ? <ThemedText accessibilityRole="alert" style={styles.errorText} type="small">{actionError}</ThemedText> : null}
-        <Pressable
-          disabled={busyAction === 'profile'}
+        <ActionButton
+          disabled={busyAction === 'profile' || !profileDraft.displayName.trim()}
+          label="Save profile"
+          loading={busyAction === 'profile'}
           onPress={() => void submitProfile()}
-          style={[styles.primaryButton, { backgroundColor: busyAction === 'profile' ? theme.hairline : theme.text }]}>
-          <ThemedText style={{ color: theme.background }} type="smallBold">
-            {busyAction === 'profile' ? 'Saving…' : 'Save Profile'}
+        />
+        {profileStatus?.complete ? (
+          <>
+            <SheetSection title="Appearance">
+              <SheetRow icon="theme-light-dark" label="Auto" selected={themeOverride === 'system'} onPress={() => setThemeOverride('system')} />
+              <SheetRow icon="white-balance-sunny" label="Light" selected={themeOverride === 'light'} onPress={() => setThemeOverride('light')} />
+              <SheetRow icon="moon-waning-crescent" label="Dark" selected={themeOverride === 'dark'} onPress={() => setThemeOverride('dark')} />
+            </SheetSection>
+            <SheetSection title="Preferences">
+              <SheetRow icon="bell-outline" label="Notifications" onPress={() => { setSheet(null); router.push('/notifications'); }} />
+              <SheetRow icon="shield-lock-outline" label="Privacy policy" onPress={() => void Linking.openURL('https://track.q9labs.ai/privacy')} />
+              <SheetRow icon="file-document-outline" label="Terms of service" onPress={() => void Linking.openURL('https://track.q9labs.ai/terms')} />
+              <SheetRow icon="email-outline" label="Support" onPress={() => void Linking.openURL('mailto:q9labs.ai@gmail.com')} />
+            </SheetSection>
+            <SheetSection>
+              <SheetRow icon="logout" label="Sign out" onPress={() => { setSheet(null); setAccountAction('sign-out'); }} />
+              <SheetRow destructive icon="trash-can-outline" label={deletingAccount ? 'Deleting account…' : 'Delete account'} onPress={() => {
+                hapticDestructive();
+                setSheet(null);
+                setAccountAction('delete');
+              }} />
+            </SheetSection>
+          </>
+        ) : null}
+      </OptionsSheet>
+
+      <OptionsSheet onClose={() => setAccountAction(null)} title={accountAction === 'delete' ? 'Delete account' : 'Sign out'} visible={accountAction !== null}>
+        <View style={styles.accountConfirmation}>
+          <ThemedText type="subtitle">{accountAction === 'delete' ? 'Request account deletion?' : 'Sign out of Track?'}</ThemedText>
+          <ThemedText themeColor="textSecondary" type="small">
+            {accountAction === 'delete'
+              ? 'Track will schedule removal of your profile and disable notifications. Shared Project and Channel content stays available to collaborators.'
+              : 'You will need to sign in again to read messages and update tasks on this device.'}
           </ThemedText>
-        </Pressable>
+          <View style={styles.accountActions}>
+            <ActionButton label="Cancel" onPress={() => setAccountAction(null)} variant="secondary" />
+            {accountAction === 'delete'
+              ? <ActionButton label="Request deletion" loading={deletingAccount} onPress={() => void deleteAccount()} variant="destructive" />
+              : <ActionButton label="Sign out" loading={busyAction === 'sign-out'} onPress={() => {
+                  setAccountAction(null);
+                  void signOut();
+                }} />}
+          </View>
+        </View>
       </OptionsSheet>
 
       <TimezonePicker
@@ -331,11 +441,13 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         visible={timezoneOpen}
       />
 
-      <OptionsSheet onClose={() => setSheet(null)} title="Two-Factor Auth" visible={sheet === 'two-factor'}>
+      <OptionsSheet onClose={() => setSheet(null)} title="Two-factor authentication" visible={sheet === 'two-factor'}>
         <SheetSection>
           <View style={styles.segmented}>
             {(['totp', 'backup_code'] as const).map((method) => (
               <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: twoFactorMethod === method }}
                 key={method}
                 onPress={() => setTwoFactorMethod(method)}
                 style={[
@@ -346,23 +458,23 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
               </Pressable>
             ))}
           </View>
-          <SheetInput label="Code" onChangeText={setTwoFactorCode} value={twoFactorCode} />
+          <SheetInput label="Code" maxLength={64} onChangeText={setTwoFactorCode} value={twoFactorCode} />
         </SheetSection>
         {actionError ? <ThemedText accessibilityRole="alert" style={styles.errorText} type="small">{actionError}</ThemedText> : null}
-        <Pressable
-          disabled={busyAction === 'two-factor'}
+        <ActionButton
+          disabled={busyAction === 'two-factor' || !twoFactorCode.trim()}
+          label="Verify"
+          loading={busyAction === 'two-factor'}
           onPress={() => void submitTwoFactor()}
-          style={[styles.primaryButton, { backgroundColor: busyAction === 'two-factor' ? theme.hairline : theme.text }]}>
-          <ThemedText style={{ color: theme.background }} type="smallBold">
-            {busyAction === 'two-factor' ? 'Verifying…' : 'Verify'}
-          </ThemedText>
-        </Pressable>
+        />
       </OptionsSheet>
     </TrackUserContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
+  accountActions: { gap: Spacing.two },
+  accountConfirmation: { gap: Spacing.three },
   errorBanner: {
     borderRadius: Radius.large,
     bottom: Spacing.four,
@@ -375,17 +487,12 @@ const styles = StyleSheet.create({
   errorText: {
     paddingHorizontal: Spacing.three,
   },
-  primaryButton: {
-    alignItems: 'center',
-    borderRadius: Radius.medium,
-    justifyContent: 'center',
-    minHeight: TouchTarget,
-    paddingHorizontal: Spacing.four,
-  },
   profileInputs: {
     gap: Spacing.three,
     padding: Spacing.three,
   },
+  profileIdentity: { flex: 1, gap: 2, minWidth: 0 },
+  profileSummary: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three },
   retryButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',

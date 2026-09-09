@@ -1,7 +1,10 @@
-import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search, Trash2 } from 'lucide-react'
+import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Pencil, Search, Trash2 } from 'lucide-react'
+import { useMutation } from 'convex/react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import { api } from '../../../../../../convex/_generated/api'
+import { appToast } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
@@ -36,6 +39,7 @@ export function MessageActions({
   }) => Promise<boolean>
   onReplyMessage: (item: GroupMessageItem) => void
 }) {
+  const editMessage = useMutation(api.messages.edit)
   return (
     <div className="track-message-actions" aria-label="Message actions">
       <Button
@@ -56,6 +60,30 @@ export function MessageActions({
         onForwardMessage={onForwardMessage}
       />
       <CreateTaskFromMessage message={item.message} />
+      {canDelete ? (
+        <Button
+          aria-label="Edit message"
+          className="icon-button track-message-action-button"
+          onClick={() => {
+            const body = window.prompt('Edit message', item.message.body)
+            if (body === null || body === item.message.body) return
+            void editMessage({
+              actorId: item.message.authorId,
+              body,
+              messageId: item.message._id,
+              ...(item.message.actingCompanyId && item.message.authorProjectMemberId
+                ? { actingCompanyId: item.message.actingCompanyId, projectMemberId: item.message.authorProjectMemberId }
+                : {}),
+            })
+              .then(() => appToast.success('Message updated'))
+              .catch(() => appToast.error('Message not updated', 'Check your access and try again.'))
+          }}
+          title="Edit message"
+          type="button"
+        >
+          <Pencil size={14} />
+        </Button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -74,7 +102,11 @@ export function MessageActions({
             <DropdownMenuItem
               onClick={() => {
                 const text = item.message.body || item.forwardedFrom?.originalBody || ''
-                if (text) void navigator.clipboard?.writeText(text)
+                if (text) {
+                  void navigator.clipboard?.writeText(text)
+                    .then(() => appToast.success('Message copied'))
+                    .catch(() => appToast.error('Message not copied', 'Your browser blocked clipboard access.'))
+                }
               }}
             >
               Copy text

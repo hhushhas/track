@@ -2,7 +2,8 @@ import { Image } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ViewableImage } from '@/components/chat/types';
@@ -33,6 +34,7 @@ type Props = {
 
 export function ImageViewer({ image, onClose }: Props) {
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
 
@@ -73,8 +75,8 @@ export function ImageViewer({ image, onClose }: Props) {
     .onEnd(() => {
       savedScale.value = scale.value;
       if (scale.value > 1) return;
-      translateX.value = withTiming(0);
-      translateY.value = withTiming(0);
+      translateX.value = withTiming(0, { duration: reducedMotion ? 0 : 200 });
+      translateY.value = withTiming(0, { duration: reducedMotion ? 0 : 200 });
       savedX.value = 0;
       savedY.value = 0;
     });
@@ -98,22 +100,22 @@ export function ImageViewer({ image, onClose }: Props) {
       const shouldDismiss =
         Math.abs(event.translationY) > DISMISS_DISTANCE || Math.abs(event.velocityY) > DISMISS_VELOCITY;
       if (shouldDismiss) {
-        runOnJS(dismiss)();
+        scheduleOnRN(dismiss);
         return;
       }
-      translateY.value = withTiming(0);
-      backdrop.value = withTiming(1);
+      translateY.value = withTiming(0, { duration: reducedMotion ? 0 : 200 });
+      backdrop.value = withTiming(1, { duration: reducedMotion ? 0 : 200 });
     });
 
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd(() => {
       const zoomed = scale.value > 1;
-      scale.value = withTiming(zoomed ? 1 : ZOOMED_SCALE);
+      scale.value = withTiming(zoomed ? 1 : ZOOMED_SCALE, { duration: reducedMotion ? 0 : 200 });
       savedScale.value = zoomed ? 1 : ZOOMED_SCALE;
       if (!zoomed) return;
-      translateX.value = withTiming(0);
-      translateY.value = withTiming(0);
+      translateX.value = withTiming(0, { duration: reducedMotion ? 0 : 200 });
+      translateY.value = withTiming(0, { duration: reducedMotion ? 0 : 200 });
       savedX.value = 0;
       savedY.value = 0;
     });

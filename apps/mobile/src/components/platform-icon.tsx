@@ -1,4 +1,4 @@
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
 import type { SFSymbol } from 'expo-symbols';
 import { Platform } from 'react-native';
@@ -60,6 +60,7 @@ export type IconName =
   | 'inbox'
   | 'information-outline'
   | 'link'
+  | 'lightbulb-outline'
   | 'list'
   | 'logout'
   | 'magnify-plus'
@@ -91,7 +92,7 @@ export type IconName =
   | 'waveform'
   | 'white-balance-sunny';
 
-const SF_MAP: Partial<Record<IconName, SFSymbol>> = {
+const SF_MAP: Record<IconName, SFSymbol> = {
   'account-circle': 'person.crop.circle',
   'account-edit-outline': 'person.crop.circle',
   'account-group': 'person.2',
@@ -111,6 +112,7 @@ const SF_MAP: Partial<Record<IconName, SFSymbol>> = {
   'calendar-today': 'calendar',
   'camera': 'camera',
   'check': 'checkmark',
+  'check-all': 'checkmark.circle',
   'check-box': 'checkmark.square.fill',
   'check-box-outline': 'square',
   'check-circle': 'checkmark.circle.fill',
@@ -147,6 +149,7 @@ const SF_MAP: Partial<Record<IconName, SFSymbol>> = {
   'inbox': 'tray',
   'information-outline': 'info.circle',
   'link': 'link',
+  'lightbulb-outline': 'lightbulb',
   'list': 'list.bullet',
   'logout': 'rectangle.portrait.and.arrow.right',
   'magnify-plus': 'plus.magnifyingglass',
@@ -180,7 +183,7 @@ const SF_MAP: Partial<Record<IconName, SFSymbol>> = {
 };
 
 // Android Material Icons mapping for a more native Android feel
-const ANDROID_MAP: Partial<Record<IconName, React.ComponentProps<typeof MaterialIcons>['name']>> = {
+const ANDROID_MAP: Record<IconName, React.ComponentProps<typeof MaterialIcons>['name']> = {
   'account-circle': 'account-circle',
   'account-edit-outline': 'person-outline',
   'account-group': 'group',
@@ -237,6 +240,7 @@ const ANDROID_MAP: Partial<Record<IconName, React.ComponentProps<typeof Material
   'inbox': 'inbox',
   'information-outline': 'info-outline',
   'link': 'link',
+  'lightbulb-outline': 'lightbulb-outline',
   'list': 'view-list',
   'logout': 'logout',
   'magnify-plus': 'zoom-in',
@@ -269,39 +273,19 @@ const ANDROID_MAP: Partial<Record<IconName, React.ComponentProps<typeof Material
   'white-balance-sunny': 'wb-sunny',
 };
 
-// Ionicons fallback for names without a platform-native mapping
-const ION_MAP: Partial<Record<IconName, React.ComponentProps<typeof Ionicons>['name']>> = {
-  'check-all': 'checkmark-done',
-  'moon-waning-crescent': 'moon-outline',
-  'theme-light-dark': 'contrast-outline',
-  'waveform': 'pulse-outline',
-  'white-balance-sunny': 'sunny-outline',
-};
-
 type Props = { name: IconName; size: number; color: string };
 
 export function PlatformIcon({ name, size, color }: Props) {
   if (Platform.OS === 'ios') {
-    const sf = SF_MAP[name];
-    if (sf) {
-      return (
-        <SymbolView
-          name={sf}
-          size={size}
-          tintColor={color}
-          style={{ width: size, height: size }}
-        />
-      );
-    }
-    const ion = ION_MAP[name];
-    if (ion) return <Ionicons color={color} name={ion} size={size} />;
-    return <Ionicons color={color} name="help-circle-outline" size={size} />;
+    return (
+      <SymbolView
+        name={SF_MAP[name]}
+        size={size}
+        tintColor={color}
+        style={{ width: size, height: size }}
+      />
+    );
   }
 
-  // Android: prefer Material Icons, then Ionicons
-  const mat = ANDROID_MAP[name];
-  if (mat) return <MaterialIcons color={color} name={mat} size={size} />;
-  const ion = ION_MAP[name];
-  if (ion) return <Ionicons color={color} name={ion} size={size} />;
-  return <Ionicons color={color} name="help-circle-outline" size={size} />;
+  return <MaterialIcons color={color} name={ANDROID_MAP[name]} size={size} />;
 }

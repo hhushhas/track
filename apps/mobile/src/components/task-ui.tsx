@@ -15,9 +15,6 @@ import {
   taskStateTone,
 } from '@/lib/task-presentation';
 
-/** Board cards are uniform so a dragged card maps cleanly onto a drop slot. */
-export const BoardCardHeight = 126;
-
 type Segment<T extends string> = { label: string; value: T };
 
 export function TaskSegmentedControl<T extends string>({
@@ -199,6 +196,8 @@ export function TaskCard({
   description,
   dueDate,
   evidence,
+  focused = false,
+  onLongPress,
   onPress,
   onStatusPress,
   priority,
@@ -213,6 +212,8 @@ export function TaskCard({
   description?: string;
   dueDate?: string;
   evidence?: boolean;
+  focused?: boolean;
+  onLongPress?: () => void;
   onPress: () => void;
   onStatusPress?: () => void;
   priority: TaskPriority;
@@ -224,6 +225,49 @@ export function TaskCard({
   const theme = useTheme();
   const board = variant === 'board';
 
+  if (!board) {
+    const context = [shortTaskKey(publicKey), contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
+      .filter(Boolean)
+      .join(' · ');
+    const due = taskDueDisplay(dueDate, undefined, category);
+    return (
+      <View style={[styles.listRow, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+        <View style={styles.listRowContent}>
+          <Pressable
+            accessibilityHint="Opens the task"
+            accessibilityLabel={`${title}. ${context}. ${stateName}${due ? `. ${due.label}` : ''}`}
+            accessibilityRole="button"
+            android_ripple={{ color: theme.backgroundSelected }}
+            onPress={onPress}
+            style={({ pressed }) => [styles.listRowPressable, { opacity: pressed ? 0.7 : 1 }]}>
+            <View style={[styles.listLeading, { backgroundColor: theme.backgroundSelected }]}>
+              {assignee && assignee !== 'You'
+                ? <ColoredAvatar label={assignee} seed={assignee} size={32} />
+                : <PlatformIcon color={theme.textSecondary} name="check-circle" size={19} />}
+            </View>
+            <View style={styles.listCopy}>
+              <ThemedText numberOfLines={2} style={styles.cardTitle} type="title">{title}</ThemedText>
+              <View style={styles.listContext}>
+                {evidence ? <View accessibilityLabel="Has evidence" style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
+                <ThemedText numberOfLines={1} style={styles.listContextText} themeColor="textSecondary" type="caption">
+                  {context}
+                </ThemedText>
+              </View>
+            </View>
+          </Pressable>
+          <View style={styles.listTrailing}>
+            <View style={styles.listTrailingLine}>
+              <TaskDueChip category={category} dueDate={dueDate} />
+            </View>
+            <View style={styles.listTrailingLine}>
+              <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     // The themed fill sits outside the pressable: Android folds a background
     // colour and a ripple into one layered drawable whose repaint never reaches
@@ -232,28 +276,32 @@ export function TaskCard({
     <View style={[styles.card, board && styles.boardCard, {
       backgroundColor: theme.backgroundElevated,
       borderColor: theme.hairline,
-    }]}>
+      }]}>
+      {focused ? (
+        <View style={[styles.focusedTask, { backgroundColor: theme.accentSoft }]}>
+          <PlatformIcon color={theme.accentStrong} name="star" size={13} />
+          <ThemedText themeColor="accentStrong" type="captionBold">Opened task</ThemedText>
+        </View>
+      ) : null}
+      <View style={styles.boardMeta}>
+        <View style={styles.cardKey}>
+          <ThemedText themeColor="textSecondary" type="mono">{shortTaskKey(publicKey)}</ThemedText>
+          {evidence ? <View accessibilityLabel="Has evidence" style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
+        </View>
+        <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />
+      </View>
       <Pressable
-        accessibilityHint="Opens the task"
-        accessibilityLabel={`${title}, ${stateName}`}
+        accessibilityHint={onLongPress ? 'Opens the task. Touch and hold to move it.' : 'Opens the task'}
+        accessibilityLabel={`${focused ? 'Opened task. ' : ''}${title}, ${stateName}`}
         accessibilityRole="button"
         android_ripple={{ color: theme.backgroundSelected }}
+        delayLongPress={350}
+        onLongPress={onLongPress ? () => { hapticLight(); onLongPress(); } : undefined}
         onPress={onPress}
         style={[styles.cardPressable, board && styles.boardCardPressable]}>
-        <View style={styles.cardMeta}>
-          <View style={styles.cardKey}>
-            {evidence ? <View style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
-            {!board ? <ThemedText themeColor="textTertiary" type="mono">{shortTaskKey(publicKey)}</ThemedText> : null}
-          </View>
-          {board ? (
-            <PlatformIcon color={theme.textTertiary} name="drag-handle" size={16} />
-          ) : (
-            <TaskPriorityBadge priority={priority} />
-          )}
-        </View>
         <View style={styles.titleRow}>
           {board ? <PlatformIcon color={theme.text} name="check-box-outline" size={17} /> : null}
-          <ThemedText numberOfLines={board ? 1 : 2} style={styles.cardTitle} type="smallBold">{title}</ThemedText>
+          <ThemedText numberOfLines={2} style={styles.cardTitle} type="smallBold">{title}</ThemedText>
         </View>
         {!board && contextLabel ? (
           <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
@@ -292,14 +340,17 @@ export function TaskStateBanner({
   action?: { label: string; onPress: () => void };
   icon: React.ComponentProps<typeof PlatformIcon>['name'];
   message: string;
-  tone?: 'neutral' | 'danger' | 'offline';
+  tone?: 'neutral' | 'danger' | 'offline' | 'success';
 }) {
   const theme = useTheme();
   const danger = tone === 'danger';
-  const backgroundColor = danger
+  const success = tone === 'success';
+  const backgroundColor = success
+    ? theme.successSoft
+    : danger
     ? theme.dangerSoft
     : tone === 'offline' ? theme.accentSoft : theme.backgroundElement;
-  const foreground = danger ? theme.danger : tone === 'offline' ? theme.accentStrong : theme.text;
+  const foreground = success ? theme.success : danger ? theme.danger : tone === 'offline' ? theme.accentStrong : theme.text;
   return (
     <View accessibilityLiveRegion="polite" accessibilityRole="alert" style={[styles.banner, { backgroundColor }]}>
       <PlatformIcon color={foreground} name={icon} size={18} />
@@ -369,20 +420,30 @@ const styles = StyleSheet.create({
   actionPrimaryText: { color: Colors.light.text },
   banner: { alignItems: 'center', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   bannerText: { flex: 1 },
-  boardCard: { height: BoardCardHeight },
-  boardCardPressable: { flex: 1, justifyContent: 'space-between' },
+  boardCard: { minHeight: 0 },
+  boardCardPressable: { justifyContent: 'space-between' },
+  boardMeta: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   card: { borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   cardFooter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
-  cardKey: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
-  cardMeta: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: 18 },
+  cardKey: { alignItems: 'center', flex: 1, flexDirection: 'row', flexShrink: 1, gap: Spacing.one, minWidth: 0 },
   cardPressable: { gap: Spacing.two, padding: Spacing.three },
   cardTitle: { flexShrink: 1 },
   cardDescription: { flexShrink: 1 },
   boardAssignee: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
   cardTrailing: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.two, justifyContent: 'flex-end' },
+  focusedTask: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: Radius.pill, flexDirection: 'row', gap: 3, marginHorizontal: Spacing.three, marginTop: Spacing.two, paddingHorizontal: Spacing.two, paddingVertical: 3 },
   inlineMeta: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one },
+  listContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
+  listContextText: { flexShrink: 1 },
+  listCopy: { flex: 1, gap: 3, minWidth: 0 },
+  listLeading: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  listRow: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  listRowContent: { alignItems: 'stretch', flexDirection: 'row', minHeight: 72 },
+  listRowPressable: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.three, minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  listTrailing: { alignItems: 'flex-end', gap: 3, justifyContent: 'center', maxWidth: 116, minHeight: TouchTarget, minWidth: 88, paddingRight: Spacing.three, paddingVertical: Spacing.two },
+  listTrailingLine: { alignItems: 'flex-end', justifyContent: 'center', minHeight: 18, maxWidth: '100%' },
   originDot: { borderRadius: Radius.pill, borderWidth: 2, height: 8, width: 8 },
-  pill: { alignItems: 'center', borderRadius: Radius.pill, flexDirection: 'row', gap: 5, maxWidth: 168, paddingHorizontal: Spacing.two, paddingVertical: 5 },
+  pill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: 5, maxWidth: 168, paddingHorizontal: Spacing.two, paddingVertical: 5 },
   pillDot: { borderRadius: Radius.pill, height: 8, width: 8 },
   pillLabel: { flexShrink: 1 },
   priority: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },

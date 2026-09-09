@@ -476,7 +476,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
             </a>
           ) : null}
           <div>
-            <h1>{mode === 'onboarding' ? 'Complete your profile' : 'Profile Settings'}</h1>
+            <h1>{mode === 'onboarding' ? 'Complete your profile' : 'Profile settings'}</h1>
             <p>
               {mode === 'onboarding'
                 ? 'Display name, designation, and timezone are required before entering the workspace.'
@@ -484,7 +484,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
             </p>
           </div>
           {mode === 'settings' ? (
-            <nav className="track-profile-tabs">
+            <nav aria-label="Profile settings" className="track-profile-tabs">
               <Button className={activePanel === 'profile' ? 'active' : ''} onClick={() => setActivePanel('profile')} type="button">
                 <UserRound size={15} /> Profile
               </Button>

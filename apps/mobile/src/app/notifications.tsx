@@ -1,17 +1,21 @@
 import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
+import { ActionButton } from '@/components/action-button';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { usePushNotifications } from '@/lib/push-notifications';
+import { notificationErrorMessage } from '@/lib/user-facing-error';
 
 type ConversationMode = 'all' | 'mentions' | 'none';
 type TaskMode = 'important' | 'all' | 'muted';
@@ -25,6 +29,8 @@ export default function NotificationSettingsScreen() {
   const settings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId } : 'skip');
   const diagnostics = useQuery(api.pushDelivery.getDiagnostics, trackUserId ? { userId: trackUserId } : 'skip');
   const setPreferences = useMutation(api.notifications.setMobilePreferences);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferenceStatus, setPreferenceStatus] = useState<'error' | 'success' | null>(null);
   const global = settings?.global ?? {
     globalMode: 'all' as const,
     taskMode: 'all' as const,
@@ -33,58 +39,73 @@ export default function NotificationSettingsScreen() {
     badgesEnabled: true,
   };
 
-  function update(changes: Partial<{
+  async function update(changes: Partial<{
     conversationMode: ConversationMode;
     taskMode: TaskMode;
     previewMode: PreviewMode;
     soundEnabled: boolean;
     badgesEnabled: boolean;
   }>) {
-    if (!trackUserId) return;
-    void setPreferences({
-      userId: trackUserId,
-      ...changes,
-    }).catch(() => Alert.alert('Settings not saved', 'Check your connection and try again.'));
+    if (!trackUserId || savingPreferences) return;
+    setSavingPreferences(true);
+    setPreferenceStatus(null);
+    try {
+      await setPreferences({ userId: trackUserId, ...changes });
+      setPreferenceStatus('success');
+    } catch {
+      setPreferenceStatus('error');
+    } finally {
+      setSavingPreferences(false);
+    }
   }
 
   async function sendTest() {
-    const result = await push.sendTestNotification();
-    if (!result) return;
-    Alert.alert(
-      result.queued > 0 ? 'Test queued' : 'Test not queued',
-      `${result.queued} queued · ${result.failed} failed across ${result.attempted} target${result.attempted === 1 ? '' : 's'}.`,
-    );
+    try {
+      const result = await push.sendTestNotification();
+      if (!result) return;
+      Alert.alert(
+        result.queued > 0 ? 'Test queued' : 'Test not queued',
+        `${result.queued} queued · ${result.failed} failed across ${result.attempted} target${result.attempted === 1 ? '' : 's'}.`,
+      );
+    } catch (failure) {
+      Alert.alert('Test notification unavailable', notificationErrorMessage(failure));
+    }
   }
 
-  const permissionTitle = push.permissionState === 'granted' || push.permissionState === 'provisional'
-    ? push.registered ? 'Notifications are connected' : 'Finishing notification setup'
-    : push.permissionState === 'denied' ? 'Notifications are disabled' : 'Stay current when Track is closed';
-  const permissionBody = push.permissionState === 'denied'
-    ? `Enable Track in ${Platform.OS === 'ios' ? 'iOS' : 'Android'} Settings to receive Project activity.`
-    : push.permissionState === 'granted' || push.permissionState === 'provisional'
-      ? 'Track will notify this device for eligible conversation and task activity.'
-      : 'Get timely message previews, mentions, replies, Channel activity, and task changes.';
+  let permissionTitle = 'Stay current when Track is closed';
+  let permissionBody = 'Get timely message previews, mentions, replies, Channel activity, and task changes.';
+  if (push.availability === 'expo_go') {
+    permissionTitle = 'Development build required';
+    permissionBody = 'Expo Go cannot register this device for remote notifications. Open Track in a development or release build.';
+  } else if (push.permissionState === 'denied') {
+    permissionTitle = 'Notifications are disabled';
+    permissionBody = `Enable Track in ${Platform.OS === 'ios' ? 'iOS' : 'Android'} Settings to receive Project activity.`;
+  } else if (push.permissionState === 'granted' || push.permissionState === 'provisional') {
+    permissionTitle = push.registered ? 'Notifications are connected' : 'Finishing notification setup';
+    permissionBody = 'Track will notify this device for eligible conversation and task activity.';
+  }
 
   return (
     <ThemedView style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+        <ConnectivityBanner message="You’re offline. Notification changes will be available after you reconnect." />
         <View style={[styles.permissionCard, { backgroundColor: theme.backgroundElement }]}>
           <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
-            <PlatformIcon color={theme.accent} name={push.permissionState === 'denied' ? 'bell-off-outline' : 'bell-outline'} size={28} />
+            <PlatformIcon color={theme.accent} name={push.permissionState === 'denied' || push.availability !== 'available' ? 'bell-off-outline' : 'bell-outline'} size={28} />
           </View>
           <ThemedText type="subtitle">{permissionTitle}</ThemedText>
           <ThemedText themeColor="textSecondary">{permissionBody}</ThemedText>
           <ThemedText themeColor="textSecondary" type="caption">
             Inbox keeps unread work inside Track. These settings control alerts when the app is closed.
           </ThemedText>
-          <PrimaryButton disabled={false} label="Open Inbox" onPress={() => router.push('/inbox')} />
-          {push.error ? <ThemedText accessibilityRole="alert" style={{ color: theme.danger }} type="small">{push.error.replaceAll('_', ' ')}</ThemedText> : null}
-          {push.permissionState === 'denied' ? (
-            <PrimaryButton disabled={push.syncing} label="Open device settings" onPress={() => void push.openDeviceSettings()} />
+          <ActionButton label="Open Inbox" onPress={() => router.push('/inbox')} />
+          {push.error ? <ThemedText accessibilityLiveRegion="assertive" accessibilityRole="alert" style={{ color: theme.danger }} type="small">{notificationErrorMessage(new Error(push.error))}</ThemedText> : null}
+          {push.availability !== 'available' ? null : push.permissionState === 'denied' ? (
+            <ActionButton disabled={push.syncing} label="Open device settings" loading={push.syncing} onPress={() => void push.openDeviceSettings()} variant="secondary" />
           ) : push.permissionState === 'not_determined' ? (
-            <PrimaryButton disabled={push.syncing} label={push.syncing ? 'Checking…' : 'Enable notifications'} onPress={() => void push.requestPermission()} />
+            <ActionButton disabled={push.syncing} label="Enable notifications" loading={push.syncing} onPress={() => void push.requestPermission()} variant="secondary" />
           ) : !push.registered ? (
-            <PrimaryButton disabled={push.syncing} label={push.syncing ? 'Connecting…' : 'Try again'} onPress={() => void push.refresh()} />
+            <ActionButton disabled={push.syncing} label="Try again" loading={push.syncing} onPress={() => void push.refresh()} variant="secondary" />
           ) : null}
         </View>
 
@@ -94,31 +115,36 @@ export default function NotificationSettingsScreen() {
           <>
           <SheetSection title="Conversation default">
             {(['all', 'mentions', 'none'] as const).map((mode) => (
-              <SheetRow key={mode} label={mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions and replies' : 'Off'} selected={global.globalMode === mode} onPress={() => update({ conversationMode: mode })} />
+              <SheetRow disabled={savingPreferences} key={mode} label={mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions and replies' : 'Off'} selected={global.globalMode === mode} onPress={() => void update({ conversationMode: mode })} />
             ))}
           </SheetSection>
 
           <SheetSection title="Task default">
             {(['important', 'all', 'muted'] as const).map((mode) => (
-              <SheetRow key={mode} label={mode === 'important' ? 'Important activity' : mode === 'all' ? 'All followed activity' : 'Off'} selected={global.taskMode === mode} onPress={() => update({ taskMode: mode })} />
+              <SheetRow disabled={savingPreferences} key={mode} label={mode === 'important' ? 'Important activity' : mode === 'all' ? 'All followed activity' : 'Off'} selected={global.taskMode === mode} onPress={() => void update({ taskMode: mode })} />
             ))}
           </SheetSection>
 
           <SheetSection title="Privacy">
-            <SheetRow label="Show message and task previews" selected={global.previewMode === 'full'} onPress={() => update({ previewMode: 'full' })} />
-            <SheetRow label="Show sender and work context" selected={global.previewMode === 'context'} onPress={() => update({ previewMode: 'context' })} />
-            <SheetRow label="Hide all work context" selected={global.previewMode === 'hidden'} onPress={() => update({ previewMode: 'hidden' })} />
+            <SheetRow disabled={savingPreferences} label="Show message and task previews" selected={global.previewMode === 'full'} onPress={() => void update({ previewMode: 'full' })} />
+            <SheetRow disabled={savingPreferences} label="Show sender and work context" selected={global.previewMode === 'context'} onPress={() => void update({ previewMode: 'context' })} />
+            <SheetRow disabled={savingPreferences} label="Hide all work context" selected={global.previewMode === 'hidden'} onPress={() => void update({ previewMode: 'hidden' })} />
           </SheetSection>
 
           <SheetSection title="Presentation">
-            <SheetRow label="Sound" trailing={<Switch accessibilityLabel="Notification sound" onValueChange={(value) => update({ soundEnabled: value })} value={global.soundEnabled} />} />
-            <SheetRow label="Badges" trailing={<Switch accessibilityLabel="Notification badges" onValueChange={(value) => update({ badgesEnabled: value })} value={global.badgesEnabled} />} />
+            <SheetRow label="Sound" trailing={<Switch accessibilityLabel="Notification sound" disabled={savingPreferences} onValueChange={(value) => void update({ soundEnabled: value })} value={global.soundEnabled} />} />
+            <SheetRow label="Badges" trailing={<Switch accessibilityLabel="Notification badges" disabled={savingPreferences} onValueChange={(value) => void update({ badgesEnabled: value })} value={global.badgesEnabled} />} />
           </SheetSection>
+          {preferenceStatus ? (
+            <ThemedText accessibilityLiveRegion={preferenceStatus === 'error' ? 'assertive' : 'polite'} style={{ color: preferenceStatus === 'error' ? theme.danger : theme.success }} type="small">
+              {preferenceStatus === 'error' ? 'Settings were not saved. Check your connection and try again.' : 'Notification settings saved.'}
+            </ThemedText>
+          ) : null}
           </>
         )}
 
         {__DEV__ ? <SheetSection title="Development diagnostics">
-          <SheetRow label="Send test notification" onPress={() => void sendTest()} />
+          <SheetRow disabled={push.availability !== 'available'} label="Send test notification" onPress={() => void sendTest()} />
           <SheetRow label="Recent delivery state" trailing={<ThemedText themeColor="textSecondary" type="caption">{diagnostics ? `${diagnostics.sampleSize} intents` : 'Loading…'}</ThemedText>} />
         </SheetSection> : null}
 
@@ -130,18 +156,8 @@ export default function NotificationSettingsScreen() {
   );
 }
 
-function PrimaryButton({ disabled, label, onPress }: { disabled: boolean; label: string; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, { backgroundColor: disabled ? theme.hairline : theme.text }]}>
-      <ThemedText style={{ color: theme.background }} type="smallBold">{label}</ThemedText>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  button: { alignItems: 'center', borderRadius: Radius.medium, marginTop: Spacing.one, minHeight: TouchTarget, justifyContent: 'center', paddingHorizontal: Spacing.four },
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
+  content: { gap: Spacing.four, padding: Spacing.four, paddingBottom: Spacing.six },
   footnote: { lineHeight: 19, paddingHorizontal: Spacing.one },
   icon: { alignItems: 'center', borderRadius: Radius.pill, height: 48, justifyContent: 'center', width: 48 },
   permissionCard: { borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.four },

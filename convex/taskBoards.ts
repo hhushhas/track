@@ -50,14 +50,22 @@ async function activeBoardsForScope(
     .collect()
 }
 
-async function insertStandardWorkflow(
+export async function ensureStandardWorkflow(
   ctx: MutationCtx,
   projectId: Id<'projects'>,
   boardId: Id<'taskBoards'>,
   now: number,
 ) {
+  const existingStates = await ctx.db
+    .query('taskWorkflowStates')
+    .withIndex('by_board_rank', (q) => q.eq('boardId', boardId))
+    .collect()
+  const existingByName = new Map(
+    existingStates.map((state) => [state.name.trim().toLowerCase(), state]),
+  )
+
   for (const [index, state] of standardWorkflow.entries()) {
-    await ctx.db.insert('taskWorkflowStates', {
+    const values = {
       projectId,
       boardId,
       name: state.name,
@@ -65,8 +73,17 @@ async function insertStandardWorkflow(
       visualToken: state.token,
       rank: String(index + 1).padStart(4, '0'),
       isDefault: state.category === 'unstarted',
-      createdAt: now,
+      archivedAt: undefined,
       updatedAt: now,
+    }
+    const existing = existingByName.get(state.name.toLowerCase())
+    if (existing) {
+      await ctx.db.patch(existing._id, values)
+      continue
+    }
+    await ctx.db.insert('taskWorkflowStates', {
+      ...values,
+      createdAt: now,
     })
   }
 }
@@ -102,7 +119,7 @@ export async function getOrCreateDefaultBoard(
     createdAt: now,
     updatedAt: now,
   })
-  await insertStandardWorkflow(ctx, input.projectId, boardId, now)
+  await ensureStandardWorkflow(ctx, input.projectId, boardId, now)
   const board = await ctx.db.get(boardId)
   if (!board) throw new Error('task_destination_invalid')
   return board
@@ -185,7 +202,7 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     })
-    await insertStandardWorkflow(ctx, args.projectId, boardId, now)
+    await ensureStandardWorkflow(ctx, args.projectId, boardId, now)
     await appendAuditEvent(ctx, {
       projectId: args.projectId,
       groupId: args.groupId,

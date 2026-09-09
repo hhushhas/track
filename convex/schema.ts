@@ -181,6 +181,7 @@ export default defineSchema({
     name: v.string(),
     clientLabel: v.optional(v.string()),
     description: v.optional(v.string()),
+    iconStorageId: v.optional(v.id('_storage')),
     accessProfile: v.optional(projectAccessProfile),
     relationshipId: v.optional(v.id('relationships')),
     proposingCompanyId: v.optional(v.id('companies')),
@@ -213,7 +214,11 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_project', ['projectId'])
+    .index('by_project_status', ['projectId', 'status'])
     .index('by_user', ['userId'])
+    .index('by_user_status', ['userId', 'status'])
+    .index('by_user_company_status', ['userId', 'companyId', 'status'])
+    .index('by_company', ['companyId'])
     .index('by_project_user', ['projectId', 'userId'])
     .index('by_project_company_status', ['projectId', 'companyId', 'status'])
     .index('by_project_company_user_term', ['projectId', 'companyId', 'userId', 'term']),
@@ -245,12 +250,14 @@ export default defineSchema({
       v.union(v.literal('active'), v.literal('suspended'), v.literal('removed'), v.literal('archived')),
     ),
     isSteward: v.optional(v.boolean()),
+    endedByProjectMembership: v.optional(v.boolean()),
     endedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_group', ['groupId'])
     .index('by_user', ['userId'])
+    .index('by_user_status', ['userId', 'status'])
     .index('by_group_user', ['groupId', 'userId'])
     .index('by_group_project_member', ['groupId', 'projectMemberId'])
     .index('by_project_member_status', ['projectMemberId', 'status']),
@@ -294,6 +301,8 @@ export default defineSchema({
     replyToMessageId: v.optional(v.id('messages')),
     forwardedFrom: v.optional(forwardedMessageSnapshot),
     notificationPreview: v.optional(v.string()),
+    revision: v.optional(v.number()),
+    editedAt: v.optional(v.number()),
     trackInvocationId: v.optional(v.id('assistantStreams')),
     createdAt: v.number(),
   })
@@ -356,6 +365,7 @@ export default defineSchema({
   })
     .index('by_project', ['projectId'])
     .index('by_group', ['groupId'])
+    .index('by_group_project_member_preference', ['groupId', 'projectMemberId', 'preference'])
     .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
     .index('by_project_member_preference', ['projectMemberId', 'preference'])
     .index('by_thread_preference', ['channelThreadId', 'preference']),

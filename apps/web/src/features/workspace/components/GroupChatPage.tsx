@@ -190,6 +190,11 @@ export function GroupChatPage({
             userId={currentUserId}
             variant="rail"
           />
+        ) : activeGroupId && !releaseConfig.threads ? (
+          <section className="track-feature-unavailable" role="status">
+            <strong>Threads are unavailable</strong>
+            <span>This project feature is disabled for the current environment.</span>
+          </section>
         ) : null}
       </div>
       <div

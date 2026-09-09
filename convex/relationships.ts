@@ -214,12 +214,18 @@ export const inviteCompany = mutation({
     if (relationship.status === 'inactive') {
       await ctx.db.patch(relationship._id, { status: 'forming', revision: relationship.revision + 1, updatedAt: Date.now() })
     }
-    return await inviteTargetCompany(ctx, {
+    const invitation = await inviteTargetCompany(ctx, {
       relationshipId: relationship._id,
       targetCompanyId: target._id,
       invitingCompanyId: args.actingCompanyId,
       actorId: actor.userId,
     })
+    await appendAuditEvent(ctx, {
+      companyId: args.actingCompanyId, relationshipId: relationship._id, actorId: actor.userId,
+      actingCompanyId: args.actingCompanyId, entityType: 'relationshipInvitation', entityId: invitation.invitationId,
+      action: 'relationship_invitation.created', after: { targetCompanyId: target._id },
+    })
+    return invitation
   },
 })
 
@@ -240,10 +246,20 @@ export const decideInvitation = mutation({
     const now = Date.now()
     if (invitation.expiresAt <= now) {
       await ctx.db.patch(invitation._id, { status: 'expired', updatedAt: now })
-      throw new Error('invitation_expired')
+      await appendAuditEvent(ctx, {
+        companyId: args.actingCompanyId, relationshipId: invitation.relationshipId, actorId: actor.userId,
+        actingCompanyId: args.actingCompanyId, entityType: 'relationshipInvitation', entityId: invitation._id,
+        action: 'relationship_invitation.expired', before: { status: 'pending' }, after: { status: 'expired' },
+      })
+      return { invitationId: invitation._id, status: 'expired' as const }
     }
     if (args.decision === 'decline') {
       await ctx.db.patch(invitation._id, { status: 'declined', decidedBy: actor.userId, decidedAt: now, updatedAt: now })
+      await appendAuditEvent(ctx, {
+        companyId: args.actingCompanyId, relationshipId: invitation.relationshipId, actorId: actor.userId,
+        actingCompanyId: args.actingCompanyId, entityType: 'relationshipInvitation', entityId: invitation._id,
+        action: 'relationship_invitation.declined', before: { status: 'pending' }, after: { status: 'declined' },
+      })
       return invitation._id
     }
     const [relationship, target, invitingCompany] = await Promise.all([
@@ -282,6 +298,11 @@ export const decideInvitation = mutation({
       await refreshRelationshipAfterParticipantChange(ctx, relationship._id, now)
     }
     await ctx.db.patch(invitation._id, { status: 'accepted', decidedBy: actor.userId, decidedAt: now, updatedAt: now })
+    await appendAuditEvent(ctx, {
+      companyId: args.actingCompanyId, relationshipId: relationship._id, actorId: actor.userId,
+      actingCompanyId: args.actingCompanyId, entityType: 'relationshipInvitation', entityId: invitation._id,
+      action: 'relationship_invitation.accepted', before: { status: 'pending' }, after: { status: 'accepted' },
+    })
     return invitation._id
   },
 })
@@ -296,6 +317,11 @@ export const leave = mutation({
     const now = Date.now()
     await ctx.db.patch(term._id, { status: 'left', endedBy: actor.userId, endedAt: now, updatedAt: now })
     await refreshRelationshipAfterParticipantChange(ctx, args.relationshipId, now)
+    await appendAuditEvent(ctx, {
+      companyId: args.actingCompanyId, relationshipId: args.relationshipId, actorId: actor.userId,
+      actingCompanyId: args.actingCompanyId, entityType: 'relationshipCompany', entityId: term._id,
+      action: 'relationship_company.left', before: { status: 'active' }, after: { status: 'left' },
+    })
     return term._id
   },
 })
@@ -324,7 +350,7 @@ export const proposeRemoval = mutation({
     const relationship = await ctx.db.get(args.relationshipId)
     if (!relationship) throw new Error('relationship_unavailable')
     const now = Date.now()
-    return await ctx.db.insert('relationshipRemovalRequests', {
+    const requestId = await ctx.db.insert('relationshipRemovalRequests', {
       relationshipId: relationship._id,
       targetCompanyId: args.targetCompanyId,
       participantRevision: relationship.participantRevision,
@@ -335,6 +361,12 @@ export const proposeRemoval = mutation({
       createdAt: now,
       updatedAt: now,
     })
+    await appendAuditEvent(ctx, {
+      companyId: args.actingCompanyId, relationshipId: relationship._id, actorId: actor.userId,
+      actingCompanyId: args.actingCompanyId, entityType: 'relationshipRemovalRequest', entityId: requestId,
+      action: 'relationship_removal.requested', after: { targetCompanyId: args.targetCompanyId },
+    })
+    return requestId
   },
 })
 
@@ -381,6 +413,12 @@ export const approveRemoval = mutation({
     await ctx.db.patch(target._id, { status: 'removed', endedBy: actor.userId, endedAt: now, updatedAt: now })
     await ctx.db.patch(request._id, { status: 'approved', decidedAt: now, updatedAt: now })
     await refreshRelationshipAfterParticipantChange(ctx, relationship._id, now)
+    await appendAuditEvent(ctx, {
+      companyId: args.actingCompanyId, relationshipId: relationship._id, actorId: actor.userId,
+      actingCompanyId: args.actingCompanyId, entityType: 'relationshipRemovalRequest', entityId: request._id,
+      action: 'relationship_company.removed', before: { status: 'active' },
+      after: { status: 'removed', targetCompanyId: request.targetCompanyId },
+    })
     return request._id
   },
 })

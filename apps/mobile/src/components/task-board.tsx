@@ -1,37 +1,24 @@
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  measure,
-  runOnJS,
-  scrollTo,
-  useAnimatedRef,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useFrameCallback,
-  useSharedValue,
-  withTiming,
-  type AnimatedRef,
-  type SharedValue,
-} from 'react-native-reanimated';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FlatList,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import type { MobileTaskView } from '@/components/task-detail-types';
-import { BoardCardHeight, TaskCard, TaskStateBanner, TaskStatusPill } from '@/components/task-ui';
+import { TaskCard, TaskStateBanner, TaskStatusPill } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
-import { hapticMedium } from '@/lib/haptics';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
-
-const ColumnWidth = 268;
-const ColumnGap = Spacing.three;
-const CardGap = Spacing.two;
-const Slot = BoardCardHeight + CardGap;
-const ListTop = 44;
-const EdgeZone = 64;
-const ScrollStep = 14;
+import { useTheme } from '@/hooks/use-theme';
+import { hapticLight } from '@/lib/haptics';
+import { boardPageIndex } from '@/lib/task-workflow';
 
 export type BoardColumnView = {
   state: Doc<'taskWorkflowStates'>;
@@ -47,516 +34,335 @@ export type TaskMoveInput = {
   workflowStateId: Id<'taskWorkflowStates'>;
 };
 
-type DragState = {
-  activeColumn: SharedValue<number>;
-  activeIndex: SharedValue<number>;
-  autoX: SharedValue<number>;
-  autoY: SharedValue<number>;
-  boardHeight: SharedValue<number>;
-  boardWidth: SharedValue<number>;
-  boardX: SharedValue<number>;
-  boardY: SharedValue<number>;
-  cardX: SharedValue<number>;
-  cardY: SharedValue<number>;
-  columnScroll: SharedValue<number[]>;
-  dragging: SharedValue<number>;
-  grabX: SharedValue<number>;
-  grabY: SharedValue<number>;
-  lift: SharedValue<number>;
-  listTop: SharedValue<number>;
-  scrollX: SharedValue<number>;
-};
-
-function useDragState(): DragState {
-  return {
-    activeColumn: useSharedValue(-1),
-    activeIndex: useSharedValue(0),
-    autoX: useSharedValue(0),
-    autoY: useSharedValue(0),
-    boardHeight: useSharedValue(0),
-    boardWidth: useSharedValue(0),
-    boardX: useSharedValue(0),
-    boardY: useSharedValue(0),
-    cardX: useSharedValue(0),
-    cardY: useSharedValue(0),
-    columnScroll: useSharedValue<number[]>([]),
-    dragging: useSharedValue(0),
-    grabX: useSharedValue(0),
-    grabY: useSharedValue(0),
-    lift: useSharedValue(0),
-    listTop: useSharedValue(0),
-    scrollX: useSharedValue(0),
-  };
-}
-
-function byRank(a: MobileTaskView, b: MobileTaskView) {
-  return a.task.rank < b.task.rank ? -1 : a.task.rank > b.task.rank ? 1 : 0;
-}
-
 const taskReasonPattern = /task_[a-z_]+(?::\d+)?/;
+const STATUS_TAB_WIDTH = 132;
+const STATUS_TAB_GAP = Spacing.two;
+const STATUS_TAB_STEP = STATUS_TAB_WIDTH + STATUS_TAB_GAP;
 
-/** Convex wraps a thrown code in a server stack, so the code is recovered
- *  rather than lost behind a blanket failure the reporter cannot act on. */
 function moveFailureReason(error: unknown) {
   if (!(error instanceof Error)) return '';
   return taskReasonPattern.exec(error.message)?.[0] ?? error.message.split('\n')[0].trim();
 }
 
 function moveFailureMessage(reason: string) {
-  if (reason.startsWith('task_conflict')) {
-    return 'This task changed elsewhere — the card returned to its saved place.';
-  }
+  if (reason.startsWith('task_conflict')) return 'This task changed elsewhere. The board has been refreshed.';
   if (reason === 'task_edit_forbidden') return 'You are not allowed to move this task.';
-  if (reason === 'task_destination_invalid') {
-    return 'That column is no longer part of this board. Reopen the board and try again.';
-  }
+  if (reason === 'task_destination_invalid') return 'That status is no longer available on this board.';
   if (reason === 'task_access_changed') return 'Your access to this task changed. Refresh and try again.';
-  if (!reason) return 'The move could not be saved.';
-  return `The move could not be saved: ${reason.replaceAll('_', ' ')}`;
+  return 'The move could not be saved. Check your connection and try again.';
 }
 
+/** A phone-first Kanban with one full-width, vertically scrolling status. */
 export function TaskBoard({
   assigneeName,
   columns,
+  focusedTaskId,
   onMove,
   onOpen,
   readOnly,
+  states,
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
+  focusedTaskId?: string;
   onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
   readOnly: boolean;
+  states: Array<Doc<'taskWorkflowStates'>>;
 }) {
   const theme = useTheme();
   const bottomContentInset = useBottomTabContentInset();
-  const rootRef = useAnimatedRef<Animated.View>();
-  const scrollRef = useAnimatedRef<Animated.ScrollView>();
-  const drag = useDragState();
-  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
-  const [pending, setPending] = useState<{ index: number; stateId: string; taskId: string } | null>(null);
+  const [activeStateId, setActiveStateId] = useState<string>('');
   const [moveTarget, setMoveTarget] = useState<MobileTaskView | null>(null);
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ message: string; retry?: TaskMoveInput } | null>(null);
+  const [pageWidth, setPageWidth] = useState(0);
+  const appliedFocusRef = useRef<string | undefined>(undefined);
+  const pagerRef = useRef<FlatList<BoardColumnView>>(null);
+  const statusListRef = useRef<FlatList<BoardColumnView>>(null);
+  const taskListRefs = useRef(new Map<string, FlatList<MobileTaskView>>());
+  const revealedFocusRef = useRef<string | undefined>(undefined);
+  const movePendingRef = useRef(false);
 
-  const display = useMemo(() => {
-    const sorted = columns.map((column) => ({ ...column, tasks: [...column.tasks].sort(byRank) }));
-    const moved = pending && sorted.flatMap((column) => column.tasks)
-      .find((item) => item.task._id === pending.taskId);
-    if (!pending || !moved) return sorted;
-    return sorted.map((column) => {
-      const tasks = column.tasks.filter((item) => item.task._id !== pending.taskId);
-      if (column.state._id !== pending.stateId) return { ...column, tasks };
-      tasks.splice(Math.min(pending.index, tasks.length), 0, moved);
-      return { ...column, tasks };
+  useEffect(() => {
+    const shouldApplyFocus = Boolean(focusedTaskId) && appliedFocusRef.current !== focusedTaskId;
+    const focusedColumn = shouldApplyFocus
+      ? columns.find((column) => column.tasks.some((item) => item.task._id === focusedTaskId))
+      : undefined;
+    if (!focusedTaskId) appliedFocusRef.current = undefined;
+    if (focusedColumn) {
+      appliedFocusRef.current = focusedTaskId;
+      setActiveStateId(focusedColumn.state._id);
+      return;
+    }
+    if (columns.some((column) => column.state._id === activeStateId)) return;
+    const preferred = columns.find((column) => column.tasks.length > 0) ?? columns[0];
+    setActiveStateId(preferred?.state._id ?? '');
+  }, [activeStateId, columns, focusedTaskId]);
+
+  const activeColumn = useMemo(
+    () => columns.find((column) => column.state._id === activeStateId) ?? columns[0],
+    [activeStateId, columns],
+  );
+  const activeColumnIndex = Math.max(
+    0,
+    columns.findIndex((column) => column.state._id === activeColumn?.state._id),
+  );
+
+  useEffect(() => {
+    if (!pageWidth) return;
+    pagerRef.current?.scrollToOffset({ animated: true, offset: activeColumnIndex * pageWidth });
+  }, [activeColumnIndex, pageWidth]);
+
+  useEffect(() => {
+    statusListRef.current?.scrollToIndex({
+      animated: true,
+      index: activeColumnIndex,
+      viewPosition: 0.5,
     });
-  }, [columns, pending]);
+  }, [activeColumnIndex]);
 
-  const dragged = display.flatMap((column) => column.tasks).find((item) => item.task._id === dragTaskId);
+  const activateColumn = useCallback((stateId: string) => {
+    if (!columns.some((column) => column.state._id === stateId)) return;
+    hapticLight();
+    setActiveStateId(stateId);
+  }, [columns]);
 
-  async function commit(input: TaskMoveInput, optimistic: { index: number; stateId: string }) {
-    setPending({ ...optimistic, taskId: input.taskId });
+  const registerTaskList = useCallback((
+    stateId: string,
+    columnTasks: MobileTaskView[],
+    list: FlatList<MobileTaskView> | null,
+  ) => {
+    if (!list) {
+      taskListRefs.current.delete(stateId);
+      return;
+    }
+    taskListRefs.current.set(stateId, list);
+    const focusedIndex = columnTasks.findIndex((item) => item.task._id === focusedTaskId);
+    if (stateId !== activeStateId || focusedIndex < 0 || revealedFocusRef.current === focusedTaskId) return;
+    requestAnimationFrame(() => {
+      list.scrollToIndex({ animated: false, index: focusedIndex, viewPosition: 0.3 });
+      revealedFocusRef.current = focusedTaskId;
+    });
+  }, [activeStateId, focusedTaskId]);
+
+  useEffect(() => {
+    if (!focusedTaskId) revealedFocusRef.current = undefined;
+  }, [focusedTaskId]);
+
+  function measurePager(event: LayoutChangeEvent) {
+    const nextWidth = Math.round(event.nativeEvent.layout.width);
+    if (nextWidth > 0 && nextWidth !== pageWidth) setPageWidth(nextWidth);
+  }
+
+  function finishPageSwipe(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (!pageWidth) return;
+    const index = boardPageIndex(event.nativeEvent.contentOffset.x, pageWidth, columns.length);
+    const next = columns[index];
+    if (next && next.state._id !== activeStateId) setActiveStateId(next.state._id);
+  }
+
+  async function commit(input: TaskMoveInput) {
+    if (movePendingRef.current) return;
+    movePendingRef.current = true;
     setFailure(null);
+    setPendingTaskId(input.taskId);
     try {
       await onMove(input);
+      setActiveStateId(input.workflowStateId);
     } catch (error) {
       const reason = moveFailureReason(error);
       setFailure(reason === 'task_open_subtasks_confirmation_required'
         ? { message: 'This task still has open checklist items.', retry: { ...input, confirmOpenSubtasks: true } }
         : { message: moveFailureMessage(reason) });
     } finally {
-      setPending(null);
+      movePendingRef.current = false;
+      setPendingTaskId(null);
     }
-  }
-
-  // The dragged task arrives from the worklet rather than from React state, so a
-  // gesture that began before the last render still resolves the right card.
-  function drop(taskId: string, columnIndex: number, index: number) {
-    const target = display[Math.min(Math.max(columnIndex, 0), display.length - 1)];
-    const item = display.flatMap((column) => column.tasks).find((row) => row.task._id === taskId);
-    setDragTaskId(null);
-    if (!target || !item) return;
-    const others = target.tasks.filter((row) => row.task._id !== item.task._id);
-    const position = Math.min(Math.max(index, 0), others.length);
-    const unchanged = target.state._id === item.task.workflowStateId &&
-      target.tasks.findIndex((row) => row.task._id === item.task._id) === position;
-    if (unchanged) return;
-    void commit({
-      afterTaskId: others[position - 1]?.task._id,
-      beforeTaskId: others[position]?.task._id,
-      expectedRevision: item.task.revision,
-      taskId: item.task._id,
-      workflowStateId: target.state._id,
-    }, { index: position, stateId: target.state._id });
   }
 
   function moveTo(state: Doc<'taskWorkflowStates'>) {
     const item = moveTarget;
     setMoveTarget(null);
     if (!item || state._id === item.task.workflowStateId) return;
-    const others = display.find((column) => column.state._id === state._id)?.tasks ?? [];
     void commit({
-      afterTaskId: others[others.length - 1]?.task._id,
       expectedRevision: item.task.revision,
       taskId: item.task._id,
       workflowStateId: state._id,
-    }, { index: others.length, stateId: state._id });
+    });
   }
 
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    drag.scrollX.value = event.contentOffset.x;
-  });
-
-  useFrameCallback(() => {
-    if (!drag.dragging.value || !drag.autoX.value) return;
-    const limit = Math.max(0, columns.length * (ColumnWidth + ColumnGap) - drag.boardWidth.value);
-    const next = Math.min(Math.max(drag.scrollX.value + drag.autoX.value * ScrollStep, 0), limit);
-    drag.scrollX.value = next;
-    scrollTo(scrollRef, next, 0, false);
-  });
-
-  const overlayStyle = useAnimatedStyle(() => ({
-    opacity: drag.lift.value,
-    transform: [
-      { translateX: drag.cardX.value },
-      { translateY: drag.cardY.value },
-      { scale: 1 + drag.lift.value * 0.05 },
-    ],
-  }));
+  if (!activeColumn) {
+    const filteredOut = states.length > 0;
+    return (
+      <View style={[styles.empty, styles.emptyBoard, { borderColor: theme.hairline }]}>
+        <ThemedText type="title">{filteredOut ? 'No matching tasks' : 'No statuses configured'}</ThemedText>
+        <ThemedText themeColor="textSecondary" type="small">
+          {filteredOut
+            ? 'Adjust the search or filters to show this board again.'
+            : readOnly ? 'This read-only board has no visible workflow.' : 'Add a workflow status before creating tasks.'}
+        </ThemedText>
+      </View>
+    );
+  }
 
   return (
-    <Animated.View ref={rootRef} style={styles.root}>
+    <View style={styles.root}>
       {failure ? (
         <TaskStateBanner
           action={failure.retry
-            ? { label: 'Complete anyway', onPress: () => {
-              const retry = failure.retry!;
-              const column = display.find((item) => item.state._id === retry.workflowStateId);
-              void commit(retry, { index: column?.tasks.length ?? 0, stateId: retry.workflowStateId });
-            } }
+            ? { label: 'Complete anyway', onPress: () => void commit(failure.retry!) }
             : { label: 'Dismiss', onPress: () => setFailure(null) }}
           icon="alert-circle"
           message={failure.message}
           tone="danger"
         />
       ) : null}
-                <Animated.ScrollView
-        contentContainerStyle={styles.columns}
+
+      <FlatList
+        accessibilityRole="tablist"
+        contentContainerStyle={styles.statusTabs}
+        data={columns}
+        getItemLayout={(_, index) => ({ index, length: STATUS_TAB_STEP, offset: STATUS_TAB_STEP * index })}
         horizontal
-        onScroll={scrollHandler}
-        ref={scrollRef}
-        scrollEnabled={!dragTaskId}
-        scrollEventThrottle={16}
-        showsHorizontalScrollIndicator={false}>
-        {display.map((column, index) => (
-          <BoardColumn
-            assigneeName={assigneeName}
-            bottomContentInset={bottomContentInset}
-            column={column}
-            columnCount={display.length}
-            drag={drag}
-            dragTaskId={dragTaskId}
-            index={index}
-            key={column.state._id}
-            onDrop={drop}
-            onLift={setDragTaskId}
-            onOpen={onOpen}
-            onStatusPress={setMoveTarget}
-            readOnly={readOnly}
-            rootRef={rootRef}
+        ItemSeparatorComponent={() => <View style={styles.statusTabSeparator} />}
+        keyExtractor={(column) => column.state._id}
+        ref={statusListRef}
+        renderItem={({ item: column }) => {
+          const selected = column.state._id === activeColumn.state._id;
+          return (
+            <Pressable
+              accessibilityHint="Shows this Kanban column"
+              accessibilityLabel={`${column.state.name}, ${column.tasks.length} tasks`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              onPress={() => activateColumn(column.state._id)}
+              style={[styles.statusTab, {
+                backgroundColor: selected ? theme.backgroundSelected : theme.backgroundElement,
+                borderColor: selected ? theme.accent : theme.hairline,
+              }]}>
+              <ThemedText numberOfLines={1} themeColor={selected ? 'text' : 'textSecondary'} type="smallBold">
+                {column.state.name}
+              </ThemedText>
+              <View style={[styles.count, { backgroundColor: selected ? theme.accentSoft : theme.backgroundElevated }]}>
+                <ThemedText themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">
+                  {column.tasks.length}
+                </ThemedText>
+              </View>
+            </Pressable>
+          );
+        }}
+        showsHorizontalScrollIndicator={false}
+        style={styles.statusScroller}
+      />
+
+      <View onLayout={measurePager} style={styles.columnViewport}>
+        {pageWidth ? (
+          <FlatList
+            data={columns}
+            decelerationRate="fast"
+            disableIntervalMomentum
+            getItemLayout={(_, index) => ({ index, length: pageWidth, offset: pageWidth * index })}
+            horizontal
+            keyExtractor={(column) => column.state._id}
+            onMomentumScrollEnd={finishPageSwipe}
+            pagingEnabled
+            ref={pagerRef}
+            renderItem={({ item: column, index }) => (
+              <View style={[styles.columnPage, { width: pageWidth }]}>
+                <View style={styles.columnHeading}>
+                  <TaskStatusPill category={column.state.category} label={column.state.name} />
+                  <ThemedText themeColor="textSecondary" type="caption">
+                    {index + 1} of {columns.length} · {column.tasks.length} {column.tasks.length === 1 ? 'task' : 'tasks'}
+                  </ThemedText>
+                </View>
+
+                <FlatList
+                  contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
+                  data={column.tasks}
+                  keyExtractor={(item) => item.task._id}
+                  ListEmptyComponent={(
+                    <View style={[styles.empty, { borderColor: theme.hairline }]}>
+                      <ThemedText type="title">No tasks in {column.state.name}</ThemedText>
+                      <ThemedText themeColor="textSecondary" type="small">
+                        {readOnly ? 'This board is read-only.' : 'Move a task here from its status menu.'}
+                      </ThemedText>
+                    </View>
+                  )}
+                  nestedScrollEnabled
+                  onScrollToIndexFailed={({ averageItemLength, index }) => {
+                    const list = taskListRefs.current.get(column.state._id);
+                    list?.scrollToOffset({ animated: false, offset: averageItemLength * index });
+                    requestAnimationFrame(() => list?.scrollToIndex({ animated: false, index, viewPosition: 0.3 }));
+                  }}
+                  ref={(list) => registerTaskList(column.state._id, column.tasks, list)}
+                  renderItem={({ item }) => (
+                    <View style={[styles.cardWrap, {
+                      borderColor: item.task._id === focusedTaskId ? theme.accent : 'transparent',
+                      opacity: pendingTaskId === item.task._id ? 0.55 : 1,
+                    }]}>
+                      <TaskCard
+                        assignee={assigneeName(item)}
+                        category={item.state?.category}
+                        description={item.task.description}
+                        dueDate={item.task.dueDate}
+                        evidence={item.references.length > 0}
+                        focused={item.task._id === focusedTaskId}
+                        onLongPress={readOnly || pendingTaskId !== null ? undefined : () => setMoveTarget(item)}
+                        onPress={() => onOpen(item)}
+                        onStatusPress={readOnly || pendingTaskId !== null ? undefined : () => setMoveTarget(item)}
+                        priority={item.task.priority}
+                        publicKey={item.task.publicKey}
+                        stateName={item.state?.name ?? 'Unknown'}
+                        title={item.task.title}
+                        variant="board"
+                      />
+                    </View>
+                  )}
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            )}
+            showsHorizontalScrollIndicator={false}
+            style={styles.pager}
           />
-        ))}
-      </Animated.ScrollView>
-      {dragged ? (
-        <Animated.View pointerEvents="none" style={[styles.overlay, { shadowColor: theme.text }, overlayStyle]}>
-          <TaskCard
-            assignee={assigneeName(dragged)}
-            category={dragged.state?.category}
-            description={dragged.task.description}
-            dueDate={dragged.task.dueDate}
-            evidence={dragged.references.length > 0}
-            onPress={() => undefined}
-            priority={dragged.task.priority}
-            publicKey={dragged.task.publicKey}
-            stateName={dragged.state?.name ?? 'Unknown'}
-            title={dragged.task.title}
-            variant="board"
-          />
-        </Animated.View>
-      ) : null}
-      <OptionsSheet onClose={() => setMoveTarget(null)} title="Move to" visible={Boolean(moveTarget)}>
+        ) : null}
+      </View>
+
+      <OptionsSheet onClose={() => setMoveTarget(null)} title="Move to status" visible={Boolean(moveTarget)}>
         <SheetSection title={moveTarget?.task.title}>
-          {columns.map((column) => (
+          {states.map((state) => (
             <SheetRow
-              icon={column.state.category === 'completed' ? 'check-circle' : 'circle-outline'}
-              key={column.state._id}
-              label={column.state.name}
-              onPress={() => moveTo(column.state)}
-              selected={column.state._id === moveTarget?.task.workflowStateId}
+              icon={state.category === 'completed' ? 'check-circle' : 'circle-outline'}
+              key={state._id}
+              label={state.name}
+              onPress={() => moveTo(state)}
+              selected={state._id === moveTarget?.task.workflowStateId}
             />
           ))}
         </SheetSection>
       </OptionsSheet>
-    </Animated.View>
-  );
-}
-
-function BoardColumn({
-  assigneeName,
-  bottomContentInset,
-  column,
-  columnCount,
-  drag,
-  dragTaskId,
-  index,
-  onDrop,
-  onLift,
-  onOpen,
-  onStatusPress,
-  readOnly,
-  rootRef,
-}: {
-  assigneeName: (item: MobileTaskView) => string | undefined;
-  bottomContentInset: number;
-  column: BoardColumnView;
-  columnCount: number;
-  drag: DragState;
-  dragTaskId: string | null;
-  index: number;
-  onDrop: (taskId: string, column: number, index: number) => void;
-  onLift: (taskId: string | null) => void;
-  onOpen: (item: MobileTaskView) => void;
-  onStatusPress: (item: MobileTaskView) => void;
-  readOnly: boolean;
-  rootRef: AnimatedRef<Animated.View>;
-}) {
-  const theme = useTheme();
-  const listRef = useAnimatedRef<Animated.ScrollView>();
-  const content = useSharedValue(0);
-  const viewport = useSharedValue(0);
-
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    const offsets = [...drag.columnScroll.value];
-    offsets[index] = event.contentOffset.y;
-    drag.columnScroll.value = offsets;
-  });
-
-  useFrameCallback(() => {
-    if (!drag.dragging.value || drag.activeColumn.value !== index || !drag.autoY.value) return;
-    const limit = Math.max(0, content.value - viewport.value);
-    const current = drag.columnScroll.value[index] ?? 0;
-    const next = Math.min(Math.max(current + drag.autoY.value * ScrollStep, 0), limit);
-    const offsets = [...drag.columnScroll.value];
-    offsets[index] = next;
-    drag.columnScroll.value = offsets;
-    scrollTo(listRef, 0, next, false);
-  });
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    opacity: drag.dragging.value && drag.activeColumn.value === index ? 1 : 0,
-    transform: [{ translateY: drag.activeIndex.value * Slot - CardGap / 2 }],
-  }));
-
-  return (
-    <View style={styles.column}>
-      {/* The count sits against its own chip: pushed to the column edge it read
-          as a label on the next column. */}
-      <View style={[styles.columnHeading, {
-        backgroundColor: column.state.category === 'completed'
-          ? theme.successSoft
-          : column.state.category === 'started' ? theme.accentSoft : theme.backgroundElement,
-      }]}>
-        <TaskStatusPill category={column.state.category} label={column.state.name} />
-        <ThemedText
-          accessibilityLabel={`${column.tasks.length} ${column.tasks.length === 1 ? 'task' : 'tasks'} in ${column.state.name}`}
-          themeColor="textSecondary"
-          type="captionBold">
-          {column.tasks.length}
-        </ThemedText>
-      </View>
-      <Animated.ScrollView
-        contentContainerStyle={[styles.columnBody, { paddingBottom: bottomContentInset }]}
-        onContentSizeChange={(_, height) => { content.value = height; }}
-        onLayout={(event) => { viewport.value = event.nativeEvent.layout.height; }}
-        onScroll={scrollHandler}
-        ref={listRef}
-        scrollEnabled={!dragTaskId}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}>
-        <Animated.View style={[styles.indicator, { backgroundColor: theme.accent }, indicatorStyle]} />
-        {column.tasks.map((item, position) => (
-          <BoardCard
-            assigneeName={assigneeName}
-            columnCount={columnCount}
-            columnIndex={index}
-            drag={drag}
-            dragging={dragTaskId === item.task._id}
-            item={item}
-            key={item.task._id}
-            onDrop={onDrop}
-            onLift={onLift}
-            onOpen={onOpen}
-            onStatusPress={onStatusPress}
-            position={position}
-            readOnly={readOnly}
-            rootRef={rootRef}
-          />
-        ))}
-        {!column.tasks.length ? (
-          <View style={[styles.columnEmpty, { borderColor: theme.hairline }]}>
-            <ThemedText themeColor="textTertiary" type="small">Drop a task here</ThemedText>
-          </View>
-        ) : null}
-      </Animated.ScrollView>
     </View>
   );
 }
 
-function BoardCard({
-  assigneeName,
-  columnCount,
-  columnIndex,
-  drag,
-  dragging,
-  item,
-  onDrop,
-  onLift,
-  onOpen,
-  onStatusPress,
-  position,
-  readOnly,
-  rootRef,
-}: {
-  assigneeName: (item: MobileTaskView) => string | undefined;
-  columnCount: number;
-  columnIndex: number;
-  drag: DragState;
-  dragging: boolean;
-  item: MobileTaskView;
-  onDrop: (taskId: string, column: number, index: number) => void;
-  onLift: (taskId: string | null) => void;
-  onOpen: (item: MobileTaskView) => void;
-  onStatusPress: (item: MobileTaskView) => void;
-  position: number;
-  readOnly: boolean;
-  rootRef: AnimatedRef<Animated.View>;
-}) {
-  const cardRef = useAnimatedRef<Animated.View>();
-  const taskId = item.task._id;
-
-  const pan = Gesture.Pan()
-    .enabled(!readOnly)
-    .activateAfterLongPress(220)
-    .onStart((event) => {
-      const card = measure(cardRef);
-      const board = measure(rootRef);
-      if (!card || !board) return;
-      drag.boardX.value = board.pageX;
-      drag.boardY.value = board.pageY;
-      drag.boardWidth.value = board.width;
-      drag.boardHeight.value = board.height;
-      drag.grabX.value = event.absoluteX - card.pageX;
-      drag.grabY.value = event.absoluteY - card.pageY;
-      drag.cardX.value = card.pageX - board.pageX;
-      drag.cardY.value = card.pageY - board.pageY;
-      // Derived from the lifted card so a banner above the columns cannot skew
-      // the drop index.
-      drag.listTop.value = drag.cardY.value - position * Slot
-        + (drag.columnScroll.value[columnIndex] ?? 0);
-      drag.activeColumn.value = columnIndex;
-      drag.activeIndex.value = position;
-      drag.dragging.value = 1;
-      drag.lift.value = withTiming(1, { duration: 120 });
-      runOnJS(hapticMedium)();
-      runOnJS(onLift)(taskId);
-    })
-    .onUpdate((event) => {
-      if (!drag.dragging.value) return;
-      drag.cardX.value = event.absoluteX - drag.grabX.value - drag.boardX.value;
-      drag.cardY.value = event.absoluteY - drag.grabY.value - drag.boardY.value;
-      const localX = drag.cardX.value + ColumnWidth / 2 + drag.scrollX.value;
-      const column = Math.min(
-        Math.max(Math.floor(localX / (ColumnWidth + ColumnGap)), 0),
-        Math.max(columnCount - 1, 0),
-      );
-      drag.activeColumn.value = column;
-      const offset = drag.columnScroll.value[column] ?? 0;
-      drag.activeIndex.value = Math.max(
-        0,
-        Math.round((drag.cardY.value - drag.listTop.value + offset) / Slot),
-      );
-      drag.autoX.value = event.absoluteX < drag.boardX.value + EdgeZone
-        ? -1
-        : event.absoluteX > drag.boardX.value + drag.boardWidth.value - EdgeZone ? 1 : 0;
-      drag.autoY.value = event.absoluteY < drag.boardY.value + drag.listTop.value + EdgeZone
-        ? -1
-        : event.absoluteY > drag.boardY.value + drag.boardHeight.value - EdgeZone ? 1 : 0;
-    })
-    .onEnd(() => {
-      if (!drag.dragging.value) return;
-      runOnJS(onDrop)(taskId, drag.activeColumn.value, drag.activeIndex.value);
-    })
-    .onFinalize(() => {
-      drag.dragging.value = 0;
-      drag.autoX.value = 0;
-      drag.autoY.value = 0;
-      drag.activeColumn.value = -1;
-      drag.lift.value = withTiming(0, { duration: 120 });
-      runOnJS(onLift)(null);
-    });
-
-  return (
-    <GestureDetector gesture={pan}>
-      <Animated.View ref={cardRef} style={dragging ? styles.lifted : undefined}>
-        <TaskCard
-          assignee={assigneeName(item)}
-          category={item.state?.category}
-          description={item.task.description}
-          dueDate={item.task.dueDate}
-          evidence={item.references.length > 0}
-          onPress={() => onOpen(item)}
-          onStatusPress={readOnly ? undefined : () => onStatusPress(item)}
-          priority={item.task.priority}
-          publicKey={item.task.publicKey}
-          stateName={item.state?.name ?? 'Unknown'}
-          title={item.task.title}
-          variant="board"
-        />
-      </Animated.View>
-    </GestureDetector>
-  );
-}
-
 const styles = StyleSheet.create({
-  column: { width: ColumnWidth },
-  columnBody: { gap: CardGap },
-  columnEmpty: {
+  columnPage: { flex: 1, gap: Spacing.three, paddingHorizontal: Spacing.one },
+  columnHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  columnViewport: { flex: 1, marginHorizontal: -Spacing.one, minHeight: 0 },
+  cardWrap: { borderRadius: Radius.large, borderWidth: 2 },
+  count: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minWidth: 24, paddingHorizontal: 6, paddingVertical: 2 },
+  empty: { borderCurve: 'continuous', borderRadius: Radius.large, borderStyle: 'dashed', borderWidth: 1, gap: Spacing.one, marginTop: Spacing.four, padding: Spacing.five },
+  emptyBoard: { marginTop: 0 },
+  list: { gap: Spacing.three, paddingTop: Spacing.two },
+  pager: { flex: 1 },
+  root: { flex: 1, gap: Spacing.three, minHeight: 0 },
+  statusTab: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: TouchTarget, paddingHorizontal: Spacing.three, width: STATUS_TAB_WIDTH },
+  statusTabSeparator: { width: STATUS_TAB_GAP },
+  statusScroller: { flexGrow: 0, marginHorizontal: -Spacing.one, overflow: 'visible' },
+  statusTabs: {
     alignItems: 'center',
-    borderRadius: Radius.large,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 112,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: Spacing.one,
   },
-  columnHeading: {
-    alignItems: 'center',
-    borderRadius: Radius.medium,
-    flexDirection: 'row',
-    gap: Spacing.two,
-    height: ListTop,
-    paddingHorizontal: Spacing.three,
-  },
-  columns: { gap: ColumnGap, paddingRight: Spacing.three },
-  indicator: { borderRadius: Radius.small, height: 3, left: 0, position: 'absolute', right: 0, top: 0 },
-  lifted: { opacity: 0.25 },
-  overlay: {
-    elevation: 12,
-    left: 0,
-    position: 'absolute',
-    shadowOffset: { height: 10, width: 0 },
-    shadowOpacity: 0.28,
-    shadowRadius: 18,
-    top: 0,
-    width: ColumnWidth,
-  },
-  root: { flex: 1, gap: Spacing.two },
 });

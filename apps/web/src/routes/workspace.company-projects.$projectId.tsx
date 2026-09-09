@@ -8,17 +8,23 @@ export const Route = createFileRoute('/workspace/company-projects/$projectId')({
     companyId: String(search.companyId ?? ''),
     groupId: String(search.groupId ?? ''),
     membershipId: String(search.membershipId ?? ''),
+    view:
+      search.view === 'overview' ? 'overview' as const
+        : search.view === 'evidence' ? 'evidence' as const
+          : search.view === 'settings' ? 'settings' as const
+            : 'channels' as const,
   }),
   component: CompanyProjectRoute,
 })
 
 function CompanyProjectRoute() {
   const { projectId } = Route.useParams()
-  const { companyId, groupId, membershipId } = Route.useSearch()
+  const { companyId, groupId, membershipId, view } = Route.useSearch()
   return <CompanyProjectPage
     actingCompanyId={companyId as Id<'companies'>}
     initialGroupId={groupId ? groupId as Id<'groups'> : undefined}
     projectId={projectId as Id<'projects'>}
     projectMemberId={membershipId as Id<'projectMembers'>}
+    view={view}
   />
 }

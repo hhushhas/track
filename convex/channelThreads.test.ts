@@ -181,6 +181,11 @@ describe('Channel threads', () => {
 
     expect(timeline.map((message) => message._id)).toEqual([sourceMessageId])
     expect(replies.map((item) => item.message._id)).toEqual([replyId])
+    await t.run(async (ctx) => await ctx.db.patch(sourceMessageId, { channelThreadId: threadId }))
+    expect(await ownerActor.query(api.channelThreads.get, { threadId, userId: owner }))
+      .toMatchObject({ source: { messageId: sourceMessageId, body: 'We should decide this separately.' } })
+    expect((await ownerActor.query(api.channelThreads.listMessages, { threadId, userId: owner }))
+      .map((item) => item.message._id)).toEqual([replyId])
     expect(memberThreads[0]).toMatchObject({ following: true, replyCount: 1, unread: true })
     expect(memberThreads[0].thread).toMatchObject({ name: 'Decision log', sourceMessageId })
   })

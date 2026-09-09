@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
+import { appToast } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
@@ -46,19 +47,25 @@ export function TaskAdminDialog({
   const [editing, setEditing] = useState<string>()
   const [error, setError] = useState('')
 
-  async function run(action: () => Promise<unknown>) {
+  async function run(action: () => Promise<unknown>, successMessage?: string) {
     setError('')
     try {
       await action()
+      if (successMessage) appToast.success(successMessage)
     } catch (failure) {
-      setError(taskError(failure))
+      const message = taskError(failure)
+      setError(message)
+      appToast.error('Change not saved', message)
     }
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    await run(() => createBoard({ projectId, name, ...identity }))
-    setName('')
+    const boardName = name.trim()
+    await run(async () => {
+      await createBoard({ projectId, name: boardName, ...identity })
+      setName('')
+    }, `Board “${boardName}” created`)
   }
 
   return <Dialog onOpenChange={onOpenChange} open={open}><DialogContent className="task-admin-dialog">
@@ -76,7 +83,7 @@ export function TaskAdminDialog({
       {editing === item.board._id && !item.board.archivedAt ? <BoardEditor board={item} identity={identity} onError={setError} /> : null}
       </article>)}
     </div>
-    {error ? <p className="task-form-error" role="alert">{error}</p> : null}
+    {error ? <p className="task-form-error">{error}</p> : null}
   </DialogContent></Dialog>
 }
 
@@ -119,8 +126,11 @@ function BoardEditor({ board, identity, onError }: { board: TaskBoardView; ident
         states: states.map(({ stateId, name: stateName, category, visualToken }) => ({ stateId, name: stateName, category, visualToken })),
         ...identity,
       })
+      appToast.success('Board and workflow saved')
     } catch (failure) {
-      onError(taskError(failure))
+      const message = taskError(failure)
+      onError(message)
+      appToast.error('Board not saved', message)
     }
   }
 

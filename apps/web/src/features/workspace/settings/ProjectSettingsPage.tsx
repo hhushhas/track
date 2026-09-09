@@ -1,4 +1,4 @@
-import { Bell, Pencil, Settings2, Trash2, Upload } from 'lucide-react'
+import { Bell, FileSearch, Hash, Pencil, Settings2, ShieldCheck, Trash2, TriangleAlert, Users } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
@@ -39,8 +39,16 @@ export function ProjectSettingsPage({
 }) {
   return (
     <div className="track-settings-page">
+      <header className="track-page-intro">
+        <p className="mono-label">Project settings</p>
+        <h2>Settings</h2>
+        <p>Manage project details, access, channels, evidence, and notifications.</p>
+      </header>
+      <nav aria-label="Project settings sections" className="track-settings-nav">
+        <a href="#general">General</a><a href="#members">Members</a><a href="#access">Access</a><a href="#channels">Channels</a><a href="#evidence">Evidence</a><a href="#notifications">Notifications</a><a href="#danger-zone">Danger zone</a>
+      </nav>
       <section className="track-settings-panel">
-        <div className="track-settings-section">
+        <div className="track-settings-section" id="general">
           <div className="track-settings-section-head">
             <div>
               <span className="mono-label">General</span>
@@ -66,33 +74,18 @@ export function ProjectSettingsPage({
                 <Pencil size={14} />
                 Edit project
               </Button>
-              {canDeleteProject ? (
-                <Button
-                  className="track-button danger"
-                  disabled={busyAction === 'delete-project'}
-                  onClick={() => {
-                    if (window.confirm(`Delete ${activeProject.name}? This removes its channels, messages, files, and members.`)) {
-                      void onDeleteProject()
-                    }
-                  }}
-                  type="button"
-                >
-                  <Trash2 size={14} />
-                  Delete project
-                </Button>
-              ) : null}
             </div>
           ) : null}
         </div>
 
         {canManageProject ? (
-          <div className="track-settings-section">
+          <div className="track-settings-section" id="channels">
             <div className="track-settings-section-head">
               <div>
                 <span className="mono-label">Channels</span>
                 <h2>Conversation lanes</h2>
               </div>
-              <Settings2 size={14} />
+              <Hash size={14} />
             </div>
             <div className="track-settings-group-list">
               {groups.map((group) => {
@@ -137,7 +130,7 @@ export function ProjectSettingsPage({
           </div>
         ) : null}
 
-        <div className="track-settings-section">
+        <div className="track-settings-section" id="notifications">
           <div className="track-settings-section-head">
             <div>
               <span className="mono-label">Notifications</span>
@@ -169,13 +162,13 @@ export function ProjectSettingsPage({
           </div>
         </div>
 
-        <div className="track-settings-section">
+        <div className="track-settings-section" id="members">
           <div className="track-settings-section-head">
             <div>
-              <span className="mono-label">Access</span>
-              <h2>Project members</h2>
+                <span className="mono-label">Members</span>
+                <h2>Project members</h2>
             </div>
-            <Upload size={14} />
+            <Users size={14} />
           </div>
           <div className="track-settings-row">
             <span>Members</span>
@@ -187,6 +180,22 @@ export function ProjectSettingsPage({
             </Button>
           </div>
         </div>
+
+        <div className="track-settings-section" id="access">
+          <div className="track-settings-section-head"><div><span className="mono-label">Project access</span><h2>Access and roles</h2><p>Companies, project members, roles, channel access, and pending or archived access remain distinct.</p></div><ShieldCheck size={14} /></div>
+          <div className="track-access-groups"><span>Companies</span><strong>Based on represented memberships</strong><span>Roles</span><strong>Manager and member</strong><span>Channel access</span><strong>Managed per channel</strong><span>Pending access</span><strong>Handled through invitations</strong><span>Archived access</span><strong>Read-only when retained</strong></div>
+        </div>
+
+        <div className="track-settings-section" id="evidence">
+          <div className="track-settings-section-head"><div><span className="mono-label">Evidence</span><h2>Evidence access</h2><p>Evidence follows the access boundary of its source message or thread.</p></div><FileSearch size={14} /></div>
+        </div>
+
+        {canManageProject && canDeleteProject && activeProject ? (
+          <div className="track-settings-section track-danger-zone" id="danger-zone">
+            <div className="track-settings-section-head"><div><span className="mono-label">Danger zone</span><h2>Delete project</h2><p>Permanently removes its channels, messages, files, and members.</p></div><TriangleAlert size={15} /></div>
+            <Button className="track-button danger" disabled={busyAction === 'delete-project'} onClick={() => { if (window.confirm(`Delete ${activeProject.name}? This removes its channels, messages, files, and members.`)) void onDeleteProject() }} type="button"><Trash2 size={14} /> Delete project</Button>
+          </div>
+        ) : null}
       </section>
     </div>
   )

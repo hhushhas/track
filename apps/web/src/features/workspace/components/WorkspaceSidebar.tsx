@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
-import { Building2, ChevronDown, FolderKanban, ListTodo, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound } from 'lucide-react'
+import { Building2, ChevronDown, FolderKanban, ListTodo, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings2, UserRound, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { api } from '../../../../../../convex/_generated/api'
@@ -24,6 +25,8 @@ import { useReleaseConfig } from '#/lib/release-config'
 type ProjectItem = {
   project: Doc<'projects'>
   membership: Doc<'projectMembers'>
+  company?: { _id: Id<'companies'>; displayName: string } | null
+  projectType?: 'legacy' | 'company' | 'shared'
 }
 
 type WorkspaceSidebarProps = {
@@ -48,13 +51,13 @@ type WorkspaceSidebarProps = {
   onNavCollapsedChange: (collapsed: boolean | ((collapsed: boolean) => boolean)) => void
   onOpenProjectSearch: () => void
   onPreloadGroupRoute: (groupId: Id<'groups'>) => void
-  onPreloadProjectRoute: (projectId: Id<'projects'>) => void
+  onPreloadProjectRoute: (projectId: Id<'projects'>, companyId?: Id<'companies'>, projectMemberId?: Id<'projectMembers'>) => void
   onPreloadProjectSettingsRoute: () => void
   onSelectGroup: (groupId: Id<'groups'>) => void
-  onSelectProject: (projectId: Id<'projects'>) => void
+  onSelectProject: (projectId: Id<'projects'>, companyId?: Id<'companies'>, projectMemberId?: Id<'projectMembers'>) => void
   onSignOut: () => void
   projectItems: Array<ProjectItem>
-  view: 'home' | 'project' | 'group' | 'settings'
+  view: 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
   visibleGroups: Array<Doc<'groups'>>
 }
 
@@ -89,16 +92,75 @@ export function WorkspaceSidebar({
   view,
   visibleGroups,
 }: WorkspaceSidebarProps) {
+  const mobileNavRef = useRef<HTMLElement>(null)
   const releaseConfig = useReleaseConfig()
   const threadUnread = useQuery(
     api.channelThreads.listGroupUnread,
-    releaseConfig.threads && activeProjectId
+    releaseConfig.threads && activeProjectId && activeProject?.projectType === 'legacy'
       ? { projectId: activeProjectId, userId: currentUserId }
       : 'skip',
   )
   const threadUnreadByGroup = new Map(
     (threadUnread ?? []).map((item) => [item.groupId, item.unreadCount]),
   )
+
+  useEffect(() => {
+    if (!mobileNavOpen) return
+    const mobileViewport = window.matchMedia('(max-width: 760px)')
+    if (!mobileViewport.matches) {
+      onMobileNavOpenChange(false)
+      return
+    }
+    const drawer = mobileNavRef.current
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Open navigation"]')
+    if (!drawer) return
+    const previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    drawer.querySelector<HTMLButtonElement>('.track-mobile-nav-close')?.focus()
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onMobileNavOpenChange(false)
+        return
+      }
+      if (event.key !== 'Tab' || !drawer) return
+      const focusable = [...drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+        .filter((element) => element.offsetParent !== null)
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
+    }
+
+    function handleViewportChange(event: MediaQueryListEvent) {
+      if (!event.matches) onMobileNavOpenChange(false)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    mobileViewport.addEventListener('change', handleViewportChange)
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+      mobileViewport.removeEventListener('change', handleViewportChange)
+      if (mobileViewport.matches) {
+        trigger?.focus()
+      } else {
+        requestAnimationFrame(() => {
+          const visibleDesktopTarget = [...drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled])')]
+            .find((element) => element.offsetParent !== null)
+          visibleDesktopTarget?.focus()
+        })
+      }
+    }
+  }, [mobileNavOpen, onMobileNavOpenChange])
+
   return (
     <>
       {mobileNavOpen ? (
@@ -111,11 +173,15 @@ export function WorkspaceSidebar({
       ) : null}
 
       <aside
+        aria-label={mobileNavOpen ? 'Workspace navigation' : undefined}
+        aria-modal={mobileNavOpen || undefined}
         className={[
           'track-nav',
           mobileNavOpen ? 'mobile-open' : '',
           navCollapsed ? 'collapsed' : '',
         ].filter(Boolean).join(' ')}
+        ref={mobileNavRef}
+        role={mobileNavOpen ? 'dialog' : undefined}
       >
         <div className="track-brand">
           <img
@@ -126,6 +192,14 @@ export function WorkspaceSidebar({
             width={35}
           />
           <span className="track-brand-word">Track</span>
+          <button
+            aria-label="Close navigation"
+            className="track-mobile-nav-close"
+            onClick={() => onMobileNavOpenChange(false)}
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+          </button>
           <button
             aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
             aria-pressed={navCollapsed}
@@ -150,7 +224,7 @@ export function WorkspaceSidebar({
               <FolderKanban className="track-nav-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
-                <span className="track-nav-meta">{activeProject?.project.clientLabel ?? 'No label'}</span>
+                <span className="track-nav-meta">{activeProject ? `${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Independent project'} · ${activeProject.membership.role}` : 'No project selected'}</span>
               </span>
               <ChevronDown className="track-nav-icon track-project-chevron" size={14} />
             </DropdownMenuTrigger>
@@ -161,10 +235,10 @@ export function WorkspaceSidebar({
                   <DropdownMenuItem
                     className={item.project._id === activeProjectId ? 'track-project-switcher-item active' : 'track-project-switcher-item'}
                     key={item.project._id}
-                    onFocus={() => onPreloadProjectRoute(item.project._id)}
-                    onClick={() => onSelectProject(item.project._id)}
-                    onPointerEnter={() => onPreloadProjectRoute(item.project._id)}
-                    onTouchStart={() => onPreloadProjectRoute(item.project._id)}
+                    onFocus={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
+                    onClick={() => onSelectProject(item.project._id, item.company?._id, item.membership._id)}
+                    onPointerEnter={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
+                    onTouchStart={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
                   >
                     <span className="track-menu-project-name">{item.project.name}</span>
                     <span className="track-menu-project-role">{item.membership.role}</span>
@@ -180,7 +254,7 @@ export function WorkspaceSidebar({
           </DropdownMenu>
         </div>
 
-        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Companies</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
+        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Back to company</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
 
         {activeProjectId ? (
           <div className="track-nav-secondary">
@@ -188,11 +262,11 @@ export function WorkspaceSidebar({
               <div className="track-nav-section">
                 <span>Channels</span>
                 <button
-                  aria-label="Create group"
+                  aria-label="Create channel"
                   className="track-nav-action"
                   disabled={busyAction === 'create-group'}
                   onClick={onCreateGroup}
-                  title={navCollapsed ? 'Create group' : undefined}
+                  title="Create channel"
                   type="button"
                 >
                   <Plus aria-hidden="true" size={13} />
@@ -209,14 +283,14 @@ export function WorkspaceSidebar({
                       onClick={() => onSelectGroup(group._id)}
                       onPointerEnter={() => onPreloadGroupRoute(group._id)}
                       onTouchStart={() => onPreloadGroupRoute(group._id)}
-                      title={navCollapsed ? group.name : undefined}
+                      title={`# ${group.name}${group.status === 'archived' ? ' (archived)' : ''}`}
                       type="button"
                     >
                       <span className={`track-nav-group-icon ${tone}`}>
                         <Icon size={14} strokeWidth={2.1} />
                       </span>
                       <span className="track-nav-copy">
-                        <span className="track-nav-title">{group.name}</span>
+                        <span className="track-nav-title"># {group.name}</span>
                         {threadUnreadByGroup.get(group._id) ? <span className="track-nav-meta">
                           {threadUnreadByGroup.get(group._id)} unread {threadUnreadByGroup.get(group._id) === 1 ? 'thread' : 'threads'}
                         </span> : null}
@@ -225,7 +299,7 @@ export function WorkspaceSidebar({
                   )
                 })}
                 {visibleGroups.length === 0 ? (
-                  <span className="track-nav-empty">No groups yet</span>
+                  <span className="track-nav-empty">No channels yet</span>
                 ) : null}
               </div>
             </div>

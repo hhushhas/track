@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { api } from './_generated/api'
+import { isDevAuthBypassEnabled } from './lib/devAuth'
 import schema from './schema'
 
 const modules = (import.meta as ImportMeta & {
@@ -34,17 +35,14 @@ afterEach(() => {
 
 describe('development auth bypass', () => {
   it('keeps the bypass disabled unless explicitly configured for loopback development', async () => {
+    expect(isDevAuthBypassEnabled({})).toBe(false)
+    expect(isDevAuthBypassEnabled({ DEV_AUTH_BYPASS: '1' })).toBe(false)
+    expect(isDevAuthBypassEnabled({
+      DEV_AUTH_BYPASS: '1',
+      SITE_URL: 'https://track.q9labs.ai',
+    })).toBe(false)
+
     const t = convexTest(schema, modules)
-
-    await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
-      'dev_auth_bypass_disabled',
-    )
-    process.env.DEV_AUTH_BYPASS = '1'
-
-    await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
-      'dev_auth_bypass_disabled',
-    )
-    process.env.SITE_URL = 'https://track.q9labs.ai'
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',

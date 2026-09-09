@@ -4,10 +4,16 @@ import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '../thread-items'
+import {
+  companyProjectViewFromWorkspaceView,
+  selectTopCompanyProject,
+  shouldProvisionStarterProject,
+  shouldSelectFallbackProject,
+} from '../lib/project-classification'
 import { findVisibleRouteGroupId } from '../lib/route-state'
 import { getResolvedTrackUserId, setResolvedTrackUserId } from '../workspace-session'
 
-type WorkspaceView = 'home' | 'project' | 'group' | 'settings'
+type WorkspaceView = 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 type SessionUser = { id: string; email: string; name: string }
 
 export function useWorkspaceSynchronization({
@@ -46,6 +52,8 @@ export function useWorkspaceSynchronization({
   trackUserId,
   view,
   visibleGroups,
+  actingCompanyId,
+  autoSelectCompanyProject,
 }: {
   acceptPendingInvitations: (args: { userId: Id<'users'> }) => Promise<unknown>
   activeGroupId: Id<'groups'> | null
@@ -59,7 +67,12 @@ export function useWorkspaceSynchronization({
   mentionIndex: number
   mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
   navCollapsed: boolean
-  projectItems: Array<{ project: Doc<'projects'>; membership: Doc<'projectMembers'> }>
+  projectItems: Array<{
+    project: Doc<'projects'>
+    membership: Doc<'projectMembers'>
+    company?: { _id: Id<'companies'>; displayName: string } | null
+    projectType?: 'legacy' | 'company' | 'shared'
+  }>
   projects: unknown[] | undefined
   railResizing: boolean
   routeGroupId: Id<'groups'> | undefined
@@ -86,6 +99,8 @@ export function useWorkspaceSynchronization({
   trackUserId: Id<'users'> | null
   view: WorkspaceView
   visibleGroups: Array<Doc<'groups'>>
+  actingCompanyId: Id<'companies'> | null
+  autoSelectCompanyProject: boolean
 }) {
   const navigate = useNavigate()
 
@@ -127,6 +142,23 @@ export function useWorkspaceSynchronization({
   }, [activeProjectId, routeProjectId, setActiveProjectId])
 
   useEffect(() => {
+    if (!routeProjectId || projects === undefined) return
+    const routedProject = projectItems.find((item) => item.project._id === routeProjectId)
+    if (!routedProject?.company?._id || routedProject.projectType === 'legacy') return
+    void navigate({
+      replace: true,
+      to: '/workspace/company-projects/$projectId',
+      params: { projectId: routeProjectId },
+      search: {
+        companyId: routedProject.company._id,
+        groupId: routeGroupId ?? '',
+        membershipId: routedProject.membership._id,
+        view: companyProjectViewFromWorkspaceView(view),
+      },
+    })
+  }, [navigate, projectItems, projects, routeGroupId, routeProjectId, view])
+
+  useEffect(() => {
     if (!sessionUser?.id) {
       setTrackUserId(null)
       return
@@ -152,13 +184,13 @@ export function useWorkspaceSynchronization({
   }, [acceptPendingInvitations, devAuthEnabled, sessionUser, setActionError, setTrackUserId, syncCurrentUser, syncDevUser, trackUserId])
 
   useEffect(() => {
-    if (!trackUserId || projects === undefined || projectItems.length > 0) return
+    if (!shouldProvisionStarterProject(view, projectItems.length) || !trackUserId || projects === undefined) return
     if (currentTrackProfileIncomplete) return
     void ensureStarterProject({ userId: trackUserId }).then((starterProjectId) => {
       setActiveProjectId(starterProjectId)
       void navigate({ to: '/workspace/projects/$projectId', params: { projectId: starterProjectId } })
     }).catch(setActionError)
-  }, [currentTrackProfileIncomplete, ensureStarterProject, navigate, projectItems.length, projects, setActionError, setActiveProjectId, trackUserId])
+  }, [currentTrackProfileIncomplete, ensureStarterProject, navigate, projectItems.length, projects, setActionError, setActiveProjectId, trackUserId, view])
 
   useEffect(() => {
     if (!trackUserId || currentTrackUser === undefined || !currentTrackProfileIncomplete) return
@@ -167,12 +199,48 @@ export function useWorkspaceSynchronization({
   }, [currentTrackProfileIncomplete, currentTrackUser, trackUserId])
 
   useEffect(() => {
-    if (!projectItems.length || activeProjectId) return
-    const firstProjectId = projectItems[0]?.project._id ?? null
+    if (!autoSelectCompanyProject || view !== 'home' || projects === undefined) return
+    const topProject = selectTopCompanyProject(projectItems, actingCompanyId)
+    if (!topProject?.company?._id || !topProject.membership?._id || !topProject.project._id) return
+    setActiveProjectId(topProject.project._id)
+    void navigate({
+      replace: true,
+      to: '/workspace/company-projects/$projectId',
+      params: { projectId: topProject.project._id },
+      search: {
+        companyId: topProject.company._id,
+        groupId: '',
+        membershipId: topProject.membership._id,
+        view: 'channels',
+      },
+    })
+  }, [actingCompanyId, autoSelectCompanyProject, navigate, projectItems, projects, setActiveProjectId, view])
+
+  useEffect(() => {
+    if (!shouldSelectFallbackProject(view, projectItems.length, activeProjectId)) return
+    const firstProject = projectItems[0]
+    const firstProjectId = firstProject?.project._id ?? null
     setActiveProjectId(firstProjectId)
-    if (view === 'home' && firstProjectId) {
-      void navigate({ to: '/workspace/projects/$projectId', params: { projectId: firstProjectId } })
+    if (view !== 'home' || !firstProjectId) return
+    if (firstProject?.company?._id && firstProject.projectType !== 'legacy') {
+      void navigate({
+        replace: true,
+        to: '/workspace/company-projects/$projectId',
+        params: { projectId: firstProjectId },
+        search: {
+          companyId: firstProject.company._id,
+          groupId: '',
+          membershipId: firstProject.membership._id,
+          view: 'channels',
+        },
+      })
+      return
     }
+    void navigate({
+      replace: true,
+      to: '/workspace/projects/$projectId',
+      params: { projectId: firstProjectId },
+    })
   }, [activeProjectId, navigate, projectItems, setActiveProjectId, view])
 
   useEffect(() => {
@@ -209,10 +277,4 @@ export function useWorkspaceSynchronization({
     }
   }, [activeGroupId, activeProjectId, groups, navigate, routeGroupId, routeProjectId, setActiveGroupId, setShowJumpToLatest, setUiError, view, visibleGroups])
 
-  useEffect(() => {
-    const firstGroupId = visibleGroups[0]?._id
-    if (routeProjectId && activeProjectId !== routeProjectId) return
-    if (view !== 'project' || groups === undefined || !activeProjectId || !firstGroupId) return
-    void navigate({ to: '/workspace/projects/$projectId/groups/$groupId', params: { groupId: firstGroupId, projectId: activeProjectId } })
-  }, [activeProjectId, groups, navigate, routeProjectId, view, visibleGroups])
 }

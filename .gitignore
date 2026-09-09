@@ -41,6 +41,23 @@ apps/mobile/credentials.json
 
 # Local screenshots / scratch captures
 SCR-*.png
+/device-current.png
+/tmp/
+/output/
+/pnpm
+/vite
+apps/mobile/c5441411-470e-445d-81fb-3e55e8014c0b (1).png
+apps/web/page-*.yml
+apps/web/.playwright-mcp/
+
+# Local agent skills and design-review material
+apps/mobile/.agents/
+apps/mobile/.impeccable/
+apps/mobile/skills-lock.json
+apps/mobile/PRODUCT.md
+apps/mobile/mobile-ui-ux-guide.md
+apps/mobile/mobile-ui-ux-review.md
+apps/mobile/assets/splash/
 
 # Riptide artifacts (cloud-synced)
 .humanlayer/tasks/

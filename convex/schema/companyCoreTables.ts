@@ -17,6 +17,7 @@ export const companyCoreTables = {
     displayName: v.string(),
     normalizedHandle: v.string(),
     logoStorageId: v.optional(v.id('_storage')),
+    description: v.optional(v.string()),
     status: companyStatus,
     revision: v.number(),
     createdBy: v.id('users'),

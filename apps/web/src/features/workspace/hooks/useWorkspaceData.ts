@@ -6,6 +6,7 @@ import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import { getActiveChannelMembers } from '#/features/workspace/lib/channel-header-members'
 import { filterVisibleProjectGroups } from '#/features/workspace/lib/route-state'
+import { isResolvedLegacyProject } from '#/features/workspace/lib/project-classification'
 import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
 
 export function useWorkspaceData({
@@ -39,18 +40,31 @@ export function useWorkspaceData({
   )
 
   const projects = useQuery(
-    api.projects.list,
-    trackUserId ? { userId: trackUserId } : 'skip',
+    api.projects.listAccessible,
+    trackUserId ? {} : 'skip',
   )
+  const activeProjectItem = useMemo(
+    () =>
+      (projects ?? []).find((item) => item.project._id === activeProjectId) as
+        | {
+            project: Doc<'projects'>
+            membership: Doc<'projectMembers'>
+            company: { _id: Id<'companies'>; displayName: string } | null
+            projectType: 'legacy' | 'company' | 'shared'
+          }
+        | undefined,
+    [activeProjectId, projects],
+  )
+  const isLegacyProject = isResolvedLegacyProject(activeProjectItem)
   const groups = useQuery(
     api.groups.listVisible,
-    trackUserId && activeProjectId
+    trackUserId && activeProjectId && isLegacyProject
       ? { userId: trackUserId, projectId: activeProjectId }
       : 'skip',
   )
   const projectMembers = useQuery(
     api.projects.listMembers,
-    trackUserId && activeProjectId
+    trackUserId && activeProjectId && isLegacyProject
       ? { userId: trackUserId, projectId: activeProjectId }
       : 'skip',
   )
@@ -97,6 +111,15 @@ export function useWorkspaceData({
       (projects ?? []) as Array<{
         project: Doc<'projects'>
         membership: Doc<'projectMembers'>
+        company: { _id: Id<'companies'>; displayName: string } | null
+        projectType: 'legacy' | 'company' | 'shared'
+        role: Doc<'projectMembers'>['role']
+        projectStatus: 'proposed' | 'active' | 'archive_pending' | 'archived'
+        memberCount: number
+        memberCountTruncated: boolean
+        channelCount: number
+        channelCountTruncated: boolean
+        lastActivityAt: number
       }>,
     [projects],
   )
@@ -123,7 +146,7 @@ export function useWorkspaceData({
     () => (assistantStreams ?? []) as Array<Doc<'assistantStreams'>>,
     [assistantStreams],
   )
-  const activeProject = projectItems.find((item) => item.project._id === activeProjectId)
+  const activeProject = activeProjectItem
   const activeGroup = visibleGroups.find((group) => group._id === activeGroupId)
   const activeChannelMembers = useMemo(
     () => getActiveChannelMembers(

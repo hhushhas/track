@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useAction, useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { useRouter, type Href } from 'expo-router';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
 import type * as NotificationsModule from 'expo-notifications';
 
@@ -9,6 +9,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { consumePushResponseId, getPushInstallationId } from '@/lib/push-installation';
+import { resolvePushAvailability, type PushAvailability } from '@/lib/push-availability';
 import { shouldPresentPush } from '@/lib/push-presentation';
 import { resolvePushHref } from '@/lib/push-routing';
 
@@ -30,8 +31,12 @@ function getNotificationsApi(): NotificationsApi | null {
 }
 
 export type PushPermissionState = 'not_determined' | 'denied' | 'granted' | 'provisional';
+const availability: PushAvailability = resolvePushAvailability({
+  expoGo: isExpoGo,
+});
 
 type PushContextValue = {
+  availability: PushAvailability;
   error: string | null;
   installationId: string | null;
   permissionState: PushPermissionState;
@@ -81,7 +86,8 @@ export function usePushNotifications() {
 
 export function PushNotificationBridge({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { trackUserId } = useTrackUser();
+  const { isSigningOut, trackUserId } = useTrackUser();
+  const { isAuthenticated: convexAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
   const registerInstallation = useMutation(api.notifications.registerNativeInstallation);
   const reportPermission = useMutation(api.notifications.reportNativePermission);
   const recordOpen = useMutation(api.notifications.recordPushOpen);
@@ -90,14 +96,19 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
   const [localPermission, setLocalPermission] = useState<PushPermissionState>('not_determined');
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeUserRef = useRef<Id<'users'> | null>(null);
+  activeUserRef.current = isSigningOut || convexAuthLoading || !convexAuthenticated ? null : trackUserId;
   const serverStatus = useQuery(
     api.notifications.getNativeStatus,
-    trackUserId ? { userId: trackUserId, installationId: installationId ?? undefined } : 'skip',
+    trackUserId && !isSigningOut && !convexAuthLoading && convexAuthenticated
+      ? { userId: trackUserId, installationId: installationId ?? undefined }
+      : 'skip',
   );
 
   const sync = useCallback(async (request: boolean) => {
     const push = getNotificationsApi();
-    if (!trackUserId || Platform.OS === 'web' || !push) return;
+    if (availability !== 'available' || !trackUserId || isSigningOut || convexAuthLoading || !convexAuthenticated || Platform.OS === 'web' || !push) return;
+    const userId = trackUserId;
     setSyncing(true);
     setError(null);
     try {
@@ -123,8 +134,9 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
         : existing;
       const state = permissionState(permission);
       setLocalPermission(state);
+      if (activeUserRef.current !== userId) return;
       const common = {
-        userId: trackUserId,
+        userId,
         installationId: id,
         platform: Platform.OS === 'ios' ? 'ios' as const : 'android' as const,
         environment: pushEnvironment(),
@@ -138,15 +150,16 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       const token = await push.getDevicePushTokenAsync();
       await registerInstallation({ ...common, token: token.data });
     } catch (failure) {
+      if (activeUserRef.current !== userId) return;
       setError(failure instanceof Error ? failure.message : 'notification_sync_failed');
     } finally {
-      setSyncing(false);
+      if (activeUserRef.current === userId) setSyncing(false);
     }
-  }, [installationId, registerInstallation, reportPermission, trackUserId]);
+  }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, registerInstallation, reportPermission, trackUserId]);
 
   useEffect(() => {
     const push = getNotificationsApi();
-    if (!trackUserId || Platform.OS === 'web' || !push) return;
+    if (!trackUserId || isSigningOut || convexAuthLoading || !convexAuthenticated || Platform.OS === 'web' || !push) return;
     void sync(false);
     const appState = AppState.addEventListener('change', (state) => {
       if (state === 'active') void sync(false);
@@ -155,6 +168,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       if (!installationId) return;
       void (async () => {
         const permission = await push.getPermissionsAsync();
+        if (activeUserRef.current !== trackUserId) return;
         await registerInstallation({
           userId: trackUserId,
           installationId,
@@ -164,17 +178,19 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
           appVersion: Constants.expoConfig?.version,
           token: devicePushToken.data,
         });
-      })().catch(() => setError('push_token_refresh_failed'));
+      })().catch(() => {
+        if (activeUserRef.current === trackUserId) setError('push_token_refresh_failed');
+      });
     });
     return () => {
       appState.remove();
       tokenSubscription.remove();
     };
-  }, [installationId, registerInstallation, sync, trackUserId]);
+  }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, registerInstallation, sync, trackUserId]);
 
   useEffect(() => {
     const push = getNotificationsApi();
-    if (!trackUserId || Platform.OS === 'web' || !push) return;
+    if (!trackUserId || isSigningOut || convexAuthLoading || !convexAuthenticated || Platform.OS === 'web' || !push) return;
     async function open(response: NotificationsModule.NotificationResponse | null) {
       if (!response) return;
       const responseId = response.notification.request.identifier;
@@ -183,6 +199,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       const href = resolvePushHref(data);
       if (!href) return;
       const id = installationId ?? await getPushInstallationId();
+      if (activeUserRef.current !== trackUserId) return;
       const intentId = data?.intentId;
       if (typeof intentId === 'string') {
         await recordOpen({
@@ -195,9 +212,10 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
     const subscription = push.addNotificationResponseReceivedListener((response) => { void open(response); });
     void push.getLastNotificationResponseAsync().then(open);
     return () => subscription.remove();
-  }, [installationId, recordOpen, router, trackUserId]);
+  }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, recordOpen, router, trackUserId]);
 
   const value = useMemo<PushContextValue>(() => ({
+    availability,
     error,
     installationId,
     permissionState: serverStatus?.permissionState ?? localPermission,
@@ -206,7 +224,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
     refresh: () => sync(false),
     openDeviceSettings: () => Linking.openSettings(),
     sendTestNotification: async () => {
-      if (!trackUserId) return null;
+      if (!trackUserId || convexAuthLoading || !convexAuthenticated) return null;
       if (serverStatus?.registered) return await sendTest({ userId: trackUserId });
       if (__DEV__ && (localPermission === 'granted' || localPermission === 'provisional')) {
         const push = getNotificationsApi();
@@ -224,7 +242,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       return await sendTest({ userId: trackUserId });
     },
     syncing,
-  }), [error, installationId, localPermission, sendTest, serverStatus, sync, syncing, trackUserId]);
+  }), [convexAuthLoading, convexAuthenticated, error, installationId, localPermission, sendTest, serverStatus, sync, syncing, trackUserId]);
 
   return <PushContext.Provider value={value}>{children}</PushContext.Provider>;
 }

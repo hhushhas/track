@@ -14,3 +14,7 @@ export function resolveReleaseConfig(
 export function useReleaseConfig() {
   return resolveReleaseConfig(useQuery(api.releaseConfig.getReleaseConfig))
 }
+
+export function useReleaseConfigProjection() {
+  return useQuery(api.releaseConfig.getReleaseConfig)
+}

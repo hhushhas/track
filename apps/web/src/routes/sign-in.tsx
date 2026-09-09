@@ -6,6 +6,7 @@ import type { CSSProperties, FormEvent } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
 import TrackLoader from '#/components/TrackLoader'
+import { appToast, queueToastAfterNavigation } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import {
@@ -19,6 +20,7 @@ import { authClient } from '../lib/auth-client'
 
 const pendingSetPasswordEmailKey = 'track-pending-set-password-email'
 const supportEmail = 'q9labs.ai@gmail.com'
+const emailAuthHintTimeoutMs = 5000
 
 type SignInVariant = 'default' | 'conversation-a' | 'conversation-b'
 
@@ -118,6 +120,18 @@ function getPasswordMessage(error: unknown) {
   return 'Could not continue. Check the details and try again.'
 }
 
+async function getEmailAuthHintWithTimeout(
+  convex: ReturnType<typeof useConvex>,
+  email: string,
+) {
+  return await Promise.race([
+    convex.query(api.auth.getEmailAuthHint, { email }),
+    new Promise<null>((resolve) => {
+      window.setTimeout(() => resolve(null), emailAuthHintTimeoutMs)
+    }),
+  ])
+}
+
 export function SignInExperience({ variant }: { variant: SignInVariant }) {
   const convex = useConvex()
   const navigate = useNavigate()
@@ -149,9 +163,12 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     setMessage('')
     try {
       await enableDevAuthBypass()
+      appToast.success('Signed in', 'Development workspace access is ready.')
       await navigate({ to: '/workspace' })
     } catch {
-      setMessage('Demo sign-in is unavailable in this development environment.')
+      const errorMessage = 'Demo sign-in is unavailable in this development environment.'
+      setMessage(errorMessage)
+      appToast.error('Sign-in failed', errorMessage)
     } finally {
       setBusy(false)
     }
@@ -169,14 +186,18 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         callbackURL: mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
       })
       if (result.error) {
-        setMessage(getPasswordMessage(result.error))
+        const errorMessage = getPasswordMessage(result.error)
+        setMessage(errorMessage)
+        appToast.error('Google sign-in failed', errorMessage)
         return
       }
       if (result.data?.url) {
         window.location.href = result.data.url
       }
     } catch (error) {
-      setMessage(getPasswordMessage(error))
+      const errorMessage = getPasswordMessage(error)
+      setMessage(errorMessage)
+      appToast.error('Google sign-in failed', errorMessage)
     } finally {
       setBusy(false)
     }
@@ -214,10 +235,13 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         }
         const result = await client.setPassword({ newPassword: passwordValue })
         if (result.error) {
-          setMessage(getPasswordMessage(result.error))
+          const errorMessage = getPasswordMessage(result.error)
+          setMessage(errorMessage)
+          appToast.error('Password not added', errorMessage)
           return
         }
         window.localStorage.removeItem(pendingSetPasswordEmailKey)
+        appToast.success('Password added', 'Your login methods are up to date.')
         await navigate({ to: '/workspace' })
         return
       }
@@ -230,25 +254,13 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           callbackURL: '/workspace',
         })
         if (result.error) {
-          setMessage(getPasswordMessage(result.error))
+          const errorMessage = getPasswordMessage(result.error)
+          setMessage(errorMessage)
+          appToast.error('Account not created', errorMessage)
           return
         }
+        queueToastAfterNavigation({ type: 'success', title: 'Account created', description: 'Welcome to Track.' })
         finishEmailAuthHandoff()
-        return
-      }
-
-      const hint = await convex.query(api.auth.getEmailAuthHint, { email: normalizedEmail })
-      if (hint.status === 'new') {
-        setMode('confirm-new')
-        setConfirmPassword('')
-        return
-      }
-      if (hint.status === 'google_only' || hint.status === 'existing_without_password') {
-        setMode('google-proof')
-        return
-      }
-      if (hint.status === 'invalid') {
-        setMessage('Enter a valid email address.')
         return
       }
 
@@ -258,15 +270,35 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         password: passwordValue,
         callbackURL: '/workspace',
       })
-      if (result.error) {
-        setMessage('Email or password is incorrect.')
+      if (!result.error) {
+        if (shouldFinishEmailAuthHandoff(result.data)) {
+          queueToastAfterNavigation({ type: 'success', title: 'Signed in', description: 'Welcome back.' })
+          finishEmailAuthHandoff()
+        }
         return
       }
-      if (shouldFinishEmailAuthHandoff(result.data)) {
-        finishEmailAuthHandoff()
+
+      const hint = await getEmailAuthHintWithTimeout(convex, normalizedEmail)
+      if (hint?.status === 'new') {
+        setMode('confirm-new')
+        setConfirmPassword('')
+        return
       }
+      if (hint?.status === 'google_only' || hint?.status === 'existing_without_password') {
+        setMode('google-proof')
+        return
+      }
+      if (hint?.status === 'invalid') {
+        setMessage('Enter a valid email address.')
+        return
+      }
+      const errorMessage = 'Email or password is incorrect.'
+      setMessage(errorMessage)
+      appToast.error('Sign-in failed', errorMessage)
     } catch (error) {
-      setMessage(getPasswordMessage(error))
+      const errorMessage = getPasswordMessage(error)
+      setMessage(errorMessage)
+      appToast.error('Sign-in failed', errorMessage)
     } finally {
       setBusy(false)
     }

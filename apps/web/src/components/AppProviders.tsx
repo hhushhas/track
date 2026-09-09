@@ -1,6 +1,7 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react'
 import type { ComponentProps, ReactNode } from 'react'
 
+import { AppToastProvider } from '#/components/ui/app-toast'
 import { TooltipProvider } from '#/components/ui/tooltip'
 import { authClient } from '#/lib/auth-client'
 import { convexClient } from '../lib/convex-client'
@@ -15,7 +16,9 @@ export default function AppProviders({
 }) {
   return (
     <ConvexBetterAuthProvider authClient={providerAuthClient} client={convexClient}>
-      <TooltipProvider>{children}</TooltipProvider>
+      <TooltipProvider>
+        <AppToastProvider>{children}</AppToastProvider>
+      </TooltipProvider>
     </ConvexBetterAuthProvider>
   )
 }

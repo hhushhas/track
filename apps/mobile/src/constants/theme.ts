@@ -9,6 +9,8 @@ export const Colors = {
     backgroundElement: '#f3f1ed',
     backgroundSelected: '#ebe8e2',
     backgroundElevated: '#ffffff',
+    navigationGlass: 'rgba(255,255,255,0.58)',
+    navigationSelectionGlass: 'rgba(254,243,199,0.74)',
     textSecondary: '#6b655c',
     textTertiary: '#8b857a',
     hairline: '#e3dfd7',
@@ -32,6 +34,8 @@ export const Colors = {
     backgroundElement: '#292522',
     backgroundSelected: '#3a3631',
     backgroundElevated: '#232019',
+    navigationGlass: 'rgba(35,32,25,0.68)',
+    navigationSelectionGlass: 'rgba(74,56,0,0.72)',
     textSecondary: '#c9c3b8',
     textTertiary: '#9a9488',
     hairline: '#3a3631',
@@ -188,5 +192,5 @@ export const IconSize = {
  * The navigation owns the device safe-area inset; screens only need this
  * stable content reserve so the last row never hides behind the bar.
  */
-export const BottomTabInset = 58;
+export const BottomTabInset = 64;
 export const MaxContentWidth = 800;

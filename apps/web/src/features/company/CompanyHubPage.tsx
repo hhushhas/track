@@ -1,25 +1,65 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowLeft, ChevronDown, FolderKanban, MoreHorizontal, Plus, Settings2, Users } from "lucide-react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
-import { useReleaseConfig } from "#/lib/release-config";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "#/components/ui/popover";
+import { resolveReleaseConfig, useReleaseConfigProjection } from "#/lib/release-config";
 import {
   CreateCompanyForm,
-  CompanyProfileForm,
+  CompanyProjectForm,
   InviteMemberForm,
   RelationshipForm,
   RelationshipParticipantForm,
   SharedProjectForm,
 } from "./CompanyForms";
 import { useActingCompany } from "./use-acting-company";
+import { resolveCompanyMemberActionCapabilities } from "./company-member-capabilities";
 import { MigrationPanel } from "./MigrationPanel";
+import { selectTopCompanyProject } from "#/features/workspace/lib/project-classification";
+
+const companyRoleLabels = {
+  owner: "Company Owner",
+  admin: "Company Admin",
+  member: "Company Member",
+} as const;
+
+function CompanyActionPopover({
+  children,
+  description,
+  label,
+  title,
+}: {
+  children: ReactNode;
+  description: string;
+  label: string;
+  title: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger render={<Button className="company-section-action" variant="outline" />}>
+        <Plus aria-hidden="true" size={14} />
+        {label}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="company-action-popover" sideOffset={8}>
+        <PopoverHeader>
+          <PopoverTitle>{title}</PopoverTitle>
+          <PopoverDescription>{description}</PopoverDescription>
+        </PopoverHeader>
+        {children}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function CompanyHubPage() {
-  const flags = useReleaseConfig();
+  const navigate = useNavigate();
+  const releaseConfigProjection = useReleaseConfigProjection();
+  const flags = resolveReleaseConfig(releaseConfigProjection);
   const currentUser = useQuery(api.auth.getCurrentUser);
   const companies = useQuery(
     api.companies.listMine,
@@ -36,9 +76,19 @@ export function CompanyHubPage() {
   );
   const { actingCompanyId, setActingCompanyId } =
     useActingCompany(availableCompanyIds);
-  const actingCompany = companies?.find(
+  const [selectedCompanyId, setSelectedCompanyId] = useState<Id<"companies"> | null>(
+    actingCompanyId,
+  );
+  useEffect(() => {
+    if (selectedCompanyId && availableCompanyIds.includes(selectedCompanyId)) return;
+    setSelectedCompanyId(actingCompanyId);
+  }, [actingCompanyId, availableCompanyIds, selectedCompanyId]);
+  const actingCompanyCandidate = companies?.find(
     (item) => item.company?._id === actingCompanyId,
   );
+  const actingCompany = actingCompanyCandidate?.company
+    ? { ...actingCompanyCandidate, company: actingCompanyCandidate.company }
+    : undefined;
   const canAdministerActingCompany =
     actingCompany?.membership.role === "owner" ||
     actingCompany?.membership.role === "admin";
@@ -46,6 +96,14 @@ export function CompanyHubPage() {
     actingCompany?.company?.status === "active" ? actingCompanyId : null;
   const administration = useQuery(
     api.companies.getAdministration,
+    activeActingCompanyId && canAdministerActingCompany ? { companyId: activeActingCompanyId } : "skip",
+  );
+  const basicCompany = useQuery(
+    api.companies.getBasic,
+    activeActingCompanyId ? { companyId: activeActingCompanyId } : "skip",
+  );
+  const companyLogoUrl = useQuery(
+    api.companies.getLogoUrl,
     activeActingCompanyId ? { companyId: activeActingCompanyId } : "skip",
   );
   const companyInvitations = useQuery(
@@ -70,11 +128,24 @@ export function CompanyHubPage() {
       ? { actingCompanyId: activeActingCompanyId }
       : "skip",
   );
-  const projects = useQuery(
-    api.sharedProjects.listForActingCompany,
-    activeActingCompanyId ? { actingCompanyId: activeActingCompanyId } : "skip",
+  const accessibleProjects = useQuery(
+    api.projects.listAccessible,
+    currentUser ? {} : "skip",
+  );
+  const companyProjects = useMemo(
+    () => (accessibleProjects ?? []).filter((item) => item.company?._id === activeActingCompanyId && item.projectType === "company"),
+    [accessibleProjects, activeActingCompanyId],
+  );
+  const sharedProjects = useMemo(
+    () => (accessibleProjects ?? []).filter((item) => item.company?._id === activeActingCompanyId && item.projectType === "shared"),
+    [accessibleProjects, activeActingCompanyId],
+  );
+  const legacyProjects = useMemo(
+    () => (accessibleProjects ?? []).filter((item) => item.projectType === "legacy"),
+    [accessibleProjects],
   );
   const decideCompanyInvitation = useMutation(api.companies.decideInvitation);
+  const revokeCompanyInvitation = useMutation(api.companies.revokeInvitation);
   const decideRelationshipInvitation = useMutation(
     api.relationships.decideInvitation,
   );
@@ -98,7 +169,10 @@ export function CompanyHubPage() {
     setBusy(true);
     setNotice(null);
     try {
-      await action();
+      const result = await action();
+      if (typeof result === "object" && result !== null && "status" in result && result.status === "expired") {
+        throw new Error("invitation_expired");
+      }
       setNotice("Saved.");
     } catch (error) {
       setNotice(
@@ -111,10 +185,40 @@ export function CompanyHubPage() {
     }
   }
 
+  function applyCompanySelection() {
+    if (!selectedCompanyId || selectedCompanyId === actingCompanyId) return;
+    setActingCompanyId(selectedCompanyId);
+    const topProject = selectTopCompanyProject(accessibleProjects ?? [], selectedCompanyId);
+    if (!topProject) {
+      void navigate({ to: "/workspace" });
+      return;
+    }
+    void navigate({
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId: topProject.project._id },
+      search: {
+        companyId: selectedCompanyId,
+        groupId: "",
+        membershipId: topProject.membership._id,
+        view: "channels",
+      },
+    });
+  }
+
+  if (releaseConfigProjection === undefined)
+    return (
+      <main className="company-hub">
+        <section className="track-guided-empty" role="status">
+          <h1>Loading companies…</h1>
+          <p>Checking company access and workspace settings.</p>
+        </section>
+      </main>
+    );
+
   if (!flags.companyModel)
     return (
       <main className="company-hub">
-        <h1>Company collaboration</h1>
+        <h1>Companies</h1>
         <p>
           This capability is currently disabled by the server release
           configuration.
@@ -127,14 +231,15 @@ export function CompanyHubPage() {
     <main aria-busy={busy} className="company-hub">
       <header className="company-hub-header">
         <div>
-          <span className="company-eyebrow">Track Company model</span>
-          <h1>Company collaboration</h1>
-          <p>
-            Relationships make shared work possible; Project and Channel
-            membership still control access.
-          </p>
+          <span className="company-eyebrow">Workspace</span>
+          <h1>Companies</h1>
+          <p>Choose the company you represent, then manage its people and project access.</p>
         </div>
-        <Link to="/workspace">Legacy Projects</Link>
+        <div className="company-header-actions">
+          <Link className="company-back-link" to="/workspace"><ArrowLeft aria-hidden="true" size={15} /> Back to workspace</Link>
+          {actingCompany ? <span className="company-profile-role">{currentUser?.displayName ?? "Your profile"}<strong>{companyRoleLabels[actingCompany.membership.role]}</strong></span> : null}
+          {canAdministerActingCompany ? <Link className="company-settings-link" to="/workspace/company/settings"><Settings2 aria-hidden="true" size={15} /> Company settings</Link> : null}
+        </div>
       </header>
       {notice ? (
         <p aria-live="polite" className="company-notice">
@@ -142,8 +247,8 @@ export function CompanyHubPage() {
         </p>
       ) : null}
 
-      <section className="company-panel">
-        <h2>Acting Company</h2>
+      <section className="company-switcher-panel">
+        <div><label htmlFor="acting-company">Company</label><p>Choose the company you are representing in Track.</p></div>
         {companies === undefined ? (
           <p>Loading Companies…</p>
         ) : companies.length === 0 ? (
@@ -152,79 +257,65 @@ export function CompanyHubPage() {
             <CreateCompanyForm run={run} />
           </>
         ) : (
-          <>
-            <label htmlFor="acting-company">Represent Company</label>
+          <div className="company-context-controls">
             <NativeSelect
               id="acting-company"
               onChange={(event) =>
-                setActingCompanyId(event.target.value as Id<"companies">)
+                setSelectedCompanyId(event.target.value as Id<"companies">)
               }
-              value={actingCompanyId ?? ""}
+              value={selectedCompanyId ?? ""}
             >
               {companies.flatMap((item) =>
                 item.company
                   ? [
                       <NativeSelectOption key={item.company._id} value={item.company._id}>
-                        {item.company.displayName} · @
-                        {item.company.normalizedHandle} · {item.membership.role}
+                        {`${item.company.displayName} · @${item.company.normalizedHandle} · ${companyRoleLabels[item.membership.role]}`}
                       </NativeSelectOption>,
                     ]
                   : [],
               )}
             </NativeSelect>
-            <CreateCompanyForm run={run} />
-          </>
+            {selectedCompanyId && selectedCompanyId !== actingCompanyId ? (
+              <Button className="company-apply-button" onClick={applyCompanySelection}>
+                Apply company
+              </Button>
+            ) : null}
+            <Popover>
+              <PopoverTrigger render={<Button className="company-create-trigger" variant="outline" />}>
+                <Plus aria-hidden="true" size={14} />
+                <span>Create company</span>
+                <ChevronDown aria-hidden="true" size={14} />
+              </PopoverTrigger>
+              <PopoverContent align="end" className="company-create-popover" sideOffset={8}>
+                <PopoverHeader>
+                  <PopoverTitle>Create another company</PopoverTitle>
+                  <PopoverDescription>A separate workspace with its own members and projects.</PopoverDescription>
+                </PopoverHeader>
+                <CreateCompanyForm run={run} />
+              </PopoverContent>
+            </Popover>
+          </div>
         )}
       </section>
 
-      {(companyInvitations ?? []).length > 0 ? (
-        <section className="company-panel">
-          <h2>Company invitations</h2>
-          <ul className="company-list">
-            {companyInvitations?.map(({ company, invitation }) => (
-              <li key={invitation._id}>
-                <div>
-                  <strong>{company?.displayName}</strong>
-                  <span>
-                    {invitation.role} · expires{" "}
-                    {new Date(invitation.expiresAt).toLocaleDateString()}
-                  </span>
-                </div>
-                <div>
-                  <Button
-                    onClick={() =>
-                      void run(() =>
-                        decideCompanyInvitation({
-                          invitationId: invitation._id,
-                          decision: "accept",
-                        }),
-                      )
-                    }
-                  >
-                    Accept
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      void run(() =>
-                        decideCompanyInvitation({
-                          invitationId: invitation._id,
-                          decision: "decline",
-                        }),
-                      )
-                    }
-                    variant="outline"
-                  >
-                    Decline
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {actingCompany?.company ? (
+        <>
+          <nav aria-label="Company page sections" className="company-section-nav">
+            <a href="#overview">Overview</a>
+            {canAdministerActingCompany ? <><a href="#members">Members</a><a href="#invitations">Invitations</a><a href="#relationships">Relationships</a></> : null}
+            <a href="#shared-projects">Shared projects</a>
+            <a href="#projects">Projects</a>
+          </nav>
+          <section className="company-summary" id="overview" aria-labelledby="company-overview-heading">
+            <div className="company-summary-identity">{companyLogoUrl ? <img alt={`${actingCompany.company.displayName} logo`} className="company-logo company-logo-image" src={companyLogoUrl} /> : <span className="company-logo" aria-hidden="true">{actingCompany.company.displayName.slice(0, 2).toUpperCase()}</span>}<div><p className="company-eyebrow">Company overview</p><h2 id="company-overview-heading">{actingCompany.company.displayName}</h2><span>@{actingCompany.company.normalizedHandle}</span></div></div>
+            <dl><div><dt>Status</dt><dd><span className={`company-status ${actingCompany.company.status}`}>{actingCompany.company.status}</span></dd></div><div><dt>Members</dt><dd><Users aria-hidden="true" size={14} />{basicCompany?.memberCount ?? "—"}</dd></div><div><dt>Projects</dt><dd><FolderKanban aria-hidden="true" size={14} />{basicCompany?.projectCount ?? "—"}</dd></div><div><dt>Your role</dt><dd>{companyRoleLabels[actingCompany.membership.role]}</dd></div></dl>
+            {basicCompany?.company.description ? <p className="company-summary-description">{basicCompany.company.description}</p> : null}
+          </section>
+        </>
       ) : null}
 
       {actingCompanyId && actingCompany?.company?.status === "suspended" ? (
-        <section className="company-panel">
+        <section className="company-panel" id="company-status">
           <h2>Company suspended</h2>
           <p>
             Project and Channel access is paused. An owner can reactivate this
@@ -250,74 +341,59 @@ export function CompanyHubPage() {
       ) : null}
 
       {actingCompanyId && administration ? (
-        <section className="company-panel">
-          <div className="company-panel-heading">
-            <div>
-              <h2>Company members</h2>
-              <p>
-                Company membership alone grants no Project or Channel content.
-              </p>
-            </div>
-            {administration.membership.role === "owner" ? (
+        <>
+          <section className="company-panel" id="members">
+            <div className="company-section-heading">
               <div>
-                <Button
-                  onClick={() =>
-                    void run(() =>
-                      setSuspended({
-                        companyId: actingCompanyId,
-                        suspended: true,
-                      }),
-                    )
-                  }
-                  variant="outline"
-                >
-                  Suspend Company
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "Close this Company after confirming retention? Shared Projects must be exited first; retained history is not erased.",
-                      )
-                    ) {
-                      void run(() =>
-                        closeCompany({
-                          companyId: actingCompanyId,
-                          retentionConfirmed: true,
-                        }),
-                      );
-                    }
-                  }}
-                  variant="destructive"
-                >
-                  Close Company
-                </Button>
+                <h2>Members</h2>
+                <p>Company membership is separate from project and channel access.</p>
               </div>
-            ) : null}
-          </div>
-          {administration.membership.role !== "member" ? (
-            <CompanyProfileForm
-              key={actingCompanyId}
-              actingCompanyId={actingCompanyId}
-              displayName={administration.company.displayName}
-              run={run}
-            />
-          ) : null}
-          <ul className="company-list">
-            {administration.members.map(({ membership, user }) => (
-              <li key={membership._id}>
+              <span className="company-section-count">{administration.members.length}</span>
+            </div>
+            <ul className="company-list company-member-list">
+              <li aria-hidden="true" className="company-member-list-header">
+                <span />
+                <span>Member</span>
+                <span>Role</span>
+                <span>Status</span>
+                <span />
+              </li>
+            {administration.members.map(({ membership, user }) => {
+              const memberActions = resolveCompanyMemberActionCapabilities({
+                actorRole: administration.membership.role,
+                isCurrentUser: membership.userId === currentUser?._id,
+                targetRole: membership.role,
+                targetStatus: membership.status,
+              })
+              return (
+              <li className="company-member-row" key={membership._id}>
+                <span className="company-member-avatar" aria-hidden="true">
+                  {(user?.displayName ?? membership.userDisplayNameSnapshot).slice(0, 2).toUpperCase()}
+                </span>
                 <div>
                   <strong>
                     {user?.displayName ?? membership.userDisplayNameSnapshot}
                   </strong>
-                  <span>
-                    {membership.role} · {membership.status}
-                  </span>
+                  {user?.email ? <span>{user.email}</span> : null}
                 </div>
-                {administration.membership.role !== "member" &&
-                membership.userId !== currentUser?._id ? (
-                  <div>
-                    {membership.status === "active" &&
+                <span className="company-member-role">{companyRoleLabels[membership.role]}</span>
+                <span className="company-member-status" data-status={membership.status}>{membership.status}</span>
+                {memberActions.showMenu ? (
+                  <details
+                    className="company-member-actions"
+                    onKeyDown={(event) => {
+                      if (event.key !== "Escape") return
+                      event.preventDefault()
+                      event.currentTarget.removeAttribute("open")
+                      event.currentTarget.querySelector<HTMLElement>("summary")?.focus()
+                    }}
+                  >
+                    <summary aria-label={`More actions for ${user?.displayName ?? membership.userDisplayNameSnapshot}`} title="More actions">
+                      <MoreHorizontal aria-hidden="true" size={16} />
+                    </summary>
+                    <div aria-label={`Actions for ${user?.displayName ?? membership.userDisplayNameSnapshot}`} role="group">
+                    {memberActions.canChangeRole &&
+                    membership.status === "active" &&
                     membership.role !== "admin" ? (
                       <Button
                         onClick={() =>
@@ -334,7 +410,8 @@ export function CompanyHubPage() {
                         Make admin
                       </Button>
                     ) : null}
-                    {membership.status === "active" &&
+                    {memberActions.canChangeRole &&
+                    membership.status === "active" &&
                     membership.role !== "member" ? (
                       <Button
                         onClick={() =>
@@ -351,9 +428,7 @@ export function CompanyHubPage() {
                         Make member
                       </Button>
                     ) : null}
-                    {administration.membership.role === "owner" &&
-                    membership.status === "active" &&
-                    membership.role !== "owner" ? (
+                    {memberActions.canPromoteToOwner ? (
                       <Button
                         onClick={() =>
                           void run(() =>
@@ -369,7 +444,7 @@ export function CompanyHubPage() {
                         Promote to owner
                       </Button>
                     ) : null}
-                    <Button
+                    {memberActions.canChangeStatus ? <Button
                       onClick={() =>
                         void run(() =>
                           updateMember({
@@ -387,8 +462,8 @@ export function CompanyHubPage() {
                       {membership.status === "active"
                         ? "Suspend"
                         : "Reactivate"}
-                    </Button>
-                    <Button
+                    </Button> : null}
+                    {memberActions.canChangeStatus ? <Button
                       onClick={() =>
                         void run(() =>
                           updateMember({
@@ -401,24 +476,85 @@ export function CompanyHubPage() {
                       variant="destructive"
                     >
                       Remove
-                    </Button>
-                  </div>
+                    </Button> : null}
+                    </div>
+                  </details>
                 ) : null}
+              </li>
+              )
+            })}
+            </ul>
+          </section>
+
+          <section className="company-panel" id="invitations">
+            <div className="company-section-heading">
+              <div>
+                <h2>Invitations</h2>
+                <p>Invite company members and review outstanding requests.</p>
+              </div>
+              {administration.membership.role !== "member" ? (
+                <CompanyActionPopover
+                  description="Invite a person as a company member or company admin. Project access stays separate."
+                  label="Invite member"
+                  title="Invite a company member"
+                >
+                  <InviteMemberForm actingCompanyId={actingCompanyId} run={run} />
+                </CompanyActionPopover>
+              ) : null}
+            </div>
+            {administration.invitations.length ? (
+              <div className="company-subsection" id="company-pending-invitations">
+                <h3>Pending invitations</h3>
+                <ul className="company-list">
+                  {administration.invitations.map((invitation) => (
+                    <li key={invitation._id}>
+                      <div><strong>{invitation.normalizedEmail}</strong><span>{companyRoleLabels[invitation.role]} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</span></div>
+                      <Button onClick={() => void run(() => revokeCompanyInvitation({ companyId: actingCompanyId, invitationId: invitation._id }))} variant="outline">Revoke</Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+
+      {(companyInvitations ?? []).length > 0 ? (
+        <section className="company-panel" id="invitations-for-you">
+          <div className="company-section-heading">
+            <div>
+              <h2>Invitations for you</h2>
+              <p>Accept or decline companies that invited your account.</p>
+            </div>
+          </div>
+          <ul className="company-list">
+            {companyInvitations?.map(({ company, invitation }) => (
+              <li key={invitation._id}>
+                <div><strong>{company?.displayName}</strong><span>{companyRoleLabels[invitation.role]} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</span></div>
+                <div>
+                  <Button onClick={() => void run(() => decideCompanyInvitation({ invitationId: invitation._id, decision: "accept" }))}>Accept</Button>
+                  <Button onClick={() => void run(() => decideCompanyInvitation({ invitationId: invitation._id, decision: "decline" }))} variant="outline">Decline</Button>
+                </div>
               </li>
             ))}
           </ul>
-          {administration.membership.role !== "member" ? (
-            <InviteMemberForm actingCompanyId={actingCompanyId} run={run} />
-          ) : null}
         </section>
       ) : null}
 
       {actingCompanyId &&
       administration &&
       administration.membership.role !== "member" ? (
-        <section className="company-panel">
-          <h2>Relationships</h2>
-          <RelationshipForm actingCompanyId={actingCompanyId} run={run} />
+        <section className="company-panel" id="relationships">
+          <div className="company-section-heading">
+            <div><h2>Relationships</h2><p>Companies approved to collaborate on shared projects.</p></div>
+            <CompanyActionPopover
+              description="Connect to one exact company handle. Track keeps company discovery private."
+              label="New relationship"
+              title="Create a relationship"
+            >
+              <RelationshipForm actingCompanyId={actingCompanyId} run={run} />
+            </CompanyActionPopover>
+          </div>
           {(relationshipInvitations ?? []).length ? (
             <ul className="company-list">
               {relationshipInvitations?.map(
@@ -547,19 +683,27 @@ export function CompanyHubPage() {
         </section>
       ) : null}
 
-      {actingCompanyId && currentUser && administration ? (
-        <section className="company-panel">
-          <h2>Shared Projects</h2>
-          {administration.membership.role !== "member" ? (
-            <SharedProjectForm
-              actingCompanyId={actingCompanyId}
-              currentUserId={currentUser._id}
-              relationships={(relationships ?? []).filter(
-                (item) => item.relationship.status === "active",
-              )}
-              run={run}
-            />
-          ) : null}
+      {actingCompanyId && currentUser && actingCompany?.company ? (
+        <section className="company-panel" id="shared-projects">
+          <div className="company-section-heading">
+            <div><h2>Shared projects</h2><p>Projects where this company collaborates with other companies.</p></div>
+            {canAdministerActingCompany ? (
+              <CompanyActionPopover
+                description="Choose an active relationship, then propose a project to its participating companies."
+                label="Propose project"
+                title="Propose a shared project"
+              >
+                <SharedProjectForm
+                  actingCompanyId={actingCompanyId}
+                  currentUserId={currentUser._id}
+                  relationships={(relationships ?? []).filter(
+                    (item) => item.relationship.status === "active",
+                  )}
+                  run={run}
+                />
+              </CompanyActionPopover>
+            ) : null}
+          </div>
           {(projectInvitations ?? []).length ? (
             <ul className="company-list">
               {projectInvitations?.map(
@@ -611,13 +755,13 @@ export function CompanyHubPage() {
             </ul>
           ) : null}
           <ul className="company-list">
-            {projects?.map((item) => (
+            {sharedProjects.map((item) => (
               <li key={item.membership._id}>
                 <div>
                   <strong>{item.project.name}</strong>
                   <span>
                     {item.membership.role} · {item.membership.status} ·
-                    represented by {administration?.company.displayName}
+                    represented by {actingCompany.company.displayName} · {item.memberCount} members · {item.channelCount} channels · updated {new Date(item.lastActivityAt).toLocaleDateString()}
                   </span>
                 </div>
                 <Link
@@ -626,6 +770,7 @@ export function CompanyHubPage() {
                     companyId: actingCompanyId,
                     groupId: '',
                     membershipId: item.membership._id,
+                    view: 'channels',
                   }}
                   to="/workspace/company-projects/$projectId"
                 >
@@ -636,18 +781,75 @@ export function CompanyHubPage() {
           </ul>
         </section>
       ) : null}
+      {actingCompany?.company ? <section className="company-panel company-legacy-projects" id="projects">
+        <div className="company-section-heading">
+          <div><h2>Company projects</h2><p>Private project spaces owned by this company. Membership is granted separately from company membership.</p></div>
+          <div className="company-section-heading-actions">
+            <Link search={{ directory: true }} to="/workspace">View all projects</Link>
+            {activeActingCompanyId && canAdministerActingCompany ? (
+              <CompanyActionPopover
+                description="Create a company project. You become its first project manager."
+                label="New project"
+                title="Create a company project"
+              >
+                <CompanyProjectForm actingCompanyId={activeActingCompanyId} run={run} />
+              </CompanyActionPopover>
+            ) : null}
+          </div>
+        </div>
+        <ul className="company-list">
+          {companyProjects.map((item) => <li key={item.membership._id}><div><strong>{item.project.name}</strong><span>{actingCompany?.company.displayName} · {item.role} · {item.projectStatus} · {item.memberCount} members · {item.channelCount} channels · updated {new Date(item.lastActivityAt).toLocaleDateString()}</span></div>{item.company ? <Link params={{ projectId: item.project._id }} search={{ companyId: item.company._id, groupId: '', membershipId: item.membership._id, view: 'channels' }} to="/workspace/company-projects/$projectId">Open project</Link> : null}</li>)}
+        </ul>
+        <div className="company-section-heading"><div><h3>Legacy projects</h3><p>Older projects remain available through the translated legacy access model.</p></div></div>
+        <ul className="company-list">
+          {legacyProjects.map((item) => <li key={item.membership._id}><div><strong>{item.project.name}</strong><span>Legacy · {item.role} · {item.projectStatus} · {item.memberCount} members · {item.channelCount} channels</span></div><Link params={{ projectId: item.project._id }} to="/workspace/projects/$projectId">Open project</Link></li>)}
+        </ul>
+      </section> : null}
+      {actingCompanyId && administration?.membership.role === "owner" ? (
+        <section className="company-panel company-danger-zone" aria-labelledby="company-danger-heading">
+          <div className="company-section-heading">
+            <div>
+              <h2 id="company-danger-heading">Danger zone</h2>
+              <p>Suspend access temporarily or permanently close this company.</p>
+            </div>
+          </div>
+          <div className="company-danger-actions">
+            <div><strong>Suspend company</strong><span>Pause project and channel access until an owner reactivates it.</span></div>
+            <Button onClick={() => void run(() => setSuspended({ companyId: actingCompanyId, suspended: true }))} variant="outline">Suspend company</Button>
+          </div>
+          <div className="company-danger-actions">
+            <div><strong>Close company</strong><span>Close the company after shared-project retention requirements are met.</span></div>
+            <Button
+              onClick={() => {
+                if (window.confirm("Close this company after confirming retention? Shared projects must be exited first; retained history is not erased.")) {
+                  void run(() => closeCompany({ companyId: actingCompanyId, retentionConfirmed: true }));
+                }
+              }}
+              variant="destructive"
+            >
+              Close company
+            </Button>
+          </div>
+        </section>
+      ) : null}
       {actingCompanyId &&
       currentUser &&
       administration &&
       administration.membership.role !== "member" ? (
-        <MigrationPanel
-          actingCompanyId={actingCompanyId}
-          currentUserId={currentUser._id}
-          relationships={(relationships ?? []).filter(
-            (item) => item.relationship.status === "active",
-          )}
-          run={run}
-        />
+        <details className="company-advanced-disclosure">
+          <summary>
+            <span><strong>Legacy project upgrade</strong><small>Map an older project into the company access model.</small></span>
+            <ChevronDown aria-hidden="true" size={16} />
+          </summary>
+          <MigrationPanel
+            actingCompanyId={actingCompanyId}
+            currentUserId={currentUser._id}
+            relationships={(relationships ?? []).filter(
+              (item) => item.relationship.status === "active",
+            )}
+            run={run}
+          />
+        </details>
       ) : null}
     </main>
   );

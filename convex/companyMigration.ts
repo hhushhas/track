@@ -360,7 +360,7 @@ export const activate = mutation({
     const projectCompanyByCompany = new Map()
     for (const confirmation of confirmations) {
       if (!mappings.some((mapping) => mapping.companyId === confirmation.companyId && mapping.neutralRole === 'manager')) {
-        throw new Error('company_manager_required')
+        throw new Error('project_manager_required')
       }
       const projectCompanyId = await ctx.db.insert('projectCompanies', {
         projectId: project._id,

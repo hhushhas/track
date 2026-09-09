@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
+import { appToast } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { DatePicker } from '#/components/ui/date-picker'
 import {
@@ -86,8 +87,11 @@ export function TaskCreateDialog({
       setAssignee('')
       setLabelIds([])
       onCreated(result.publicKey)
+      appToast.success('Task created', `${result.publicKey} is ready.`)
     } catch (failure) {
-      setError(taskError(failure))
+      const message = taskError(failure)
+      setError(message)
+      appToast.error('Task not created', message)
     } finally {
       setSaving(false)
     }
@@ -122,7 +126,7 @@ export function TaskCreateDialog({
             <label>Due date<DatePicker aria-label="Due date" onChange={setDueDate} value={dueDate} /></label>
           </div>
           <fieldset><legend>Labels</legend><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => setLabelIds((current) => current.includes(label._id) ? current.filter((id) => id !== label._id) : [...current, label._id])} size="sm" type="button" variant={labelIds.includes(label._id) ? 'default' : 'outline'}>{label.name}</Button>)}</div></fieldset>
-          {error ? <p className="task-form-error" role="alert">{error}</p> : null}
+          {error ? <p className="task-form-error">{error}</p> : null}
           <DialogFooter><Button disabled={saving || !title.trim()} type="submit">{saving ? 'Creating…' : 'Create task'}</Button></DialogFooter>
         </form>
       </DialogContent>

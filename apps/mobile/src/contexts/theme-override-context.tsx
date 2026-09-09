@@ -13,12 +13,14 @@ import {
 const STORE_KEY = 'theme_override';
 
 type ThemeOverrideContextValue = {
+  isThemeReady: boolean;
   theme: ThemeName;
   themeOverride: ThemeOverride;
   setThemeOverride: (value: ThemeOverride) => void;
 };
 
 const ThemeOverrideContext = createContext<ThemeOverrideContextValue>({
+  isThemeReady: false,
   theme: 'light',
   themeOverride: 'system',
   setThemeOverride: () => undefined,
@@ -26,12 +28,24 @@ const ThemeOverrideContext = createContext<ThemeOverrideContextValue>({
 
 export function ThemeOverrideProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
+  const [isThemeReady, setIsThemeReady] = useState(false);
   const [themeOverride, setThemeOverrideState] = useState<ThemeOverride>('system');
 
   useEffect(() => {
-    void platformStorage.getItemAsync(STORE_KEY).then((saved) => {
-      setThemeOverrideState(isThemeOverride(saved) ? saved : 'system');
-    });
+    let active = true;
+    void platformStorage.getItemAsync(STORE_KEY)
+      .then((saved) => {
+        if (active) setThemeOverrideState(isThemeOverride(saved) ? saved : 'system');
+      })
+      .catch(() => {
+        // A storage failure falls back to the system theme for this launch.
+      })
+      .finally(() => {
+        if (active) setIsThemeReady(true);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   /**
@@ -56,10 +70,11 @@ export function ThemeOverrideProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const value = useMemo(() => ({
+    isThemeReady,
     theme: resolveTheme(themeOverride, systemScheme),
     themeOverride,
     setThemeOverride,
-  }), [setThemeOverride, systemScheme, themeOverride]);
+  }), [isThemeReady, setThemeOverride, systemScheme, themeOverride]);
 
   return (
     <ThemeOverrideContext value={value}>

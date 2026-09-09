@@ -14,7 +14,8 @@ import type {
   TaskEditField,
 } from '@/components/task-detail-types';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Colors, MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticMedium } from '@/lib/haptics';
 import {
@@ -34,6 +35,7 @@ export function TaskDetailsTab({
   onAddSubtask,
   onEditField,
   onOpenReference,
+  onOpenSubtask,
   onSubtaskChange,
   onToggleSubtask,
   readOnly,
@@ -47,6 +49,7 @@ export function TaskDetailsTab({
   onAddSubtask: () => void;
   onEditField: (field: TaskEditField) => void;
   onOpenReference: (reference: Doc<'taskReferences'>) => void;
+  onOpenSubtask: (item: MobileTaskListItem) => void;
   onSubtaskChange: (value: string) => void;
   onToggleSubtask: (item: MobileTaskListItem) => void;
   readOnly: boolean;
@@ -54,6 +57,7 @@ export function TaskDetailsTab({
   subtasks: MobileTaskListItem[];
 }) {
   const theme = useTheme();
+  const [expandedSubtaskId, setExpandedSubtaskId] = useState<string | null>(null);
   const due = taskDueDisplay(detail.task.dueDate, undefined, detail.state?.category);
   return (
     <>
@@ -94,6 +98,7 @@ export function TaskDetailsTab({
         <Pressable
           accessibilityHint={readOnly ? undefined : 'Opens the description editor'}
           accessibilityRole={readOnly ? 'text' : 'button'}
+          accessibilityState={{ disabled: readOnly }}
           disabled={readOnly}
           onPress={() => onEditField('description')}
           style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
@@ -120,7 +125,7 @@ export function TaskDetailsTab({
                 style={[styles.label, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
                 <PlatformIcon color={theme.textSecondary} name="tag" size={15} />
                 <ThemedText themeColor="textSecondary" type="smallBold">
-                  {detail.labels.length ? 'Edit' : 'Add labels'}
+                  Edit labels
                 </ThemedText>
               </Pressable>
             ) : null}
@@ -141,25 +146,24 @@ export function TaskDetailsTab({
               {subtasks.map((item, index) => {
                 const complete = item.state?.category === 'completed' || item.state?.category === 'canceled';
                 return (
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: complete, disabled: readOnly }}
-                    disabled={readOnly || busy}
+                  <View
                     key={item.task._id}
-                    onPress={() => onToggleSubtask(item)}
                     style={[styles.checkRow, index > 0 && {
                       borderTopColor: theme.hairline,
                       borderTopWidth: StyleSheet.hairlineWidth,
                     }]}>
-                    <PlatformIcon color={complete ? theme.accent : theme.textSecondary} name={complete ? 'check-box' : 'check-box-outline'} size={21} />
-                    <ThemedText style={[styles.checkLabel, complete && {
-                      color: theme.textSecondary,
-                      textDecorationLine: 'line-through',
-                    }]} type="small">
-                      {item.task.title}
-                    </ThemedText>
-                    <ThemedText themeColor="textSecondary" type="caption">{item.state?.name ?? 'Unknown'}</ThemedText>
-                  </Pressable>
+                    <Pressable accessibilityLabel={`${complete ? 'Mark incomplete' : 'Mark complete'}: ${item.task.title}`} accessibilityRole="checkbox" accessibilityState={{ checked: complete, disabled: readOnly || busy }} disabled={readOnly || busy} hitSlop={8} onPress={() => onToggleSubtask(item)} style={styles.checkbox}>
+                      <PlatformIcon color={complete ? theme.accent : theme.textSecondary} name={complete ? 'check-box' : 'check-box-outline'} size={22} />
+                    </Pressable>
+                    <Pressable accessibilityHint={item.task.description ? 'Expands the checklist description' : 'Opens checklist item details'} accessibilityRole="button" onPress={() => item.task.description ? setExpandedSubtaskId((current) => current === item.task._id ? null : item.task._id) : onOpenSubtask(item)} style={styles.checkBody}>
+                      <View style={styles.checkTitleRow}>
+                        <ThemedText numberOfLines={2} style={[styles.checkLabel, complete && { color: theme.textSecondary, textDecorationLine: 'line-through' }]} type="small">{item.task.title}</ThemedText>
+                        {item.task.description ? <PlatformIcon color={theme.textTertiary} name={expandedSubtaskId === item.task._id ? 'chevron-up' : 'chevron-down'} size={17} /> : <PlatformIcon color={theme.textTertiary} name="chevron-right" size={17} />}
+                      </View>
+                      {expandedSubtaskId === item.task._id && item.task.description ? <ThemedText themeColor="textSecondary" type="caption">{item.task.description}</ThemedText> : null}
+                      <View style={styles.checkMeta}><ThemedText themeColor="textSecondary" type="caption">{item.state?.name ?? 'Unknown'}</ThemedText>{expandedSubtaskId === item.task._id ? <Pressable accessibilityRole="button" onPress={() => onOpenSubtask(item)}><ThemedText themeColor="accentStrong" type="captionBold">Open details</ThemedText></Pressable> : null}</View>
+                    </Pressable>
+                  </View>
                 );
               })}
             </View>
@@ -170,6 +174,8 @@ export function TaskDetailsTab({
             <TextInput
               accessibilityLabel="New checklist item"
               allowFontScaling
+              maxFontSizeMultiplier={MaxFontScale}
+              maxLength={180}
               onChangeText={onSubtaskChange}
               placeholder="Add a checklist item"
               placeholderTextColor={theme.textSecondary}
@@ -182,6 +188,8 @@ export function TaskDetailsTab({
             />
             <Pressable
               accessibilityLabel="Add checklist item"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !subtask.trim() || busy }}
               disabled={!subtask.trim() || busy}
               onPress={onAddSubtask}
               style={[styles.addButton, {
@@ -313,6 +321,7 @@ export function TaskCommentComposer({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const bottomTabBarInset = useBottomTabBarInset();
   const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   const canSend = value.trim().length > 0 && !busy;
 
@@ -329,7 +338,10 @@ export function TaskCommentComposer({
     <View style={[styles.composer, {
       backgroundColor: theme.background,
       borderTopColor: theme.hairline,
-      paddingBottom: keyboardVisible ? Spacing.two : Math.max(insets.bottom, Spacing.three),
+      marginBottom: keyboardVisible ? 0 : bottomTabBarInset,
+      paddingBottom: keyboardVisible
+        ? Spacing.two
+        : Platform.OS === 'ios' ? Spacing.three : Math.max(insets.bottom, Spacing.three),
     }]}>
       {assignees?.length ? (
         <ScrollView
@@ -361,6 +373,8 @@ export function TaskCommentComposer({
         <TextInput
           accessibilityLabel="Add a task comment"
           allowFontScaling
+          maxFontSizeMultiplier={MaxFontScale}
+          maxLength={10_000}
           multiline
           onChangeText={onChangeText}
           placeholder="Add a comment…"
@@ -370,6 +384,8 @@ export function TaskCommentComposer({
         />
         <Pressable
           accessibilityLabel="Send comment"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSend }}
           disabled={!canSend}
           onPress={() => {
             hapticMedium();
@@ -432,6 +448,7 @@ function MetadataRow({
       accessibilityHint={onPress ? `Changes the ${label.toLowerCase()}` : undefined}
       accessibilityLabel={`${label}: ${value}`}
       accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityState={{ disabled: !onPress }}
       disabled={!onPress}
       onPress={onPress}
       style={({ pressed }) => [styles.metadataRow, {
@@ -465,8 +482,12 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   addButton: { alignItems: 'center', borderRadius: Radius.medium, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   addSubtask: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
+  checkbox: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  checkBody: { flex: 1, gap: Spacing.one, minHeight: TouchTarget, paddingVertical: Spacing.two },
   checkLabel: { flex: 1 },
-  checkRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  checkMeta: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  checkRow: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingRight: Spacing.three },
+  checkTitleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   checklist: { borderRadius: Radius.large, overflow: 'hidden' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   comment: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.two },

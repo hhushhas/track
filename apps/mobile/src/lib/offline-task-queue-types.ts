@@ -3,6 +3,8 @@ import type { Id } from '../../../../convex/_generated/dataModel';
 export type OfflineTaskCreate = {
   projectId: Id<'projects'>;
   groupId?: Id<'groups'>;
+  boardId?: Id<'taskBoards'>;
+  workflowStateId?: Id<'taskWorkflowStates'>;
   title: string;
   priority: 'none' | 'urgent' | 'high' | 'medium' | 'low';
   dueDate?: string;
@@ -19,4 +21,3 @@ export type OfflineTaskCreate = {
 };
 
 export type OfflineTaskItem = OfflineTaskCreate & { queuedAt: number; lastError?: string };
-

@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
+import { appToast } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { DatePicker } from '#/components/ui/date-picker'
 import { Input } from '#/components/ui/input'
@@ -71,6 +72,7 @@ export function TaskDetailDrawer({
   const [scopeBoardId, setScopeBoardId] = useState('')
   const [scopeConfirmed, setScopeConfirmed] = useState(false)
   const [error, setError] = useState('')
+  const [errorAnnouncedByToast, setErrorAnnouncedByToast] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -85,6 +87,7 @@ export function TaskDetailDrawer({
     })
     setLabelIds(detail.labels.map((label) => label._id))
     setError('')
+    setErrorAnnouncedByToast(false)
   }, [detail])
 
   const board = boardRows?.find((item) => item.board._id === detail?.task.boardId)
@@ -100,6 +103,7 @@ export function TaskDetailDrawer({
     if (!detail) return
     setSaving(true)
     setError('')
+    setErrorAnnouncedByToast(false)
     try {
       await updateTask({
         taskId: detail.task._id,
@@ -113,9 +117,15 @@ export function TaskDetailDrawer({
         confirmOpenSubtasks: true,
         ...identity,
       })
-      onAnnounce(`${detail.task.publicKey} saved.`)
+      appToast.success(
+        draft.stateId === detail.task.workflowStateId ? 'Task saved' : 'Task status updated',
+        draft.stateId === detail.task.workflowStateId ? detail.task.publicKey : `${detail.task.publicKey} moved to ${selectedState?.name ?? 'the selected status'}.`,
+      )
     } catch (failure) {
-      setError(taskError(failure))
+      const message = taskError(failure)
+      setError(message)
+      setErrorAnnouncedByToast(true)
+      appToast.error('Task not saved', message)
     } finally {
       setSaving(false)
     }
@@ -137,6 +147,7 @@ export function TaskDetailDrawer({
       onAnnounce('Comment added.')
     } catch (failure) {
       setError(taskError(failure))
+      setErrorAnnouncedByToast(false)
     }
   }
 
@@ -157,6 +168,7 @@ export function TaskDetailDrawer({
       onAnnounce('Subtask created.')
     } catch (failure) {
       setError(taskError(failure))
+      setErrorAnnouncedByToast(false)
     }
   }
 
@@ -195,7 +207,7 @@ export function TaskDetailDrawer({
                 {detail.capabilities.canEdit ? <Button className="task-save-button" disabled={saving} size="sm" type="submit"><Check size={13} /> {saving ? 'Saving…' : 'Save changes'}</Button> : <p className="task-read-only">Read-only task history</p>}
               </form>
 
-              {error ? <p className="task-form-error" role="alert">{error}</p> : null}
+              {error ? <p className="task-form-error" role={errorAnnouncedByToast ? undefined : 'alert'}>{error}</p> : null}
               <div className="task-detail-actions">
                 <Button onClick={() => void setFollowing({ taskId: detail.task._id, enabled: !detail.following, ...identity })} variant="outline"><UserRound size={13} /> {detail.following ? 'Unfollow' : 'Follow'}</Button>
                 {detail.capabilities.canArchive ? <Button onClick={() => void setArchived({ taskId: detail.task._id, archived: !detail.task.archivedAt, ...identity })} variant="outline"><Archive size={13} /> {detail.task.archivedAt ? 'Restore' : 'Archive'}</Button> : null}

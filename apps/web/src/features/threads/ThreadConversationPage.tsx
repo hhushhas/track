@@ -1,6 +1,7 @@
 import { parseMentions } from '@track/shared'
+import { Link } from '@tanstack/react-router'
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
@@ -15,7 +16,7 @@ import {
   CreateTaskFromMessage,
   MessageInlineTasks,
 } from '#/features/tasks/ConversationTaskActions'
-import { useReleaseConfig } from '#/lib/release-config'
+import { resolveReleaseConfig, useReleaseConfigProjection } from '#/lib/release-config'
 import type { RepresentedThreadContext } from './thread-navigation'
 
 export function ThreadConversationPage({
@@ -29,7 +30,8 @@ export function ThreadConversationPage({
   projectId: Id<'projects'>
   threadId: Id<'channelThreads'>
 }) {
-  const releaseConfig = useReleaseConfig()
+  const releaseConfigProjection = useReleaseConfigProjection()
+  const releaseConfig = resolveReleaseConfig(releaseConfigProjection)
   const currentUser = useQuery(api.auth.getCurrentUser)
   const navigation = useQuery(
     api.mobile.resolveNavigation,
@@ -143,10 +145,6 @@ export function ThreadConversationPage({
       item,
     })),
   ].sort((a, b) => a.at - b.at), [assistantStreams, messages])
-
-  const backHref = context
-    ? `/workspace/company-projects/${projectId}?companyId=${context.actingCompanyId}&membershipId=${context.projectMemberId}&groupId=${groupId}`
-    : `/workspace/projects/${projectId}/groups/${groupId}`
 
   async function submitMessage(event: FormEvent) {
     event.preventDefault()
@@ -296,20 +294,23 @@ export function ThreadConversationPage({
     }
   }
 
-  if (!releaseConfig.threads) return <Unavailable backHref={backHref} />
+  if (releaseConfigProjection === undefined) {
+    return <main className="track-thread-route"><p role="status">Opening thread…</p></main>
+  }
+  if (!releaseConfig.threads) return <Unavailable context={context} groupId={groupId} projectId={projectId} />
   if (typeof navigator !== 'undefined' && !navigator.onLine && thread === undefined) {
-    return <Unavailable backHref={backHref} detail="You're offline and this thread isn't available on this device." retry />
+    return <Unavailable context={context} detail="You're offline and this thread isn't available on this device." groupId={groupId} projectId={projectId} retry />
   }
   if (!currentUser || navigation === undefined || (navigation.available && thread === undefined)) {
     return <main className="track-thread-route"><p role="status">Opening thread…</p></main>
   }
-  if (!navigation.available || !thread) return <Unavailable backHref={backHref} />
+  if (!navigation.available || !thread) return <Unavailable context={context} groupId={groupId} projectId={projectId} />
 
   const archived = thread.thread.status === 'archived' || navigation.archived
   return (
     <main className="track-thread-route" aria-busy={busy}>
       <header className="track-thread-route-header">
-        <a href={backHref}>← Back to Channel</a>
+        <ChannelBackLink context={context} groupId={groupId} projectId={projectId}>← Back to Channel</ChannelBackLink>
         <div>
           <span className="mono-label">Thread</span>
           <h1>{thread.thread.name}</h1>
@@ -339,14 +340,14 @@ export function ThreadConversationPage({
         </form>
       ) : null}
       {thread.source ? (
-        <aside className="track-thread-source">
+      <aside aria-label="Source message" className="track-thread-source">
           <strong>Source message</strong>
           {'unavailable' in thread.source ? (
             <p>Source message unavailable.</p>
           ) : (
-            <a href={`${backHref}#message-${thread.source.messageId}`}>
+            <ChannelBackLink context={context} groupId={groupId} hash={`message-${thread.source.messageId}`} projectId={projectId}>
               {thread.source.body || 'Attachment message'}
-            </a>
+            </ChannelBackLink>
           )}
         </aside>
       ) : null}
@@ -450,13 +451,47 @@ type ThreadMessageDetail = {
 }
 
 function Unavailable({
-  backHref,
+  context,
   detail = 'Thread unavailable or access changed.',
+  groupId,
+  projectId,
   retry = false,
 }: {
-  backHref: string
+  context?: RepresentedThreadContext
   detail?: string
+  groupId: Id<'groups'>
+  projectId: Id<'projects'>
   retry?: boolean
 }) {
-  return <main className="track-thread-route"><h1>Thread unavailable</h1><p>{detail}</p>{retry ? <Button onClick={() => window.location.reload()}>Retry</Button> : null}<a href={backHref}>Back to Channel</a></main>
+  return <main className="track-thread-route"><h1>Thread unavailable</h1><p>{detail}</p>{retry ? <Button onClick={() => window.location.reload()}>Retry</Button> : null}<ChannelBackLink context={context} groupId={groupId} projectId={projectId}>Back to Channel</ChannelBackLink></main>
+}
+
+function ChannelBackLink({
+  children,
+  context,
+  groupId,
+  hash,
+  projectId,
+}: {
+  children: ReactNode
+  context?: RepresentedThreadContext
+  groupId: Id<'groups'>
+  hash?: string
+  projectId: Id<'projects'>
+}) {
+  return context ? (
+    <Link
+      hash={hash}
+      params={{ projectId }}
+      search={{
+        companyId: context.actingCompanyId,
+        groupId,
+        membershipId: context.projectMemberId,
+        view: 'channels',
+      }}
+      to="/workspace/company-projects/$projectId"
+    >{children}</Link>
+  ) : (
+    <Link hash={hash} params={{ groupId, projectId }} to="/workspace/projects/$projectId/groups/$groupId">{children}</Link>
+  )
 }

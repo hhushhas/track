@@ -34,7 +34,7 @@
     "oxlint": "^1.73.0",
     "turbo": "^2.10.4",
     "typescript": "7.0.2",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wrangler": "^4.110.0"
   },
   "dependencies": {
@@ -47,7 +47,7 @@
     "better-auth": "1.6.25",
     "fflate": "0.8.3",
     "firebase-admin": "14.2.0",
-    "hono": "4.12.34",
+    "hono": "4.13.5",
     "jose": "6.2.5",
     "react": "19.2.0",
     "react-dom": "19.2.0",

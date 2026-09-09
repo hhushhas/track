@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -32,5 +32,13 @@ describe('web Acting Company selection', () => {
 
     rerender({ available: [first] })
     expect(result.current.actingCompanyId).toBe(first)
+  })
+
+  it('persists an applied Company before the current screen unmounts', () => {
+    const { result } = renderHook(() => useActingCompany([first, second]))
+
+    act(() => result.current.setActingCompanyId(second))
+
+    expect(window.localStorage.getItem('track-acting-company-id')).toBe(second)
   })
 })

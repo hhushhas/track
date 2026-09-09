@@ -88,6 +88,43 @@ describe('Company model authorization and lifecycle', () => {
   it('enforces invitation and Project lifecycle transitions', async () => {
     {
       const t = convexTest(schema, modules)
+      const owner = await seedUser(t, 'expired-invitation-owner')
+      const targetOwner = await seedUser(t, 'expired-invitation-target')
+      const companyId = await createCompany(t, owner, 'Expiry Source', 'expiry-source')
+      const targetCompanyId = await createCompany(t, targetOwner, 'Expiry Target', 'expiry-target')
+      const now = Date.now()
+      const invitationIds = await t.run(async (ctx) => {
+        const relationshipId = await ctx.db.insert('relationships', {
+          name: 'Expired Relationship', status: 'forming', createdBy: owner,
+          createdByCompanyId: companyId, participantRevision: 0, revision: 1,
+          createdAt: now, updatedAt: now,
+        })
+        const relationshipInvitationId = await ctx.db.insert('relationshipInvitations', {
+          relationshipId, targetCompanyId, invitingCompanyId: companyId, invitedBy: owner,
+          tokenHash: 'expired-relationship-invitation', status: 'pending', expiresAt: now - 1,
+          createdAt: now, updatedAt: now,
+        })
+        const projectId = await ctx.db.insert('projects', {
+          accessProfile: 'company', createdAt: now, createdBy: owner, name: 'Expired Shared Project',
+          origin: 'shared', participantRevision: 0, revision: 1, status: 'proposed', updatedAt: now,
+        })
+        const projectInvitationId = await ctx.db.insert('projectCompanyInvitations', {
+          projectId, targetCompanyId, invitingCompanyId: companyId, invitedBy: owner,
+          tokenHash: 'expired-project-invitation', status: 'pending', expiresAt: now - 1,
+          createdAt: now, updatedAt: now,
+        })
+        return { projectInvitationId, relationshipInvitationId }
+      })
+      expect(await asUser(t, targetOwner).mutation(api.relationships.decideInvitation, {
+        actingCompanyId: targetCompanyId, decision: 'accept', invitationId: invitationIds.relationshipInvitationId,
+      })).toEqual({ invitationId: invitationIds.relationshipInvitationId, status: 'expired' })
+      expect(await asUser(t, targetOwner).mutation(api.sharedProjects.decideInvitation, {
+        actingCompanyId: targetCompanyId, decision: 'accept', initialMembers: [{ role: 'manager', userId: targetOwner }],
+        invitationId: invitationIds.projectInvitationId,
+      })).toEqual({ invitationId: invitationIds.projectInvitationId, status: 'expired' })
+    }
+    {
+      const t = convexTest(schema, modules)
       const owner = await seedUser(t, 'closing-owner')
       const targetOwner = await seedUser(t, 'closing-target-owner')
       const companyId = await createCompany(t, owner, 'Closing Company', 'closing-company')
@@ -149,7 +186,11 @@ describe('Company model authorization and lifecycle', () => {
     const actor = asUser(t, owner)
 
     await actor.mutation(api.companies.setSuspended, { companyId, suspended: true })
-    await expect(actor.query(api.mobile.listProjects, { actingCompanyId: companyId, userId: owner })).rejects.toThrow('company_unavailable')
+    await expect(actor.query(api.mobile.listProjects, {
+      actingCompanyId: companyId,
+      userId: owner,
+      paginationOpts: { cursor: null, numItems: 50 },
+    })).rejects.toThrow('company_unavailable')
     await expect(actor.query(api.sharedProjects.listForActingCompany, { actingCompanyId: companyId })).rejects.toThrow('company_unavailable')
 
     vi.stubEnv('TRACK_COMPANY_MODEL_ENABLED', 'false')
@@ -572,6 +613,26 @@ describe('Company model authorization and lifecycle', () => {
       actingCompanyId: aCompany,
       projectMemberId: firstExit.aMember!._id,
     }
+    const archivedOverview = await asUser(t, a).query(api.sharedProjects.getOverview, {
+      projectId,
+      ...archivedIdentity,
+    })
+    expect(archivedOverview.memberCount).toBe(2)
+    expect(archivedOverview.managers.map((manager) => manager.displayName))
+      .toContain('company-a-owner')
+    expect(archivedOverview.managers.map((manager) => manager.displayName))
+      .not.toContain('Live author after exit')
+    expect(archivedOverview.companies).toHaveLength(2)
+    await t.run(async (ctx) => await ctx.db.patch(projectId, { status: 'archived' }))
+    const archivedProjectList = await asUser(t, a).query(api.projects.listAccessible, {})
+    expect(archivedProjectList).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        project: expect.objectContaining({ _id: projectId, status: 'archive_pending' }),
+        projectStatus: 'archive_pending',
+        memberCount: 2,
+      }),
+    ]))
+    await t.run(async (ctx) => await ctx.db.patch(projectId, { status: 'archive_pending' }))
     expect(await asUser(t, a).query(api.channelThreads.listMessages, {
       threadId: exitThreadId,
       userId: a,

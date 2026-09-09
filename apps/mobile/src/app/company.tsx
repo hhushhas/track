@@ -3,6 +3,8 @@ import { useMutation, useQuery } from 'convex/react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
+import { ActionButton } from '@/components/action-button';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
@@ -13,6 +15,8 @@ import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
+import { companyRoleLabel } from '@/lib/role-label';
+import { useState } from 'react';
 
 type NamedCompany = { displayName: string; _id?: string };
 
@@ -38,7 +42,10 @@ export default function CompanyScreen() {
 
   async function run(action: () => Promise<unknown>, success: string) {
     try {
-      await action();
+      const result = await action();
+      if (typeof result === 'object' && result !== null && 'status' in result && result.status === 'expired') {
+        throw new Error('invitation_expired');
+      }
       Alert.alert(success);
     } catch {
       Alert.alert(
@@ -64,6 +71,7 @@ export default function CompanyScreen() {
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{ title: 'Companies' }} />
       <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+        <ConnectivityBanner />
         <ActingIdentityCard company={actingCompany?.company} role={actingCompany?.membership.role} />
 
         <Section title="Act as">
@@ -84,8 +92,8 @@ export default function CompanyScreen() {
                 <CompanyChoice
                   detail={
                     company.status === 'active'
-                      ? membership.role
-                      : `${membership.role} · ${company.status}`
+                      ? companyRoleLabel(membership.role)
+                      : `${companyRoleLabel(membership.role)} · ${company.status}`
                   }
                   key={company._id}
                   label={company.displayName}
@@ -129,7 +137,7 @@ export default function CompanyScreen() {
                     'Invitation declined',
                   )
                 }
-                detail={`Join as ${invitation.role}`}
+                detail={`Join as ${companyRoleLabel(invitation.role)}`}
                 key={invitation._id}
                 title={company?.displayName ?? 'Company'}
               />
@@ -279,7 +287,7 @@ function ActingIdentityCard({
           {company?.displayName ?? 'Personal / legacy Projects'}
         </ThemedText>
         <ThemedText themeColor="textSecondary" type="caption">
-          {company ? `${role} · ${company.status}` : 'No Company identity represented'}
+          {company ? `${companyRoleLabel(role)} · ${company.status}` : 'No Company identity represented'}
         </ThemedText>
       </View>
       {suspended ? (
@@ -385,15 +393,25 @@ function InvitationCard({
   invitedBy,
   title,
 }: {
-  accept: () => void;
+  accept: () => Promise<void>;
   audience?: NamedCompany[];
   audienceLabel?: string;
-  decline: () => void;
+  decline: () => Promise<void>;
   detail: string;
   invitedBy?: string;
   title: string;
 }) {
   const theme = useTheme();
+  const [decision, setDecision] = useState<'accept' | 'decline' | null>(null);
+
+  async function decide(next: 'accept' | 'decline') {
+    setDecision(next);
+    try {
+      await (next === 'accept' ? accept() : decline());
+    } finally {
+      setDecision(null);
+    }
+  }
 
   return (
     <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
@@ -417,22 +435,8 @@ function InvitationCard({
         <AudienceList companies={audience} label={audienceLabel} />
       ) : null}
       <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          android_ripple={{ color: theme.backgroundSelected }}
-          onPress={accept}
-          style={[styles.button, { backgroundColor: theme.text }]}>
-          <ThemedText style={{ color: theme.background }} type="title">
-            Accept
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          android_ripple={{ color: theme.backgroundSelected }}
-          onPress={decline}
-          style={[styles.button, { borderColor: theme.hairline, borderWidth: 1 }]}>
-          <ThemedText type="title">Decline</ThemedText>
-        </Pressable>
+        <ActionButton disabled={decision !== null} label="Accept" loading={decision === 'accept'} onPress={() => void decide('accept')} style={styles.decisionButton} />
+        <ActionButton disabled={decision !== null} label="Decline" loading={decision === 'decline'} onPress={() => void decide('decline')} style={styles.decisionButton} variant="secondary" />
       </View>
     </View>
   );
@@ -443,14 +447,6 @@ const styles = StyleSheet.create({
   audience: { gap: Spacing.one },
   audienceName: { flex: 1 },
   audienceRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  button: {
-    alignItems: 'center',
-    borderRadius: Radius.medium,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: TouchTarget,
-    paddingHorizontal: Spacing.three,
-  },
   card: { borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.three },
   cardHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three },
   cardHeading: { flex: 1, gap: 2 },
@@ -468,7 +464,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
+  content: { gap: Spacing.four, padding: Spacing.four, paddingBottom: Spacing.six },
+  decisionButton: { flex: 1 },
   identity: {
     alignItems: 'center',
     borderRadius: Radius.large,

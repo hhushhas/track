@@ -15,16 +15,32 @@ export function useWorkspaceNavigation({
   const navigate = useNavigate()
   const router = useRouter()
 
-  function navigateToProject(projectId: Id<'projects'>) {
+  function navigateToProject(projectId: Id<'projects'>, companyId?: Id<'companies'>, projectMemberId?: Id<'projectMembers'>) {
     setMobileNavOpen(false)
     setActiveGroupId(null)
+    if (companyId && projectMemberId) {
+      void navigate({
+        to: '/workspace/company-projects/$projectId',
+        params: { projectId },
+        search: { companyId, groupId: '', membershipId: projectMemberId, view: 'channels' },
+      })
+      return
+    }
     void navigate({
       to: '/workspace/projects/$projectId',
       params: { projectId },
     })
   }
 
-  function preloadProjectRoute(projectId: Id<'projects'>) {
+  function preloadProjectRoute(projectId: Id<'projects'>, companyId?: Id<'companies'>, projectMemberId?: Id<'projectMembers'>) {
+    if (companyId && projectMemberId) {
+      void router.preloadRoute({
+        to: '/workspace/company-projects/$projectId',
+        params: { projectId },
+        search: { companyId, groupId: '', membershipId: projectMemberId, view: 'channels' },
+      }).catch(() => undefined)
+      return
+    }
     void router.preloadRoute({
       to: '/workspace/projects/$projectId',
       params: { projectId },

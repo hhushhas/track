@@ -1,6 +1,7 @@
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { MessageSquare, Plus, Search } from 'lucide-react'
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -8,7 +9,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { useReleaseConfig } from '#/lib/release-config'
-import { threadHref, type RepresentedThreadContext } from './thread-navigation'
+import type { RepresentedThreadContext } from './thread-navigation'
 
 type TimelineMessage = {
   message: {
@@ -38,6 +39,7 @@ export function ChannelThreadBrowser({
   variant?: 'panel' | 'rail'
 }) {
   const releaseConfig = useReleaseConfig()
+  const navigate = useNavigate()
   const [status, setStatus] = useState<'active' | 'archived'>('active')
   const [name, setName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -122,7 +124,14 @@ export function ChannelThreadBrowser({
         sourceMessageId: sourceMessageId || undefined,
       })
       idempotencyKey.current = null
-      window.location.assign(threadHref(projectId, groupId, threadId, context))
+      await navigate({
+        to: '/workspace/projects/$projectId/groups/$groupId/threads/$threadId',
+        params: { groupId, projectId, threadId },
+        search: {
+          companyId: context?.actingCompanyId ?? '',
+          membershipId: context?.projectMemberId ?? '',
+        },
+      })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save")
     } finally {
@@ -134,12 +143,12 @@ export function ChannelThreadBrowser({
     <section aria-label="Channel threads" className="track-rail-thread-section">
       <header><span>Threads</span></header>
       {threads === undefined ? <p role="status">Loading threads…</p> : threads.length ? (
-        <ul>{threads.slice(0, 4).map((item) => <li key={item.thread._id}><a href={threadHref(projectId, groupId, item.thread._id, context)}>
+        <ul>{threads.slice(0, 4).map((item) => <li key={item.thread._id}><ThreadLink context={context} groupId={groupId} projectId={projectId} threadId={item.thread._id}>
           <MessageSquare aria-hidden="true" size={13} />
           <strong>{item.thread.name}</strong>
           <span>{item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'}</span>
           {item.unread ? <i aria-label="Unread thread" /> : null}
-        </a></li>)}</ul>
+        </ThreadLink></li>)}</ul>
       ) : <p className="track-rail-empty">No {status} threads.</p>}
       <details className="track-rail-thread-tools">
         <summary><Search size={12} /> Find or start a thread</summary>
@@ -147,7 +156,7 @@ export function ChannelThreadBrowser({
           {(['active', 'archived'] as const).map((value) => <button aria-selected={status === value} className={status === value ? 'active' : ''} key={value} onClick={() => setStatus(value)} role="tab" type="button">{value}</button>)}
         </div>
         <Input aria-label="Search Project threads and replies" onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search threads" value={searchQuery} />
-        {searchTerm.length >= 2 ? <ul className="track-thread-list">{searchRows.slice(0, 4).map((item) => <li key={item.id}><a href={threadHref(projectId, item.groupId, item.threadId, context, item.messageId)}><span><strong>{item.title}</strong><small>{item.detail}</small></span></a></li>)}</ul> : null}
+        {searchTerm.length >= 2 ? <ul className="track-thread-list">{searchRows.slice(0, 4).map((item) => <li key={item.id}><ThreadLink context={context} groupId={item.groupId} messageId={item.messageId} projectId={projectId} threadId={item.threadId}><span><strong>{item.title}</strong><small>{item.detail}</small></span></ThreadLink></li>)}</ul> : null}
         {!readOnly && status === 'active' ? <form className="track-thread-create" onSubmit={(event) => void submit(event)}>
           <Input aria-label="Thread name" maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Thread name" required value={name} />
           <label><span className="sr-only">Optional source message</span><NativeSelect aria-label="Optional source message" onChange={(event) => setSourceMessageId(event.target.value as Id<'messages'> | '')} value={sourceMessageId}><NativeSelectOption value="">Start directly in this Channel</NativeSelectOption>{availableSources.map((item) => <NativeSelectOption key={item.message._id} value={item.message._id}>{item.author?.displayName ?? 'Unknown member'}: {item.message.body || 'Attachment message'}</NativeSelectOption>)}</NativeSelect></label>
@@ -196,9 +205,9 @@ export function ChannelThreadBrowser({
         <ul className="track-thread-list" aria-label="Thread search results">
           {searchRows.map((item) => (
             <li key={item.id}>
-              <a href={threadHref(projectId, item.groupId, item.threadId, context, item.messageId)}>
+              <ThreadLink context={context} groupId={item.groupId} messageId={item.messageId} projectId={projectId} threadId={item.threadId}>
                 <span><strong>{item.title}</strong><small>{item.detail}</small></span>
-              </a>
+              </ThreadLink>
             </li>
           ))}
         </ul>
@@ -210,7 +219,7 @@ export function ChannelThreadBrowser({
         <ul className="track-thread-list">
           {threads.map((item) => (
             <li key={item.thread._id}>
-              <a href={threadHref(projectId, groupId, item.thread._id, context)}>
+              <ThreadLink context={context} groupId={groupId} projectId={projectId} threadId={item.thread._id}>
                 <span>
                   <strong>{item.thread.name}</strong>
                   <small>
@@ -219,7 +228,7 @@ export function ChannelThreadBrowser({
                   </small>
                 </span>
                 {item.unread ? <b aria-label="Unread thread">Unread</b> : null}
-              </a>
+              </ThreadLink>
             </li>
           ))}
         </ul>
@@ -257,5 +266,33 @@ export function ChannelThreadBrowser({
       ) : null}
       {error ? <p className="track-error" role="alert">{error}. Retry keeps the same request.</p> : null}
     </section>
+  )
+}
+
+function ThreadLink({
+  children,
+  context,
+  groupId,
+  messageId,
+  projectId,
+  threadId,
+}: {
+  children: ReactNode
+  context?: RepresentedThreadContext
+  groupId: Id<'groups'>
+  messageId?: Id<'messages'>
+  projectId: Id<'projects'>
+  threadId: Id<'channelThreads'>
+}) {
+  return (
+    <Link
+      hash={messageId ? `message-${messageId}` : undefined}
+      params={{ groupId, projectId, threadId }}
+      search={{
+        companyId: context?.actingCompanyId ?? '',
+        membershipId: context?.projectMemberId ?? '',
+      }}
+      to="/workspace/projects/$projectId/groups/$groupId/threads/$threadId"
+    >{children}</Link>
   )
 }

@@ -1,7 +1,8 @@
 import { parseMentions } from '@track/shared';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { AssistantMessage } from '@/components/chat/assistant-message';
@@ -33,6 +34,8 @@ type Props = {
   isFirstInGroup: boolean;
   isOwnMessage?: boolean;
   onLongPress: () => void;
+  /** Opens the source of a forwarded snapshot when still authorized. */
+  onOpenForwardSource?: () => void;
   /** Opens the Channel thread attached to this message. */
   onOpenThread?: () => void;
   /** Jumps to the message this one quotes. */
@@ -45,11 +48,13 @@ export function ThreadRow({
   isFirstInGroup,
   isOwnMessage,
   onLongPress,
+  onOpenForwardSource,
   onOpenThread,
   onPressReply,
   onSwipeReply,
 }: Props) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const translateX = useSharedValue(0);
 
   const gesture = Gesture.Pan()
@@ -61,9 +66,9 @@ export function ThreadRow({
     })
     .onEnd((e) => {
       if (e.translationX > SWIPE_THRESHOLD && onSwipeReply) {
-        runOnJS(onSwipeReply)();
+        scheduleOnRN(onSwipeReply);
       }
-      translateX.value = withSpring(0, { damping: 20 });
+      translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -97,6 +102,7 @@ export function ThreadRow({
               isOwnMessage={Boolean(isOwnMessage)}
               message={item.item}
               onLongPress={onLongPress}
+              onOpenForwardSource={onOpenForwardSource}
               onOpenThread={onOpenThread}
               onPressReply={onPressReply}
               timeLabel={fmtTime(item.item.message.createdAt)}

@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
 import TrackLoader from '#/components/TrackLoader'
+import { queueToastAfterNavigation } from '#/components/ui/app-toast'
 import { authClient } from '#/lib/auth-client'
 
 export const Route = createFileRoute('/auth/callback')({
@@ -15,6 +16,7 @@ function AuthCallback() {
 
   useEffect(() => {
     if (!session.data) return
+    queueToastAfterNavigation({ type: 'success', title: 'Signed in', description: 'Welcome back.' })
     window.location.replace(next.startsWith('/') ? next : '/workspace')
   }, [next, session.data])
 

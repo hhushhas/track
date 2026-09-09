@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withDelay, withRepeat, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { AssistantMark } from '@/components/chat/assistant-mark';
 import { MessageText } from '@/components/chat/message-text';
@@ -157,11 +157,13 @@ function ThinkingDots() {
 
 function ThinkingDot({ delay }: { delay: number }) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const opacity = useSharedValue(0.25);
 
   useEffect(() => {
+    if (reducedMotion) return;
     opacity.value = withDelay(delay, withRepeat(withTiming(1, { duration: 420 }), -1, true));
-  }, [delay, opacity]);
+  }, [delay, opacity, reducedMotion]);
 
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
 

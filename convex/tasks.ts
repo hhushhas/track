@@ -249,15 +249,16 @@ export const list = query({
           .withIndex('by_task_label', (q) => q.eq('taskId', task._id).eq('labelId', args.labelId!)).unique()
         if (!link) continue
       }
-      if (task.groupId) {
-        try {
-          const scoped = await resolveTaskRequestContext(ctx, actor, task.projectId, args, task.groupId)
-          if (!scoped.capabilities.canReadChannel) continue
-        } catch {
-          continue
-        }
-      } else if (!access.capabilities.canReadProject) continue
-      visible.push(await taskView(ctx, task))
+      let taskAccess
+      try {
+        taskAccess = await requireTaskAccess(ctx, actor, task._id, args)
+      } catch {
+        continue
+      }
+      visible.push({
+        ...await taskView(ctx, task),
+        capabilities: taskAccess.taskCapabilities,
+      })
     }
     return visible
   },
@@ -434,6 +435,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     validateTaskFields(args)
+    if ((args.references?.length ?? 0) > 20) throw new Error('task_references_limit_exceeded')
     const existing = await ctx.db.query('tasks')
       .withIndex('by_project_idempotency', (q) =>
         q.eq('projectId', args.projectId).eq('createIdempotencyKey', args.idempotencyKey),

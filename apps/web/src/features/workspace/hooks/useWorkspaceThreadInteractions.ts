@@ -79,7 +79,7 @@ export function useWorkspaceThreadInteractions({
   setShowJumpToLatest: Dispatch<SetStateAction<boolean>>
   shouldFollowLatestRef: MutableRefObject<boolean>
   threadScrollRef: RefObject<HTMLDivElement | null>
-  view: 'home' | 'project' | 'group' | 'settings'
+  view: 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
   visibleMessages: Array<GroupMessageItem>
 }) {
   function scrollThreadToLatest(behavior: ScrollBehavior = 'smooth') {

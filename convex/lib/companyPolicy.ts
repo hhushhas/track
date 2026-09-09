@@ -130,6 +130,18 @@ export async function resolveCompanyProjectAccess(
   ) {
     throw new Error('project_unavailable')
   }
+  if (!archiveMode && project.origin === 'shared' && project.relationshipId) {
+    const [relationship, relationshipTerms] = await Promise.all([
+      ctx.db.get(project.relationshipId),
+      ctx.db.query('relationshipCompanies').withIndex('by_relationship_status', (q) =>
+        q.eq('relationshipId', project.relationshipId!).eq('status', 'active'),
+      ).collect(),
+    ])
+    if (
+      !relationship || relationship.status !== 'active' ||
+      !relationshipTerms.some((term) => term.companyId === input.actingCompanyId)
+    ) throw new Error('project_unavailable')
+  }
 
   const entitlement = archiveMode
     ? await ctx.db
@@ -161,6 +173,7 @@ export async function resolveCompanyProjectAccess(
     accessProfile: 'company',
     accessMode: archiveMode || project.status === 'archived' ? 'archive' : 'active',
     projectRole: projectMember.role as 'manager' | 'member',
+    projectStatus: project.status,
     channelMember,
     channelActive: !group?.status || group.status === 'active',
     channelSteward: channelMembership?.isSteward === true,

@@ -126,7 +126,7 @@ async function buildThreadSummary(
     sourceMessage &&
     sourceMessage.projectId === thread.projectId &&
     sourceMessage.groupId === thread.groupId &&
-    !sourceMessage.channelThreadId &&
+    (!sourceMessage.channelThreadId || sourceMessage.channelThreadId === thread._id) &&
     (!cutoff || sourceMessage.createdAt <= cutoff),
   )
 
@@ -346,7 +346,7 @@ export const listMessages = query({
           : q.eq('channelThreadId', thread._id))
         .order('desc')
         .take(args.limit ?? 80)
-      return await Promise.all(messages.map(async (message) =>
+      return await Promise.all(messages.filter((message) => message._id !== thread.sourceMessageId).map(async (message) =>
         await buildMessageDetail(
           ctx,
           message,
@@ -390,7 +390,7 @@ export const listMessagePage = query({
           : q.eq('channelThreadId', thread._id))
         .order('desc')
         .paginate(args.paginationOpts)
-      const page = [...result.page]
+      const page = result.page.filter((message) => message._id !== thread.sourceMessageId)
       if (args.paginationOpts.cursor === null && args.targetMessageId) {
         const target = await ctx.db.get(args.targetMessageId)
         if (

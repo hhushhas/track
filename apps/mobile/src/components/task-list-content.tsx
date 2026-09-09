@@ -19,6 +19,7 @@ export type { MobileBoardView, MobileSuggestionView, MobileTaskView };
 export function TaskCollection({
   assigneeName,
   columns,
+  focusedTaskId,
   onCreate,
   onMove,
   onOpen,
@@ -31,6 +32,7 @@ export function TaskCollection({
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
+  focusedTaskId?: string;
   onCreate: () => void;
   onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
@@ -53,6 +55,20 @@ export function TaskCollection({
       />
     );
   }
+  if (tab === 'board') {
+    return (
+      <TaskBoard
+        assigneeName={assigneeName}
+        columns={columns}
+        focusedTaskId={focusedTaskId}
+        onMove={onMove}
+        onOpen={onOpen}
+        readOnly={readOnly}
+        states={selectedBoard?.states ?? []}
+      />
+    );
+  }
+
   if (!tasks.length) {
     return (
       <TaskEmptyState
@@ -63,18 +79,6 @@ export function TaskCollection({
         icon="check-box-outline"
         onPress={tab === 'my' ? onViewAll : onCreate}
         title={tab === 'my' ? 'Nothing assigned to you' : 'No tasks yet'}
-      />
-    );
-  }
-
-  if (tab === 'board') {
-    return (
-      <TaskBoard
-        assigneeName={assigneeName}
-        columns={columns}
-        onMove={onMove}
-        onOpen={onOpen}
-        readOnly={readOnly}
       />
     );
   }
@@ -102,6 +106,7 @@ export function TaskCollection({
 }
 
 export function SuggestionInbox({
+  focusedSuggestionId,
   onAccept,
   onDismiss,
   onHide,
@@ -109,6 +114,7 @@ export function SuggestionInbox({
   readOnly,
   suggestions,
 }: {
+  focusedSuggestionId?: string;
   onAccept: (row: MobileSuggestionView) => void;
   onDismiss: (row: MobileSuggestionView) => void;
   onHide: (row: MobileSuggestionView) => void;
@@ -139,12 +145,13 @@ export function SuggestionInbox({
 
   return (
     <View style={styles.list}>
-      {suggestions.map((row) => (
+      {[...suggestions].sort((a, b) => Number(b.suggestion._id === focusedSuggestionId) - Number(a.suggestion._id === focusedSuggestionId)).map((row) => (
         <View
           key={row.suggestion._id}
           style={[styles.suggestion, {
             backgroundColor: theme.backgroundElement,
-            borderColor: theme.hairline,
+            borderColor: row.suggestion._id === focusedSuggestionId ? theme.accent : theme.hairline,
+            borderWidth: row.suggestion._id === focusedSuggestionId ? 2 : StyleSheet.hairlineWidth,
           }]}>
           <View style={styles.eyebrow}>
             <PlatformIcon color={theme.textSecondary} name="forum-outline" size={16} />

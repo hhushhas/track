@@ -28,7 +28,7 @@ export async function requireProjectMember(
     throw new Error('company_policy_required')
   }
   const member = await getProjectMember(ctx, projectId, userId)
-  if (!member) {
+  if (!member || (member.status !== undefined && member.status !== 'active')) {
     throw new Error('not_project_member')
   }
   return member
