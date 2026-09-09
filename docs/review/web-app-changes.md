@@ -16,10 +16,10 @@ These percentages show the share of changed lines in the current working tree. T
 
 | Area | Share | Changed lines | What it means |
 |---|---:|---:|---|
-| Web | 56.5% | 23,236 | Most of the diff is in web screens, routes, and styles. |
-| Mobile | 33.5% | 13,767 | The app has new navigation, screens, helpers, and tests. |
-| Backend | 7.9% | 3,258 | Convex adds and tightens shared access and work rules. |
-| Shared and docs | 2.1% | 853 | Shared policy, setup files, and product notes stay aligned. |
+| Web | 64.1% | 23,332 | Most of the diff is in web screens, routes, and styles. |
+| Mobile | 24.1% | 8,773 | The app has new navigation, screens, helpers, and tests. |
+| Backend | 9.3% | 3,401 | Convex adds and tightens shared access and work rules. |
+| Shared and docs | 2.4% | 878 | Shared policy, setup files, and product notes stay aligned. |
 
 ## How the pieces work together
 
