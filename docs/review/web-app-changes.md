@@ -1,15 +1,15 @@
-# Track web app change summary
+# Track web and mobile changes
 
-Track now gives people one simple path from a Company to a Project, from a chat to a task, and from a task back to its source.
+Track now gives people one clear path from a Company to a Project, from a chat to a task, and from a task back to its source.
 
 ## What changed
 
-- The Company and Project pages now share one clear shell, with the current place shown in the sidebar and header.
-- Tasks, Channels, Threads, Evidence, and Memory use the same spacing, focus rings, buttons, fields, and overlays.
-- Destructive actions now ask first. Delete, move, archive, forward, close, and logout actions use the same safe dialog.
-- Actions that were easy to miss on hover are also available with a keyboard and on touch screens.
-- Notifications, filters, labels, dates, mentions, and status names now use clearer words and steady layouts.
-- The web suite has focused tests for the new dialog, label, date, toast, mention, task, thread, and navigation behavior.
+- The web app now has a clearer Company and Project shell.
+- Tasks, Channels, Threads, Evidence, and Memory share the same spacing, buttons, fields, focus states, and safe dialogs.
+- The mobile app now has cleaner Home, Projects, Task Board, Task Detail, Evidence, chat, thread, and notification flows.
+- The mobile bottom navigation is easier to read on Android, and the Project Task Board keeps its original header layout.
+- The backend now uses priority-aware task indexes, so filtered task pages return the right tasks without breaking cursor pagination.
+- Tests cover the new dialogs, labels, dates, toasts, mentions, tasks, threads, navigation, and mobile helpers.
 
 ## How the main flow works
 
@@ -28,48 +28,48 @@ Each step keeps its place and source. A person can move forward to do work, then
 
 | Check | Result | Meaning |
 |---|---:|---|
-| Web test files | 40 / 40 (100%) | Every web test file passed. |
-| Web tests | 111 / 111 (100%) | The tested web behavior is green. |
-| Web build | Passed | Client, server, and Nitro output built. |
-| Web lint and type check | 2 / 2 (100%) | The web code passed both checks. |
-| Screenshots included | 5 / 5 (100%) | Five web views are attached below. |
-| Full repository test gate | Blocked | One existing Convex pagination test still fails. |
-| Figma pixel comparison | Blocked | The connected Figma account has View access, not file edit access. |
+| Lint | 100% passed | Web, mobile, shared, and Convex code passed lint. |
+| Type check | 100% passed | Backend and all app packages passed TypeScript checks. |
+| Tests | 279 / 279 passed (100%) | Shared, web, mobile, and Convex tests are green. |
+| Dependency audit | 0 known vulnerabilities | Production dependencies passed the audit. |
+| Production build | Passed | Web client, server, Nitro output, and mobile build step completed. |
+| Mobile evidence | 5 / 5 screenshots (100%) | Five real Android emulator views are included below. |
 
-The numbers show checks, not product quality. The open backend and Figma items are called out so nobody mistakes a green web suite for a fully closed release.
+## Mobile screenshots
 
-## Web screenshots
+These are real Android emulator captures using demo data. They show the main paths a team member will review.
 
-These screenshots use demo data. They show the web shell, Company overview, Company settings, Projects, and sign-in flow.
+### 1. Home
 
-### 1. Company overview
+![Track mobile Home](../pr/mobile/01-home.png)
 
-![Company overview](../../apps/web/audit-company-overview.png)
+### 2. Projects
 
-### 2. Company settings shell
+![Track mobile Projects](../pr/mobile/02-projects.png)
 
-![Company settings shell](../../apps/web/audit-company-settings-shell.png)
+### 3. Project Task Board
 
-### 3. Company settings form
+![Track mobile Task Board](../pr/mobile/03-task-board.png)
 
-![Company settings form](../../apps/web/audit-company-settings.png)
+### 4. Task Detail
 
-### 4. Projects directory
+![Track mobile Task Detail](../pr/mobile/04-task-detail.png)
 
-![Projects directory](../../apps/web/workflow-4-projects.png)
+### 5. Evidence
 
-### 5. Sign-in
+![Track mobile Evidence](../pr/mobile/05-evidence.png)
 
-![Sign-in screen](./assets/web-sign-in.png)
+## Change map
 
-No password, token, or private credential is included in these captures.
+| Area | Main result | Review value |
+|---|---|---|
+| Web | Shared Company, Project, task, thread, search, and evidence patterns | Easier desktop navigation and safer actions |
+| Mobile | Consistent screens, cards, sheets, task board, and Android navigation | Easier phone use and clearer work context |
+| Backend | Scoped task data, priority indexes, and cursor-safe filtering | Correct results as task lists grow |
+| Tests and docs | Regression tests, audit notes, design rules, and screenshots | Faster review and safer future changes |
 
-## Checks still open
+## Limits
 
-- `convex/taskManagement.test.ts:215` still returns an empty bounded task page instead of the expected task ID.
-- Profile and Project Settings need a valid local auth origin and session before they can be checked live.
-- Figma parity needs a session with the file exposed to the connector.
+The screenshots prove the current emulator layout and working paths. They do not claim exact Figma pixel parity because the connected Figma session did not expose the reference file for reliable inspection.
 
-## Branch
-
-This summary and the five web screenshots are pushed to `zohaib/web&app-changes`.
+No password, token, or private credential is included in the screenshots.
