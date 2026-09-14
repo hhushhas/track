@@ -40,6 +40,18 @@ export async function resolveTaskRequestContext(
   const project = await ctx.db.get(projectId)
   if (!project) throw new Error('task_access_changed')
 
+  return await resolveTaskRequestContextForProject(ctx, actor, project, identity, groupId)
+}
+
+async function resolveTaskRequestContextForProject(
+  ctx: TaskPolicyCtx,
+  actor: AuthenticatedActor,
+  project: Doc<'projects'>,
+  identity: TaskRequestIdentity,
+  groupId?: Id<'groups'>,
+) {
+  const projectId = project._id
+
   if (resolveProjectAccessProfile(project.accessProfile) === 'company') {
     if (!identity.actingCompanyId || !identity.projectMemberId) {
       throw new Error('task_acting_company_required')
@@ -95,6 +107,37 @@ export async function resolveTaskRequestContext(
     group,
     entitlement: null,
     capabilities,
+  }
+}
+
+export type ResolvedTaskRequestContext = Awaited<ReturnType<typeof resolveTaskRequestContext>>
+
+/**
+ * Resolves the project once and memoizes each Channel scope for the lifetime
+ * of one request. Permission decisions are deliberately not shared across
+ * requests so membership and revocation changes remain visible immediately.
+ */
+export async function createTaskRequestScope(
+  ctx: TaskPolicyCtx,
+  actor: AuthenticatedActor,
+  projectId: Id<'projects'>,
+  identity: TaskRequestIdentity,
+) {
+  requireTasksEnabled()
+  const project = await ctx.db.get(projectId)
+  if (!project) throw new Error('task_access_changed')
+  const projectAccess = await resolveTaskRequestContextForProject(ctx, actor, project, identity)
+  const channelAccess = new Map<string, Promise<ResolvedTaskRequestContext>>()
+  return {
+    project: projectAccess,
+    forGroup: (groupId: Id<'groups'>) => {
+      const key = String(groupId)
+      const cached = channelAccess.get(key)
+      if (cached) return cached
+      const access = resolveTaskRequestContextForProject(ctx, actor, project, identity, groupId)
+      channelAccess.set(key, access)
+      return access
+    },
   }
 }
 

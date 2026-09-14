@@ -20,6 +20,8 @@ export function TaskCollection({
   assigneeName,
   columns,
   focusedTaskId,
+  loadMore,
+  loadingMore,
   onCreate,
   onMove,
   onOpen,
@@ -33,6 +35,8 @@ export function TaskCollection({
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
   focusedTaskId?: string;
+  loadMore?: () => void;
+  loadingMore?: boolean;
   onCreate: () => void;
   onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
@@ -55,43 +59,49 @@ export function TaskCollection({
       />
     );
   }
-  if (tab === 'board') {
+  if (!tasks.length) {
     return (
-      <TaskBoard
-        assigneeName={assigneeName}
-        columns={columns}
-        focusedTaskId={focusedTaskId}
-        onMove={onMove}
-        onOpen={onOpen}
-        readOnly={readOnly}
-        states={selectedBoard?.states ?? []}
-      />
+      <>
+        <TaskEmptyState
+          body={tab === 'my'
+            ? 'Tasks assigned to you will appear here.'
+            : 'Create a task or turn a conversation into action.'}
+          buttonLabel={tab === 'my' ? 'View all tasks' : readOnly ? undefined : 'Create task'}
+          icon="check-box-outline"
+          onPress={tab === 'my' ? onViewAll : onCreate}
+          title={tab === 'my' ? 'Nothing assigned to you' : 'No tasks yet'}
+        />
+        <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
+      </>
     );
   }
 
-  if (!tasks.length) {
+  if (tab === 'board') {
     return (
-      <TaskEmptyState
-        body={tab === 'my'
-          ? 'Tasks assigned to you will appear here.'
-          : 'Create a task or turn a conversation into action.'}
-        buttonLabel={tab === 'my' ? 'View all tasks' : readOnly ? undefined : 'Create task'}
-        icon="check-box-outline"
-        onPress={tab === 'my' ? onViewAll : onCreate}
-        title={tab === 'my' ? 'Nothing assigned to you' : 'No tasks yet'}
-      />
+      <>
+        <TaskBoard
+          assigneeName={assigneeName}
+          columns={columns}
+          focusedTaskId={focusedTaskId}
+          onMove={onMove}
+          onOpen={onOpen}
+          readOnly={readOnly}
+          states={selectedBoard?.states ?? []}
+        />
+        <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
+      </>
     );
   }
 
   return (
-    <View style={styles.list}>
-      {tasks.map((item) => (
+    <>
+      <View style={styles.list}>
+        {tasks.map((item) => (
         <TaskCard
           assignee={assigneeName(item)}
           category={item.state?.category}
-          description={item.task.description}
           dueDate={item.task.dueDate}
-          evidence={item.references.length > 0}
+          evidence={false}
           key={item.task._id}
           onPress={() => onOpen(item)}
           onStatusPress={readOnly ? undefined : () => onStatusPress(item)}
@@ -100,9 +110,16 @@ export function TaskCollection({
           stateName={item.state?.name ?? 'Unknown'}
           title={item.task.title}
         />
-      ))}
-    </View>
+        ))}
+      </View>
+      <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
+    </>
   );
+}
+
+function TaskLoadMore({ loadMore, loading }: { loadMore?: () => void; loading?: boolean }) {
+  if (!loadMore && !loading) return null;
+  return <TaskAction disabled={loading} label={loading ? 'Loading more…' : 'Load more tasks'} onPress={() => loadMore?.()} />;
 }
 
 export function SuggestionInbox({
@@ -145,16 +162,15 @@ export function SuggestionInbox({
 
   return (
     <View style={styles.list}>
-      {[...suggestions].sort((a, b) => Number(b.suggestion._id === focusedSuggestionId) - Number(a.suggestion._id === focusedSuggestionId)).map((row) => (
+      {suggestions.map((row) => (
         <View
           key={row.suggestion._id}
-          style={[styles.suggestion, {
+          style={[styles.suggestion, row.suggestion._id === focusedSuggestionId && { borderColor: theme.accent }, {
             backgroundColor: theme.backgroundElement,
-            borderColor: row.suggestion._id === focusedSuggestionId ? theme.accent : theme.hairline,
-            borderWidth: row.suggestion._id === focusedSuggestionId ? 2 : StyleSheet.hairlineWidth,
+            borderColor: theme.hairline,
           }]}>
           <View style={styles.eyebrow}>
-            <PlatformIcon color={theme.textSecondary} name="forum-outline" size={16} />
+            <PlatformIcon color={theme.textSecondary} name="message" size={16} />
             <ThemedText themeColor="textSecondary" type="caption">From conversation</ThemedText>
             <View style={styles.spacer} />
             <ConfidenceMeter value={row.suggestion.confidence} />

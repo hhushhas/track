@@ -1,24 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  FlatList,
-  type LayoutChangeEvent,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
+import { PlatformIcon } from '@/components/platform-icon';
 import type { MobileTaskView } from '@/components/task-detail-types';
-import { TaskCard, TaskStateBanner, TaskStatusPill } from '@/components/task-ui';
+import { TaskCard, TaskStateBanner } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
-import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticLight } from '@/lib/haptics';
-import { boardPageIndex } from '@/lib/task-workflow';
+import { isCompactTaskBoard } from '@/lib/task-board-layout';
+
+const ColumnWidth = 280;
+const ColumnGap = Spacing.three;
+const CardGap = Spacing.two;
 
 export type BoardColumnView = {
   state: Doc<'taskWorkflowStates'>;
@@ -34,25 +29,38 @@ export type TaskMoveInput = {
   workflowStateId: Id<'taskWorkflowStates'>;
 };
 
-const taskReasonPattern = /task_[a-z_]+(?::\d+)?/;
-const STATUS_TAB_WIDTH = 132;
-const STATUS_TAB_GAP = Spacing.two;
-const STATUS_TAB_STEP = STATUS_TAB_WIDTH + STATUS_TAB_GAP;
+type LastMove = {
+  input: TaskMoveInput;
+  message: string;
+  optimistic: { index: number; stateId: string };
+};
 
+function byRank(a: MobileTaskView, b: MobileTaskView) {
+  return a.task.rank < b.task.rank ? -1 : a.task.rank > b.task.rank ? 1 : 0;
+}
+
+const taskReasonPattern = /task_[a-z_]+(?::\d+)?/;
+
+/** Convex wraps a thrown code in a server stack, so the code is recovered
+ *  rather than lost behind a blanket failure the reporter cannot act on. */
 function moveFailureReason(error: unknown) {
   if (!(error instanceof Error)) return '';
   return taskReasonPattern.exec(error.message)?.[0] ?? error.message.split('\n')[0].trim();
 }
 
 function moveFailureMessage(reason: string) {
-  if (reason.startsWith('task_conflict')) return 'This task changed elsewhere. The board has been refreshed.';
+  if (reason.startsWith('task_conflict')) {
+    return 'This task changed elsewhere — the card returned to its saved place.';
+  }
   if (reason === 'task_edit_forbidden') return 'You are not allowed to move this task.';
-  if (reason === 'task_destination_invalid') return 'That status is no longer available on this board.';
+  if (reason === 'task_destination_invalid') {
+    return 'That column is no longer part of this board. Reopen the board and try again.';
+  }
   if (reason === 'task_access_changed') return 'Your access to this task changed. Refresh and try again.';
-  return 'The move could not be saved. Check your connection and try again.';
+  if (!reason) return 'The move could not be saved.';
+  return `The move could not be saved: ${reason.replaceAll('_', ' ')}`;
 }
 
-/** A phone-first Kanban with one full-width, vertically scrolling status. */
 export function TaskBoard({
   assigneeName,
   columns,
@@ -70,114 +78,50 @@ export function TaskBoard({
   readOnly: boolean;
   states: Array<Doc<'taskWorkflowStates'>>;
 }) {
-  const theme = useTheme();
-  const bottomContentInset = useBottomTabContentInset();
-  const [activeStateId, setActiveStateId] = useState<string>('');
+  const { width: windowWidth } = useWindowDimensions();
+  const compactBoard = isCompactTaskBoard(windowWidth);
+  const [pending, setPending] = useState<{ index: number; stateId: string; taskId: string } | null>(null);
   const [moveTarget, setMoveTarget] = useState<MobileTaskView | null>(null);
-  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ message: string; retry?: TaskMoveInput } | null>(null);
-  const [pageWidth, setPageWidth] = useState(0);
-  const appliedFocusRef = useRef<string | undefined>(undefined);
-  const pagerRef = useRef<FlatList<BoardColumnView>>(null);
-  const statusListRef = useRef<FlatList<BoardColumnView>>(null);
-  const taskListRefs = useRef(new Map<string, FlatList<MobileTaskView>>());
-  const revealedFocusRef = useRef<string | undefined>(undefined);
-  const movePendingRef = useRef(false);
+  const [lastMove, setLastMove] = useState<LastMove | null>(null);
 
-  useEffect(() => {
-    const shouldApplyFocus = Boolean(focusedTaskId) && appliedFocusRef.current !== focusedTaskId;
-    const focusedColumn = shouldApplyFocus
-      ? columns.find((column) => column.tasks.some((item) => item.task._id === focusedTaskId))
-      : undefined;
-    if (!focusedTaskId) appliedFocusRef.current = undefined;
-    if (focusedColumn) {
-      appliedFocusRef.current = focusedTaskId;
-      setActiveStateId(focusedColumn.state._id);
-      return;
-    }
-    if (columns.some((column) => column.state._id === activeStateId)) return;
-    const preferred = columns.find((column) => column.tasks.length > 0) ?? columns[0];
-    setActiveStateId(preferred?.state._id ?? '');
-  }, [activeStateId, columns, focusedTaskId]);
-
-  const activeColumn = useMemo(
-    () => columns.find((column) => column.state._id === activeStateId) ?? columns[0],
-    [activeStateId, columns],
-  );
-  const activeColumnIndex = Math.max(
-    0,
-    columns.findIndex((column) => column.state._id === activeColumn?.state._id),
-  );
-
-  useEffect(() => {
-    if (!pageWidth) return;
-    pagerRef.current?.scrollToOffset({ animated: true, offset: activeColumnIndex * pageWidth });
-  }, [activeColumnIndex, pageWidth]);
-
-  useEffect(() => {
-    statusListRef.current?.scrollToIndex({
-      animated: true,
-      index: activeColumnIndex,
-      viewPosition: 0.5,
+  const display = useMemo(() => {
+    const sorted = columns.map((column) => ({ ...column, tasks: [...column.tasks].sort(byRank) }));
+    const moved = pending && sorted.flatMap((column) => column.tasks)
+      .find((item) => item.task._id === pending.taskId);
+    if (!pending || !moved) return sorted;
+    return sorted.map((column) => {
+      const tasks = column.tasks.filter((item) => item.task._id !== pending.taskId);
+      if (column.state._id !== pending.stateId) return { ...column, tasks };
+      tasks.splice(Math.min(pending.index, tasks.length), 0, moved);
+      return { ...column, tasks };
     });
-  }, [activeColumnIndex]);
+  }, [columns, pending]);
 
-  const activateColumn = useCallback((stateId: string) => {
-    if (!columns.some((column) => column.state._id === stateId)) return;
-    hapticLight();
-    setActiveStateId(stateId);
-  }, [columns]);
-
-  const registerTaskList = useCallback((
-    stateId: string,
-    columnTasks: MobileTaskView[],
-    list: FlatList<MobileTaskView> | null,
-  ) => {
-    if (!list) {
-      taskListRefs.current.delete(stateId);
-      return;
-    }
-    taskListRefs.current.set(stateId, list);
-    const focusedIndex = columnTasks.findIndex((item) => item.task._id === focusedTaskId);
-    if (stateId !== activeStateId || focusedIndex < 0 || revealedFocusRef.current === focusedTaskId) return;
-    requestAnimationFrame(() => {
-      list.scrollToIndex({ animated: false, index: focusedIndex, viewPosition: 0.3 });
-      revealedFocusRef.current = focusedTaskId;
-    });
-  }, [activeStateId, focusedTaskId]);
-
-  useEffect(() => {
-    if (!focusedTaskId) revealedFocusRef.current = undefined;
-  }, [focusedTaskId]);
-
-  function measurePager(event: LayoutChangeEvent) {
-    const nextWidth = Math.round(event.nativeEvent.layout.width);
-    if (nextWidth > 0 && nextWidth !== pageWidth) setPageWidth(nextWidth);
-  }
-
-  function finishPageSwipe(event: NativeSyntheticEvent<NativeScrollEvent>) {
-    if (!pageWidth) return;
-    const index = boardPageIndex(event.nativeEvent.contentOffset.x, pageWidth, columns.length);
-    const next = columns[index];
-    if (next && next.state._id !== activeStateId) setActiveStateId(next.state._id);
-  }
-
-  async function commit(input: TaskMoveInput) {
-    if (movePendingRef.current) return;
-    movePendingRef.current = true;
+  async function commit(
+    input: TaskMoveInput,
+    optimistic: { index: number; stateId: string },
+    undo?: TaskMoveInput,
+    undoOptimistic?: { index: number; stateId: string },
+    restoreUndoOnFailure?: LastMove,
+  ) {
+    setPending({ ...optimistic, taskId: input.taskId });
     setFailure(null);
-    setPendingTaskId(input.taskId);
+    setLastMove(null);
     try {
       await onMove(input);
-      setActiveStateId(input.workflowStateId);
+      if (undo && undoOptimistic) {
+        const destination = states.find((state) => state._id === input.workflowStateId)?.name ?? 'the selected status';
+        setLastMove({ input: undo, message: `Task moved to ${destination}.`, optimistic: undoOptimistic });
+      }
     } catch (error) {
+      if (restoreUndoOnFailure) setLastMove(restoreUndoOnFailure);
       const reason = moveFailureReason(error);
       setFailure(reason === 'task_open_subtasks_confirmation_required'
         ? { message: 'This task still has open checklist items.', retry: { ...input, confirmOpenSubtasks: true } }
         : { message: moveFailureMessage(reason) });
     } finally {
-      movePendingRef.current = false;
-      setPendingTaskId(null);
+      setPending(null);
     }
   }
 
@@ -185,25 +129,53 @@ export function TaskBoard({
     const item = moveTarget;
     setMoveTarget(null);
     if (!item || state._id === item.task.workflowStateId) return;
+    const others = display.find((column) => column.state._id === state._id)?.tasks ?? [];
+    const source = display.find((column) => column.state._id === item.task.workflowStateId);
+    const sourceTasks = source?.tasks.filter((row) => row.task._id !== item.task._id) ?? [];
+    const sourcePosition = source?.tasks.findIndex((row) => row.task._id === item.task._id) ?? 0;
     void commit({
+      afterTaskId: others[others.length - 1]?.task._id,
       expectedRevision: item.task.revision,
       taskId: item.task._id,
       workflowStateId: state._id,
-    });
+    }, { index: others.length, stateId: state._id }, {
+      afterTaskId: sourceTasks[sourcePosition - 1]?.task._id,
+      beforeTaskId: sourceTasks[sourcePosition]?.task._id,
+      expectedRevision: item.task.revision + 1,
+      taskId: item.task._id,
+      workflowStateId: item.task.workflowStateId,
+    }, { index: sourcePosition, stateId: item.task.workflowStateId });
   }
 
-  if (!activeColumn) {
-    const filteredOut = states.length > 0;
-    return (
-      <View style={[styles.empty, styles.emptyBoard, { borderColor: theme.hairline }]}>
-        <ThemedText type="title">{filteredOut ? 'No matching tasks' : 'No statuses configured'}</ThemedText>
-        <ThemedText themeColor="textSecondary" type="small">
-          {filteredOut
-            ? 'Adjust the search or filters to show this board again.'
-            : readOnly ? 'This read-only board has no visible workflow.' : 'Add a workflow status before creating tasks.'}
-        </ThemedText>
-      </View>
-    );
+  function reorderWithinColumn(position: 'top' | 'up' | 'down' | 'bottom') {
+    const item = moveTarget;
+    setMoveTarget(null);
+    if (!item) return;
+    const source = display.find((column) => column.state._id === item.task.workflowStateId);
+    if (!source) return;
+    const currentIndex = source.tasks.findIndex((row) => row.task._id === item.task._id);
+    const others = source.tasks.filter((row) => row.task._id !== item.task._id);
+    const nextIndex = position === 'top'
+      ? 0
+      : position === 'bottom'
+        ? others.length
+        : position === 'up'
+          ? Math.max(0, currentIndex - 1)
+          : Math.min(others.length, currentIndex + 1);
+    if (nextIndex === currentIndex) return;
+    void commit({
+      afterTaskId: others[nextIndex - 1]?.task._id,
+      beforeTaskId: others[nextIndex]?.task._id,
+      expectedRevision: item.task.revision,
+      taskId: item.task._id,
+      workflowStateId: item.task.workflowStateId,
+    }, { index: nextIndex, stateId: item.task.workflowStateId }, {
+      afterTaskId: others[currentIndex - 1]?.task._id,
+      beforeTaskId: others[currentIndex]?.task._id,
+      expectedRevision: item.task.revision + 1,
+      taskId: item.task._id,
+      workflowStateId: item.task.workflowStateId,
+    }, { index: currentIndex, stateId: item.task.workflowStateId });
   }
 
   return (
@@ -211,125 +183,68 @@ export function TaskBoard({
       {failure ? (
         <TaskStateBanner
           action={failure.retry
-            ? { label: 'Complete anyway', onPress: () => void commit(failure.retry!) }
+            ? { label: 'Complete anyway', onPress: () => {
+              const retry = failure.retry!;
+              const column = display.find((item) => item.state._id === retry.workflowStateId);
+              void commit(retry, { index: column?.tasks.length ?? 0, stateId: retry.workflowStateId });
+            } }
             : { label: 'Dismiss', onPress: () => setFailure(null) }}
           icon="alert-circle"
           message={failure.message}
           tone="danger"
         />
       ) : null}
-
-      <FlatList
-        accessibilityRole="tablist"
-        contentContainerStyle={styles.statusTabs}
-        data={columns}
-        getItemLayout={(_, index) => ({ index, length: STATUS_TAB_STEP, offset: STATUS_TAB_STEP * index })}
-        horizontal
-        ItemSeparatorComponent={() => <View style={styles.statusTabSeparator} />}
-        keyExtractor={(column) => column.state._id}
-        ref={statusListRef}
-        renderItem={({ item: column }) => {
-          const selected = column.state._id === activeColumn.state._id;
-          return (
-            <Pressable
-              accessibilityHint="Shows this Kanban column"
-              accessibilityLabel={`${column.state.name}, ${column.tasks.length} tasks`}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              onPress={() => activateColumn(column.state._id)}
-              style={[styles.statusTab, {
-                backgroundColor: selected ? theme.backgroundSelected : theme.backgroundElement,
-                borderColor: selected ? theme.accent : theme.hairline,
-              }]}>
-              <ThemedText numberOfLines={1} themeColor={selected ? 'text' : 'textSecondary'} type="smallBold">
-                {column.state.name}
-              </ThemedText>
-              <View style={[styles.count, { backgroundColor: selected ? theme.accentSoft : theme.backgroundElevated }]}>
-                <ThemedText themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">
-                  {column.tasks.length}
-                </ThemedText>
-              </View>
-            </Pressable>
-          );
-        }}
-        showsHorizontalScrollIndicator={false}
-        style={styles.statusScroller}
-      />
-
-      <View onLayout={measurePager} style={styles.columnViewport}>
-        {pageWidth ? (
-          <FlatList
-            data={columns}
-            decelerationRate="fast"
-            disableIntervalMomentum
-            getItemLayout={(_, index) => ({ index, length: pageWidth, offset: pageWidth * index })}
-            horizontal
-            keyExtractor={(column) => column.state._id}
-            onMomentumScrollEnd={finishPageSwipe}
-            pagingEnabled
-            ref={pagerRef}
-            renderItem={({ item: column, index }) => (
-              <View style={[styles.columnPage, { width: pageWidth }]}>
-                <View style={styles.columnHeading}>
-                  <TaskStatusPill category={column.state.category} label={column.state.name} />
-                  <ThemedText themeColor="textSecondary" type="caption">
-                    {index + 1} of {columns.length} · {column.tasks.length} {column.tasks.length === 1 ? 'task' : 'tasks'}
-                  </ThemedText>
-                </View>
-
-                <FlatList
-                  contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
-                  data={column.tasks}
-                  keyExtractor={(item) => item.task._id}
-                  ListEmptyComponent={(
-                    <View style={[styles.empty, { borderColor: theme.hairline }]}>
-                      <ThemedText type="title">No tasks in {column.state.name}</ThemedText>
-                      <ThemedText themeColor="textSecondary" type="small">
-                        {readOnly ? 'This board is read-only.' : 'Move a task here from its status menu.'}
-                      </ThemedText>
-                    </View>
-                  )}
-                  nestedScrollEnabled
-                  onScrollToIndexFailed={({ averageItemLength, index }) => {
-                    const list = taskListRefs.current.get(column.state._id);
-                    list?.scrollToOffset({ animated: false, offset: averageItemLength * index });
-                    requestAnimationFrame(() => list?.scrollToIndex({ animated: false, index, viewPosition: 0.3 }));
-                  }}
-                  ref={(list) => registerTaskList(column.state._id, column.tasks, list)}
-                  renderItem={({ item }) => (
-                    <View style={[styles.cardWrap, {
-                      borderColor: item.task._id === focusedTaskId ? theme.accent : 'transparent',
-                      opacity: pendingTaskId === item.task._id ? 0.55 : 1,
-                    }]}>
-                      <TaskCard
-                        assignee={assigneeName(item)}
-                        category={item.state?.category}
-                        description={item.task.description}
-                        dueDate={item.task.dueDate}
-                        evidence={item.references.length > 0}
-                        focused={item.task._id === focusedTaskId}
-                        onLongPress={readOnly || pendingTaskId !== null ? undefined : () => setMoveTarget(item)}
-                        onPress={() => onOpen(item)}
-                        onStatusPress={readOnly || pendingTaskId !== null ? undefined : () => setMoveTarget(item)}
-                        priority={item.task.priority}
-                        publicKey={item.task.publicKey}
-                        stateName={item.state?.name ?? 'Unknown'}
-                        title={item.task.title}
-                        variant="board"
-                      />
-                    </View>
-                  )}
-                  showsVerticalScrollIndicator={false}
-                />
-              </View>
-            )}
-            showsHorizontalScrollIndicator={false}
-            style={styles.pager}
-          />
-        ) : null}
-      </View>
-
-      <OptionsSheet onClose={() => setMoveTarget(null)} title="Move to status" visible={Boolean(moveTarget)}>
+      {lastMove ? (
+        <TaskStateBanner
+          action={{
+            label: 'Undo',
+            onPress: () => {
+              const undo = lastMove;
+              void commit(undo.input, undo.optimistic, undefined, undefined, undo);
+            },
+          }}
+          icon="check-circle"
+          message={lastMove.message}
+          tone="success"
+        />
+      ) : null}
+      {compactBoard ? (
+        <>
+          <ScrollView contentContainerStyle={styles.compactColumns} horizontal showsHorizontalScrollIndicator={false}>
+            {display.map((column) => (
+              <BoardColumn
+                assigneeName={assigneeName}
+                column={column}
+                columnWidth={Math.min(282, Math.max(272, windowWidth - 108))}
+                focusedTaskId={focusedTaskId}
+                key={column.state._id}
+                onOpen={onOpen}
+                onStatusPress={setMoveTarget}
+                readOnly={readOnly}
+              />
+            ))}
+          </ScrollView>
+        </>
+      ) : (
+        <ScrollView
+          contentContainerStyle={styles.columns}
+          horizontal
+          showsHorizontalScrollIndicator={false}>
+          {display.map((column) => (
+            <BoardColumn
+              assigneeName={assigneeName}
+              column={column}
+              columnWidth={ColumnWidth}
+              focusedTaskId={focusedTaskId}
+              key={column.state._id}
+              onOpen={onOpen}
+              onStatusPress={setMoveTarget}
+              readOnly={readOnly}
+            />
+          ))}
+        </ScrollView>
+      )}
+      <OptionsSheet onClose={() => setMoveTarget(null)} title="Move to" visible={Boolean(moveTarget)}>
         <SheetSection title={moveTarget?.task.title}>
           {states.map((state) => (
             <SheetRow
@@ -341,28 +256,149 @@ export function TaskBoard({
             />
           ))}
         </SheetSection>
+        {moveTarget ? (
+          <SheetSection title="Order in current status">
+            <SheetRow icon="arrow-up" label="Move to top" onPress={() => reorderWithinColumn('top')} />
+            <SheetRow icon="chevron-up" label="Move up" onPress={() => reorderWithinColumn('up')} />
+            <SheetRow icon="chevron-down" label="Move down" onPress={() => reorderWithinColumn('down')} />
+            <SheetRow icon="arrow-down" label="Move to bottom" onPress={() => reorderWithinColumn('bottom')} />
+          </SheetSection>
+        ) : null}
       </OptionsSheet>
     </View>
   );
 }
 
+function BoardColumn({
+  assigneeName,
+  column,
+  columnWidth,
+  focusedTaskId,
+  onOpen,
+  onStatusPress,
+  readOnly,
+}: {
+  assigneeName: (item: MobileTaskView) => string | undefined;
+  column: BoardColumnView;
+  columnWidth: number;
+  focusedTaskId?: string;
+  onOpen: (item: MobileTaskView) => void;
+  onStatusPress: (item: MobileTaskView) => void;
+  readOnly: boolean;
+}) {
+  const theme = useTheme();
+
+  return (
+    <View style={[styles.column, { backgroundColor: theme.background, borderColor: theme.background, width: columnWidth }]}>
+      <View style={[styles.columnHeading, { borderBottomColor: theme.hairline }]}>
+        <View style={styles.columnTitle}>
+          <View style={[styles.columnDot, { backgroundColor: stateDotColor(column.state.category, theme) }]} />
+          <ThemedText numberOfLines={1} type="smallBold">{column.state.name}</ThemedText>
+        </View>
+        <ThemedText
+          accessibilityLabel={`${column.tasks.length} ${column.tasks.length === 1 ? 'task' : 'tasks'} in ${column.state.name}`}
+          themeColor="textSecondary"
+          type="captionBold">
+          {column.tasks.length}
+        </ThemedText>
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.columnBody}
+        showsVerticalScrollIndicator={false}>
+        {column.tasks.map((item) => (
+          <BoardCard
+            assigneeName={assigneeName}
+            item={item}
+            key={item.task._id}
+            onOpen={onOpen}
+            onLongPress={() => onStatusPress(item)}
+            onStatusPress={onStatusPress}
+            readOnly={readOnly}
+            focused={item.task._id === focusedTaskId}
+          />
+        ))}
+        {!column.tasks.length ? (
+          <View style={[styles.columnEmpty, { borderColor: theme.hairline }]}>
+            <PlatformIcon color={theme.textTertiary} name="view-column" size={20} />
+            <ThemedText themeColor="textTertiary" type="caption">No tasks in this status</ThemedText>
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+function stateDotColor(category: Doc<'taskWorkflowStates'>['category'], theme: ReturnType<typeof useTheme>) {
+  if (category === 'completed') return theme.success;
+  if (category === 'started') return theme.accentStrong;
+  if (category === 'canceled') return theme.danger;
+  return theme.textTertiary;
+}
+
+function BoardCard({
+  assigneeName,
+  focused,
+  item,
+  onLongPress,
+  onOpen,
+  onStatusPress,
+  readOnly,
+}: {
+  assigneeName: (item: MobileTaskView) => string | undefined;
+  focused: boolean;
+  item: MobileTaskView;
+  onLongPress: () => void;
+  onOpen: (item: MobileTaskView) => void;
+  onStatusPress: (item: MobileTaskView) => void;
+  readOnly: boolean;
+}) {
+  const referenceCount = 'references' in item && Array.isArray(item.references)
+    ? item.references.length
+    : item.hasEvidence ? 1 : 0;
+  return (
+    <TaskCard
+      assignee={assigneeName(item)}
+      category={item.state?.category}
+      dueDate={item.task.dueDate}
+      evidence={referenceCount > 0}
+      focused={focused}
+      onLongPress={readOnly ? undefined : onLongPress}
+      onPress={() => onOpen(item)}
+      onStatusPress={readOnly ? undefined : () => onStatusPress(item)}
+      priority={item.task.priority}
+      publicKey={item.task.publicKey}
+      referenceCount={referenceCount}
+      stateName={item.state?.name ?? 'Unknown'}
+      title={item.task.title}
+      variant="board"
+    />
+  );
+}
+
 const styles = StyleSheet.create({
-  columnPage: { flex: 1, gap: Spacing.three, paddingHorizontal: Spacing.one },
-  columnHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  columnViewport: { flex: 1, marginHorizontal: -Spacing.one, minHeight: 0 },
-  cardWrap: { borderRadius: Radius.large, borderWidth: 2 },
-  count: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minWidth: 24, paddingHorizontal: 6, paddingVertical: 2 },
-  empty: { borderCurve: 'continuous', borderRadius: Radius.large, borderStyle: 'dashed', borderWidth: 1, gap: Spacing.one, marginTop: Spacing.four, padding: Spacing.five },
-  emptyBoard: { marginTop: 0 },
-  list: { gap: Spacing.three, paddingTop: Spacing.two },
-  pager: { flex: 1 },
-  root: { flex: 1, gap: Spacing.three, minHeight: 0 },
-  statusTab: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: TouchTarget, paddingHorizontal: Spacing.three, width: STATUS_TAB_WIDTH },
-  statusTabSeparator: { width: STATUS_TAB_GAP },
-  statusScroller: { flexGrow: 0, marginHorizontal: -Spacing.one, overflow: 'visible' },
-  statusTabs: {
+  column: { minHeight: 220, overflow: 'visible', width: ColumnWidth },
+  columnBody: { gap: CardGap, paddingBottom: Spacing.four },
+  columnEmpty: {
     alignItems: 'center',
-    paddingHorizontal: Spacing.one,
-    paddingVertical: Spacing.one,
+    borderCurve: 'continuous',
+    borderRadius: Radius.large,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    gap: Spacing.one,
+    justifyContent: 'center',
+    minHeight: 104,
+    paddingHorizontal: Spacing.two,
   },
+  columnHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    height: 34,
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.one,
+  },
+  columns: { gap: ColumnGap, paddingBottom: Spacing.four, paddingRight: Spacing.three },
+  compactColumns: { gap: ColumnGap, paddingBottom: Spacing.four, paddingRight: Spacing.three },
+  columnDot: { borderRadius: Radius.pill, height: 8, width: 8 },
+  columnTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
+  root: { flex: 1, gap: Spacing.two },
 });

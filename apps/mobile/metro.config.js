@@ -5,7 +5,10 @@ const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
+config.watchFolders = [
+  ...new Set([...(config.watchFolders ?? []), path.resolve(workspaceRoot, 'packages/shared')]),
+  path.resolve(workspaceRoot, 'convex'),
+];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),

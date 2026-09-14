@@ -28,6 +28,16 @@ function gridRows(images: ViewableImage[]) {
   return rows;
 }
 
+function imageSource(image: ViewableImage, previewFailed: boolean) {
+  if (previewFailed && image.previewUrl) return image.originalUrl ?? image.url;
+  return image.previewUrl ?? image.url;
+}
+
+function knownImageRatio(image: ViewableImage) {
+  if (!image.width || !image.height || image.width < 1 || image.height < 1) return null;
+  return Math.min(Math.max(image.width / image.height, SINGLE_MIN_RATIO), SINGLE_MAX_RATIO);
+}
+
 type Props = {
   images: ViewableImage[];
   onLongPress?: () => void;
@@ -94,10 +104,11 @@ function SingleImage({
   onPress: (image: ViewableImage) => void;
 }) {
   const theme = useTheme();
-  const [ratio, setRatio] = useState(SINGLE_DEFAULT_RATIO);
-  const [failed, setFailed] = useState(false);
+  const [ratio, setRatio] = useState(knownImageRatio(image) ?? SINGLE_DEFAULT_RATIO);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [originalFailed, setOriginalFailed] = useState(false);
 
-  if (failed) return <BrokenImage image={image} width={maxWidth} />;
+  if (originalFailed) return <BrokenImage image={image} width={maxWidth} />;
 
   return (
     <Pressable
@@ -109,16 +120,20 @@ function SingleImage({
       style={[styles.tile, { backgroundColor: theme.skeleton, width: maxWidth }]}>
       <Image
         contentFit="cover"
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (image.previewUrl && !previewFailed) {
+            setPreviewFailed(true);
+            return;
+          }
+          setOriginalFailed(true);
+        }}
         onLoad={({ source }) =>
-          setRatio(
-            Math.min(Math.max(source.width / source.height, SINGLE_MIN_RATIO), SINGLE_MAX_RATIO),
-          )
+          setRatio(knownImageRatio(image) ?? Math.min(Math.max(source.width / source.height, SINGLE_MIN_RATIO), SINGLE_MAX_RATIO))
         }
         placeholder={PLACEHOLDER}
         placeholderContentFit="cover"
         recyclingKey={image.id}
-        source={{ uri: image.url }}
+        source={{ uri: imageSource(image, previewFailed) }}
         style={{ aspectRatio: ratio, width: maxWidth }}
         transition={180}
       />
@@ -142,9 +157,10 @@ function ImageTile({
   width: number;
 }) {
   const theme = useTheme();
-  const [failed, setFailed] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [originalFailed, setOriginalFailed] = useState(false);
 
-  if (failed) return <BrokenImage image={image} width={width} />;
+  if (originalFailed) return <BrokenImage image={image} width={width} />;
 
   return (
     <Pressable
@@ -160,11 +176,17 @@ function ImageTile({
       style={[styles.tile, { backgroundColor: theme.skeleton, height, width }]}>
       <Image
         contentFit="cover"
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (image.previewUrl && !previewFailed) {
+            setPreviewFailed(true);
+            return;
+          }
+          setOriginalFailed(true);
+        }}
         placeholder={PLACEHOLDER}
         placeholderContentFit="cover"
         recyclingKey={image.id}
-        source={{ uri: image.url }}
+        source={{ uri: imageSource(image, previewFailed) }}
         style={styles.tileImage}
         transition={180}
       />

@@ -4,10 +4,18 @@ import type { MutationCtx, QueryCtx } from '../_generated/server'
 
 import { assertActorMatches, requireAuthenticatedActor } from './actorContext'
 import { resolveCompanyProjectAccess } from './companyPolicy'
+import { assertProjectSnapshotWritable } from './projectSnapshotLock'
 import { requireGroupMember, requireProjectManager, requireProjectMember } from './permissions'
 
 type RequestCtx = QueryCtx | MutationCtx
 type RequiredCapability = 'readProject' | 'writeProject' | 'manageProject' | 'readChannel' | 'writeChannel' | 'stewardChannel'
+
+function requiresWritableProject(capability: RequiredCapability) {
+  return capability === 'writeProject' ||
+    capability === 'manageProject' ||
+    capability === 'writeChannel' ||
+    capability === 'stewardChannel'
+}
 
 export type ScopedRequest = {
   projectId: Id<'projects'>
@@ -28,15 +36,19 @@ export async function authorizeScopedRequest(
   if (!project) throw new Error('project_unavailable')
 
   if (resolveProjectAccessProfile(project.accessProfile) === 'legacy') {
-    if (required === 'manageProject' || required === 'stewardChannel') {
-      await requireProjectManager(ctx, project._id, actor.userId)
-    } else {
-      await requireProjectMember(ctx, project._id, actor.userId)
-    }
+    const projectMember = required === 'manageProject' || required === 'stewardChannel'
+      ? await requireProjectManager(ctx, project._id, actor.userId)
+      : await requireProjectMember(ctx, project._id, actor.userId)
     if (input.groupId && (required === 'readChannel' || required === 'writeChannel' || required === 'stewardChannel')) {
       await requireGroupMember(ctx, input.groupId, actor.userId)
     }
-    return { actor, project, companyAccess: null }
+    if (input.projectMemberId && input.projectMemberId !== projectMember._id) {
+      throw new Error('actor_context_mismatch')
+    }
+    if (requiresWritableProject(required)) {
+      await assertProjectSnapshotWritable(ctx, project._id)
+    }
+    return { actor, project, projectMember, companyAccess: null }
   }
 
   if (!input.actingCompanyId || !input.projectMemberId) throw new Error('actor_context_required')
@@ -55,5 +67,8 @@ export async function authorizeScopedRequest(
     stewardChannel: companyAccess.capabilities.canStewardChannel,
   }[required]
   if (!allowed) throw new Error(required.includes('Channel') ? 'channel_unavailable' : 'project_unavailable')
-  return { actor, project, companyAccess }
+  if (requiresWritableProject(required)) {
+    await assertProjectSnapshotWritable(ctx, project._id)
+  }
+  return { actor, project, projectMember: companyAccess.projectMember, companyAccess }
 }

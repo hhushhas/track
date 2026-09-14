@@ -1,36 +1,33 @@
-import { SectionList, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
-import type { Doc } from '../../../../convex/_generated/dataModel';
-import { useTrackUser } from '@/contexts/track-user-context';
-import { useCompany } from '@/contexts/company-context';
-import { ColoredAvatar } from '@/components/colored-avatar';
-import { AdaptiveListRow } from '@/components/adaptive-list-row';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import { ActionButton } from '@/components/action-button';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
+import { OptionsSheet, SheetInput, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
+import { ProjectAccountButton } from '@/components/project-overview-dashboard';
+import {
+  ProjectDirectoryCard,
+  WorkspaceOverview,
+  type DirectoryChannel,
+  type DirectoryProject,
+} from '@/components/projects-directory';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { EmptyState } from '@/components/empty-state';
-import { OptionsSheet, SheetInput, SheetSection } from '@/components/options-sheet';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { useCompany } from '@/contexts/company-context';
+import { useTrackUser } from '@/contexts/track-user-context';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
-import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
-import { projectOverviewHref } from '@/lib/company-navigation';
-import { projectRoleLabel } from '@/lib/role-label';
-
-type MobileProject = {
-  project: Doc<'projects'>;
-  membership: Doc<'projectMembers'>;
-  groupCount: number;
-  unreadCount: number;
-};
+import { channelHref, projectOverviewHref, type RepresentedProjectContext } from '@/lib/company-navigation';
+import { hapticLight } from '@/lib/haptics';
 
 export default function ProjectsScreen() {
   const theme = useTheme();
@@ -39,54 +36,59 @@ export default function ProjectsScreen() {
   const { trackUserId, openProfileSheet } = useTrackUser();
   const { actingCompanyId, actingCompany, companyModelEnabled } = useCompany();
   const [createOpen, setCreateOpen] = useState(false);
+  const [expandedMembershipId, setExpandedMembershipId] = useState<Id<'projectMembers'> | null | undefined>(undefined);
   const [projectName, setProjectName] = useState('');
   const [projectClientLabel, setProjectClientLabel] = useState('');
   const [creating, setCreating] = useState(false);
+  const profileStatus = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
   const [createError, setCreateError] = useState<string | null>(null);
 
   const createProject = useMutation(api.projects.create);
-  const ensureStarter = useMutation(api.projects.ensureStarter);
-
   const projects = usePaginatedQuery(
     api.mobile.listProjects,
-    trackUserId ? { userId: trackUserId } : 'skip',
+    trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip',
     { initialNumItems: 50 },
   );
-  const { loadMore: loadMoreProjects, status: projectPageStatus } = projects;
-  const projectItems = projects.results.filter((project): project is MobileProject => project !== null);
   const lastContext = useQuery(api.mobile.getLastActiveContext, trackUserId ? { userId: trackUserId } : 'skip');
-  const sections = useMemo(() => {
-    const attention = projectItems.filter((item) => item.membership.status !== 'archived' && item.unreadCount > 0)
-      .sort((left, right) => right.unreadCount - left.unreadCount)
-      .slice(0, 3);
-    const attentionIds = new Set(attention.map((item) => item.membership._id));
-    const recent = lastContext?.projectId
-      ? projectItems.filter((item) =>
-          item.project._id === lastContext.projectId &&
-          (!lastContext.projectMemberId || item.membership._id === lastContext.projectMemberId) &&
-          (!lastContext.actingCompanyId || item.membership.companyId === lastContext.actingCompanyId) &&
-          item.membership.status !== 'archived' &&
-          !attentionIds.has(item.membership._id),
-        )
-      : [];
-    const highlightedIds = new Set([...attentionIds, ...recent.map((item) => item.membership._id)]);
-    const companyGroups = new Map<string, MobileProject[]>();
-    for (const item of projectItems.filter((row) => row.membership.status !== 'archived' && !highlightedIds.has(row.membership._id))) {
-      const company = item.membership.companyDisplayNameSnapshot ?? 'Independent Projects';
-      companyGroups.set(company, [...(companyGroups.get(company) ?? []), item]);
-    }
-    const result: Array<{ title: string; subtitle?: string; data: MobileProject[] }> = [];
-    if (attention.length) result.push({ title: 'Needs attention', subtitle: 'Unread work is prioritized; opening remains your choice.', data: attention });
-    if (recent.length) result.push({ title: 'Continue working', subtitle: 'Your most recently opened Project.', data: recent });
-    for (const [company, data] of companyGroups) result.push({ title: company, data });
-    const archives = projectItems.filter((item) => item.membership.status === 'archived');
-    if (archives.length) result.push({ title: 'Read-only archives', subtitle: 'Retained work from Companies you have left.', data: archives });
-    return result;
-  }, [lastContext?.actingCompanyId, lastContext?.projectId, lastContext?.projectMemberId, projectItems]);
+  const projectItems = useMemo(
+    () => projects.results.filter((project): project is DirectoryProject => project !== null),
+    [projects.results],
+  );
+  const sortedProjects = useMemo(() => [...projectItems].sort((left, right) => {
+    const archiveOrder = Number(left.membership.status === 'archived') - Number(right.membership.status === 'archived');
+    if (archiveOrder !== 0) return archiveOrder;
+    const leftIsRecent = isLastContext(left, lastContext);
+    const rightIsRecent = isLastContext(right, lastContext);
+    if (leftIsRecent !== rightIsRecent) return leftIsRecent ? -1 : 1;
+    if (left.unreadCount !== right.unreadCount) return right.unreadCount - left.unreadCount;
+    return left.project.name.localeCompare(right.project.name);
+  }), [lastContext, projectItems]);
+  const expandedProject = sortedProjects.find((item) => item.membership._id === expandedMembershipId);
+  const expandedIdentity = expandedProject ? projectIdentity(expandedProject) : null;
+  const expandedChannels = usePaginatedQuery(
+    api.mobile.listGroupsPage,
+    trackUserId && expandedProject && expandedProject.membership.status !== 'archived' ? {
+      userId: trackUserId,
+      projectId: expandedProject.project._id,
+      actingCompanyId: expandedIdentity?.companyId,
+      projectMemberId: expandedIdentity?.membershipId,
+    } : 'skip',
+    { initialNumItems: 20 },
+  );
 
   useEffect(() => {
-    if (projectPageStatus === 'CanLoadMore') loadMoreProjects(50);
-  }, [loadMoreProjects, projectPageStatus]);
+    if (projects.status === 'CanLoadMore') projects.loadMore(50);
+  }, [projects.loadMore, projects.status]);
+
+  useEffect(() => {
+    if (expandedMembershipId === undefined || expandedMembershipId && !sortedProjects.some((item) => item.membership._id === expandedMembershipId)) {
+      setExpandedMembershipId(sortedProjects.find((item) => item.membership.status !== 'archived')?.membership._id ?? null);
+    }
+  }, [expandedMembershipId, sortedProjects]);
+
+  useEffect(() => {
+    if (expandedChannels.status === 'CanLoadMore') expandedChannels.loadMore(20);
+  }, [expandedChannels.loadMore, expandedChannels.status]);
 
   function openCreateProject() {
     hapticLight();
@@ -94,15 +96,13 @@ export default function ProjectsScreen() {
   }
 
   function closeCreateProject() {
-    if (creating) return;
-    setCreateOpen(false);
+    if (!creating) setCreateOpen(false);
   }
 
   async function submitCreateProject() {
     if (!trackUserId) return;
     const name = projectName.trim();
     if (!name) return;
-
     setCreating(true);
     setCreateError(null);
     try {
@@ -116,94 +116,90 @@ export default function ProjectsScreen() {
       setCreateOpen(false);
       router.push(projectOverviewHref(projectId, null));
     } catch (error) {
-      setCreateError(
-        error instanceof Error && error.message.includes('not_allowed_to_create_project')
-          ? 'You do not have permission to create a Project for this identity.'
-          : 'Please check the project details and try again.',
-      );
+      setCreateError(error instanceof Error && error.message.includes('not_allowed_to_create_project')
+        ? 'You do not have permission to create a Project for this identity.'
+        : 'Please check the Project details and try again.');
     } finally {
       setCreating(false);
     }
   }
 
-  async function navigateToProject(item: MobileProject) {
-    if (!trackUserId) return;
-
-    if (projectItems.length === 0) {
-      const projectId = await ensureStarter({ userId: trackUserId });
-      router.push(projectOverviewHref(projectId, null));
-    } else {
-      router.push(projectOverviewHref(item.project._id, item.membership.companyId ? {
-        archived: item.membership.status === 'archived',
-        companyId: item.membership.companyId,
-        membershipId: item.membership._id,
-      } : null) as never);
-    }
+  function openProject(item: DirectoryProject) {
+    router.push(projectOverviewHref(item.project._id, projectIdentity(item)) as never);
   }
+
+  function openChannel(project: DirectoryProject, channel: DirectoryChannel) {
+    router.push(channelHref(project.project._id, channel.group._id, projectIdentity(project)) as never);
+  }
+
+  const activeProjects = sortedProjects.filter((item) => item.membership.status !== 'archived');
+  const visibleChannels = activeProjects.reduce((sum, item) => sum + item.groupCount, 0);
+  const companyLabel = actingCompany?.company?.displayName ?? 'All Companies';
 
   return (
     <ThemedView style={styles.screen}>
-      <Stack.Screen
-        options={{
-          title: 'Projects',
-          headerLargeTitle: false,
-          headerTransparent: false,
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              {companyModelEnabled ? <IconButton accessibilityLabel="Switch company and manage invitations" icon="office-building" onPress={() => router.push('/company')} /> : null}
-              {!actingCompanyId ? (
-                <IconButton accessibilityLabel="Create project" icon="plus" onPress={openCreateProject} />
-              ) : null}
-              <IconButton accessibilityLabel="Open account" icon="account-circle" onPress={openProfileSheet} />
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={{
+        title: 'Projects',
+        headerLargeTitle: false,
+        headerTransparent: false,
+        headerRight: () => <View style={styles.headerActions}>
+          {companyModelEnabled ? <IconButton accessibilityLabel="Switch Company" icon="office-building" onPress={() => router.push('/company')} /> : null}
+          {!actingCompanyId ? <IconButton accessibilityLabel="Create Project" icon="plus" onPress={openCreateProject} /> : null}
+          <ProjectAccountButton label={profileStatus?.user.displayName || profileStatus?.user.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
+        </View>,
+      }} />
       <ConnectivityBanner style={styles.connection} />
 
-      {actingCompanyId ? (
-        <View style={[styles.contextBanner, { backgroundColor: theme.backgroundElement }]}>
-          <ThemedText type="title">Representing {actingCompany?.company?.displayName}</ThemedText>
-          <ThemedText themeColor="textSecondary" type="caption">
-            Project actions use this Company identity.
-          </ThemedText>
-        </View>
-      ) : null}
-
-      {projects.status === 'LoadingFirstPage' ? (
-        <SkeletonList label="Loading projects" />
-      ) : (
-        <SectionList
+      {projects.status === 'LoadingFirstPage' ? <SkeletonList label="Loading Projects" /> : (
+        <FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
+          data={sortedProjects}
           keyExtractor={(item) => item.membership._id}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={<View style={styles.listHeader}>
-            <ThemedText type="display">Your Projects</ThemedText>
-            <ThemedText themeColor="textSecondary">Resume important work or browse by Company. Notifications never change your active Project automatically.</ThemedText>
+            <WorkspaceOverview
+              activeProjects={activeProjects.length}
+              companyLabel={companyLabel}
+              companyScoped={Boolean(actingCompanyId)}
+              onPressCompany={() => router.push('/company')}
+              visibleChannels={visibleChannels}
+            />
+            <View style={styles.directoryHeading}>
+              <View style={styles.directoryTitle}>
+                <PlatformIcon color={theme.accentStrong} name="project" size={17} />
+                <ThemedText style={styles.directoryTitleText} type="title">Projects & Channels</ThemedText>
+                <View style={[styles.count, { backgroundColor: theme.backgroundElement }]}><ThemedText themeColor="textSecondary" type="captionBold">{sortedProjects.length}</ThemedText></View>
+              </View>
+              <View style={styles.sortLabel}><PlatformIcon color={theme.textSecondary} name="sort" size={14} /><ThemedText themeColor="textSecondary" type="caption">Recent & unread</ThemedText></View>
+            </View>
           </View>}
-          renderSectionHeader={({ section }) => <View style={[styles.sectionHeader, { backgroundColor: theme.background }]}><ThemedText type="titleLarge">{section.title}</ThemedText>{section.subtitle ? <ThemedText themeColor="textSecondary" type="caption">{section.subtitle}</ThemedText> : null}</View>}
-          renderItem={({ item }) => (
-            <ProjectRow item={item} onPress={() => void navigateToProject(item)} />
-          )}
+          ListEmptyComponent={<EmptyState
+            actionLabel={!actingCompanyId ? 'Create Project' : undefined}
+            body={actingCompanyId ? 'Accepted shared Projects and retained archives will appear here.' : 'Create a Project to organize conversations and tasks.'}
+            icon="project"
+            onAction={!actingCompanyId ? openCreateProject : undefined}
+            title="No Projects yet"
+          />}
+          ListFooterComponent={!actingCompanyId && sortedProjects.length ? <Pressable accessibilityRole="button" onPress={openCreateProject} style={[styles.addProject, { backgroundColor: theme.text }]}>
+            <PlatformIcon color={theme.background} name="plus" size={17} />
+            <ThemedText style={{ color: theme.background }} type="title">Add Project</ThemedText>
+          </Pressable> : null}
           onEndReached={() => { if (projects.status === 'CanLoadMore') projects.loadMore(50); }}
           onEndReachedThreshold={0.35}
-          sections={sections}
-          stickySectionHeadersEnabled={false}
-          ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <EmptyState
-                actionLabel={!actingCompanyId ? 'Create project' : undefined}
-                icon="briefcase-outline"
-                onAction={!actingCompanyId ? openCreateProject : undefined}
-                title="No projects yet"
-                body={actingCompanyId ? 'Accepted shared Projects and retained exit archives will appear here.' : 'Create a project to organize conversations and tasks.'}
-              />
-            </View>
-          }
+          renderItem={({ item }) => <ProjectDirectoryCard
+            channels={item.membership._id === expandedMembershipId ? expandedChannels.results : []}
+            expanded={item.membership._id === expandedMembershipId}
+            item={item}
+            loadingChannels={item.membership._id === expandedMembershipId && expandedChannels.status === 'LoadingFirstPage'}
+            onOpenChannel={(channel) => openChannel(item, channel)}
+            onOpenProject={() => openProject(item)}
+            onToggle={() => setExpandedMembershipId((current) => current === item.membership._id ? null : item.membership._id)}
+          />}
         />
       )}
 
-      <OptionsSheet onClose={closeCreateProject} title="Create project" visible={createOpen}>
+      <OptionsSheet onClose={closeCreateProject} title="Create Project" visible={createOpen}>
         <SheetSection>
           <View style={styles.createInputs}>
             <SheetInput label="Project name" maxLength={100} onChangeText={setProjectName} value={projectName} />
@@ -211,83 +207,38 @@ export default function ProjectsScreen() {
           </View>
         </SheetSection>
         {createError ? <ThemedText accessibilityRole="alert" style={{ color: theme.danger }} type="small">{createError}</ThemedText> : null}
-        <ActionButton disabled={!projectName.trim()} label="Create project" loading={creating} onPress={() => void submitCreateProject()} />
+        <ActionButton disabled={!projectName.trim()} label="Create Project" loading={creating} onPress={() => void submitCreateProject()} />
       </OptionsSheet>
-
     </ThemedView>
   );
 }
 
-function ProjectRow({ item, onPress }: { item: MobileProject; onPress: () => void }) {
-  const theme = useTheme();
-  const archived = item.membership.status === 'archived';
-  const company = item.membership.companyDisplayNameSnapshot ?? 'Independent Project';
-  const channels = `${item.groupCount} ${item.groupCount === 1 ? 'Channel' : 'Channels'}`;
-  return (
-    <AdaptiveListRow
-      accessibilityHint={archived ? 'Opens this read-only Project archive' : 'Opens this Project'}
-      accessibilityLabel={`${item.project.name}. ${projectRoleLabel(item.membership.role)}. ${channels}.${item.unreadCount ? ` ${item.unreadCount} unread.` : ''}${archived ? ' Read-only archive.' : ''}`}
-      leading={<ColoredAvatar label={item.project.name} seed={item.project._id} shape="rounded" size={40} />}
-      onPress={() => { hapticLight(); onPress(); }}
-      subtitle={`${company} · ${projectRoleLabel(item.membership.role)} · ${channels}`}
-      title={item.project.name}
-      trailingBottom={archived ? <ThemedText themeColor="textSecondary" type="captionBold">Read-only</ThemedText> : null}
-      trailingTop={item.unreadCount > 0 ? (
-          <View
-            accessibilityLabel={`${item.unreadCount} unread`}
-            style={[styles.badge, { backgroundColor: theme.accent }]}>
-            <ThemedText style={styles.badgeText} type="captionBold">
-              {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
-            </ThemedText>
-          </View>
-        ) : (
-          <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
-        )}
-    />
-  );
+function projectIdentity(item: DirectoryProject): RepresentedProjectContext | null {
+  return item.membership.companyId ? {
+    archived: item.membership.status === 'archived',
+    companyId: item.membership.companyId,
+    membershipId: item.membership._id,
+  } : null;
+}
+
+function isLastContext(item: DirectoryProject, context: { projectId?: Id<'projects'>; projectMemberId?: Id<'projectMembers'>; actingCompanyId?: Id<'companies'> } | null | undefined) {
+  return Boolean(context?.projectId === item.project._id
+    && (!context.projectMemberId || context.projectMemberId === item.membership._id)
+    && (!context.actingCompanyId || context.actingCompanyId === item.membership.companyId));
 }
 
 const styles = StyleSheet.create({
+  addProject: { alignItems: 'center', alignSelf: 'center', borderRadius: Radius.large, flexDirection: 'row', gap: Spacing.two, justifyContent: 'center', marginTop: Spacing.five, minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   connection: { marginHorizontal: Spacing.four, marginTop: Spacing.two },
-  badge: {
-    alignItems: 'center',
-    borderRadius: Radius.pill,
-    minWidth: 22,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  // The accent is the same yellow in both themes, so the badge ink is fixed
-  // to the light-theme stone that clears AA against it (9.18:1).
-  badgeText: {
-    color: Colors.light.text,
-  },
-  contextBanner: {
-    gap: Spacing.one,
-    marginHorizontal: Spacing.four,
-    marginTop: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: Radius.large,
-  },
-  createInputs: {
-    gap: Spacing.three,
-    padding: Spacing.three,
-  },
-  emptyWrap: {
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  list: {
-    gap: Spacing.two,
-    padding: Spacing.four,
-    paddingTop: Spacing.two,
-  },
-  listHeader: { gap: Spacing.two },
-  sectionHeader: { gap: 2, paddingBottom: Spacing.one, paddingTop: Spacing.three },
-  screen: {
-    flex: 1,
-  },
+  count: { borderRadius: Radius.small, paddingHorizontal: Spacing.two, paddingVertical: 2 },
+  createInputs: { gap: Spacing.three, padding: Spacing.three },
+  directoryHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.five },
+  directoryTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  directoryTitleText: { fontSize: 16, lineHeight: 22 },
+  headerActions: { alignItems: 'center', flexDirection: 'row' },
+  list: { padding: Spacing.four, paddingTop: Spacing.two },
+  listHeader: { marginBottom: Spacing.three },
+  screen: { flex: 1 },
+  separator: { height: Spacing.three },
+  sortLabel: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
 });

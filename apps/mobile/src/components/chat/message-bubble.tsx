@@ -155,7 +155,7 @@ export function MessageBubble({
               hasMedia && styles.inset,
               { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline },
             ]}>
-            <PlatformIcon color={theme.textSecondary} name="forum-outline" size={15} />
+            <PlatformIcon color={theme.textSecondary} name="thread" size={15} />
             <View style={styles.threadBody}>
               <ThemedText numberOfLines={1} type="captionBold">
                 {message.channelThread.name}

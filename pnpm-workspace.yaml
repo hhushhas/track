@@ -11,7 +11,21 @@ onlyBuiltDependencies:
   - sharp
   - workerd
 
+# Convex bundles the Node image action for linux-arm64 even when local
+# development runs on the M4 (darwin-arm64) or CI runs on linux-x64. Install
+# only the three real deployment hosts needed by this repository.
+supportedArchitectures:
+  os:
+    - current
+    - linux
+  cpu:
+    - current
+    - arm64
+    - x64
+
 overrides:
+  '@xmldom/xmldom@>=0.7.0 <=0.8.14': 0.8.15
+  '@xmldom/xmldom@>=0.9.0 <=0.9.11': 0.9.12
   brace-expansion@<=5.0.8: 5.0.9
   browserslist@<=4.28.6: 4.28.7
   decode-uri-component@<=0.4.2: 0.5.0
@@ -26,10 +40,16 @@ overrides:
   sharp@<0.35.4: 0.35.4
   undici@>=7.0.0 <7.29.0: 7.29.0
   uuid@<11.1.1: 11.1.1
-  '@xmldom/xmldom@>=0.7.0 <0.8.15': 0.8.15
-  '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12
 
 patchedDependencies:
   brace-expansion@5.0.9: patches/brace-expansion@5.0.9.patch
   expo-modules-core@55.0.26: patches/expo-modules-core@55.0.26.patch
   react-native-reanimated@4.2.1: patches/react-native-reanimated@4.2.1.patch
+
+# dependency-cruiser 18 parses TypeScript through the compiler API and does not
+# support TypeScript 7 yet. Keep its parser-only TypeScript isolated from the
+# repository compiler used by the application packages.
+packageExtensions:
+  dependency-cruiser:
+    dependencies:
+      typescript: 6.0.3

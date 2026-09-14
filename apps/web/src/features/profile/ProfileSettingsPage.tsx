@@ -13,7 +13,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { toDataURL } from 'qrcode'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ChangeEvent, FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
@@ -27,6 +27,7 @@ import { authClient } from '#/lib/auth-client'
 import { useDevAuthBypass } from '#/lib/dev-auth-bypass'
 import { getAvatarTone, getAvatarToneColor, getInitials } from '#/features/workspace/identity'
 import { TeamMemberCard } from '#/features/workspace/avatar-tooltip'
+import ThemeToggle from '#/components/ThemeToggle'
 import {
   ProfileBannerBackground,
   normalizeProfileBannerStyle,
@@ -36,7 +37,11 @@ import {
 
 type ProfileSettingsPageProps = {
   mode: 'onboarding' | 'settings'
+  initialPanel?: ProfilePanel
+  onPanelChange?: (panel: ProfilePanel) => void
 }
+
+export type ProfilePanel = 'profile' | 'security' | 'methods'
 
 type AuthAccount = {
   id?: string
@@ -45,6 +50,14 @@ type AuthAccount = {
 
 type AuthClientWithAccountMethods = typeof authClient & {
   listAccounts: () => Promise<{ data?: AuthAccount[] | null; error?: { message?: string } | null }>
+}
+
+type AuthClientWithPasswordMethods = typeof authClient & {
+  changePassword: (input: {
+    currentPassword: string
+    newPassword: string
+    revokeOtherSessions?: boolean
+  }) => Promise<{ error?: { message?: string } | null }>
 }
 
 type AuthClientWithTwoFactorMethods = typeof authClient & {
@@ -168,7 +181,7 @@ function getImagePalette(image: HTMLImageElement) {
   }
 }
 
-export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
+export function ProfileSettingsPage({ initialPanel = 'profile', mode, onPanelChange }: ProfileSettingsPageProps) {
   const session = authClient.useSession()
   const devAuthBypass = useDevAuthBypass()
   const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser)
@@ -197,14 +210,22 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
   const [accounts, setAccounts] = useState<AuthAccount[]>([])
   const [securityMessage, setSecurityMessage] = useState('')
   const [accountPassword, setAccountPassword] = useState('')
+  const [passwordChangeOpen, setPasswordChangeOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [setupCode, setSetupCode] = useState('')
   const [setupQrUrl, setSetupQrUrl] = useState('')
   const [setupBackupCodes, setSetupBackupCodes] = useState<string[]>([])
   const [backupCodesVisible, setBackupCodesVisible] = useState(false)
   const [busySecurity, setBusySecurity] = useState(false)
-  const [activePanel, setActivePanel] = useState<'profile' | 'security' | 'methods'>('profile')
+  const [activePanel, setActivePanel] = useState<ProfilePanel>(initialPanel)
   const [timezoneOpen, setTimezoneOpen] = useState(false)
   const [timezoneSearch, setTimezoneSearch] = useState('')
+  const [timezoneIndex, setTimezoneIndex] = useState(0)
+  const timezoneTriggerRef = useRef<HTMLButtonElement>(null)
+  const timezoneSearchRef = useRef<HTMLInputElement>(null)
+  const timezonePickerRef = useRef<HTMLDivElement>(null)
 
   const timezoneOptions = useMemo(getTimezoneOptions, [])
   const filteredTimezoneOptions = useMemo(() => {
@@ -214,6 +235,22 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
       : timezoneOptions
     return matches.slice(0, 80)
   }, [timezoneOptions, timezoneSearch])
+  useEffect(() => {
+    const selectedIndex = filteredTimezoneOptions.indexOf(timezone)
+    setTimezoneIndex(selectedIndex >= 0 ? selectedIndex : 0)
+  }, [filteredTimezoneOptions, timezone])
+  useEffect(() => {
+    if (!timezoneOpen) return
+    requestAnimationFrame(() => timezoneSearchRef.current?.focus())
+  }, [timezoneOpen])
+  useEffect(() => {
+    if (!timezoneOpen) return
+    function handlePointerDown(event: PointerEvent) {
+      if (!timezonePickerRef.current?.contains(event.target as Node)) closeTimezonePicker(false)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [timezoneOpen])
   const user = profileStatus?.user ?? null
   const canSaveProfile = isProfileComplete({ displayName, profileDesignation: designation, timezone })
   const hasCredentialAccount = accounts.some((account) => account.providerId === 'credential')
@@ -231,6 +268,26 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
     (!twoFactorEnabled && canManageTwoFactor && !setupQrUrl) ||
       (twoFactorEnabled && (canManageTwoFactor || canResetStepUpGracePeriod)),
   )
+
+  useEffect(() => {
+    setActivePanel(initialPanel)
+  }, [initialPanel])
+
+  function selectPanel(panel: ProfilePanel) {
+    setActivePanel(panel)
+    onPanelChange?.(panel)
+  }
+
+  function closeTimezonePicker(returnFocus = true) {
+    setTimezoneOpen(false)
+    setTimezoneSearch('')
+    if (returnFocus) requestAnimationFrame(() => timezoneTriggerRef.current?.focus())
+  }
+
+  function selectTimezone(option: string) {
+    setTimezone(option)
+    closeTimezonePicker()
+  }
 
   useEffect(() => {
     if (session.isPending && !devAuthBypass.enabled) return
@@ -443,6 +500,41 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
     }
   }
 
+  async function changeAccountPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (newPassword.length < 10) {
+      setSecurityMessage('New password must be at least 10 characters.')
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      setSecurityMessage('New passwords do not match.')
+      return
+    }
+    setBusySecurity(true)
+    setSecurityMessage('')
+    try {
+      const client = authClient as AuthClientWithPasswordMethods
+      const result = await client.changePassword({
+        currentPassword,
+        newPassword,
+        revokeOtherSessions: true,
+      })
+      if (result.error) {
+        setSecurityMessage(result.error.message ?? 'Could not change your password.')
+        return
+      }
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+      setPasswordChangeOpen(false)
+      setSecurityMessage('Password changed. Other sessions were signed out.')
+    } catch (error) {
+      setSecurityMessage(getSecurityMessage(error, 'Could not change your password.'))
+    } finally {
+      setBusySecurity(false)
+    }
+  }
+
   async function resetTwoFactorGracePeriod() {
     if (!trackUserId) return
     setBusySecurity(true)
@@ -485,16 +577,25 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
           </div>
           {mode === 'settings' ? (
             <nav aria-label="Profile settings" className="track-profile-tabs">
-              <Button className={activePanel === 'profile' ? 'active' : ''} onClick={() => setActivePanel('profile')} type="button">
-                <UserRound size={15} /> Profile
+              <Button aria-pressed={activePanel === 'profile'} className={activePanel === 'profile' ? 'active' : ''} onClick={() => selectPanel('profile')} type="button">
+                <UserRound aria-hidden="true" size={15} /> Profile
               </Button>
-              <Button className={activePanel === 'security' ? 'active' : ''} onClick={() => setActivePanel('security')} type="button">
-                <ShieldCheck size={15} /> Security
+              <Button aria-pressed={activePanel === 'security'} className={activePanel === 'security' ? 'active' : ''} onClick={() => selectPanel('security')} type="button">
+                <ShieldCheck aria-hidden="true" size={15} /> Security
               </Button>
-              <Button className={activePanel === 'methods' ? 'active' : ''} onClick={() => setActivePanel('methods')} type="button">
-                <KeyRound size={15} /> Login methods
+              <Button aria-pressed={activePanel === 'methods'} className={activePanel === 'methods' ? 'active' : ''} onClick={() => selectPanel('methods')} type="button">
+                <KeyRound aria-hidden="true" size={15} /> Login methods
               </Button>
             </nav>
+          ) : null}
+          {mode === 'settings' ? (
+            <section aria-label="Appearance settings" className="track-profile-appearance-card">
+              <div>
+                <span>Appearance</span>
+                <small>System, light, or dark</small>
+              </div>
+              <ThemeToggle showLabel />
+            </section>
           ) : null}
         </aside>
 
@@ -504,6 +605,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
               <div className="track-profile-section-header">
                 <div>
                   <h2>Teammate card</h2>
+                  <p className="track-profile-muted">Your profile is visible to people who share a Project or Channel with you.</p>
                 </div>
               </div>
 
@@ -525,7 +627,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                   <span>Display name</span>
                   <span className="track-profile-input-shell">
                     <UserRound size={18} />
-                    <Input value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} />
+                    <Input autoComplete="name" name="displayName" placeholder="Your name…" value={displayName} onChange={(event) => setDisplayName(event.currentTarget.value)} />
                   </span>
                 </label>
                 <label>
@@ -533,7 +635,10 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                   <span className="track-profile-input-shell">
                     <PenLine size={18} />
                     <Input
+                      autoComplete="organization-title"
                       maxLength={60}
+                      name="designation"
+                      placeholder="Your role or title…"
                       value={designation}
                       onChange={(event) => setDesignation(event.currentTarget.value)}
                     />
@@ -542,38 +647,78 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                 </label>
                 <label>
                   <span>Timezone</span>
-                  <div className="track-timezone-picker">
+                  <div className="track-timezone-picker" ref={timezonePickerRef}>
                     <button
+                      aria-controls="timezone-options-menu"
                       aria-expanded={timezoneOpen}
+                      aria-haspopup="listbox"
                       className="track-timezone-trigger"
                       onClick={() => {
                         setTimezoneOpen((open) => !open)
                         setTimezoneSearch('')
                       }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setTimezoneOpen(true)
+                          setTimezoneSearch('')
+                        }
+                        if (event.key === 'Escape' && timezoneOpen) {
+                          event.preventDefault()
+                          closeTimezonePicker()
+                        }
+                      }}
+                      ref={timezoneTriggerRef}
                       type="button"
                     >
                       <span>{timezone}</span>
                       <ChevronDown size={15} />
                     </button>
                     {timezoneOpen ? (
-                      <div className="track-timezone-menu">
+                      <div className="track-timezone-menu" id="timezone-options-menu">
                         <Input
-                          autoFocus
+                          aria-activedescendant={filteredTimezoneOptions[timezoneIndex] ? `timezone-option-${timezoneIndex}` : undefined}
+                          aria-autocomplete="list"
+                          aria-controls="timezone-options-list"
+                          aria-expanded={timezoneOpen}
+                          aria-label="Search time zones"
+                          autoComplete="off"
+                          onKeyDown={(event) => {
+                            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                              event.preventDefault()
+                              if (filteredTimezoneOptions.length > 0) {
+                                setTimezoneIndex((current) => (current + (event.key === 'ArrowDown' ? 1 : -1) + filteredTimezoneOptions.length) % filteredTimezoneOptions.length)
+                              }
+                            }
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              const option = filteredTimezoneOptions[timezoneIndex]
+                              if (option) selectTimezone(option)
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              closeTimezonePicker()
+                            }
+                          }}
                           onChange={(event) => setTimezoneSearch(event.currentTarget.value)}
-                          placeholder="Search timezone"
+                          name="timezoneSearch"
+                          placeholder="Search time zones…"
+                          ref={timezoneSearchRef}
+                          role="combobox"
                           value={timezoneSearch}
                         />
-                        <div className="track-timezone-options">
+                        <span aria-live="polite" className="sr-only">{filteredTimezoneOptions.length} time zone{filteredTimezoneOptions.length === 1 ? '' : 's'} available</span>
+                        <div aria-label="Timezone results" className="track-timezone-options" id="timezone-options-list" role="listbox">
                           {filteredTimezoneOptions.map((option) => (
                             <button
+                              aria-selected={option === timezone}
                               className={option === timezone ? 'active' : ''}
+                              id={`timezone-option-${filteredTimezoneOptions.indexOf(option)}`}
                               key={option}
-                              onClick={() => {
-                                setTimezone(option)
-                                setTimezoneOpen(false)
-                                setTimezoneSearch('')
-                              }}
+                              onClick={() => selectTimezone(option)}
+                              onMouseEnter={() => setTimezoneIndex(filteredTimezoneOptions.indexOf(option))}
                               type="button"
+                              role="option"
                             >
                               <span>{option}</span>
                               <small>{getLocalTimeLabel(option)}</small>
@@ -590,7 +735,10 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                   <span className="track-profile-input-shell textarea">
                     <PenLine size={18} />
                     <Textarea
+                      autoComplete="off"
                       maxLength={180}
+                      name="bio"
+                      placeholder="A short introduction for your teammates…"
                       rows={4}
                       value={bio}
                       onChange={(event) => setBio(event.currentTarget.value)}
@@ -645,6 +793,16 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                   {profileMessage ? <p>{profileMessage}</p> : null}
                 </div>
               </form>
+              {mode === 'settings' ? (
+                <div className="track-profile-preference-card">
+                  <div>
+                    <span className="track-profile-eyebrow">Notifications</span>
+                    <h3>Project and Channel notifications</h3>
+                    <p>Track keeps notification preferences with the Project and Channel that owns the conversation, so the access boundary stays clear.</p>
+                  </div>
+                  <a href="/workspace">Open workspace notification controls</a>
+                </div>
+              ) : null}
             </section>
           ) : null}
 
@@ -667,7 +825,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                 <div className="track-security-action-bar">
                   {!twoFactorEnabled && canManageTwoFactor && !setupQrUrl ? (
                     <Button className="track-button track-button-primary" disabled={busySecurity} onClick={() => void startTwoFactorSetup()} type="button">
-                      <QrCode size={15} /> Set up authenticator app
+                      <QrCode aria-hidden="true" size={15} /> Set up authenticator app
                     </Button>
                   ) : null}
                   {twoFactorEnabled && canManageTwoFactor ? (
@@ -713,8 +871,9 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
               ) : null}
 
               {hasCredentialAccount ? (
-                <label className="track-profile-password">
-                  <span>Account password</span>
+                <div className="track-profile-password">
+                  <span>Password for security actions</span>
+                  <small>Used to confirm two-factor changes.</small>
                   <Input
                     autoComplete="current-password"
                     onChange={(event) => setAccountPassword(event.currentTarget.value)}
@@ -722,7 +881,18 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                     type="password"
                     value={accountPassword}
                   />
-                </label>
+                  <Button onClick={() => setPasswordChangeOpen((open) => !open)} type="button" variant="outline">
+                    {passwordChangeOpen ? 'Cancel password change' : 'Change password'}
+                  </Button>
+                  {passwordChangeOpen ? (
+                    <form className="track-profile-inline-form" onSubmit={(event) => void changeAccountPassword(event)}>
+                      <Input autoComplete="current-password" aria-label="Current password" onChange={(event) => setCurrentPassword(event.currentTarget.value)} placeholder="Current password" required type="password" value={currentPassword} />
+                      <Input autoComplete="new-password" aria-label="New password" onChange={(event) => setNewPassword(event.currentTarget.value)} placeholder="New password" required type="password" value={newPassword} />
+                      <Input autoComplete="new-password" aria-label="Confirm new password" onChange={(event) => setConfirmNewPassword(event.currentTarget.value)} placeholder="Confirm new password" required type="password" value={confirmNewPassword} />
+                      <Button disabled={busySecurity} type="submit">Save new password</Button>
+                    </form>
+                  ) : null}
+                </div>
               ) : null}
 
               {!twoFactorEnabled && canManageTwoFactor ? (
@@ -731,7 +901,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                     <p className="track-profile-muted">Use the setup action above to add an authenticator app.</p>
                   ) : (
                     <>
-                      <img alt="Authenticator QR code" className="track-profile-qr" src={setupQrUrl} />
+                      <img alt="Authenticator QR code" className="track-profile-qr" height={180} src={setupQrUrl} width={180} />
                       <form className="track-profile-inline-form" onSubmit={(event) => void verifyTwoFactorSetup(event)}>
                         <Input
                           autoComplete="one-time-code"
@@ -770,6 +940,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
               <div className="track-profile-section-header">
                 <div>
                   <h2>Login methods</h2>
+                  <p className="track-profile-muted">Connected methods are shown here for reference. Password changes are managed during sign-in.</p>
                 </div>
               </div>
               <div className="track-profile-method-list">
@@ -778,7 +949,7 @@ export function ProfileSettingsPage({ mode }: ProfileSettingsPageProps) {
                     <span className="track-profile-method-identity">
                       <span className="track-profile-method-icon">
                         {account.providerId === 'google'
-                          ? <img alt="" src="/google-g.svg" />
+                          ? <img alt="" height={18} src="/google-g.svg" width={18} />
                           : account.providerId === 'credential'
                             ? <Mail size={17} />
                             : <KeyRound size={17} />}

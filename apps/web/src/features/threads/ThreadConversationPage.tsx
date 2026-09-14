@@ -1,14 +1,16 @@
-import { parseMentions } from '@track/shared'
-import { Link } from '@tanstack/react-router'
-import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Archive, Bell, BellOff, ChevronLeft, FileText, Hash, MessageSquareText, Pencil } from 'lucide-react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
+import TrackLoader from '#/components/TrackLoader'
 import { Button } from '#/components/ui/button'
+import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Input } from '#/components/ui/input'
-import { Textarea } from '#/components/ui/textarea'
-import { getMentionHandle } from '#/features/workspace/identity'
+import { CompanyProjectNavigation } from '#/features/company/CompanyProjectNavigation'
+import type { ConversationComposerReply } from '#/features/workspace/components/ConversationComposer'
+import { ScopedConversationComposer } from '#/features/workspace/components/ScopedConversationComposer'
 import { MarkdownText } from '#/features/workspace/markdown'
 import {
   AssistantInlineTasks,
@@ -16,8 +18,10 @@ import {
   CreateTaskFromMessage,
   MessageInlineTasks,
 } from '#/features/tasks/ConversationTaskActions'
-import { resolveReleaseConfig, useReleaseConfigProjection } from '#/lib/release-config'
-import type { RepresentedThreadContext } from './thread-navigation'
+import { TaskLinkBatchProvider } from '#/features/tasks/task-link-context'
+import { useReleaseConfigState } from '#/lib/release-config'
+import { companyProjectChannelHref, type RepresentedThreadContext } from './thread-navigation'
+import './thread-workspace.css'
 
 export function ThreadConversationPage({
   context,
@@ -30,8 +34,8 @@ export function ThreadConversationPage({
   projectId: Id<'projects'>
   threadId: Id<'channelThreads'>
 }) {
-  const releaseConfigProjection = useReleaseConfigProjection()
-  const releaseConfig = resolveReleaseConfig(releaseConfigProjection)
+  const releaseState = useReleaseConfigState()
+  const releaseConfig = releaseState.config
   const currentUser = useQuery(api.auth.getCurrentUser)
   const navigation = useQuery(
     api.mobile.resolveNavigation,
@@ -66,9 +70,38 @@ export function ThreadConversationPage({
     scopedArgs ? { ...scopedArgs, targetMessageId } : 'skip',
     { initialNumItems: 50 },
   )
-  const assistantStreams = useQuery(api.assistant.listForThread, scopedArgs ? { ...scopedArgs, limit: 40 } : 'skip')
-  const projectMembers = useQuery(
-    api.mobile.listProjectMembers,
+  const assistantPage = usePaginatedQuery(
+    api.assistant.listForThreadPage,
+    scopedArgs ? { ...scopedArgs, targetMessageId } : 'skip',
+    { initialNumItems: 50 },
+  )
+  const assistantStreams = assistantPage.status === 'LoadingFirstPage' ? undefined : assistantPage.results
+  const combinedMessagePageStatus =
+    messagePageStatus === 'LoadingFirstPage' || assistantPage.status === 'LoadingFirstPage'
+      ? 'LoadingFirstPage'
+      : messagePageStatus === 'LoadingMore' || assistantPage.status === 'LoadingMore'
+        ? 'LoadingMore'
+        : messagePageStatus === 'CanLoadMore' || assistantPage.status === 'CanLoadMore'
+          ? 'CanLoadMore'
+          : 'Exhausted'
+  const timelineBoundary = useMemo(() => {
+    const boundaries: number[] = []
+    if (messagePageStatus === 'CanLoadMore' || messagePageStatus === 'LoadingMore') {
+      const loadedMessageTimes = (messages ?? [])
+        .filter((item) => item.message._id !== targetMessageId)
+        .map((item) => item.message.createdAt)
+      if (loadedMessageTimes.length > 0) boundaries.push(Math.min(...loadedMessageTimes))
+    }
+    if (assistantPage.status === 'CanLoadMore' || assistantPage.status === 'LoadingMore') {
+      const loadedAssistantTimes = (assistantStreams ?? [])
+        .filter((item) => item.promptMessageId !== targetMessageId)
+        .map((item) => item.createdAt)
+      if (loadedAssistantTimes.length > 0) boundaries.push(Math.min(...loadedAssistantTimes))
+    }
+    return boundaries.length > 0 ? Math.max(...boundaries) : undefined
+  }, [assistantPage.status, assistantStreams, messagePageStatus, messages, targetMessageId])
+  const channelRows = useQuery(
+    api.mobile.listGroups,
     currentUser && navigation?.available
       ? {
           projectId,
@@ -78,29 +111,44 @@ export function ThreadConversationPage({
         }
       : 'skip',
   )
-  const sendMessage = useMutation(api.messages.send)
+  const visibleGroups = useMemo(
+    () => (channelRows ?? []).map((row) => row.group),
+    [channelRows],
+  )
+  const activeGroup = visibleGroups.find((group) => group._id === groupId)
   const setFollowing = useMutation(api.channelThreads.setFollowing)
   const markRead = useMutation(api.channelThreads.markRead)
   const setStatus = useMutation(api.channelThreads.setStatus)
   const rename = useMutation(api.channelThreads.rename)
-  const generateUploadUrl = useMutation(api.messages.generateUploadUrl)
-  const attachFile = useMutation(api.messages.attachFile)
   const deleteMessage = useMutation(api.messages.remove)
   const createReport = useMutation(api.reports.create)
-  const askTrack = useAction(api.assistant.ask)
-  const [composer, setComposer] = useState('')
   const [renameValue, setRenameValue] = useState('')
-  const [attachment, setAttachment] = useState<File | null>(null)
-  const [replyTo, setReplyTo] = useState<Id<'messages'> | null>(null)
+  const [replyTo, setReplyTo] = useState<ConversationComposerReply | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const sendKey = useRef<string | null>(null)
-
+  const [pendingDeleteMessage, setPendingDeleteMessage] = useState<{ id: Id<'messages'>; preview: string } | null>(null)
+  const messageListRef = useRef<HTMLElement | null>(null)
+  const historyAnchorRef = useRef<{ height: number; top: number; count: number } | null>(null)
+  const viewedSequenceRef = useRef(0)
+  const acknowledgedSequenceRef = useRef(0)
+  const acknowledgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [tabVisible, setTabVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState === 'visible',
+  )
   useEffect(() => {
-    if (!scopedArgs || !messages || navigation?.readStateImmutable) return
-    void markRead(scopedArgs).catch(() => undefined)
-  }, [markRead, messages, navigation?.readStateImmutable, scopedArgs])
+    if (typeof document === 'undefined') return () => {}
+    const handleVisibility = () => setTabVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+  useEffect(() => {
+    if (acknowledgeTimeoutRef.current) clearTimeout(acknowledgeTimeoutRef.current)
+    acknowledgeTimeoutRef.current = null
+    acknowledgedSequenceRef.current = 0
+    viewedSequenceRef.current = 0
+    historyAnchorRef.current = null
+  }, [context?.actingCompanyId, context?.projectMemberId, threadId])
   useEffect(() => {
     if (thread) setRenameValue(thread.thread.name)
   }, [thread])
@@ -113,123 +161,103 @@ export function ThreadConversationPage({
     })
   }, [messages])
 
-  const memberHandles = useMemo(() => {
-    const handles = new Map<string, Array<{
-      projectMemberId: Id<'projectMembers'>
-      userId: Id<'users'>
-    }>>()
-    for (const item of projectMembers ?? []) {
-      if (!item.user) continue
-      const handle = getMentionHandle(item.user.displayName)
-      handles.set(handle, [
-        ...(handles.get(handle) ?? []),
-        { projectMemberId: item.membership._id, userId: item.user._id },
-      ])
-    }
-    return handles
-  }, [projectMembers])
-  const streamItems = useMemo(() => [
-    ...[...new Map(
-      ((messages ?? []) as Array<ThreadMessageDetail>)
-        .map((item) => [item.message._id, item] as const),
-    ).values()].map((item) => ({
-      at: item.message.createdAt,
-      id: item.message._id,
-      kind: 'message' as const,
-      item,
-    })),
-    ...((assistantStreams ?? []) as Array<Doc<'assistantStreams'>>).map((item) => ({
-      at: item.createdAt,
-      id: item._id,
-      kind: 'assistant' as const,
-      item,
-    })),
-  ].sort((a, b) => a.at - b.at), [assistantStreams, messages])
+  const streamItems = useMemo(() => {
+    const items = [
+      ...[...new Map(
+        ((messages ?? []) as Array<ThreadMessageDetail>)
+          .map((item) => [item.message._id, item] as const),
+      ).values()].map((item) => ({
+        at: item.message.createdAt,
+        id: item.message._id,
+        kind: 'message' as const,
+        item,
+      })),
+      ...((assistantStreams ?? []) as Array<Doc<'assistantStreams'>>).map((item) => ({
+        at: item.createdAt,
+        id: item._id,
+        kind: 'assistant' as const,
+        item,
+      })),
+    ]
+    // eslint-disable-next-line unicorn/no-array-sort -- reason: Sort a newly copied array while supporting the web ES2022 target.
+    items.sort((a, b) => a.at - b.at)
+    return items.filter((entry) =>
+      timelineBoundary === undefined ||
+      entry.at >= timelineBoundary ||
+      (entry.kind === 'message'
+        ? entry.item.message._id === targetMessageId
+        : entry.item.promptMessageId === targetMessageId),
+    )
+  }, [assistantStreams, messages, targetMessageId, timelineBoundary])
 
-  async function submitMessage(event: FormEvent) {
-    event.preventDefault()
-    if (!currentUser || !thread || thread.thread.status !== 'active') return
-    const body = composer.trim()
-    if (!body && !attachment) return
-    setBusy(true)
-    setError(null)
-    sendKey.current ??= crypto.randomUUID()
-    try {
-      const mentionedMembers = parseMentions(body).flatMap((handle) => {
-        const matches = memberHandles.get(handle) ?? []
-        return matches.length === 1 ? matches : []
+  const acknowledgeViewedSequence = useCallback((sequence: number) => {
+    if (!scopedArgs || !tabVisible || navigation?.readStateImmutable || sequence <= acknowledgedSequenceRef.current) return
+    viewedSequenceRef.current = Math.max(viewedSequenceRef.current, sequence)
+    if (acknowledgeTimeoutRef.current) return
+    acknowledgeTimeoutRef.current = setTimeout(() => {
+      acknowledgeTimeoutRef.current = null
+      const nextSequence = viewedSequenceRef.current
+      if (
+        nextSequence <= acknowledgedSequenceRef.current ||
+        (typeof document !== 'undefined' && document.visibilityState !== 'visible')
+      ) return
+      acknowledgedSequenceRef.current = nextSequence
+      void markRead({ ...scopedArgs, viewedChannelSequence: nextSequence }).catch(() => {
+        acknowledgedSequenceRef.current = Math.min(acknowledgedSequenceRef.current, nextSequence - 1)
       })
-      const messageId = await sendMessage({
-        projectId,
-        groupId,
-        channelThreadId: threadId,
-        authorId: currentUser._id,
-        actingCompanyId: context?.actingCompanyId,
-        projectMemberId: context?.projectMemberId,
-        idempotencyKey: sendKey.current,
-        body,
-        mentions: mentionedMembers.map((member) => member.userId),
-        mentionedProjectMemberIds: mentionedMembers.map((member) => member.projectMemberId),
-        replyToMessageId: replyTo ?? undefined,
-        notificationPreview: attachment && !body ? 'Sent an attachment.' : undefined,
-      })
-      if (attachment) await uploadAttachment(messageId, attachment)
-      if (parseMentions(body).includes('track')) {
-        await askTrack({
-          projectId,
-          groupId,
-          channelThreadId: threadId,
-          requesterId: currentUser._id,
-          actingCompanyId: context?.actingCompanyId,
-          projectMemberId: context?.projectMemberId,
-          promptMessageId: messageId,
-          question: body,
-        })
+    }, 150)
+  }, [markRead, navigation?.readStateImmutable, scopedArgs, tabVisible])
+
+  useEffect(() => {
+    const list = messageListRef.current
+    const messageCount = streamItems.length
+    if (!list || !tabVisible || messageCount === 0) return () => {}
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const sequenceValue = entry.target.getAttribute('data-channel-sequence')
+        const sequence = sequenceValue ? Number(sequenceValue) : 0
+        if (Number.isInteger(sequence) && sequence > 0) acknowledgeViewedSequence(sequence)
       }
-      sendKey.current = null
-      setComposer('')
-      setAttachment(null)
-      setReplyTo(null)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save")
-    } finally {
-      setBusy(false)
+    }, { threshold: 0.6 })
+    for (const message of list.querySelectorAll<HTMLElement>('[data-channel-sequence]')) {
+      observer.observe(message)
     }
-  }
+    return () => observer.disconnect()
+  }, [acknowledgeViewedSequence, streamItems.length, tabVisible])
 
-  async function uploadAttachment(messageId: Id<'messages'>, file: File) {
-    if (!currentUser) return
-    const uploadUrl = await generateUploadUrl({
-      groupId,
-      channelThreadId: threadId,
-      userId: currentUser._id,
-      actingCompanyId: context?.actingCompanyId,
-      projectMemberId: context?.projectMemberId,
+  const loadMoreThreadMessages = useCallback(() => {
+    const list = messageListRef.current
+    if (!list || combinedMessagePageStatus !== 'CanLoadMore' || historyAnchorRef.current) return
+    historyAnchorRef.current = {
+      count: streamItems.length,
+      height: list.scrollHeight,
+      top: list.scrollTop,
+    }
+    if (messagePageStatus === 'CanLoadMore') loadMoreMessages(50)
+    if (assistantPage.status === 'CanLoadMore') assistantPage.loadMore(50)
+  }, [assistantPage, combinedMessagePageStatus, loadMoreMessages, messagePageStatus, streamItems.length])
+
+  useEffect(() => {
+    const anchor = historyAnchorRef.current
+    if (!anchor || combinedMessagePageStatus === 'LoadingMore' || streamItems.length <= anchor.count) return
+    historyAnchorRef.current = null
+    requestAnimationFrame(() => {
+      const list = messageListRef.current
+      if (list) list.scrollTop = anchor.top + (list.scrollHeight - anchor.height)
     })
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
-    })
-    if (!response.ok) throw new Error('upload_failed')
-    const { storageId } = await response.json() as { storageId: Id<'_storage'> }
-    await attachFile({
-      projectId,
-      groupId,
-      messageId,
-      userId: currentUser._id,
-      actingCompanyId: context?.actingCompanyId,
-      projectMemberId: context?.projectMemberId,
-      storageId,
-      filename: file.name,
-      contentType: file.type || 'application/octet-stream',
-      size: file.size,
-      kind: file.type.startsWith('audio/') ? 'voice_note' : 'file',
-    })
-  }
+  }, [combinedMessagePageStatus, streamItems.length])
+
+  useEffect(() => () => {
+    if (acknowledgeTimeoutRef.current) clearTimeout(acknowledgeTimeoutRef.current)
+  }, [])
+
+  const backHref = context
+    ? companyProjectChannelHref(projectId, groupId, context)
+    : `/workspace/projects/${projectId}/groups/${groupId}`
 
   async function removeMessage(messageId: Id<'messages'>) {
-    if (!currentUser || !window.confirm('Delete this message? This can’t be undone.')) return
+    if (!currentUser) return false
     setBusy(true)
     setError(null)
     try {
@@ -239,10 +267,12 @@ export function ThreadConversationPage({
         actingCompanyId: context?.actingCompanyId,
         projectMemberId: context?.projectMemberId,
       })
-      if (replyTo === messageId) setReplyTo(null)
+      if (replyTo?.messageId === messageId) setReplyTo(null)
       setNotice('Message deleted.')
+      return true
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't delete message")
+      return false
     } finally {
       setBusy(false)
     }
@@ -250,17 +280,21 @@ export function ThreadConversationPage({
 
   async function toggleFollowing() {
     if (!scopedArgs || !thread) return
+    setBusy(true)
     setError(null)
     try {
       await setFollowing({ ...scopedArgs, following: !thread.following })
       setNotice(thread.following ? 'Thread unfollowed.' : 'Thread followed.')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't update follow state")
+    } finally {
+      setBusy(false)
     }
   }
 
   async function updateStatus() {
     if (!scopedArgs || !thread) return
+    setBusy(true)
     setError(null)
     try {
       const result = await setStatus({
@@ -273,12 +307,15 @@ export function ThreadConversationPage({
         : result.status === 'archived' ? 'Thread archived.' : 'Thread reopened.')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't update thread")
+    } finally {
+      setBusy(false)
     }
   }
 
   async function submitRename(event: FormEvent) {
     event.preventDefault()
     if (!scopedArgs || !thread) return
+    setBusy(true)
     setError(null)
     try {
       const result = await rename({
@@ -291,74 +328,72 @@ export function ThreadConversationPage({
         : 'Thread renamed.')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't rename thread")
+    } finally {
+      setBusy(false)
     }
   }
 
-  if (releaseConfigProjection === undefined) {
-    return <main className="track-thread-route"><p role="status">Opening thread…</p></main>
-  }
-  if (!releaseConfig.threads) return <Unavailable context={context} groupId={groupId} projectId={projectId} />
+  if (releaseState.status === 'loading') return <TrackLoader label="Loading thread" />
+  if (!releaseConfig.threads) return <Unavailable backHref={backHref} />
   if (typeof navigator !== 'undefined' && !navigator.onLine && thread === undefined) {
-    return <Unavailable context={context} detail="You're offline and this thread isn't available on this device." groupId={groupId} projectId={projectId} retry />
+    return <Unavailable backHref={backHref} detail="You're offline and this thread isn't available on this device." retry />
   }
   if (!currentUser || navigation === undefined || (navigation.available && thread === undefined)) {
-    return <main className="track-thread-route"><p role="status">Opening thread…</p></main>
+    return <TrackLoader label="Loading thread" />
   }
-  if (!navigation.available || !thread) return <Unavailable context={context} groupId={groupId} projectId={projectId} />
+  if (!navigation.available || !thread) return <Unavailable backHref={backHref} />
 
   const archived = thread.thread.status === 'archived' || navigation.archived
-  return (
+  const taskLinkMessageIds = streamItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : [])
+  const taskLinkAssistantStreamIds = streamItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.item._id] : [])
+  const conversationContent = (
     <main className="track-thread-route" aria-busy={busy}>
       <header className="track-thread-route-header">
-        <ChannelBackLink context={context} groupId={groupId} projectId={projectId}>← Back to Channel</ChannelBackLink>
-        <div>
-          <span className="mono-label">Thread</span>
+        <a className="track-thread-back" href={backHref}>
+          <ChevronLeft aria-hidden="true" size={15} />
+          Back to #{activeGroup?.name ?? 'Channel'}
+        </a>
+        <div className="track-thread-title">
+          <span className="mono-label">{navigation.project?.name} / #{activeGroup?.name ?? 'Channel'} / Thread</span>
           <h1>{thread.thread.name}</h1>
           <p>{thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'} · {thread.following ? 'Following' : 'Not following'}</p>
         </div>
         <div className="track-thread-route-actions">
-          {!navigation.archived ? <Button onClick={() => void toggleFollowing()} variant="outline">
+          {!navigation.archived ? <Button disabled={busy} onClick={() => void toggleFollowing()} variant="outline">
+            {thread.following ? <BellOff aria-hidden="true" size={14} /> : <Bell aria-hidden="true" size={14} />}
             {thread.following ? 'Unfollow' : 'Follow'}
           </Button> : null}
           {thread.canManage && !navigation.archived ? (
             <Button
+              disabled={busy}
               onClick={() => void updateStatus()}
               variant="outline"
             >
+              <Archive aria-hidden="true" size={14} />
               {thread.thread.status === 'active' ? 'Archive' : 'Reopen'}
             </Button>
           ) : null}
         </div>
       </header>
-      {thread.canManage && !navigation.archived ? (
-        <form
-          className="track-thread-rename"
-          onSubmit={(event) => void submitRename(event)}
-        >
-          <Input aria-label="Rename thread" maxLength={100} onChange={(event) => setRenameValue(event.target.value)} value={renameValue} />
-          <Button type="submit" variant="outline">Rename</Button>
-        </form>
-      ) : null}
-      {thread.source ? (
-      <aside aria-label="Source message" className="track-thread-source">
-          <strong>Source message</strong>
-          {'unavailable' in thread.source ? (
-            <p>Source message unavailable.</p>
-          ) : (
-            <ChannelBackLink context={context} groupId={groupId} hash={`message-${thread.source.messageId}`} projectId={projectId}>
-              {thread.source.body || 'Attachment message'}
-            </ChannelBackLink>
-          )}
-        </aside>
-      ) : null}
       {notice ? <p className="track-thread-notice" role="status">{notice}</p> : null}
       {error ? <p className="track-error" role="alert">{error}. Your unsent reply is still here.</p> : null}
       {archived ? <p className="track-thread-archived" role="status">This thread is read-only.</p> : null}
-      <section className="track-thread-message-list" role="log" aria-label="Thread messages">
-        {messagePageStatus === 'CanLoadMore' ? (
-          <Button onClick={() => loadMoreMessages(50)} variant="outline">Load older replies</Button>
+      <section
+        className="track-thread-message-list"
+        ref={(element) => { messageListRef.current = element }}
+        role="log"
+        aria-label="Thread messages"
+      >
+        {combinedMessagePageStatus === 'CanLoadMore' ? (
+          <Button onClick={loadMoreThreadMessages} variant="outline">Load older replies</Button>
         ) : null}
-        {streamItems.length === 0 ? <p>{messagePageStatus === 'LoadingFirstPage' ? 'Loading replies…' : 'No replies yet.'}</p> : streamItems.map((entry) => entry.kind === 'assistant' ? (
+        {streamItems.length === 0 ? (
+          <div className="track-thread-empty" role="status">
+            <MessageSquareText aria-hidden="true" size={20} />
+            <strong>{messagePageStatus === 'LoadingFirstPage' ? 'Loading replies…' : 'No replies yet'}</strong>
+            <span>{messagePageStatus === 'LoadingFirstPage' ? 'The discussion will appear here.' : 'Continue this focused discussion below.'}</span>
+          </div>
+        ) : streamItems.map((entry) => entry.kind === 'assistant' ? (
           <article className="track-thread-message assistant" key={entry.id}>
             <header>
               <strong>Track Assistant</strong>
@@ -378,10 +413,16 @@ export function ThreadConversationPage({
             ) : null}
           </article>
         ) : (
-          <article className="track-thread-message" id={`message-${entry.id}`} key={entry.id} tabIndex={-1}>
+          <article
+            className="track-thread-message"
+            data-channel-sequence={entry.item.message.channelSequence}
+            id={`message-${entry.id}`}
+            key={entry.id}
+            tabIndex={-1}
+          >
             <header>
               <strong>{entry.item.author?.displayName ?? 'Unknown member'}</strong>
-              <time>{new Date(entry.at).toLocaleString()}</time>
+              <time dateTime={new Date(entry.at).toISOString()}>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(entry.at)}</time>
             </header>
             {entry.item.replyTo ? <small>Replying to {entry.item.replyTo.authorName}: {entry.item.replyTo.body}</small> : null}
             <MarkdownText text={entry.item.message.body || 'Attachment message'} />
@@ -395,7 +436,18 @@ export function ThreadConversationPage({
               <a href={url} key={file._id} rel="noreferrer" target="_blank">{file.filename}</a>
             ) : null)}
             <footer>
-              {!archived ? <button onClick={() => setReplyTo(entry.item.message._id)} type="button">Reply</button> : null}
+              {!archived ? (
+                <button
+                  onClick={() => setReplyTo({
+                    authorName: entry.item.author?.displayName ?? 'Unknown member',
+                    body: entry.item.message.body,
+                    messageId: entry.item.message._id,
+                  })}
+                  type="button"
+                >
+                  Reply
+                </button>
+              ) : null}
               {!archived &&
                 entry.item.message.authorId === currentUser._id &&
                 (!context?.projectMemberId ||
@@ -403,7 +455,7 @@ export function ThreadConversationPage({
                   entry.item.message.authorProjectMemberId === context.projectMemberId) ? (
                 <Button
                   disabled={busy}
-                  onClick={() => void removeMessage(entry.item.message._id)}
+                  onClick={() => setPendingDeleteMessage({ id: entry.item.message._id, preview: entry.item.message.body || 'Attachment message' })}
                   variant="destructive"
                 >
                   Delete
@@ -431,15 +483,133 @@ export function ThreadConversationPage({
           </article>
         ))}
       </section>
-      {!archived ? (
-        <form className="track-thread-composer" onSubmit={(event) => void submitMessage(event)}>
-          {replyTo ? <p>Reply selected. <button onClick={() => setReplyTo(null)} type="button">Cancel</button></p> : null}
-          <Textarea aria-label={`Reply in ${thread.thread.name}`} onChange={(event) => setComposer(event.target.value)} placeholder="Reply in thread" value={composer} />
-          <input aria-label="Attach a file" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} type="file" />
-          <Button disabled={busy || (!composer.trim() && !attachment)} type="submit">{busy ? 'Sending…' : 'Send'}</Button>
-        </form>
+      {!archived && activeGroup ? (
+        <ScopedConversationComposer
+          actorId={currentUser._id}
+          channelThreadId={threadId}
+          className="track-thread-composer"
+          context={context}
+          group={activeGroup}
+          onBusyChange={(action) => {
+            setBusy(Boolean(action))
+            if (action) setError(null)
+          }}
+          onError={(caught) => {
+            setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't send reply")
+          }}
+          onReplyChange={setReplyTo}
+          placeholder="Reply in thread. Type @ to tag someone"
+          projectId={projectId}
+          replyTo={replyTo}
+          visibleGroups={visibleGroups}
+        />
       ) : null}
+      <ConfirmDialog
+        confirmLabel="Delete message"
+        description={pendingDeleteMessage ? `This removes "${pendingDeleteMessage.preview.slice(0, 120)}${pendingDeleteMessage.preview.length > 120 ? '...' : ''}" from the thread. The action cannot be undone.` : 'This removes the message from the thread. The action cannot be undone.'}
+        onConfirm={async () => {
+          if (!pendingDeleteMessage) return false
+          const messageId = pendingDeleteMessage.id
+          const deleted = await removeMessage(messageId)
+          if (deleted) setPendingDeleteMessage(null)
+          return deleted
+        }}
+        onOpenChange={(open) => { if (!open) setPendingDeleteMessage(null) }}
+        open={Boolean(pendingDeleteMessage)}
+        title="Delete this message?"
+      />
     </main>
+  )
+
+  const conversation = releaseConfig.tasks ? (
+    <TaskLinkBatchProvider
+      assistantStreamIds={taskLinkAssistantStreamIds}
+      identity={{ actingCompanyId: context?.actingCompanyId, projectMemberId: context?.projectMemberId }}
+      messageIds={taskLinkMessageIds}
+    >
+      {conversationContent}
+    </TaskLinkBatchProvider>
+  ) : conversationContent
+
+  if (!context) return conversation
+
+  return (
+    <div className="track-company-thread-workspace company-unified-shell">
+      <CompanyProjectNavigation
+        actingCompanyId={context.actingCompanyId}
+        activeArea="conversation"
+        activeProject={{ projectId, projectMemberId: context.projectMemberId, groupId }}
+        secondaryNavigation={
+          <nav aria-label="Channels">
+            <span className="company-project-nav-label">Channels</span>
+            <div className="company-project-nav-channel-list">
+              {visibleGroups.map((group) => (
+                <a
+                  aria-current={group._id === groupId ? 'page' : undefined}
+                  className={group._id === groupId ? 'company-project-nav-channel active' : 'company-project-nav-channel'}
+                  href={companyProjectChannelHref(projectId, group._id, context)}
+                  key={group._id}
+                >
+                  <span className="company-project-nav-channel-icon">
+                    <Hash aria-hidden="true" size={14} />
+                  </span>
+                  <span className="company-project-nav-copy">
+                    <strong>{group.name}</strong>
+                    <small>{group._id === groupId ? 'Current Channel' : 'Channel'}</small>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </nav>
+        }
+        tasksEnabled={releaseConfig.tasks}
+      />
+      {conversation}
+      <aside aria-label="Thread context" className="track-thread-context-rail">
+        <header>
+          <span className="mono-label">Thread context</span>
+          <h2>#{activeGroup?.name ?? 'Channel'}</h2>
+          <p>Focused discussion with the same Company, Project, and Channel access.</p>
+        </header>
+        <section>
+          <h3><MessageSquareText aria-hidden="true" size={14} /> Details</h3>
+          <dl>
+            <div><dt>Status</dt><dd>{archived ? 'Read only' : 'Open'}</dd></div>
+            <div><dt>Replies</dt><dd>{thread.replyCount}</dd></div>
+            <div><dt>Notifications</dt><dd>{thread.following ? 'Following' : 'Not following'}</dd></div>
+          </dl>
+        </section>
+        <section>
+          <h3><FileText aria-hidden="true" size={14} /> Source message</h3>
+          {thread.source ? (
+            'unavailable' in thread.source ? (
+              <p>Source message unavailable.</p>
+            ) : (
+              <a className="track-thread-source-link" href={`${backHref}#message-${thread.source.messageId}`}>
+                {thread.source.body || 'Attachment message'}
+              </a>
+            )
+          ) : <p>This thread started directly in the Channel.</p>}
+        </section>
+        {thread.canManage && !navigation.archived ? (
+          <section>
+            <h3><Pencil aria-hidden="true" size={14} /> Rename thread</h3>
+            <form className="track-thread-rename" onSubmit={(event) => void submitRename(event)}>
+              <label className="sr-only" htmlFor="thread-rename">Thread name</label>
+              <Input
+                autoComplete="off"
+                id="thread-rename"
+                maxLength={100}
+                name="threadName"
+                onChange={(event) => setRenameValue(event.target.value)}
+                value={renameValue}
+              />
+              <Button disabled={busy || !renameValue.trim()} type="submit" variant="outline">Save name</Button>
+            </form>
+          </section>
+        ) : null}
+      </aside>
+    </div>
   )
 }
 
@@ -451,47 +621,13 @@ type ThreadMessageDetail = {
 }
 
 function Unavailable({
-  context,
+  backHref,
   detail = 'Thread unavailable or access changed.',
-  groupId,
-  projectId,
   retry = false,
 }: {
-  context?: RepresentedThreadContext
+  backHref: string
   detail?: string
-  groupId: Id<'groups'>
-  projectId: Id<'projects'>
   retry?: boolean
 }) {
-  return <main className="track-thread-route"><h1>Thread unavailable</h1><p>{detail}</p>{retry ? <Button onClick={() => window.location.reload()}>Retry</Button> : null}<ChannelBackLink context={context} groupId={groupId} projectId={projectId}>Back to Channel</ChannelBackLink></main>
-}
-
-function ChannelBackLink({
-  children,
-  context,
-  groupId,
-  hash,
-  projectId,
-}: {
-  children: ReactNode
-  context?: RepresentedThreadContext
-  groupId: Id<'groups'>
-  hash?: string
-  projectId: Id<'projects'>
-}) {
-  return context ? (
-    <Link
-      hash={hash}
-      params={{ projectId }}
-      search={{
-        companyId: context.actingCompanyId,
-        groupId,
-        membershipId: context.projectMemberId,
-        view: 'channels',
-      }}
-      to="/workspace/company-projects/$projectId"
-    >{children}</Link>
-  ) : (
-    <Link hash={hash} params={{ groupId, projectId }} to="/workspace/projects/$projectId/groups/$groupId">{children}</Link>
-  )
+  return <main className="track-thread-route"><h1>Thread unavailable</h1><p>{detail}</p>{retry ? <Button onClick={() => window.location.reload()}>Retry</Button> : null}<a href={backHref}>Back to Channel</a></main>
 }

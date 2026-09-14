@@ -47,6 +47,7 @@ import {
   type MentionCandidate,
 } from '@/lib/mention-autocomplete';
 import { useVoiceRecorder } from '@/lib/media-capture';
+import type { Id } from '../../../../convex/_generated/dataModel';
 
 export type ComposerProps = {
   activeGroupName: string | null;
@@ -56,7 +57,10 @@ export type ComposerProps = {
    * Everyone who can be mentioned here, assistant included. Omitting it turns
    * the autocomplete off; mentions still send, they just are not suggested.
    */
+  mentionCandidatesHasMore?: boolean;
+  mentionCandidatesLoading?: boolean;
   mentionCandidates?: MentionCandidate[];
+  onLoadMoreMentionCandidates?: () => void;
   onCancelReply: () => void;
   onChangeText: (value: string) => void;
   onFocus?: () => void;
@@ -102,10 +106,13 @@ function LevelBar({ color, index, level }: { color: string; index: number; level
 export function Composer({
   activeGroupName,
   busy,
+  mentionCandidatesHasMore = false,
+  mentionCandidatesLoading = false,
   mentionCandidates = [],
   onCancelReply,
   onChangeText,
   onFocus,
+  onLoadMoreMentionCandidates,
   onSendMessage,
   replyTo,
   value,
@@ -120,7 +127,7 @@ export function Composer({
   const [caret, setCaret] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [retryMessageId, setRetryMessageId] = useState<string | null>(null);
+  const [retryMessageId, setRetryMessageId] = useState<Id<'messages'> | null>(null);
   /** Set for one commit after inserting a mention, to place the caret after it. */
   const [selection, setSelection] = useState<{ end: number; start: number } | null>(null);
   const [sending, setSending] = useState(false);
@@ -257,7 +264,13 @@ export function Composer({
         },
         surfaceStyle,
       ]}>
-      <MentionSuggestions candidates={mentions} onSelect={insertMention} />
+      <MentionSuggestions
+        canLoadMore={Boolean(mentionRange) && mentionCandidatesHasMore}
+        candidates={mentions}
+        loadingMore={Boolean(mentionRange) && mentionCandidatesLoading}
+        onLoadMore={onLoadMoreMentionCandidates}
+        onSelect={insertMention}
+      />
 
       {replyTo ? (
         <View style={[styles.reply, { backgroundColor: theme.backgroundElement }]}>

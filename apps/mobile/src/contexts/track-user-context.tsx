@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useMutation, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { useAppToast } from '@/components/app-toast';
 import { ActionButton } from '@/components/action-button';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { authClient, setTwoFactorRedirectHandler } from '@/lib/auth-client';
@@ -46,6 +47,7 @@ export function useTrackUser() {
 
 export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const theme = useTheme();
+  const { showToast } = useAppToast();
   const { themeOverride, setThemeOverride } = useThemeOverride();
   const router = useRouter();
   const devAuthBypass = useDevAuthBypass();
@@ -255,12 +257,13 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
       setAccountAction(null);
       await signOut();
     } catch (error) {
-      Alert.alert(
-        'Deletion request not completed',
-        error instanceof Error && error.message.includes('company_ownership_transfer_required')
+      showToast({
+        title: 'Deletion request not completed',
+        message: error instanceof Error && error.message.includes('company_ownership_transfer_required')
           ? 'Transfer sole Company ownership on the web, then try again.'
           : 'Check your connection and try again in a moment.',
-      );
+        tone: 'error',
+      });
     } finally {
       setDeletingAccount(false);
     }

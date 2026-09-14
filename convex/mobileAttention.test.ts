@@ -9,6 +9,43 @@ const modules = (import.meta as ImportMeta & {
 }).glob(['./**/*.{ts,js}', '!./**/*.test.{ts,js}'])
 
 describe('mobile attention queue', () => {
+  it('counts only active personal Project memberships without hydrating Project rows', async () => {
+    const t = convexTest(schema, modules)
+    const userId = await t.run(async (ctx) => await ctx.db.insert('users', {
+      authUserId: 'project-count-owner',
+      googleSubject: 'project-count-owner',
+      normalizedEmail: 'project-count-owner@track.local',
+      email: 'project-count-owner@track.local',
+      displayName: 'Project Count Owner',
+      twoFactorEnabled: false,
+      createdAt: 1,
+      updatedAt: 1,
+    }))
+    await t.run(async (ctx) => {
+      for (const [index, status] of ([undefined, 'archived', 'removed'] as const).entries()) {
+        const projectId = await ctx.db.insert('projects', {
+          name: `Counted Project ${index}`,
+          accessProfile: 'legacy',
+          createdBy: userId,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        })
+        await ctx.db.insert('projectMembers', {
+          projectId,
+          userId,
+          role: 'manager',
+          status,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        })
+      }
+    })
+
+    await expect(t.withIdentity({ subject: 'project-count-owner' }).query(api.mobile.countProjects, {
+      userId,
+    })).resolves.toBe(1)
+  })
+
   it('paginates every accessible Project membership instead of truncating at 100', async () => {
     const t = convexTest(schema, modules)
     const userId = await t.run(async (ctx) => await ctx.db.insert('users', {
@@ -297,6 +334,14 @@ describe('mobile attention queue', () => {
       expect.objectContaining({ membership: expect.objectContaining({ companyId: fixture.companyId }) }),
     ]))
 
+    const scopedProjects = await t.withIdentity(identity).query(api.mobile.listProjects, {
+      userId,
+      actingCompanyId: fixture.companyId,
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+    expect(scopedProjects.page).toHaveLength(1)
+    expect(scopedProjects.page[0]?.membership.companyId).toBe(fixture.companyId)
+
     const globalTasks = await t.withIdentity(identity).query(api.mobile.listMyTasks, {
       userId,
       openOnly: true,
@@ -375,12 +420,37 @@ describe('mobile attention queue', () => {
         idempotencyKey: 'attention-task-due-event',
         createdAt: 11,
       })
+      const replyTargetId = await ctx.db.insert('messages', {
+        projectId: seeded.projectId,
+        groupId: fixture.groupId,
+        authorId: userId,
+        authorProjectMemberId: fixture.memberId,
+        channelSequence: 98,
+        body: 'I will review this decision today.',
+        mentions: [],
+        mentionedProjectMemberIds: [],
+        attachmentIds: [],
+        createdAt: 15,
+      })
       await ctx.db.insert('messages', {
         projectId: seeded.projectId,
         groupId: fixture.groupId,
         authorId,
         authorProjectMemberId: undefined,
         channelSequence: 99,
+        body: 'Attention Owner, please review this decision.',
+        mentions: [userId],
+        mentionedProjectMemberIds: [fixture.memberId],
+        attachmentIds: [],
+        replyToMessageId: replyTargetId,
+        createdAt: 30,
+      })
+      await ctx.db.insert('messages', {
+        projectId: seeded.projectId,
+        groupId: fixture.groupId,
+        authorId,
+        authorProjectMemberId: undefined,
+        channelSequence: 100,
         body: 'Attention Owner, please review this decision.',
         mentions: [userId],
         mentionedProjectMemberIds: [fixture.memberId],
@@ -392,7 +462,7 @@ describe('mobile attention queue', () => {
         groupId: fixture.groupId,
         authorId,
         authorProjectMemberId: undefined,
-        channelSequence: 100,
+        channelSequence: 101,
         body: 'A general unread Channel update.',
         mentions: [],
         mentionedProjectMemberIds: [],
@@ -437,13 +507,14 @@ describe('mobile attention queue', () => {
       userId,
       paginationOpts: { cursor: null, numItems: 50 },
     })
-    expect(items.page).toHaveLength(5)
-    expect(items.page.map((item) => item.kind)).toEqual(['message', 'task', 'task', 'suggestion', 'message'])
+    expect(items.page).toHaveLength(6)
+    expect(items.page.map((item) => item.kind)).toEqual(['message', 'message', 'task', 'task', 'suggestion', 'message'])
     expect(items.page[0]).toMatchObject({ eventType: 'mention', projectId: seeded.projectId })
-    expect(items.page[1]).toMatchObject({ eventType: 'due_soon', projectId: seeded.projectId })
-    expect(items.page[2]).toMatchObject({ eventType: 'assignment', projectId: seeded.projectId })
-    expect(items.page[3]).toMatchObject({ eventType: 'task_suggestion', projectId: seeded.projectId })
-    expect(items.page[4]).toMatchObject({ eventType: 'discussion', projectId: seeded.projectId })
+    expect(items.page[1]).toMatchObject({ eventType: 'direct_reply', projectId: seeded.projectId })
+    expect(items.page[2]).toMatchObject({ eventType: 'due_soon', projectId: seeded.projectId })
+    expect(items.page[3]).toMatchObject({ eventType: 'assignment', projectId: seeded.projectId })
+    expect(items.page[4]).toMatchObject({ eventType: 'task_suggestion', projectId: seeded.projectId })
+    expect(items.page[5]).toMatchObject({ eventType: 'discussion', projectId: seeded.projectId })
 
     await t.withIdentity({ subject: 'attention-owner' }).mutation(api.taskNotifications.markTaskRead, {
       taskId: fixture.taskId,

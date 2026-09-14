@@ -7,6 +7,8 @@ import type * as NotificationsModule from 'expo-notifications';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { useAppToast } from '@/components/app-toast';
+import type { IconName } from '@/components/platform-icon';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { consumePushResponseId, getPushInstallationId } from '@/lib/push-installation';
 import { resolvePushAvailability, type PushAvailability } from '@/lib/push-availability';
@@ -69,14 +71,23 @@ notifications?.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data;
     const present = shouldPresentPush(data);
+    const foreground = AppState.currentState === 'active';
     return {
-      shouldPlaySound: present && data?.soundEnabled !== 'false',
+      shouldPlaySound: present && !foreground && data?.soundEnabled !== 'false',
       shouldSetBadge: present && notification.request.content.badge !== null,
-      shouldShowBanner: present,
+      shouldShowBanner: present && !foreground,
       shouldShowList: present,
     };
   },
 });
+
+function pushIcon(eventKind: unknown): IconName {
+  if (typeof eventKind !== 'string') return 'bell-outline';
+  if (eventKind.includes('task')) return 'task';
+  if (eventKind.includes('mention') || eventKind.includes('reply') || eventKind.includes('message')) return 'message';
+  if (eventKind.includes('invitation')) return 'account-group';
+  return 'bell-outline';
+}
 
 export function usePushNotifications() {
   const context = useContext(PushContext);
@@ -86,6 +97,7 @@ export function usePushNotifications() {
 
 export function PushNotificationBridge({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const { showToast } = useAppToast();
   const { isSigningOut, trackUserId } = useTrackUser();
   const { isAuthenticated: convexAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
   const registerInstallation = useMutation(api.notifications.registerNativeInstallation);
@@ -213,6 +225,26 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
     void push.getLastNotificationResponseAsync().then(open);
     return () => subscription.remove();
   }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, recordOpen, router, trackUserId]);
+
+  useEffect(() => {
+    const push = getNotificationsApi();
+    if (!push) return;
+    const subscription = push.addNotificationReceivedListener((notification) => {
+      if (AppState.currentState !== 'active') return;
+      const data = notification.request.content.data;
+      if (data?.eventKind === 'test') return;
+      const title = notification.request.content.title?.trim();
+      const message = notification.request.content.body?.trim();
+      if (!title && !message) return;
+      showToast({
+        icon: pushIcon(data?.eventKind),
+        message,
+        title: title || 'Track activity',
+        tone: 'info',
+      });
+    });
+    return () => subscription.remove();
+  }, [showToast]);
 
   const value = useMemo<PushContextValue>(() => ({
     availability,

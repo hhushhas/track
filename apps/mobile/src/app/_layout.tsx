@@ -1,12 +1,10 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { Stack } from 'expo-router';
-import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useState, type ComponentProps } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -20,6 +18,7 @@ import { Colors } from '@/constants/theme';
 import { PushNotificationBridge } from '@/lib/push-notifications';
 import { OfflineTaskSync } from '@/components/offline-task-sync';
 import { LaunchScreen } from '@/components/launch-screen';
+import { AppToastProvider } from '@/components/app-toast';
 
 if (Platform.OS !== 'web') {
   void SplashScreen.preventAutoHideAsync();
@@ -51,11 +50,6 @@ const NAV_THEME_DARK = {
 };
 
 export default function RootLayout() {
-  // Do not block the entire application on the icon font. Expo can keep the
-  // native splash visible indefinitely when a font request is delayed; the
-  // rest of the UI remains usable while the font finishes loading.
-  useFonts(MaterialIcons.font);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
@@ -71,6 +65,8 @@ function AppLayout() {
   const { isThemeReady, theme } = useThemeOverride();
   const [continuationDidLayout, setContinuationDidLayout] = useState(false);
   const [showContinuation, setShowContinuation] = useState(true);
+  const [launchExiting, setLaunchExiting] = useState(false);
+  const finishLaunch = useCallback(() => setShowContinuation(false), []);
 
   useEffect(() => {
     if (!isThemeReady || !continuationDidLayout) return;
@@ -83,7 +79,7 @@ function AppLayout() {
     void hideNativeSplash.finally(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (active) setShowContinuation(false);
+          if (active) setLaunchExiting(true);
         });
       });
     });
@@ -103,13 +99,14 @@ function AppLayout() {
   return (
     <ConvexBetterAuthProvider client={convexClient} authClient={providerAuthClient}>
       <ThemeProvider value={navTheme}>
-        <TrackUserProvider>
-          <PushNotificationBridge>
-            <CompanyProvider>
-              <OfflineTaskSync />
-              <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-              <View style={styles.app}>
-                <Stack
+        <AppToastProvider>
+          <TrackUserProvider>
+            <PushNotificationBridge>
+              <CompanyProvider>
+                <OfflineTaskSync />
+                <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+                <View style={styles.app}>
+                  <Stack
                   screenOptions={{
                     headerShown: true,
                     headerBackTitle: 'Back',
@@ -127,16 +124,21 @@ function AppLayout() {
                   <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                   <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
                   <Stack.Screen name="company" options={{ title: 'Companies' }} />
-                </Stack>
-                {showContinuation ? (
-                  <View pointerEvents="none" style={styles.continuation}>
-                    <LaunchScreen onReady={() => setContinuationDidLayout(true)} />
-                  </View>
-                ) : null}
-              </View>
-            </CompanyProvider>
-          </PushNotificationBridge>
-        </TrackUserProvider>
+                  </Stack>
+                  {showContinuation ? (
+                    <View pointerEvents="none" style={styles.continuation}>
+                      <LaunchScreen
+                        exiting={launchExiting}
+                        onExitComplete={finishLaunch}
+                        onReady={() => setContinuationDidLayout(true)}
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              </CompanyProvider>
+            </PushNotificationBridge>
+          </TrackUserProvider>
+        </AppToastProvider>
       </ThemeProvider>
     </ConvexBetterAuthProvider>
   );

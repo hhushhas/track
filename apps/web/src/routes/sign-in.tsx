@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvex } from 'convex/react'
 import { Eye, EyeOff, KeyRound, Lock, Mail, MessageSquareText, Search, ShieldCheck } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
@@ -147,11 +147,17 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
   })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const messageRef = useRef<HTMLParagraphElement>(null)
   const pendingSetPasswordEmail = useMemo(() => {
     if (typeof window === 'undefined') return ''
     return window.localStorage.getItem(pendingSetPasswordEmailKey) ?? ''
   }, [mode])
   const authenticatedDestination = getAuthenticatedSignInDestination(Boolean(session.data), mode)
+
+  useEffect(() => {
+    if (!message) return
+    requestAnimationFrame(() => messageRef.current?.focus())
+  }, [message])
 
   useEffect(() => {
     if (!authenticatedDestination) return
@@ -183,7 +189,10 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     try {
       const result = await authClient.signIn.social({
         provider: 'google',
-        callbackURL: mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
+        callbackURL: new URL(
+          mode === 'google-proof' ? '/auth/callback?next=/sign-in' : '/auth/callback',
+          window.location.origin,
+        ).toString(),
       })
       if (result.error) {
         const errorMessage = getPasswordMessage(result.error)
@@ -251,7 +260,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           email: normalizedEmail,
           password: passwordValue,
           name: normalizedEmail.split('@')[0] || 'Track User',
-          callbackURL: '/workspace',
+          callbackURL: new URL('/workspace', window.location.origin).toString(),
         })
         if (result.error) {
           const errorMessage = getPasswordMessage(result.error)
@@ -268,7 +277,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
       const result = await authClient.signIn.email({
         email: normalizedEmail,
         password: passwordValue,
-        callbackURL: '/workspace',
+        callbackURL: new URL('/workspace', window.location.origin).toString(),
       })
       if (!result.error) {
         if (shouldFinishEmailAuthHandoff(result.data)) {
@@ -396,10 +405,15 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
                 <label>
                   <span>Email</span>
                   <Input
+                    aria-describedby={message ? 'sign-in-error' : undefined}
+                    aria-invalid={Boolean(message)}
                     autoComplete="email"
                     className="track-auth-input-with-icon"
                     onChange={(event) => setEmail(event.currentTarget.value)}
                     placeholder="you@example.com"
+                    name="email"
+                    required
+                    spellCheck={false}
                     type="email"
                     value={email}
                   />
@@ -409,10 +423,14 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
               <label>
                 <span>Password</span>
                 <Input
+                  aria-describedby={message ? 'sign-in-error' : undefined}
+                  aria-invalid={Boolean(message)}
                   autoComplete={mode === 'continue' ? 'current-password' : 'new-password'}
                   className="track-auth-input-with-icon track-auth-input-with-action"
                   onChange={(event) => setPassword(event.currentTarget.value)}
                   placeholder="At least 10 characters"
+                  name="password"
+                  required
                   type={passwordVisible ? 'text' : 'password'}
                   value={password}
                 />
@@ -430,10 +448,14 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
                 <label>
                   <span>Confirm password</span>
                   <Input
+                    aria-describedby={message ? 'sign-in-error' : undefined}
+                    aria-invalid={Boolean(message)}
                     autoComplete="new-password"
                     className="track-auth-input-with-icon track-auth-input-with-action"
                     onChange={(event) => setConfirmPassword(event.currentTarget.value)}
                     placeholder="Repeat password"
+                    name="confirmPassword"
+                    required
                     type={confirmPasswordVisible ? 'text' : 'password'}
                     value={confirmPassword}
                   />
@@ -503,7 +525,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
             </Button>
           ) : null}
 
-          {message ? <p className="track-auth-error">{message}</p> : null}
+          {message ? <p aria-live="assertive" className="track-auth-error" id="sign-in-error" ref={messageRef} role="alert" tabIndex={-1}>{message}</p> : null}
 
           <div className="track-auth-note">
             <ShieldCheck size={16} />

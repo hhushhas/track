@@ -3,6 +3,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskPriority } from './schema/taskValidators'
 
@@ -58,6 +59,7 @@ export const commit = mutation({
     if (!access.capabilities.canManageProject || (groupId && !access.capabilities.canReadChannel)) {
       throw new Error('task_memory_scan_forbidden')
     }
+    await assertProjectSnapshotWritable(ctx, memoryImport.projectId)
     let created = 0
     for (const candidate of args.candidates) {
       if (candidate.confidence < 0.78 || candidate.sourceMessageIds.length !== 1 ||

@@ -4,6 +4,7 @@ import { BlurView } from 'expo-blur';
 import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   ReduceMotion,
@@ -40,6 +41,48 @@ import { uniqueAttentionItems, type MobileAttentionItem } from '@/lib/mobile-att
 
 const spring = { duration: 280, dampingRatio: 0.86, reduceMotion: ReduceMotion.System } as const;
 
+type StandaloneTabKey = 'evidence' | 'home' | 'projects' | 'tasks';
+
+const standaloneTabs: Array<{ key: StandaloneTabKey; label: string; icon: React.ComponentProps<typeof PlatformIcon>['name']; href: string }> = [
+  { key: 'home', label: 'Home', icon: 'home', href: '/' },
+  { key: 'projects', label: 'Projects', icon: 'project', href: '/projects' },
+  { key: 'tasks', label: 'Tasks', icon: 'task', href: '/tasks' },
+  { key: 'evidence', label: 'Evidence', icon: 'evidence', href: '/search' },
+];
+
+/** Keeps top-level utility screens visually attached to the primary app shell. */
+export function StandalonePrimaryNavigation({ active }: { active: StandaloneTabKey }) {
+  const theme = useTheme();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.standalonePositioner, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+      <View accessibilityRole="tablist" style={[styles.standaloneRow, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+        {standaloneTabs.map((tab) => {
+          const selected = tab.key === active;
+          return (
+            <Pressable
+              accessibilityLabel={tab.label}
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              android_ripple={Platform.OS === 'android' ? { color: theme.backgroundSelected, borderless: false } : undefined}
+              key={tab.key}
+              onPress={() => router.replace(tab.href as never)}
+              style={({ pressed }) => [styles.item, selected && styles.standaloneItemSelected, selected && { backgroundColor: theme.accentSoft, borderColor: theme.hairline }, { opacity: pressed ? 0.72 : 1 }]}
+            >
+              <View style={[styles.icon, styles.androidIcon]}>
+                <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={tab.icon} size={IconSize.large} variant={selected ? 'filled' : 'outline'} weight={selected ? 'medium' : 'regular'} />
+              </View>
+              <ThemedText themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">{tab.label}</ThemedText>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 /** Global peer navigation. Each destination owns an independent nested stack. */
 export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
   const theme = useTheme();
@@ -69,7 +112,7 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
   const glassAvailable = isIos && reduceTransparency === false && safeGlassAvailability();
 
   useEffect(() => {
-    if (!isIos) return;
+    if (!rowWidth) return;
     void AccessibilityInfo.isReduceTransparencyEnabled().then(setReduceTransparency);
     const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduceTransparency);
     return () => subscription.remove();
@@ -79,7 +122,11 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
     if (!rowWidth) return;
     if (indicatorDragging.get()) return;
     const geometry = primaryTabGeometry(rowWidth, destinations.length, selectedIndex);
-    const { cellWidth, indicatorLeft: targetLeft, indicatorWidth: restingWidth } = geometry;
+    const { cellWidth } = geometry;
+    const restingWidth = isIos ? geometry.indicatorWidth : 28;
+    const targetLeft = isIos
+      ? geometry.indicatorLeft
+      : selectedIndex * cellWidth + (cellWidth - restingWidth) / 2;
     const currentLeft = indicatorLeft.get();
     const distance = Math.abs(targetLeft - currentLeft);
 
@@ -102,6 +149,14 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
     cancelAnimation(indicatorScaleX);
     cancelAnimation(indicatorScaleY);
     cancelAnimation(indicatorWidth);
+    if (!isIos) {
+      indicatorLeft.set(withSpring(targetLeft, spring));
+      indicatorWidth.set(withSpring(restingWidth, spring));
+      indicatorLift.set(withSpring(0, spring));
+      indicatorScaleX.set(withSpring(1, spring));
+      indicatorScaleY.set(withSpring(1, spring));
+      return;
+    }
     const stretchedWidth = restingWidth + Math.min(distance, cellWidth * 1.35);
 
     if (targetLeft >= currentLeft) {
@@ -253,6 +308,7 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="tab"
         accessibilityState={{ disabled: destination.disabled, selected }}
+        android_ripple={!isIos ? { color: theme.backgroundSelected, borderless: false } : undefined}
         disabled={destination.disabled}
         key={route.key}
         onLongPress={isIos ? undefined : () => navigation.emit({ type: 'tabLongPress', target: route.key })}
@@ -265,15 +321,16 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
         <View style={[
           styles.icon,
           !isIos && styles.androidIcon,
-          !isIos && selected && { backgroundColor: theme.accentSoft },
         ]}>
           <PlatformIcon
             color={selected ? theme.accentStrong : theme.textSecondary}
             name={destination.icon}
             size={IconSize.large}
+            variant={selected ? 'filled' : 'outline'}
+            weight={selected ? 'medium' : 'regular'}
           />
           {badge > 0 ? (
-            <View style={[styles.badge, { backgroundColor: theme.accent }]}>
+              <View style={[styles.badge, { backgroundColor: theme.accent, borderColor: theme.backgroundElevated }]}>
               <ThemedText style={styles.badgeText} type="captionBold">
                 {badge > 99 ? '99+' : badge}
               </ThemedText>
@@ -292,16 +349,17 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
 
   if (!isIos) {
     return (
-      <View style={[styles.androidPositioner, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { backgroundColor: theme.backgroundElevated }]}
-        />
-        <View
-          accessibilityRole="tablist"
-          style={[styles.androidRow, { borderColor: theme.hairline }]}
-        >
-          {tabItems}
+      <View style={[styles.androidPositioner, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+        <View style={[styles.androidChrome, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+          <View accessibilityRole="tablist" onLayout={onRowLayout} style={styles.androidRow}>
+            <Animated.View
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              pointerEvents="none"
+              style={[styles.androidIndicator, indicatorStyle, { backgroundColor: theme.accentSoft, borderColor: theme.hairline }]}
+            />
+            {tabItems}
+          </View>
         </View>
       </View>
     );
@@ -401,17 +459,30 @@ function safeGlassAvailability() {
 }
 
 const styles = StyleSheet.create({
-  androidIcon: { borderRadius: Radius.pill, height: 32 },
-  androidPositioner: { minHeight: BottomTabInset, overflow: 'hidden' },
-  androidRow: {
+  androidIcon: { borderRadius: Radius.pill, height: 28 },
+  androidChrome: {
     borderTopWidth: StyleSheet.hairlineWidth,
+    boxShadow: '0 -2px 8px rgba(0,0,0,0.06)',
+    overflow: 'visible',
+  },
+  androidIndicator: {
+    borderRadius: Radius.pill,
+    bottom: Spacing.one,
+    height: 3,
+    left: 0,
+    position: 'absolute',
+    zIndex: 0,
+  },
+  androidPositioner: { paddingHorizontal: 0, paddingTop: 0 },
+  androidRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.one,
+    minHeight: BottomTabInset,
     position: 'relative',
   },
   badge: {
     alignItems: 'center',
     borderRadius: Radius.pill,
+    borderWidth: 2,
     justifyContent: 'center',
     minHeight: 18,
     minWidth: 18,
@@ -446,6 +517,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'absolute',
     top: Spacing.one,
+    zIndex: 0,
   },
   iosPositioner: {
     backgroundColor: 'transparent',
@@ -467,11 +539,35 @@ const styles = StyleSheet.create({
     minHeight: BottomTabInset,
     paddingHorizontal: Spacing.one,
     paddingVertical: Spacing.two,
+    position: 'relative',
     zIndex: 1,
   },
   pillFill: {
     ...StyleSheet.absoluteFillObject,
     borderCurve: 'continuous',
     borderRadius: Radius.pill,
+  },
+  standalonePositioner: {
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+    position: 'absolute',
+    right: 0,
+    zIndex: 50,
+  },
+  standaloneItemSelected: {
+    borderCurve: 'continuous',
+    borderRadius: Radius.large,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginVertical: Spacing.one,
+  },
+  standaloneRow: {
+    borderCurve: 'continuous',
+    borderRadius: Radius.xlarge,
+    borderWidth: StyleSheet.hairlineWidth,
+    boxShadow: '0 6px 22px rgba(0,0,0,0.16)',
+    flexDirection: 'row',
+    overflow: 'visible',
   },
 });

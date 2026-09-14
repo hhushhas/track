@@ -131,12 +131,14 @@ export const Typography = {
   caption: {
     fontFamily: Fonts?.sans,
     fontSize: 12,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 16,
     fontWeight: '400' as const,
   },
   captionBold: {
     fontFamily: Fonts?.sans,
     fontSize: 12,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 16,
     fontWeight: '600' as const,
   },
@@ -144,6 +146,7 @@ export const Typography = {
   metadata: {
     fontFamily: Fonts?.mono,
     fontSize: 11,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 15,
     fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
     letterSpacing: 0.3,
@@ -151,6 +154,7 @@ export const Typography = {
   metadataLabel: {
     fontFamily: Fonts?.mono,
     fontSize: 10.5,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 14,
     fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
     letterSpacing: 0.6,
@@ -175,8 +179,8 @@ export const Radius = {
   pill: 999,
 } as const;
 
-/** Caps Dynamic Type growth so dense chat and task layouts stay intact. */
-export const MaxFontScale = 1.3;
+/** Supports the plan's 200% large-text gate while keeping a finite layout contract. */
+export const MaxFontScale = 2;
 
 export const TouchTarget = Platform.select({ ios: 44, android: 48 }) ?? 44;
 

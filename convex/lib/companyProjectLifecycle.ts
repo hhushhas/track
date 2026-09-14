@@ -1,3 +1,4 @@
+import { assertProjectSnapshotWritable } from './projectSnapshotLock'
 import type { Id } from '../_generated/dataModel'
 import type { MutationCtx } from '../_generated/server'
 
@@ -29,6 +30,74 @@ export async function getGeneralChannel(ctx: MutationCtx, projectId: Id<'project
   return general
 }
 
+export async function createCompanyProject(
+  ctx: MutationCtx,
+  input: {
+    name: string
+    description?: string
+    owningCompanyId: Id<'companies'>
+    owningCompanyDisplayName: string
+    proposingCompanyId?: Id<'companies'>
+    relationshipId?: Id<'relationships'>
+    origin: 'single_company' | 'shared'
+    status: 'proposed' | 'active'
+    createdBy: Id<'users'>
+    initialMembers: Array<{
+      userId: Id<'users'>
+      role: 'manager' | 'member'
+    }>
+  },
+) {
+  const now = Date.now()
+  const projectId = await ctx.db.insert('projects', {
+    name: input.name,
+    description: input.description,
+    accessProfile: 'company',
+    owningCompanyId: input.owningCompanyId,
+    relationshipId: input.relationshipId,
+    proposingCompanyId: input.proposingCompanyId,
+    origin: input.origin,
+    status: input.status,
+    participantRevision: 1,
+    revision: 1,
+    createdBy: input.createdBy,
+    createdAt: now,
+    updatedAt: now,
+  })
+  const projectCompanyId = await ctx.db.insert('projectCompanies', {
+    projectId,
+    companyId: input.owningCompanyId,
+    term: 1,
+    status: 'active',
+    acceptedBy: input.createdBy,
+    acceptedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await ctx.db.insert('groups', {
+    projectId,
+    kind: 'general',
+    name: 'General',
+    status: 'active',
+    revision: 1,
+    createdBy: input.createdBy,
+    createdAt: now,
+    updatedAt: now,
+  })
+  for (const member of input.initialMembers) {
+    await createCompanyProjectMembership(ctx, {
+      projectId,
+      projectCompanyId,
+      companyId: input.owningCompanyId,
+      companyDisplayName: input.owningCompanyDisplayName,
+      userId: member.userId,
+      role: member.role,
+      invitedBy: input.createdBy,
+    })
+  }
+  return { projectId, projectCompanyId }
+}
+
 export async function createCompanyProjectMembership(
   ctx: MutationCtx,
   input: {
@@ -41,6 +110,7 @@ export async function createCompanyProjectMembership(
     invitedBy: Id<'users'>
   },
 ) {
+  await assertProjectSnapshotWritable(ctx, input.projectId)
   const { user } = await requireEligibleCompanyUser(ctx, input.companyId, input.userId)
   const existingTerms = await ctx.db
     .query('projectMembers')
@@ -105,6 +175,20 @@ export async function invalidateProjectArchiveRequests(
   }
 }
 
+export async function invalidateProjectOwnershipRequests(
+  ctx: MutationCtx,
+  projectId: Id<'projects'>,
+  now: number,
+) {
+  const requests = await ctx.db
+    .query('projectOwnershipRequests')
+    .withIndex('by_project_status', (q) => q.eq('projectId', projectId).eq('status', 'pending'))
+    .collect()
+  await Promise.all(requests.map((request) =>
+    ctx.db.patch(request._id, { status: 'stale', updatedAt: now }),
+  ))
+}
+
 export async function revokePendingProjectInvitations(
   ctx: MutationCtx,
   projectId: Id<'projects'>,
@@ -131,5 +215,8 @@ export async function bumpProjectParticipants(
     revision: (project.revision ?? 0) + 1,
     updatedAt: now,
   })
-  await invalidateProjectArchiveRequests(ctx, project._id, now)
+  await Promise.all([
+    invalidateProjectArchiveRequests(ctx, project._id, now),
+    invalidateProjectOwnershipRequests(ctx, project._id, now),
+  ])
 }

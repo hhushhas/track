@@ -1,4 +1,6 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { Image, StyleSheet, View, type ViewStyle } from 'react-native';
+import Animated, { Easing, cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
@@ -16,9 +18,23 @@ export function SignInHero() {
   const theme = useTheme();
   const { theme: themeName } = useThemeOverride();
   const markSource = themeName === 'dark' ? trackMarkReversedImage : trackMarkImage;
+  const ring = `${theme.text}12`;
 
   return (
     <View pointerEvents="none" style={styles.hero}>
+      <Orbit degreesPerSecond={8} style={styles.orbitLarge}>
+        <View style={[styles.ringLarge, { borderColor: ring }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 537, top: 320 }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 228, top: 537 }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 11, top: 228 }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 320, top: 11 }]} />
+      </Orbit>
+      <Orbit degreesPerSecond={-12} style={styles.orbitSmall}>
+        <View style={[styles.ringSmall, { borderColor: ring }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 204, top: 16 }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 225, top: 260 }]} />
+        <View style={[styles.station, { backgroundColor: theme.accent, left: 4, top: 156 }]} />
+      </Orbit>
       <View style={styles.lockup}>
         <View style={[styles.markTile, { backgroundColor: theme.backgroundElement }]}>
           <Image accessibilityIgnoresInvertColors resizeMode="contain" source={markSource} style={styles.mark} />
@@ -35,11 +51,25 @@ export function SignInHero() {
   );
 }
 
+function Orbit({ children, degreesPerSecond, style }: { children: React.ReactNode; degreesPerSecond: number; style: ViewStyle }) {
+  const reducedMotion = useReducedMotion();
+  const turns = useSharedValue(0);
+  useEffect(() => {
+    if (reducedMotion) return;
+    const duration = (360 / Math.abs(degreesPerSecond)) * 1000;
+    turns.value = withRepeat(withTiming(1, { duration, easing: Easing.linear }), -1);
+    return () => cancelAnimation(turns);
+  }, [degreesPerSecond, reducedMotion, turns]);
+  const spin = useAnimatedStyle(() => ({ transform: [{ rotate: `${turns.value * 360 * Math.sign(degreesPerSecond)}deg` }] }));
+  return <Animated.View style={[style, spin]}>{children}</Animated.View>;
+}
+
 const styles = StyleSheet.create({
   hero: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
+    overflow: 'hidden',
     paddingHorizontal: Spacing.five,
   },
   lockup: {
@@ -61,11 +91,16 @@ const styles = StyleSheet.create({
   },
   markTile: {
     alignItems: 'center',
-    borderRadius: Radius.xlarge,
+    borderRadius: 26,
     height: 88,
     justifyContent: 'center',
     width: 88,
   },
+  orbitLarge: { height: 560, position: 'absolute', right: -200, top: -230, width: 560 },
+  orbitSmall: { bottom: -140, height: 300, left: -150, position: 'absolute', width: 300 },
+  ringLarge: { ...StyleSheet.absoluteFillObject, borderRadius: 9999, borderWidth: 26 },
+  ringSmall: { ...StyleSheet.absoluteFillObject, borderRadius: 9999, borderWidth: 18 },
+  station: { borderRadius: 6, height: 12, position: 'absolute', width: 12 },
   name: {
     fontSize: 38,
     fontWeight: '800',

@@ -7,6 +7,8 @@
  * failed file retryable without producing a duplicate message.
  */
 
+import type { Id } from '../../../../convex/_generated/dataModel';
+
 export type AttachmentKind = 'file' | 'voice_note';
 
 export type UploadableFile = {
@@ -25,25 +27,49 @@ export type AttachmentUploadTarget = {
     durationMs?: number;
     filename: string;
     kind?: AttachmentKind;
-    messageId: string;
+    messageId: Id<'messages'>;
+    uploadIntentId: Id<'messageUploadIntents'>;
     size: number;
-    storageId: string;
+    storageId: Id<'_storage'>;
   }) => Promise<unknown>;
-  generateUploadUrl: () => Promise<string>;
-  sendMessage: (input: { body: string; replyToMessageId?: string }) => Promise<string>;
+  claimUploadIntent: (input: { intentId: Id<'messageUploadIntents'>; storageId: string }) => Promise<{
+    storageId: Id<'_storage'> | null;
+  }>;
+  generateUploadUrl: (input: {
+    contentType: string;
+    durationMs?: number;
+    filename: string;
+    intentKey: string;
+    kind?: AttachmentKind;
+    size: number;
+  }) => Promise<UploadIntentResponse>;
+  sendMessage: (input: {
+    body: string;
+    idempotencyKey?: string;
+    replyToMessageId?: Id<'messages'>;
+  }) => Promise<Id<'messages'>>;
+};
+
+export type UploadIntentResponse = {
+  expiresAt: number;
+  intentId: Id<'messageUploadIntents'>;
+  status: 'issued' | 'uploaded' | 'claimed';
+  storageId: Id<'_storage'> | null;
+  uploadUrl: string | null;
 };
 
 export type ComposerSubmission = {
   attachments: UploadableFile[];
   body: string;
+  idempotencyKey?: string;
   /** Set when retrying: reuses the message created by the first attempt. */
-  messageId?: string | null;
+  messageId?: Id<'messages'> | null;
   reportProgress: (attachmentId: string, progress: number) => void;
 };
 
 export type ComposerSubmissionResult = {
   failedIds: string[];
-  messageId: string | null;
+  messageId: Id<'messages'> | null;
 };
 
 /** Progress updates land in React state, so only report meaningful steps. */
@@ -79,8 +105,8 @@ function putBlob(input: {
         reject(new Error('upload_failed'));
         return;
       }
-      const payload = JSON.parse(request.responseText) as { storageId?: string };
-      if (!payload.storageId) {
+      const payload: unknown = JSON.parse(request.responseText);
+      if (!isStoragePayload(payload)) {
         reject(new Error('upload_failed'));
         return;
       }
@@ -92,28 +118,52 @@ function putBlob(input: {
   });
 }
 
+function isStoragePayload(value: unknown): value is { storageId: string } {
+  return typeof value === 'object' && value !== null && 'storageId' in value && typeof value.storageId === 'string' && value.storageId.length > 0;
+}
+
 async function uploadOne(input: {
   file: UploadableFile;
-  messageId: string;
+  intentKey: string;
+  messageId: Id<'messages'>;
   onProgress: (fraction: number) => void;
   target: AttachmentUploadTarget;
 }) {
-  const url = await input.target.generateUploadUrl();
   const blob = await (await fetch(input.file.uri)).blob();
-  const storageId = await putBlob({
-    blob,
-    contentType: input.file.contentType,
-    onProgress: input.onProgress,
-    url,
+  const contentType = input.file.contentType || blob.type || 'application/octet-stream';
+  const intent = await input.target.generateUploadUrl({
+    contentType,
+    durationMs: input.file.durationMs,
+    filename: input.file.filename,
+    intentKey: input.intentKey,
+    kind: input.file.kind,
+    size: blob.size,
   });
+  let storageId = intent.storageId;
+  if (!storageId) {
+    if (!intent.uploadUrl) throw new Error('upload_intent_unavailable');
+    const uploadedStorageId = await putBlob({
+      blob,
+      contentType,
+      onProgress: input.onProgress,
+      url: intent.uploadUrl,
+    });
+    const claimed = await input.target.claimUploadIntent({
+      intentId: intent.intentId,
+      storageId: uploadedStorageId,
+    });
+    if (!claimed.storageId) throw new Error('upload_intent_unavailable');
+    storageId = claimed.storageId;
+  }
   await input.target.attachFile({
-    contentType: input.file.contentType,
+    contentType,
     durationMs: input.file.durationMs,
     filename: input.file.filename,
     kind: input.file.kind ?? 'file',
     messageId: input.messageId,
     size: blob.size,
     storageId,
+    uploadIntentId: intent.intentId,
   });
 }
 
@@ -123,18 +173,26 @@ async function uploadOne(input: {
  * with the message they belong to.
  */
 export async function sendComposerMessage(
-  input: ComposerSubmission & { replyToMessageId?: string; target: AttachmentUploadTarget },
+  input: ComposerSubmission & { replyToMessageId?: Id<'messages'>; target: AttachmentUploadTarget },
 ): Promise<ComposerSubmissionResult> {
   const { attachments, body, replyToMessageId, reportProgress, target } = input;
 
   if (attachments.length === 0) {
-    const messageId = await target.sendMessage({ body, replyToMessageId });
+    const messageId = await target.sendMessage({
+      body,
+      idempotencyKey: input.idempotencyKey,
+      replyToMessageId,
+    });
     return { failedIds: [], messageId };
   }
 
   const messageId =
     input.messageId ??
-    (await target.sendMessage({ body: body || fallbackBody(attachments), replyToMessageId }));
+    (await target.sendMessage({
+      body: body || fallbackBody(attachments),
+      idempotencyKey: input.idempotencyKey,
+      replyToMessageId,
+    }));
 
   const failedIds: string[] = [];
   for (const file of attachments) {
@@ -142,6 +200,7 @@ export async function sendComposerMessage(
       reportProgress(file.id, 0);
       await uploadOne({
         file,
+        intentKey: `${input.idempotencyKey ?? messageId}:attachment:${file.id}`,
         messageId,
         onProgress: (fraction) => reportProgress(file.id, fraction),
         target,

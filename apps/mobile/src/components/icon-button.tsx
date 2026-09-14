@@ -44,9 +44,12 @@ export function IconButton({
       style={({ pressed }) => [
         styles.button,
         selected && { backgroundColor: theme.accentSoft },
-        { opacity: unavailable ? 0.42 : pressed ? 0.62 : 1 },
+        {
+          opacity: unavailable ? 0.42 : pressed ? 0.68 : 1,
+          transform: [{ scale: pressed ? 0.96 : 1 }],
+        },
       ]}>
-      {loading ? <ActivityIndicator color={color} size="small" /> : <PlatformIcon color={color} name={icon} size={size} />}
+      {loading ? <ActivityIndicator color={color} size="small" /> : <PlatformIcon color={color} name={icon} size={size} weight="medium" />}
     </Pressable>
   );
 }

@@ -9,6 +9,7 @@ import {
   invitationStatus,
   projectCompanyStatus,
 } from './companyValidators'
+import { exitSnapshotPhase, exitSnapshotStatus } from './projectExitTables'
 
 export const companyProjectTables = {
   projectCompanyInvitations: defineTable({
@@ -40,8 +41,13 @@ export const companyProjectTables = {
     exitPreparedAt: v.optional(v.number()),
     exitCutoff: v.optional(v.number()),
     exitOperationId: v.optional(v.string()),
+    exitSnapshotStatus: v.optional(exitSnapshotStatus),
+    exitSnapshotPhase: v.optional(exitSnapshotPhase),
+    exitSnapshotError: v.optional(v.string()),
     exitContextRevision: v.optional(v.number()),
     exitMemoryBoxId: v.optional(v.string()),
+    exitOwningCompanyId: v.optional(v.id('companies')),
+    exitOwningCompanyDisplayName: v.optional(v.string()),
     exitProjectSnapshot: v.optional(v.any()),
     exitChannelSnapshots: v.optional(v.array(v.any())),
     exitMemberSnapshots: v.optional(v.array(v.any())),
@@ -87,24 +93,63 @@ export const companyProjectTables = {
     .index('by_request', ['requestId'])
     .index('by_request_participant', ['requestId', 'projectCompanyId']),
 
+  projectOwnershipRequests: defineTable({
+    projectId: v.id('projects'),
+    participantRevision: v.number(),
+    sourceOwningCompanyId: v.optional(v.id('companies')),
+    proposedOwningCompanyId: v.id('companies'),
+    requestedByCompanyId: v.id('companies'),
+    requestedBy: v.id('users'),
+    status: approvalRequestStatus,
+    idempotencyKey: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    decidedAt: v.optional(v.number()),
+  })
+    .index('by_project_status', ['projectId', 'status'])
+    .index('by_project_idempotency', ['projectId', 'idempotencyKey']),
+
+  projectOwnershipApprovals: defineTable({
+    requestId: v.id('projectOwnershipRequests'),
+    projectCompanyId: v.id('projectCompanies'),
+    decidedBy: v.id('users'),
+    decision: approvalDecision,
+    participantRevision: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_request', ['requestId'])
+    .index('by_request_participant', ['requestId', 'projectCompanyId']),
+
   projectArchiveEntitlements: defineTable({
     projectId: v.id('projects'),
     projectCompanyId: v.id('projectCompanies'),
     companyId: v.id('companies'),
     projectMemberId: v.id('projectMembers'),
     exitAt: v.number(),
+    owningCompanyId: v.optional(v.id('companies')),
+    owningCompanyDisplayName: v.optional(v.string()),
     channelIds: v.array(v.id('groups')),
+    channelCount: v.optional(v.number()),
     projectSnapshot: v.any(),
     channelSnapshots: v.array(v.any()),
     threadSnapshots: v.optional(v.array(v.any())),
     memberSnapshots: v.optional(v.array(v.any())),
     retentionStatus: archiveRetentionStatus,
     manifestHash: v.string(),
+    snapshotOperationId: v.optional(v.string()),
+    visibilityStatus: v.optional(
+      v.union(v.literal('staging'), v.literal('active')),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_project_company', ['projectId', 'companyId'])
+    .index('by_project_company_operation', [
+      'projectCompanyId',
+      'snapshotOperationId',
+    ])
     .index('by_member', ['projectMemberId'])
+    .index('by_member_operation', ['projectMemberId', 'snapshotOperationId'])
     .index('by_retention_status', ['retentionStatus']),
 
   projectArchiveSnapshots: defineTable({

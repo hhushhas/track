@@ -60,9 +60,9 @@ export function primaryTabResetTarget(key: PrimaryDestination['key']) {
 }
 
 export function primaryDestinationForRoute(routeName: string, tasksDisabled = false): PrimaryDestination {
-  if (routeName === '(home)') return { key: 'home', label: 'Home', icon: 'inbox' };
-  if (routeName === '(projects)') return { key: 'projects', label: 'Projects', icon: 'briefcase-outline' };
-  if (routeName === '(tasks)') return { key: 'tasks', label: 'Tasks', icon: 'check-circle', disabled: tasksDisabled };
-  if (routeName === '(search)') return { key: 'evidence', label: 'Evidence', icon: 'file-document-outline' };
+  if (routeName === '(home)') return { key: 'home', label: 'Home', icon: 'home' };
+  if (routeName === '(projects)') return { key: 'projects', label: 'Projects', icon: 'project' };
+  if (routeName === '(tasks)') return { key: 'tasks', label: 'Tasks', icon: 'task', disabled: tasksDisabled };
+  if (routeName === '(search)') return { key: 'evidence', label: 'Evidence', icon: 'evidence' };
   throw new Error(`Unsupported primary tab route: ${routeName}`);
 }

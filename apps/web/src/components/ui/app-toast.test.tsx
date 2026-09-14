@@ -12,10 +12,12 @@ describe('application toast feedback', () => {
     expect(window.sessionStorage.getItem('track-pending-toast')).toBeNull()
 
     appToast.error('Task not saved', 'Your draft is still available.')
+    appToast.error('Task not saved', 'Your draft is still available.')
 
     expect((await screen.findAllByText('Task not saved')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Your draft is still available.').length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText('Dismiss notification').length).toBeGreaterThan(0)
+    expect([...document.querySelectorAll('.track-toast')].filter((toast) => toast.textContent?.includes('Task not saved'))).toHaveLength(1)
   })
 
   it('keeps navigation feedback best-effort when browser storage is unavailable', () => {

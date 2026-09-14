@@ -1,20 +1,35 @@
-import { useCallback, useRef } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Image, StyleSheet, View } from 'react-native';
 
-import trackMarkDark from '@/assets/images/track-mark-reversed.png';
-import trackMarkLight from '@/assets/images/track-mark.png';
-import { useThemeOverride } from '@/contexts/theme-override-context';
+import splashIcon from '@/assets/images/splash-icon.png';
 
-const MARK_SIZE = 180;
-const SPLASH_BACKGROUND = { dark: '#000000', light: '#faf9f7' } as const;
+const MARK_SIZE = 360;
+const SPLASH_BACKGROUND = '#000000';
 
-/** Pixel-matched startup artwork shown while the existing session flow resolves. */
-export function LaunchScreen({ onReady }: { onReady?: () => void }) {
-  const { theme: themeName } = useThemeOverride();
+/** Native-matched startup artwork with a short, interruptible handoff to the app. */
+export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exiting?: boolean; onExitComplete?: () => void; onReady?: () => void }) {
   const didLoadImage = useRef(false);
   const didLayout = useRef(false);
   const didReportReady = useRef(false);
-  const source = themeName === 'dark' ? trackMarkDark : trackMarkLight;
+  const opacity = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(1)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+  }, []);
+
+  useEffect(() => {
+    if (!exiting) return;
+    const animation = Animated.parallel([
+      Animated.timing(opacity, { duration: reduceMotion ? 0 : 240, toValue: 0, useNativeDriver: true }),
+      Animated.timing(scale, { duration: reduceMotion ? 0 : 240, toValue: 1.035, useNativeDriver: true }),
+    ]);
+    animation.start(({ finished }) => {
+      if (finished) onExitComplete?.();
+    });
+    return () => animation.stop();
+  }, [exiting, onExitComplete, opacity, reduceMotion, scale]);
 
   const reportReady = useCallback(() => {
     if (didReportReady.current || !didLayout.current || !didLoadImage.current) return;
@@ -28,20 +43,22 @@ export function LaunchScreen({ onReady }: { onReady?: () => void }) {
         didLayout.current = true;
         reportReady();
       }}
-      style={[styles.screen, { backgroundColor: SPLASH_BACKGROUND[themeName] }]}
+      style={[styles.screen, { backgroundColor: SPLASH_BACKGROUND }]}
     >
-      <Image
-        accessible={false}
-        accessibilityIgnoresInvertColors
-        fadeDuration={0}
-        onLoadEnd={() => {
-          didLoadImage.current = true;
-          reportReady();
-        }}
-        resizeMode="contain"
-        source={source}
-        style={styles.mark}
-      />
+      <Animated.View style={{ opacity, transform: [{ scale }] }}>
+        <Image
+          accessible={false}
+          accessibilityIgnoresInvertColors
+          fadeDuration={0}
+          onLoadEnd={() => {
+            didLoadImage.current = true;
+            reportReady();
+          }}
+          resizeMode="contain"
+          source={splashIcon}
+          style={styles.mark}
+        />
+      </Animated.View>
     </View>
   );
 }

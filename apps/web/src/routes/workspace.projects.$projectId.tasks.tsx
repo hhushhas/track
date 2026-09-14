@@ -4,6 +4,7 @@ import { TaskProjectPage } from '#/features/tasks/TaskProjectPage'
 
 type TaskSearch = {
   actingCompanyId?: string
+  groupId?: string
   projectMemberId?: string
   task?: string
   view?: 'inbox' | 'my' | 'all' | 'board'
@@ -18,6 +19,7 @@ type TaskSearch = {
 export const Route = createFileRoute('/workspace/projects/$projectId/tasks')({
   validateSearch: (search: Record<string, unknown>): TaskSearch => ({
     actingCompanyId: typeof search.actingCompanyId === 'string' ? search.actingCompanyId : undefined,
+    groupId: typeof search.groupId === 'string' ? search.groupId : undefined,
     projectMemberId: typeof search.projectMemberId === 'string' ? search.projectMemberId : undefined,
     task: typeof search.task === 'string' ? search.task : undefined,
     view: search.view === 'inbox' || search.view === 'my' || search.view === 'all' || search.view === 'board'

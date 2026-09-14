@@ -51,7 +51,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import type { Doc } from '../../../../../convex/_generated/dataModel'
+import type { GroupReference } from './group-types'
 
 type GroupAvatar = {
   Icon: LucideIcon
@@ -131,7 +131,7 @@ function stableIndex(value: string, modulo: number) {
   return hash % modulo
 }
 
-export function getGroupAvatar(group: Doc<'groups'>): GroupAvatar {
+export function getGroupAvatar(group: GroupReference): GroupAvatar {
   const name = group.name.toLowerCase()
   const match = groupAvatarRules.find((rule) => rule.keywords.some((keyword) => name.includes(keyword)))
   if (match) return match

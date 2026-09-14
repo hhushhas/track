@@ -1,12 +1,13 @@
 import { useMutation, usePaginatedQuery } from 'convex/react';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useMemo, useState } from 'react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { AdaptiveListRow } from '@/components/adaptive-list-row';
 import { ActionButton } from '@/components/action-button';
+import { useAppToast } from '@/components/app-toast';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
@@ -36,6 +37,7 @@ type AttentionItem = {
   createdAt: number;
   companyId?: Id<'companies'>;
   membershipId: Id<'projectMembers'>;
+  taskId: Id<'tasks'>;
 } | {
   kind: 'message';
   id: Id<'messages'>;
@@ -122,6 +124,7 @@ function dayLabel(createdAt: number, now = new Date()) {
 }
 
 export default function InboxScreen() {
+  const { showToast } = useAppToast();
   const theme = useTheme();
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
@@ -132,10 +135,8 @@ export default function InboxScreen() {
     : 'skip', { initialNumItems: 10 });
   const items = itemPages.results as AttentionItem[];
   const { loadMore: loadMoreItems, status: itemStatus } = itemPages;
-  useEffect(() => {
-    if (itemStatus === 'CanLoadMore') loadMoreItems(10);
-  }, [itemStatus, loadMoreItems]);
   const decideInvitation = useMutation(api.companies.decideInvitation);
+  const markTaskRead = useMutation(api.taskNotifications.markTaskRead);
   const [filter, setFilter] = useState<AttentionFilter>(params.filter === 'invitations' ? 'invitations' : 'all');
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [invitationBusy, setInvitationBusy] = useState<string | null>(null);
@@ -165,6 +166,13 @@ export default function InboxScreen() {
 
   function openItem(item: AttentionItem) {
     hapticLight();
+    if (item.kind === 'task') {
+      void markTaskRead({
+        taskId: item.taskId,
+        actingCompanyId: item.companyId,
+        projectMemberId: item.companyId ? item.membershipId : undefined,
+      }).catch(() => undefined);
+    }
     const identity: MobileTaskIdentity | null = item.companyId && item.kind !== 'invitation'
       ? { companyId: item.companyId, membershipId: item.membershipId }
       : null;
@@ -231,9 +239,9 @@ export default function InboxScreen() {
                         if (typeof result === 'object' && result !== null && 'status' in result && result.status === 'expired') {
                           throw new Error('invitation_expired');
                         }
-                        Alert.alert(decision === 'accept' ? 'Company joined' : 'Invitation declined');
+                        showToast({ title: decision === 'accept' ? 'Company joined' : 'Invitation declined', tone: 'success' });
                       })
-                      .catch(() => Alert.alert('Invitation unavailable', 'It expired or your access changed.'))
+                      .catch(() => showToast({ title: 'Invitation unavailable', message: 'It expired or your access changed.', tone: 'error' }))
                       .finally(() => setInvitationBusy(null));
                   }}
                   onPress={() => openItem(item)}
@@ -244,8 +252,7 @@ export default function InboxScreen() {
           ListHeaderComponent={
             <View style={styles.header}>
               <View style={styles.intro}>
-                <ThemedText type="display">Your attention</ThemedText>
-                <ThemedText themeColor="textSecondary">A calm queue of work that changed and needs a response.</ThemedText>
+                <ThemedText themeColor="textSecondary">Mentions, replies, and assigned work across every Company and Project.</ThemedText>
               </View>
               <View accessibilityRole="tablist" style={styles.filters}>
                 {(['all', 'mentions', 'replies', 'tasks'] as const).map((value) => (
@@ -277,13 +284,29 @@ export default function InboxScreen() {
               body={emptyCopy[filter].body}
             />
           }
+          ListFooterComponent={itemStatus === 'LoadingMore' ? <View style={styles.footer}><ActivityIndicator color={theme.accentStrong} /></View> : null}
+          onEndReached={() => { if (itemStatus === 'CanLoadMore') loadMoreItems(10); }}
+          onEndReachedThreshold={0.6}
         />
       )}
       <OptionsSheet onClose={() => setFilterSheetOpen(false)} title="Filter Inbox" visible={filterSheetOpen}>
         <SheetSection title="Show">
-          <SheetRow icon="bell-outline" label="Suggestions" selected={filter === 'suggestions'} onPress={() => { setFilter('suggestions'); setFilterSheetOpen(false); }} />
-          <SheetRow icon="account-group" label="Invitations" selected={filter === 'invitations'} onPress={() => { setFilter('invitations'); setFilterSheetOpen(false); }} />
-          <SheetRow icon="inbox" label="All attention" selected={filter === 'all'} onPress={() => { setFilter('all'); setFilterSheetOpen(false); }} />
+          {([
+            ['all', 'All attention', 'inbox'],
+            ['mentions', 'Mentions', 'message'],
+            ['replies', 'Direct replies', 'reply'],
+            ['tasks', 'Task updates', 'task'],
+            ['suggestions', 'Task suggestions', 'lightbulb-outline'],
+            ['invitations', 'Invitations', 'account-group'],
+          ] as const).map(([key, label, icon]) => (
+            <SheetRow
+              icon={icon}
+              key={key}
+              label={label}
+              selected={filter === key}
+              onPress={() => { setFilter(key); setFilterSheetOpen(false); }}
+            />
+          ))}
         </SheetSection>
       </OptionsSheet>
     </ThemedView>
@@ -318,7 +341,7 @@ function AttentionRow({ invitationBusy, item, onInvitationDecision, onPress }: {
         emphasized={direct}
         leading={(
           <View style={[styles.iconWrap, { backgroundColor: direct ? theme.backgroundElevated : theme.accentSoft }]}>
-            <PlatformIcon color={theme.accentStrong} name={item.kind === 'task' ? 'check-circle' : item.kind === 'message' ? 'bell-outline' : 'inbox'} size={20} />
+            <PlatformIcon color={theme.accentStrong} name={item.kind === 'task' ? 'task' : item.kind === 'message' ? 'message' : 'inbox'} size={20} />
           </View>
         )}
         onPress={onPress}
@@ -380,10 +403,11 @@ const styles = StyleSheet.create({
   dayHeading: { marginBottom: Spacing.one, marginTop: Spacing.two },
   daySection: { gap: Spacing.one },
   body: { flex: 1, gap: 2, minWidth: 0 },
-  card: { borderRadius: Radius.large, overflow: 'hidden' },
+  card: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   cardPressable: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 76, padding: Spacing.three },
   filter: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  footer: { alignItems: 'center', minHeight: TouchTarget, paddingVertical: Spacing.two },
   header: { gap: Spacing.two },
   iconWrap: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
   invitationActions: { borderTopColor: 'rgba(128,128,128,0.18)', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, justifyContent: 'flex-end', padding: Spacing.two },

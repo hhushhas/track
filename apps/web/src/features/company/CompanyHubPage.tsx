@@ -1,65 +1,105 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, ChevronDown, FolderKanban, MoreHorizontal, Plus, Settings2, Users } from "lucide-react";
+import {
+  ArrowUpRight,
+  Archive,
+  Bell,
+  Building2,
+  CalendarDays,
+  CheckSquare2,
+  Clock3,
+  Filter,
+  FolderKanban,
+  Handshake,
+  LayoutGrid,
+  Mail,
+  MessageSquareText,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Settings2,
+  ShieldCheck,
+  UserPlus,
+  UsersRound,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import TrackLoader from "#/components/TrackLoader";
+import { ConfirmDialog } from "#/components/ui/confirm-dialog";
 import { Button } from "#/components/ui/button";
-import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "#/components/ui/popover";
-import { resolveReleaseConfig, useReleaseConfigProjection } from "#/lib/release-config";
+import { useReleaseConfigState } from "#/lib/release-config";
 import {
   CreateCompanyForm,
-  CompanyProjectForm,
+  CompanyProfileForm,
+  InternalProjectForm,
   InviteMemberForm,
   RelationshipForm,
   RelationshipParticipantForm,
   SharedProjectForm,
 } from "./CompanyForms";
+import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
 import { useActingCompany } from "./use-acting-company";
 import { resolveCompanyMemberActionCapabilities } from "./company-member-capabilities";
 import { MigrationPanel } from "./MigrationPanel";
-import { selectTopCompanyProject } from "#/features/workspace/lib/project-classification";
+import { UnassignedProjects } from "./UnassignedProjects";
+import { formatCompanyError } from "./company-errors";
+import {
+  getCompanyProjectConversationSearch,
+  getCompanyProjectTaskSearch,
+} from "./company-project-links";
+import { resolveCompanyAdministrationId } from "./company-query-scope";
+import { type CompanyHubView } from "./company-view-state";
+import {
+  filterPeopleDirectory,
+  filterProjectDirectory,
+  filterRelationshipDirectory,
+  type PeopleDirectoryFilter,
+  type ProjectDirectoryFilter,
+  type RelationshipDirectoryFilter,
+} from "./company-collaboration-state";
 
-const companyRoleLabels = {
-  owner: "Company Owner",
-  admin: "Company Admin",
-  member: "Company Member",
-} as const;
+import "./company-overview-reference.css";
+import "./company-collaboration.css";
 
-function CompanyActionPopover({
-  children,
-  description,
-  label,
-  title,
-}: {
-  children: ReactNode;
-  description: string;
-  label: string;
-  title: string;
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger render={<Button className="company-section-action" variant="outline" />}>
-        <Plus aria-hidden="true" size={14} />
-        {label}
-      </PopoverTrigger>
-      <PopoverContent align="end" className="company-action-popover" sideOffset={8}>
-        <PopoverHeader>
-          <PopoverTitle>{title}</PopoverTitle>
-          <PopoverDescription>{description}</PopoverDescription>
-        </PopoverHeader>
-        {children}
-      </PopoverContent>
-    </Popover>
-  );
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 }
 
-export function CompanyHubPage() {
-  const navigate = useNavigate();
-  const releaseConfigProjection = useReleaseConfigProjection();
-  const flags = resolveReleaseConfig(releaseConfigProjection);
+function formatRelativeTime(timestamp: number) {
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  const hours = Math.floor(elapsed / 3_600_000);
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatTaskDueDate(value?: string) {
+  if (!value) return "No due date";
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}
+
+export function CompanyHubPage({
+  initialView = "overview",
+  onViewChange,
+}: {
+  initialView?: CompanyHubView;
+  onViewChange?: (view: CompanyHubView) => void;
+}) {
+  const releaseState = useReleaseConfigState();
+  const flags = releaseState.config;
   const currentUser = useQuery(api.auth.getCurrentUser);
   const companies = useQuery(
     api.companies.listMine,
@@ -76,34 +116,26 @@ export function CompanyHubPage() {
   );
   const { actingCompanyId, setActingCompanyId } =
     useActingCompany(availableCompanyIds);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<Id<"companies"> | null>(
-    actingCompanyId,
-  );
-  useEffect(() => {
-    if (selectedCompanyId && availableCompanyIds.includes(selectedCompanyId)) return;
-    setSelectedCompanyId(actingCompanyId);
-  }, [actingCompanyId, availableCompanyIds, selectedCompanyId]);
-  const actingCompanyCandidate = companies?.find(
+  const actingCompany = companies?.find(
     (item) => item.company?._id === actingCompanyId,
   );
-  const actingCompany = actingCompanyCandidate?.company
-    ? { ...actingCompanyCandidate, company: actingCompanyCandidate.company }
-    : undefined;
   const canAdministerActingCompany =
     actingCompany?.membership.role === "owner" ||
     actingCompany?.membership.role === "admin";
   const activeActingCompanyId =
     actingCompany?.company?.status === "active" ? actingCompanyId : null;
+  const companyAdministrationId = resolveCompanyAdministrationId(
+    companies,
+    actingCompanyId,
+  );
   const administration = useQuery(
     api.companies.getAdministration,
-    activeActingCompanyId && canAdministerActingCompany ? { companyId: activeActingCompanyId } : "skip",
+    companyAdministrationId && canAdministerActingCompany
+      ? { companyId: companyAdministrationId }
+      : "skip",
   );
-  const basicCompany = useQuery(
+  const companyBasic = useQuery(
     api.companies.getBasic,
-    activeActingCompanyId ? { companyId: activeActingCompanyId } : "skip",
-  );
-  const companyLogoUrl = useQuery(
-    api.companies.getLogoUrl,
     activeActingCompanyId ? { companyId: activeActingCompanyId } : "skip",
   );
   const companyInvitations = useQuery(
@@ -128,24 +160,42 @@ export function CompanyHubPage() {
       ? { actingCompanyId: activeActingCompanyId }
       : "skip",
   );
-  const accessibleProjects = useQuery(
-    api.projects.listAccessible,
-    currentUser ? {} : "skip",
+  const projects = useQuery(
+    api.sharedProjects.listForActingCompany,
+    activeActingCompanyId ? { actingCompanyId: activeActingCompanyId } : "skip",
   );
-  const companyProjects = useMemo(
-    () => (accessibleProjects ?? []).filter((item) => item.company?._id === activeActingCompanyId && item.projectType === "company"),
-    [accessibleProjects, activeActingCompanyId],
+  const openTasks = useQuery(
+    api.mobile.listMyTasks,
+    currentUser && activeActingCompanyId && flags.tasks
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          openOnly: true,
+          paginationOpts: { cursor: null, numItems: 50 },
+          userId: currentUser._id,
+        }
+      : "skip",
   );
-  const sharedProjects = useMemo(
-    () => (accessibleProjects ?? []).filter((item) => item.company?._id === activeActingCompanyId && item.projectType === "shared"),
-    [accessibleProjects, activeActingCompanyId],
+  const attention = useQuery(
+    api.mobile.listAttention,
+    currentUser && activeActingCompanyId
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          paginationOpts: { cursor: null, numItems: 40 },
+          userId: currentUser._id,
+        }
+      : "skip",
   );
-  const legacyProjects = useMemo(
-    () => (accessibleProjects ?? []).filter((item) => item.projectType === "legacy"),
-    [accessibleProjects],
+  const projectSummaries = useQuery(
+    api.mobile.listProjects,
+    currentUser && activeActingCompanyId
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          paginationOpts: { cursor: null, numItems: 50 },
+          userId: currentUser._id,
+        }
+      : "skip",
   );
   const decideCompanyInvitation = useMutation(api.companies.decideInvitation);
-  const revokeCompanyInvitation = useMutation(api.companies.revokeInvitation);
   const decideRelationshipInvitation = useMutation(
     api.relationships.decideInvitation,
   );
@@ -164,61 +214,153 @@ export function CompanyHubPage() {
   const closeCompany = useMutation(api.companies.close);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<CompanyHubView>(initialView);
+  const [overviewSearch, setOverviewSearch] = useState("");
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [projectFilter, setProjectFilter] = useState<ProjectDirectoryFilter>("all");
+  const [relationshipFilter, setRelationshipFilter] =
+    useState<RelationshipDirectoryFilter>("all");
+  const [peopleFilter, setPeopleFilter] = useState<PeopleDirectoryFilter>("all");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [closeCompanyOpen, setCloseCompanyOpen] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "task" | "message" | "suggestion" | "invitation">("all");
+  const [projectCreatorRequested, setProjectCreatorRequested] = useState(false);
+  const overviewSearchRef = useRef<HTMLInputElement>(null);
+  const notificationButtonRef = useRef<HTMLButtonElement>(null);
+  const notificationContainerRef = useRef<HTMLDivElement>(null);
+  const firstProjectCreatorRef = useRef<HTMLElement>(null);
+  const projectCreatorDisclosureRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    setActiveView(initialView);
+  }, [initialView]);
+
+  useEffect(() => {
+    function focusOverviewSearch(event: KeyboardEvent) {
+      if (
+        activeView === "overview" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        overviewSearchRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", focusOverviewSearch);
+    return () => window.removeEventListener("keydown", focusOverviewSearch);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !notificationContainerRef.current?.contains(event.target)
+      ) {
+        setNotificationsOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setNotificationsOpen(false);
+      notificationButtonRef.current?.focus();
+    }
+
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [notificationsOpen]);
+
+  useEffect(() => {
+    if (
+      !projectCreatorRequested ||
+      activeView !== "projects" ||
+      projects === undefined
+    ) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const creator =
+        firstProjectCreatorRef.current ?? projectCreatorDisclosureRef.current;
+      if (!creator) return;
+      if (creator instanceof HTMLDetailsElement) creator.open = true;
+      const reduceMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      creator.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      creator
+        .querySelector<HTMLElement>("input, textarea, select, button")
+        ?.focus({ preventScroll: true });
+      setProjectCreatorRequested(false);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [activeView, projectCreatorRequested, projects]);
+
+  const selectView = (view: CompanyHubView) => {
+    if (view !== activeView) setDirectorySearch("");
+    setActiveView(view);
+    onViewChange?.(view);
+  };
+
+  const scrollToManagement = (id: string) => {
+    const target = document.getElementById(id);
+    if (!target) return;
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    target.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
+    target.querySelector<HTMLElement>("input, button, select")?.focus({
+      preventScroll: true,
+    });
+  };
+
+  const showProjectCreator = () => {
+    setProjectCreatorRequested(true);
+    selectView("projects");
+  };
 
   async function run(action: () => Promise<unknown>) {
+    if (busy) return;
     setBusy(true);
     setNotice(null);
     try {
       const result = await action();
-      if (typeof result === "object" && result !== null && "status" in result && result.status === "expired") {
-        throw new Error("invitation_expired");
+      if (
+        result &&
+        typeof result === "object" &&
+        "status" in result &&
+        result.status === "expired"
+      ) {
+        setNotice("This invitation expired. Refresh the page to see current invitations.");
+      } else {
+        setNotice("Saved.");
       }
-      setNotice("Saved.");
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message.replaceAll("_", " ")
-          : "The action failed.",
-      );
+      setNotice(formatCompanyError(error));
     } finally {
       setBusy(false);
     }
   }
 
-  function applyCompanySelection() {
-    if (!selectedCompanyId || selectedCompanyId === actingCompanyId) return;
-    setActingCompanyId(selectedCompanyId);
-    const topProject = selectTopCompanyProject(accessibleProjects ?? [], selectedCompanyId);
-    if (!topProject) {
-      void navigate({ to: "/workspace" });
-      return;
-    }
-    void navigate({
-      to: "/workspace/company-projects/$projectId",
-      params: { projectId: topProject.project._id },
-      search: {
-        companyId: selectedCompanyId,
-        groupId: "",
-        membershipId: topProject.membership._id,
-        view: "channels",
-      },
-    });
-  }
-
-  if (releaseConfigProjection === undefined)
-    return (
-      <main className="company-hub">
-        <section className="track-guided-empty" role="status">
-          <h1>Loading companies…</h1>
-          <p>Checking company access and workspace settings.</p>
-        </section>
-      </main>
-    );
+  if (releaseState.status === "loading")
+    return <TrackLoader label="Loading Company workspace" timeoutMs={8000} />;
 
   if (!flags.companyModel)
     return (
       <main className="company-hub">
-        <h1>Companies</h1>
+        <h1>Company collaboration</h1>
         <p>
           This capability is currently disabled by the server release
           configuration.
@@ -227,630 +369,1471 @@ export function CompanyHubPage() {
       </main>
     );
 
+  if (companies === undefined || currentUser === undefined)
+    return <TrackLoader label="Loading Company workspace" timeoutMs={8000} />;
+
+  const isCompanyAdmin = canAdministerActingCompany;
+  const visibleView =
+    (activeView === "relationships" || activeView === "settings") &&
+    !isCompanyAdmin
+      ? "overview"
+      : activeView;
+  const activeMembers =
+    administration?.members.filter(
+      ({ membership }) => membership.status === "active",
+    ) ?? [];
+  const overviewMemberCount = companyBasic?.memberCount ?? activeMembers.length;
+  const activeRelationships =
+    relationships?.filter(
+      ({ relationship }) => relationship.status === "active",
+    ) ?? [];
+  const companyProjects =
+    projects?.filter((item) => item.participationRole === "owner") ?? [];
+  const collaboratingProjects =
+    projects?.filter((item) => item.participationRole === "collaborator") ?? [];
+  const unassignedProjects =
+    projects?.filter((item) => item.participationRole === "unassigned_legacy") ??
+    [];
+  const directoryProjects = filterProjectDirectory(
+    projects ?? [],
+    projectFilter,
+    directorySearch,
+  );
+  const visibleRelationships = filterRelationshipDirectory(
+    relationships ?? [],
+    relationshipFilter,
+    directorySearch,
+  );
+  const visiblePeople = filterPeopleDirectory(
+    administration?.members ?? [],
+    peopleFilter,
+    directorySearch,
+  );
+  const normalizedOverviewSearch = overviewSearch.trim().toLocaleLowerCase();
+  const visibleOverviewProjects = normalizedOverviewSearch
+    ? (projects ?? []).filter((item) =>
+        [item.project.name, item.project.description]
+          .filter(Boolean)
+          .some((value) =>
+            value?.toLocaleLowerCase().includes(normalizedOverviewSearch),
+          ),
+      )
+    : (projects ?? []);
+  const upcomingTasks = [...(openTasks?.page ?? [])]
+    .filter((item) => {
+      if (!item.task.dueDate) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const end = new Date(today);
+      end.setDate(end.getDate() + 7);
+      const [year, month, day] = item.task.dueDate.split("-").map(Number);
+      const dueDate = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
+      return dueDate >= today && dueDate < end;
+    })
+    .sort((left, right) =>
+      (left.task.dueDate ?? "").localeCompare(right.task.dueDate ?? ""),
+    )
+    .slice(0, 3);
+  const attentionItems = attention?.page.slice(0, 4) ?? [];
+  const visibleAttentionItems = attentionItems.filter((item) => notificationFilter === "all" || item.kind === notificationFilter);
+  const projectSummaryById = new Map(
+    (projectSummaries?.page ?? []).map((item) => [item.project._id, item]),
+  );
+  const viewCopy: Record<CompanyHubView, { title: string; description: string }> = {
+    overview: {
+      title: "Company overview",
+      description: "Shared work, partners, and people in one place.",
+    },
+    projects: {
+      title: "Projects",
+      description: "Your Company’s own work and the Projects where it collaborates.",
+    },
+    relationships: {
+      title: "Relationships",
+      description: "Manage the Companies allowed to collaborate with you.",
+    },
+    people: {
+      title: "People",
+      description: "See who can represent this Company across shared work.",
+    },
+    settings: {
+      title: "Company settings",
+      description: "Profile, migration, and Company-level administration.",
+    },
+  };
+  const currentViewCopy = viewCopy[visibleView];
+
   return (
-    <main aria-busy={busy} className="company-hub">
-      <header className="company-hub-header">
-        <div>
-          <span className="company-eyebrow">Workspace</span>
-          <h1>Companies</h1>
-          <p>Choose the company you represent, then manage its people and project access.</p>
-        </div>
-        <div className="company-header-actions">
-          <Link className="company-back-link" to="/workspace"><ArrowLeft aria-hidden="true" size={15} /> Back to workspace</Link>
-          {actingCompany ? <span className="company-profile-role">{currentUser?.displayName ?? "Your profile"}<strong>{companyRoleLabels[actingCompany.membership.role]}</strong></span> : null}
-          {canAdministerActingCompany ? <Link className="company-settings-link" to="/workspace/company/settings"><Settings2 aria-hidden="true" size={15} /> Company settings</Link> : null}
-        </div>
-      </header>
-      {notice ? (
-        <p aria-live="polite" className="company-notice">
-          {notice}
-        </p>
-      ) : null}
-
-      <section className="company-switcher-panel">
-        <div><label htmlFor="acting-company">Company</label><p>Choose the company you are representing in Track.</p></div>
-        {companies === undefined ? (
-          <p>Loading Companies…</p>
-        ) : companies.length === 0 ? (
-          <>
-            <p>Create your first Company to start.</p>
-            <CreateCompanyForm run={run} />
-          </>
-        ) : (
-          <div className="company-context-controls">
-            <NativeSelect
-              id="acting-company"
-              onChange={(event) =>
-                setSelectedCompanyId(event.target.value as Id<"companies">)
+    <main aria-busy={busy} className="company-hub-shell company-unified-shell company-reference-shell">
+      <CompanyProjectNavigation
+        actingCompanyId={actingCompanyId}
+        activeArea="company"
+        onCompanyChange={setActingCompanyId}
+        tasksEnabled={flags.tasks}
+        companyNavigation={
+          <nav aria-label="Company workspace">
+            <span className="company-project-nav-label">Workspace</span>
+          <Link
+            aria-current={visibleView === "overview" ? "page" : undefined}
+            className={
+              visibleView === "overview"
+                ? "company-project-nav-item active"
+                : "company-project-nav-item"
+            }
+            search={{ view: "overview" }}
+            to="/workspace/company"
+          >
+            <LayoutGrid aria-hidden="true" size={14} />
+            Overview
+          </Link>
+          {activeActingCompanyId && currentUser ? (
+            <Link
+              aria-current={visibleView === "projects" ? "page" : undefined}
+              className={
+                visibleView === "projects"
+                  ? "company-project-nav-item active"
+                  : "company-project-nav-item"
               }
-              value={selectedCompanyId ?? ""}
+              search={{ view: "projects" }}
+              to="/workspace/company"
             >
-              {companies.flatMap((item) =>
-                item.company
-                  ? [
-                      <NativeSelectOption key={item.company._id} value={item.company._id}>
-                        {`${item.company.displayName} · @${item.company.normalizedHandle} · ${companyRoleLabels[item.membership.role]}`}
-                      </NativeSelectOption>,
-                    ]
-                  : [],
-              )}
-            </NativeSelect>
-            {selectedCompanyId && selectedCompanyId !== actingCompanyId ? (
-              <Button className="company-apply-button" onClick={applyCompanySelection}>
-                Apply company
-              </Button>
-            ) : null}
-            <Popover>
-              <PopoverTrigger render={<Button className="company-create-trigger" variant="outline" />}>
-                <Plus aria-hidden="true" size={14} />
-                <span>Create company</span>
-                <ChevronDown aria-hidden="true" size={14} />
-              </PopoverTrigger>
-              <PopoverContent align="end" className="company-create-popover" sideOffset={8}>
-                <PopoverHeader>
-                  <PopoverTitle>Create another company</PopoverTitle>
-                  <PopoverDescription>A separate workspace with its own members and projects.</PopoverDescription>
-                </PopoverHeader>
-                <CreateCompanyForm run={run} />
-              </PopoverContent>
-            </Popover>
-          </div>
-        )}
-      </section>
-
-      {actingCompany?.company ? (
-        <>
-          <nav aria-label="Company page sections" className="company-section-nav">
-            <a href="#overview">Overview</a>
-            {canAdministerActingCompany ? <><a href="#members">Members</a><a href="#invitations">Invitations</a><a href="#relationships">Relationships</a></> : null}
-            <a href="#shared-projects">Shared projects</a>
-            <a href="#projects">Projects</a>
+              <FolderKanban aria-hidden="true" size={14} />
+              Projects
+            </Link>
+          ) : null}
+          {activeActingCompanyId && projects?.[0] && flags.tasks ? (
+            <Link
+              className="company-project-nav-item"
+              params={{ projectId: projects[0].project._id }}
+              search={getCompanyProjectTaskSearch({
+                actingCompanyId: activeActingCompanyId,
+                projectId: projects[0].project._id,
+                projectMemberId: projects[0].membership._id,
+              })}
+              to="/workspace/projects/$projectId/tasks"
+            >
+              <CheckSquare2 aria-hidden="true" size={14} />
+              Tasks
+            </Link>
+          ) : null}
+          {activeActingCompanyId && projects?.[0] ? (
+            <Link
+              className="company-project-nav-item"
+              params={{ projectId: projects[0].project._id }}
+              search={getCompanyProjectConversationSearch({
+                actingCompanyId: activeActingCompanyId,
+                projectId: projects[0].project._id,
+                projectMemberId: projects[0].membership._id,
+              })}
+              to="/workspace/company-projects/$projectId"
+            >
+              <MessageSquareText aria-hidden="true" size={14} />
+              Threads
+            </Link>
+          ) : null}
+          {actingCompanyId && isCompanyAdmin ? (
+            <Link
+              aria-current={visibleView === "relationships" ? "page" : undefined}
+              className={
+                visibleView === "relationships"
+                  ? "company-project-nav-item active"
+                  : "company-project-nav-item"
+              }
+              search={{ view: "relationships" }}
+              to="/workspace/company"
+            >
+              <Handshake aria-hidden="true" size={14} />
+              Relationships
+            </Link>
+          ) : null}
+          {actingCompanyId && administration ? (
+            <Link
+              aria-current={visibleView === "people" ? "page" : undefined}
+              className={
+                visibleView === "people"
+                  ? "company-project-nav-item active"
+                  : "company-project-nav-item"
+              }
+              search={{ view: "people" }}
+              to="/workspace/company"
+            >
+              <UsersRound aria-hidden="true" size={14} />
+              People
+            </Link>
+          ) : null}
+          {actingCompanyId && isCompanyAdmin ? (
+            <Link
+              aria-current={visibleView === "settings" ? "page" : undefined}
+              className={
+                visibleView === "settings"
+                  ? "company-project-nav-item active"
+                  : "company-project-nav-item"
+              }
+              search={{ view: "settings" }}
+              to="/workspace/company"
+            >
+              <Settings2 aria-hidden="true" size={14} />
+              Settings
+            </Link>
+          ) : null}
           </nav>
-          <section className="company-summary" id="overview" aria-labelledby="company-overview-heading">
-            <div className="company-summary-identity">{companyLogoUrl ? <img alt={`${actingCompany.company.displayName} logo`} className="company-logo company-logo-image" src={companyLogoUrl} /> : <span className="company-logo" aria-hidden="true">{actingCompany.company.displayName.slice(0, 2).toUpperCase()}</span>}<div><p className="company-eyebrow">Company overview</p><h2 id="company-overview-heading">{actingCompany.company.displayName}</h2><span>@{actingCompany.company.normalizedHandle}</span></div></div>
-            <dl><div><dt>Status</dt><dd><span className={`company-status ${actingCompany.company.status}`}>{actingCompany.company.status}</span></dd></div><div><dt>Members</dt><dd><Users aria-hidden="true" size={14} />{basicCompany?.memberCount ?? "—"}</dd></div><div><dt>Projects</dt><dd><FolderKanban aria-hidden="true" size={14} />{basicCompany?.projectCount ?? "—"}</dd></div><div><dt>Your role</dt><dd>{companyRoleLabels[actingCompany.membership.role]}</dd></div></dl>
-            {basicCompany?.company.description ? <p className="company-summary-description">{basicCompany.company.description}</p> : null}
-          </section>
-        </>
-      ) : null}
+        }
+      />
 
-      {actingCompanyId && actingCompany?.company?.status === "suspended" ? (
-        <section className="company-panel" id="company-status">
-          <h2>Company suspended</h2>
-          <p>
-            Project and Channel access is paused. An owner can reactivate this
-            Company without support intervention.
-          </p>
-          {actingCompany.membership.role === "owner" ? (
-            <Button
-              onClick={() =>
-                void run(() =>
-                  setSuspended({
-                    companyId: actingCompanyId,
-                    suspended: false,
-                  }),
-                )
-              }
-            >
-              Reactivate Company
-            </Button>
-          ) : (
-            <p>Ask a Company owner to reactivate it.</p>
-          )}
-        </section>
-      ) : null}
-
-      {actingCompanyId && administration ? (
-        <>
-          <section className="company-panel" id="members">
-            <div className="company-section-heading">
-              <div>
-                <h2>Members</h2>
-                <p>Company membership is separate from project and channel access.</p>
-              </div>
-              <span className="company-section-count">{administration.members.length}</span>
-            </div>
-            <ul className="company-list company-member-list">
-              <li aria-hidden="true" className="company-member-list-header">
-                <span />
-                <span>Member</span>
-                <span>Role</span>
-                <span>Status</span>
-                <span />
-              </li>
-            {administration.members.map(({ membership, user }) => {
-              const memberActions = resolveCompanyMemberActionCapabilities({
-                actorRole: administration.membership.role,
-                isCurrentUser: membership.userId === currentUser?._id,
-                targetRole: membership.role,
-                targetStatus: membership.status,
-              })
-              return (
-              <li className="company-member-row" key={membership._id}>
-                <span className="company-member-avatar" aria-hidden="true">
-                  {(user?.displayName ?? membership.userDisplayNameSnapshot).slice(0, 2).toUpperCase()}
-                </span>
-                <div>
-                  <strong>
-                    {user?.displayName ?? membership.userDisplayNameSnapshot}
-                  </strong>
-                  {user?.email ? <span>{user.email}</span> : null}
-                </div>
-                <span className="company-member-role">{companyRoleLabels[membership.role]}</span>
-                <span className="company-member-status" data-status={membership.status}>{membership.status}</span>
-                {memberActions.showMenu ? (
-                  <details
-                    className="company-member-actions"
-                    onKeyDown={(event) => {
-                      if (event.key !== "Escape") return
-                      event.preventDefault()
-                      event.currentTarget.removeAttribute("open")
-                      event.currentTarget.querySelector<HTMLElement>("summary")?.focus()
-                    }}
+      <section className="company-hub">
+        <header className="company-hub-header company-overview-page-header">
+          <div>
+            <span className="company-eyebrow">
+              {actingCompany?.company?.displayName ?? "Company workspace"}
+            </span>
+            <h1>{currentViewCopy.title}</h1>
+            <p>{currentViewCopy.description}</p>
+          </div>
+          {visibleView === "overview" ? (
+            <div className="company-overview-header-tools">
+              <label className="company-overview-search">
+                <Search aria-hidden="true" size={18} />
+                <span className="sr-only">Search company projects</span>
+                <input
+                  autoComplete="off"
+                  name="companySearch"
+                  onChange={(event) => setOverviewSearch(event.target.value)}
+                  placeholder="Search projects, tasks, or people…"
+                  ref={overviewSearchRef}
+                  type="search"
+                  value={overviewSearch}
+                />
+                <kbd>Ctrl K</kbd>
+              </label>
+              <div
+                className="company-overview-notifications"
+                ref={notificationContainerRef}
+              >
+                <button
+                  aria-controls="company-overview-notifications"
+                  aria-expanded={notificationsOpen}
+                  aria-label={
+                    notificationsOpen
+                      ? "Close notifications"
+                      : "Open notifications"
+                  }
+                  className="company-overview-icon-button"
+                  onClick={() => setNotificationsOpen((value) => !value)}
+                  ref={notificationButtonRef}
+                  type="button"
+                >
+                  <Bell aria-hidden="true" size={21} />
+                  {(attention?.page.length ?? 0) > 0 ? <i aria-hidden="true" /> : null}
+                </button>
+                {notificationsOpen ? (
+                  <section
+                    aria-label="Notifications"
+                    className="company-overview-notification-popover"
+                    id="company-overview-notifications"
                   >
-                    <summary aria-label={`More actions for ${user?.displayName ?? membership.userDisplayNameSnapshot}`} title="More actions">
-                      <MoreHorizontal aria-hidden="true" size={16} />
-                    </summary>
-                    <div aria-label={`Actions for ${user?.displayName ?? membership.userDisplayNameSnapshot}`} role="group">
-                    {memberActions.canChangeRole &&
-                    membership.status === "active" &&
-                    membership.role !== "admin" ? (
+                    <header>
+                      <strong>Notifications</strong>
+                      <span>{attention?.page.length ?? 0} unread</span>
+                    </header>
+                    <div aria-label="Notification filters" className="company-notification-filters" role="group">
+                      {(["all", "task", "message", "suggestion", "invitation"] as const).map((filter) => (
+                        <button aria-pressed={notificationFilter === filter} className={notificationFilter === filter ? "active" : undefined} key={filter} onClick={() => setNotificationFilter(filter)} type="button">
+                          {filter === "all" ? "All" : filter === "message" ? "Messages" : filter === "suggestion" ? "Suggestions" : filter === "invitation" ? "Invites" : "Tasks"}
+                        </button>
+                      ))}
+                    </div>
+                    {visibleAttentionItems.length > 0 ? (
+                      <ul>
+                        {visibleAttentionItems.map((item) => {
+                          const href = item.kind === "task"
+                            ? `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=board&task=${encodeURIComponent(item.taskKey)}`
+                            : item.kind === "message"
+                              ? `/workspace/company-projects/${encodeURIComponent(String(item.projectId))}?view=channels&groupId=${encodeURIComponent(String(item.groupId))}${item.threadId ? `&threadId=${encodeURIComponent(String(item.threadId))}` : ""}`
+                              : item.kind === "invitation"
+                                ? "/workspace/company/settings"
+                                : `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=inbox`
+                          return <li key={`${item.kind}-${item.id}`}>
+                            <span className={`activity-dot ${item.kind}`} />
+                            <a href={href}>
+                              <strong>
+                                {item.kind === "task"
+                                  ? item.taskTitle
+                                  : item.kind === "suggestion"
+                                    ? item.title
+                                    : item.kind === "message"
+                                      ? item.senderName
+                                      : item.title}
+                              </strong>
+                              <span>{item.projectName} · View</span>
+                            </a>
+                          </li>
+                        })}
+                      </ul>
+                    ) : (
+                      <p>{attentionItems.length ? "No notifications match this filter." : "You are all caught up."}</p>
+                    )}
+                  </section>
+                ) : null}
+              </div>
+              {isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={showProjectCreator}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={19} />
+                  New project
+                </button>
+              ) : null}
+            </div>
+          ) : visibleView !== "settings" ? (
+            <div className="company-directory-header-tools">
+              <label className="company-directory-search">
+                <Search aria-hidden="true" size={16} />
+                <span className="sr-only">Search {currentViewCopy.title}</span>
+                <input
+                  autoComplete="off"
+                  name={`${visibleView}Search`}
+                  onChange={(event) => setDirectorySearch(event.target.value)}
+                  placeholder={`Search ${currentViewCopy.title.toLocaleLowerCase()}…`}
+                  type="search"
+                  value={directorySearch}
+                />
+              </label>
+              {visibleView === "projects" && isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={showProjectCreator}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={18} />
+                  New project
+                </button>
+              ) : visibleView === "relationships" && isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={() => scrollToManagement("create-company-relationship")}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={18} />
+                  New relationship
+                </button>
+              ) : visibleView === "people" && isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={() => scrollToManagement("invite-company-member")}
+                  type="button"
+                >
+                  <UserPlus aria-hidden="true" size={18} />
+                  Invite person
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </header>
+        {notice ? (
+          <p aria-live="polite" className="company-notice">
+            {notice}
+          </p>
+        ) : null}
+
+        <div className="company-hub-content">
+          {currentUser &&
+          (visibleView === "overview" || visibleView === "projects") ? (
+            <UnassignedProjects userId={currentUser._id} />
+          ) : null}
+          {companies.length === 0 ? (
+            <section className="company-empty-workspace">
+              <span className="company-empty-icon">
+                <Building2 aria-hidden="true" size={22} />
+              </span>
+              <h2>Create your first Company</h2>
+              <p>
+                A Company represents your team when you work with external
+                partners.
+              </p>
+              <CreateCompanyForm run={run} />
+            </section>
+          ) : null}
+
+          {(companyInvitations ?? []).length > 0 ? (
+            <section className="company-workspace-section company-inbox">
+              <div className="company-section-heading">
+                <div>
+                  <span className="company-section-kicker">Inbox</span>
+                  <h2>Company invitations</h2>
+                </div>
+                <span className="company-count-badge">
+                  {companyInvitations?.length}
+                </span>
+              </div>
+              <ul className="company-request-list">
+                {companyInvitations?.map(({ company, invitation }) => (
+                  <li key={invitation._id}>
+                    <div>
+                      <strong>{company?.displayName}</strong>
+                      <span>
+                        Invited as {invitation.role} · expires{" "}
+                        {new Date(invitation.expiresAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="company-row-actions">
                       <Button
                         onClick={() =>
                           void run(() =>
-                            updateMember({
-                              companyId: actingCompanyId,
-                              companyMemberId: membership._id,
-                              role: "admin",
+                            decideCompanyInvitation({
+                              invitationId: invitation._id,
+                              decision: "accept",
+                            }),
+                          )
+                        }
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          void run(() =>
+                            decideCompanyInvitation({
+                              invitationId: invitation._id,
+                              decision: "decline",
                             }),
                           )
                         }
                         variant="outline"
                       >
-                        Make admin
+                        Decline
                       </Button>
-                    ) : null}
-                    {memberActions.canChangeRole &&
-                    membership.status === "active" &&
-                    membership.role !== "member" ? (
-                      <Button
-                        onClick={() =>
-                          void run(() =>
-                            updateMember({
-                              companyId: actingCompanyId,
-                              companyMemberId: membership._id,
-                              role: "member",
-                            }),
-                          )
-                        }
-                        variant="outline"
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {actingCompanyId && actingCompany?.company?.status === "suspended" ? (
+            <section className="company-workspace-section company-state-alert">
+              <div>
+                <h2>Company suspended</h2>
+                <p>
+                  Project and Channel access is paused until an owner
+                  reactivates this Company.
+                </p>
+              </div>
+              {actingCompany.membership.role === "owner" ? (
+                <Button
+                  onClick={() =>
+                    void run(() =>
+                      setSuspended({
+                        companyId: actingCompanyId,
+                        suspended: false,
+                      }),
+                    )
+                  }
+                >
+                  Reactivate Company
+                </Button>
+              ) : null}
+            </section>
+          ) : null}
+
+          {visibleView === "overview" &&
+          actingCompanyId &&
+          actingCompany?.company &&
+          companyBasic ? (
+            <>
+              <section className="company-overview-mast">
+                <div className="company-overview-identity">
+                  <span className="company-overview-mark">
+                    <Building2 aria-hidden="true" size={32} />
+                  </span>
+                  <div>
+                    <span className="company-status-label">
+                      <i aria-hidden="true" /> Active Company
+                    </span>
+                    <h2>{actingCompany.company.displayName}</h2>
+                    <p>
+                      @{actingCompany.company.normalizedHandle} · You represent
+                      this Company as {actingCompany.membership.role}.
+                    </p>
+                  </div>
+                </div>
+                <div className="company-overview-stats">
+                  <button
+                    onClick={() => selectView("projects")}
+                    type="button"
+                  >
+                    <strong>{projects?.length ?? "–"}</strong>
+                    <span>Projects</span>
+                  </button>
+                  {isCompanyAdmin ? (
+                    <button
+                      onClick={() => selectView("relationships")}
+                      type="button"
+                    >
+                      <strong>{relationships?.length ?? "–"}</strong>
+                      <span>Relationships</span>
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={() => selectView("people")}
+                    type="button"
+                  >
+                    <strong>{overviewMemberCount}</strong>
+                    <span>Active people</span>
+                  </button>
+                  <div>
+                    <strong>{openTasks?.page.length ?? "–"}</strong>
+                    <span>Open tasks</span>
+                  </div>
+                </div>
+              </section>
+
+              <div className="company-overview-grid">
+                <section className="company-workspace-section company-overview-projects">
+                  <div className="company-section-heading">
+                    <div>
+                      <span className="company-overview-section-icon">
+                        <FolderKanban aria-hidden="true" size={24} />
+                      </span>
+                      <span>
+                        <h2>Projects</h2>
+                        <p>Your Company’s projects and key initiatives.</p>
+                      </span>
+                    </div>
+                    <button
+                      className="company-section-link"
+                      onClick={() => selectView("projects")}
+                      type="button"
+                    >
+                      View all
+                      <ArrowUpRight aria-hidden="true" size={15} />
+                    </button>
+                  </div>
+                  {projects === undefined ? (
+                    <div className="company-quiet-empty" role="status">
+                      <FolderKanban aria-hidden="true" size={18} />
+                      <div>
+                        <strong>Loading Projects…</strong>
+                        <span>Checking this Company’s available work.</span>
+                      </div>
+                    </div>
+                  ) : visibleOverviewProjects.length > 0 ? (
+                    <div className="company-project-gallery">
+                      {visibleOverviewProjects.slice(0, 3).map((item, index) => (
+                        <Link
+                          className="company-project-card"
+                          key={item.membership._id}
+                          params={{ projectId: item.project._id }}
+                          search={getCompanyProjectConversationSearch({
+                            actingCompanyId,
+                            projectId: item.project._id,
+                            projectMemberId: item.membership._id,
+                          })}
+                          to="/workspace/company-projects/$projectId"
+                        >
+                          <span className={`company-project-graphic tone-${(index % 3) + 1}`}>
+                            <FolderKanban aria-hidden="true" size={22} />
+                          </span>
+                          <span className="company-project-card-copy">
+                            <span className="company-project-card-title">
+                              <strong>{item.project.name}</strong>
+                              <small>
+                                {item.participationRole === "owner"
+                                  ? "Company project"
+                                  : "Shared project"}
+                              </small>
+                            </span>
+                            <span>
+                              {item.project.description ??
+                                (item.participationRole === "owner"
+                                  ? `Owned by ${item.owningCompany?.displayName ?? "this Company"}`
+                                  : `Shared by ${item.owningCompany?.displayName ?? "a partner Company"}`)}
+                            </span>
+                            <span className="company-project-meta">
+                              <small><MessageSquareText aria-hidden="true" size={16} /> {projectSummaryById.get(item.project._id)?.groupCount ?? 0} channels</small>
+                              <small><Bell aria-hidden="true" size={16} /> {projectSummaryById.get(item.project._id)?.unreadCount ?? 0} unread</small>
+                              <small><CalendarDays aria-hidden="true" size={16} /> Updated {formatRelativeTime(item.project.updatedAt)}</small>
+                            </span>
+                          </span>
+                          <ArrowUpRight
+                            aria-hidden="true"
+                            className="company-project-card-arrow"
+                            size={18}
+                          />
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="company-quiet-empty">
+                      <FolderKanban aria-hidden="true" size={18} />
+                      <div>
+                        <strong>No Projects yet</strong>
+                        <span>
+                          Create this Company’s first Project to start working.
+                        </span>
+                        {isCompanyAdmin ? (
+                          <Button onClick={showProjectCreator}>
+                            Create first Project
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <div className="company-overview-side">
+                  <section className="company-workspace-section company-overview-upcoming">
+                    <div className="company-section-heading">
+                      <div>
+                        <span className="company-overview-section-icon"><CalendarDays aria-hidden="true" size={24} /></span>
+                        <span><h2>Upcoming</h2><p>Next 7 days</p></span>
+                      </div>
+                      <button className="company-section-link" onClick={() => selectView("projects")} type="button">
+                        View all <ArrowUpRight aria-hidden="true" size={15} />
+                      </button>
+                    </div>
+                    <ul className="company-overview-compact-list">
+                      {upcomingTasks.length > 0 ? upcomingTasks.map((item, index) => (
+                        <li key={item.task._id}>
+                          <i className={`tone-${(index % 3) + 1}`} />
+                          <strong>{item.task.title}</strong>
+                          <span>{formatTaskDueDate(item.task.dueDate)}</span>
+                        </li>
+                      )) : <li className="is-empty"><CalendarDays aria-hidden="true" size={14} /><strong>No tasks due in the next 7 days</strong></li>}
+                    </ul>
+                  </section>
+
+                  <section className="company-workspace-section company-overview-partners">
+                    <div className="company-section-heading">
+                      <div>
+                        <span className="company-overview-section-icon"><Handshake aria-hidden="true" size={24} /></span>
+                        <span><h2>Connected partners</h2><p>Companies approved for shared work</p></span>
+                      </div>
+                      {isCompanyAdmin ? <button className="company-section-link" onClick={() => selectView("relationships")} type="button">
+                        View all <ArrowUpRight aria-hidden="true" size={15} />
+                      </button> : null}
+                    </div>
+                    <ul className="company-overview-partner-list">
+                      {activeRelationships.length > 0 ? activeRelationships.slice(0, 4).map((item) => {
+                        const partnerNames = item.participants
+                          .filter((company) => company._id !== actingCompanyId)
+                          .map((company) => company.displayName);
+                        return <li key={item.relationship._id}>
+                          <span className="company-partner-mark"><Handshake aria-hidden="true" size={14} /></span>
+                          <span>
+                            <strong>{item.relationship.name}</strong>
+                            <small>{partnerNames.join(", ") || "Company relationship"}</small>
+                          </span>
+                          <em>Active</em>
+                        </li>;
+                      }) : <li className="is-empty">
+                        <span className="company-partner-mark"><Handshake aria-hidden="true" size={14} /></span>
+                        <span>
+                          <strong>No connected partners</strong>
+                          <small>{isCompanyAdmin ? "Create a relationship to share project work." : "An admin can connect partner Companies."}</small>
+                        </span>
+                      </li>}
+                    </ul>
+                  </section>
+
+                  <section className="company-workspace-section company-overview-activity">
+                    <div className="company-section-heading">
+                      <div>
+                        <span className="company-overview-section-icon"><Clock3 aria-hidden="true" size={24} /></span>
+                        <span><h2>Recent activity</h2><p>Latest updates across your projects, tasks, and threads.</p></span>
+                      </div>
+                      <button className="company-section-link" onClick={() => setNotificationsOpen(true)} type="button">
+                        View all <ArrowUpRight aria-hidden="true" size={15} />
+                      </button>
+                    </div>
+                    <ul className="company-overview-activity-list">
+                      {attentionItems.length > 0 ? attentionItems.map((item, index) => (
+                        <li key={`${item.kind}-${item.id}`}>
+                          <span className={`company-person-avatar tone-${(index % 4) + 1}`}>
+                            {item.kind === "message" ? getInitials(item.senderName) : item.kind === "task" ? "T" : "AI"}
+                          </span>
+                          <strong>
+                            {item.kind === "message"
+                              ? `${item.senderName} posted in ${item.projectName}`
+                              : item.kind === "task"
+                                ? item.taskTitle
+                                : item.title}
+                          </strong>
+                          <span>{formatRelativeTime(item.createdAt)}</span>
+                          <small className={item.kind}>{item.kind === "message" ? "Thread" : item.kind === "task" ? "Task" : "Review"}</small>
+                        </li>
+                      )) : visibleOverviewProjects.slice(0, 3).map((item, index) => (
+                        <li key={item.project._id}>
+                          <span className={`company-person-avatar tone-${(index % 4) + 1}`}>{getInitials(item.project.name)}</span>
+                          <strong>{item.project.name} is active</strong>
+                          <span>{formatRelativeTime(item.project.updatedAt)}</span>
+                          <small className="project">Project</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          {visibleView === "projects" &&
+          actingCompanyId &&
+          currentUser &&
+          actingCompany?.company ? (
+            <div className="company-view-stack company-directory-view">
+              <section className="company-collaboration-summary" aria-label="Project portfolio summary">
+                <div><span>Visible projects</span><strong>{projects?.length ?? 0}</strong></div>
+                <div><span>Owned</span><strong>{companyProjects.length}</strong></div>
+                <div><span>Collaborating</span><strong>{collaboratingProjects.length}</strong></div>
+                <div><span>Needs attention</span><strong>{(projectInvitations?.length ?? 0) + unassignedProjects.length}</strong></div>
+              </section>
+              <nav aria-label="Filter Projects" className="company-filter-bar">
+                <span><Filter aria-hidden="true" size={14} /> View</span>
+                {([
+                  ["all", "All", projects?.length ?? 0],
+                  ["owned", "Owned", companyProjects.filter((item) => item.project.status !== "archived").length],
+                  ["collaborating", "Collaborating", collaboratingProjects.filter((item) => item.project.status !== "archived").length],
+                  ["proposed", "Proposed", (projectInvitations?.length ?? 0) + (projects ?? []).filter((item) => item.project.status === "proposed").length],
+                  ["archived", "Archived", (projects ?? []).filter((item) => item.project.status === "archived").length],
+                  ["ownership", "Ownership pending", unassignedProjects.length],
+                ] as const).map(([value, label, count]) => (
+                  <button
+                    aria-pressed={projectFilter === value}
+                    className={projectFilter === value ? "active" : undefined}
+                    key={value}
+                    onClick={() => setProjectFilter(value)}
+                    type="button"
+                  >
+                    {label}<small>{count}</small>
+                  </button>
+                ))}
+              </nav>
+              {(projectFilter === "all" || projectFilter === "proposed") &&
+              (projectInvitations ?? []).length > 0 ? (
+                <section className="company-workspace-section company-inbox">
+                  <div className="company-section-heading">
+                    <div>
+                      <span className="company-section-kicker">Inbox</span>
+                      <h2>Project invitations</h2>
+                    </div>
+                    <span className="company-count-badge">
+                      {projectInvitations?.length}
+                    </span>
+                  </div>
+                  <ul className="company-request-list">
+                    {projectInvitations?.map(
+                      ({ invitation, invitingCompany, project }) => (
+                        <li key={invitation._id}>
+                          <div>
+                            <strong>{project?.name}</strong>
+                            <span>
+                              {invitingCompany?.displayName} proposes shared
+                              work. Accepting makes you the initial manager.
+                            </span>
+                          </div>
+                          <div className="company-row-actions">
+                            <Button
+                              onClick={() =>
+                                void run(() =>
+                                  decideProjectInvitation({
+                                    actingCompanyId,
+                                    invitationId: invitation._id,
+                                    decision: "accept",
+                                    initialMembers: [
+                                      {
+                                        userId: currentUser._id,
+                                        role: "manager",
+                                      },
+                                    ],
+                                  }),
+                                )
+                              }
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              onClick={() =>
+                                void run(() =>
+                                  decideProjectInvitation({
+                                    actingCompanyId,
+                                    invitationId: invitation._id,
+                                    decision: "decline",
+                                    initialMembers: [],
+                                  }),
+                                )
+                              }
+                              variant="outline"
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </section>
+              ) : null}
+
+              {isCompanyAdmin &&
+              projects !== undefined &&
+              projects.length === 0 ? (
+                <section
+                  className="company-workspace-section company-first-project"
+                  ref={firstProjectCreatorRef}
+                >
+                  <div className="company-section-heading">
+                    <div>
+                      <span className="company-section-kicker">Get started</span>
+                      <h2>Create your first Company Project</h2>
+                      <p>
+                        Start inside {actingCompany.company.displayName}. Add
+                        collaborating Companies only when the work needs them.
+                      </p>
+                    </div>
+                  </div>
+                  <InternalProjectForm
+                    actingCompanyId={actingCompanyId}
+                    currentUserId={currentUser._id}
+                    run={run}
+                  />
+                </section>
+              ) : null}
+
+              {!isCompanyAdmin &&
+              projects !== undefined &&
+              projects.length === 0 ? (
+                <section className="company-workspace-section">
+                  <div className="company-quiet-empty">
+                    <FolderKanban aria-hidden="true" size={18} />
+                    <div>
+                      <strong>No Projects available yet</strong>
+                      <span>
+                        A Company admin can create the first Project and add
+                        members.
+                      </span>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="company-workspace-section company-directory-panel">
+                  <div className="company-section-heading">
+                    <div>
+                      <span className="company-overview-section-icon"><FolderKanban aria-hidden="true" size={21} /></span>
+                      <span>
+                        <h2>Project directory</h2>
+                        <p>Ownership, participation, lifecycle, and the next route in one scan.</p>
+                      </span>
+                    </div>
+                    <span className="company-count-badge">{directoryProjects.length} shown</span>
+                  </div>
+                  <div className="company-directory-table" role="table" aria-label="Company Projects">
+                    <div className="company-directory-table-head" role="row">
+                      <span role="columnheader">Project</span><span role="columnheader">Owner</span><span role="columnheader">Access</span><span role="columnheader">Status</span><span role="columnheader">Updated</span><span aria-hidden="true" />
+                    </div>
+                    {directoryProjects.map((item, index) => (
+                      <Link
+                        className="company-directory-row"
+                        key={item.membership._id}
+                        params={{ projectId: item.project._id }}
+                        role="row"
+                        search={getCompanyProjectConversationSearch({ actingCompanyId, projectId: item.project._id, projectMemberId: item.membership._id })}
+                        to="/workspace/company-projects/$projectId"
                       >
-                        Make member
-                      </Button>
-                    ) : null}
-                    {memberActions.canPromoteToOwner ? (
-                      <Button
-                        onClick={() =>
-                          void run(() =>
-                            updateMember({
-                              companyId: actingCompanyId,
-                              companyMemberId: membership._id,
-                              role: "owner",
-                            }),
-                          )
-                        }
-                        variant="outline"
-                      >
-                        Promote to owner
-                      </Button>
-                    ) : null}
-                    {memberActions.canChangeStatus ? <Button
+                        <span className="company-directory-identity" role="cell">
+                          <span className={`company-project-graphic tone-${(index % 3) + 1}`}><FolderKanban aria-hidden="true" size={18} /></span>
+                          <span><strong>{item.project.name}</strong><small>{item.project.description || "No description added"}</small></span>
+                        </span>
+                        <span role="cell">{item.owningCompany?.displayName ?? "Unassigned"}</span>
+                        <span role="cell" className="company-access-cell"><ShieldCheck aria-hidden="true" size={14} /> {item.membership.role}</span>
+                        <span role="cell" className={`company-state-pill ${item.project.status}`}>
+                          {item.participationRole === "unassigned_legacy" ? "Ownership pending" : item.project.status}
+                        </span>
+                        <span role="cell">{formatRelativeTime(item.project.updatedAt)}</span>
+                        <ArrowUpRight aria-label={`Open ${item.project.name}`} role="img" size={16} />
+                      </Link>
+                    ))}
+                  </div>
+                  {directoryProjects.length === 0 ? (
+                    <div className="company-quiet-empty"><Archive aria-hidden="true" size={18} /><div><strong>No matching Projects</strong><span>Change the filter or search term to see more work.</span></div></div>
+                  ) : null}
+              </section>
+
+              {isCompanyAdmin &&
+              projects !== undefined &&
+              projects.length > 0 ? (
+                <details
+                  className="company-management-disclosure"
+                  ref={projectCreatorDisclosureRef}
+                >
+                  <summary>
+                    <span>
+                      <Plus aria-hidden="true" size={15} />
+                      Create a Company Project
+                    </span>
+                    <small>Start internal work; invite collaborators later</small>
+                  </summary>
+                  <div className="company-management-body">
+                    <InternalProjectForm
+                      actingCompanyId={actingCompanyId}
+                      currentUserId={currentUser._id}
+                      run={run}
+                    />
+                  </div>
+                </details>
+              ) : null}
+
+              {isCompanyAdmin && activeRelationships.length > 0 ? (
+                <details className="company-management-disclosure">
+                  <summary>
+                    <span>
+                      <Plus aria-hidden="true" size={15} />
+                      Propose a shared Project
+                    </span>
+                    <small>
+                      Start work with Companies in an active relationship
+                    </small>
+                  </summary>
+                  <div className="company-management-body">
+                    <SharedProjectForm
+                      actingCompanyId={actingCompanyId}
+                      currentUserId={currentUser._id}
+                      relationships={activeRelationships}
+                      run={run}
+                    />
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
+
+          {visibleView === "people" && actingCompanyId && administration ? (
+            <div className="company-view-stack company-directory-view">
+              <section className="company-collaboration-summary" aria-label="People and membership summary">
+                <div><span>Company people</span><strong>{administration.members.length}</strong></div>
+                <div><span>Active</span><strong>{activeMembers.length}</strong></div>
+                <div><span>Administrators</span><strong>{administration.members.filter(({ membership }) => membership.status === "active" && (membership.role === "owner" || membership.role === "admin")).length}</strong></div>
+                <div><span>Invited</span><strong>{administration.invitations.length}</strong></div>
+              </section>
+              <nav aria-label="Filter people" className="company-filter-bar">
+                <span><Filter aria-hidden="true" size={14} /> View</span>
+                {([
+                  ["all", "All", administration.members.length],
+                  ["active", "Active", activeMembers.length],
+                  ["suspended", "Suspended", administration.members.filter(({ membership }) => membership.status === "suspended").length],
+                  ["invited", "Invited", administration.invitations.length],
+                ] as const).map(([value, label, count]) => (
+                  <button aria-pressed={peopleFilter === value} className={peopleFilter === value ? "active" : undefined} key={value} onClick={() => setPeopleFilter(value)} type="button">
+                    {label}<small>{count}</small>
+                  </button>
+                ))}
+              </nav>
+              {peopleFilter !== "invited" ? <section className="company-workspace-section company-directory-panel">
+                <div className="company-section-heading">
+                  <div>
+                    <span className="company-overview-section-icon"><UsersRound aria-hidden="true" size={21} /></span>
+                    <span><h2>People directory</h2><p>Company role establishes representation. Project and Channel access remain separate.</p></span>
+                  </div>
+                  <span className="company-count-badge">
+                    {visiblePeople.length} shown
+                  </span>
+                </div>
+                <ul className="company-people-list">
+                  <li className="company-people-list-head" aria-hidden="true"><span /><span>Person</span><span>Role</span><span>Status</span><span /></li>
+                  {visiblePeople.map(({ membership, user }) => {
+                    const name =
+                      user?.displayName ?? membership.userDisplayNameSnapshot;
+                    const memberActions = resolveCompanyMemberActionCapabilities({
+                      actorRole: administration.membership.role,
+                      isCurrentUser: membership.userId === currentUser?._id,
+                      targetRole: membership.role,
+                      targetStatus: membership.status,
+                    });
+                    return (
+                      <li key={membership._id}>
+                        <span className="company-person-avatar">
+                          {getInitials(name)}
+                        </span>
+                        <span className="company-person-copy">
+                          <strong>{name}</strong>
+                          <small>{user?.email ?? "Account details unavailable"}</small>
+                        </span>
+                        <span className="company-role-cell"><ShieldCheck aria-hidden="true" size={13} /> {membership.role}</span>
+                        <span
+                          className={`company-member-status ${membership.status}`}
+                        >
+                          <i aria-hidden="true" />
+                          {membership.status}
+                        </span>
+                        {memberActions.showMenu ? (
+                          <details
+                            aria-busy={busy}
+                            className="company-member-actions"
+                            onClick={(event) => {
+                              if ((event.target as HTMLElement).closest("button")) {
+                                event.currentTarget.removeAttribute("open");
+                              }
+                            }}
+                          >
+                            <summary aria-label={`Manage ${name}`}>
+                              <MoreHorizontal aria-hidden="true" size={16} />
+                            </summary>
+                            <div aria-label={`Actions for ${name}`} role="group">
+                              {memberActions.canChangeRole &&
+                              membership.status === "active" &&
+                              membership.role !== "admin" ? (
+                                <Button
+                                  onClick={() =>
+                                    void run(() =>
+                                      updateMember({
+                                        companyId: actingCompanyId,
+                                        companyMemberId: membership._id,
+                                        role: "admin",
+                                      }),
+                                    )
+                                  }
+                                  variant="outline"
+                                >
+                                  Make admin
+                                </Button>
+                              ) : null}
+                              {memberActions.canChangeRole &&
+                              membership.status === "active" &&
+                              membership.role !== "member" ? (
+                                <Button
+                                  onClick={() =>
+                                    void run(() =>
+                                      updateMember({
+                                        companyId: actingCompanyId,
+                                        companyMemberId: membership._id,
+                                        role: "member",
+                                      }),
+                                    )
+                                  }
+                                  variant="outline"
+                                >
+                                  Make member
+                                </Button>
+                              ) : null}
+                              {memberActions.canPromoteToOwner ? (
+                                <Button
+                                  onClick={() =>
+                                    void run(() =>
+                                      updateMember({
+                                        companyId: actingCompanyId,
+                                        companyMemberId: membership._id,
+                                        role: "owner",
+                                      }),
+                                    )
+                                  }
+                                  variant="outline"
+                                >
+                                  Promote to owner
+                                </Button>
+                              ) : null}
+                              {memberActions.canChangeStatus ? <Button
+                                onClick={() =>
+                                  void run(() =>
+                                    updateMember({
+                                      companyId: actingCompanyId,
+                                      companyMemberId: membership._id,
+                                      status:
+                                        membership.status === "active"
+                                          ? "suspended"
+                                          : "active",
+                                    }),
+                                  )
+                                }
+                                variant="outline"
+                              >
+                                {membership.status === "active"
+                                  ? "Suspend"
+                                  : "Reactivate"}
+                              </Button> : null}
+                              {memberActions.canChangeStatus ? <Button
+                                onClick={() =>
+                                  void run(() =>
+                                    updateMember({
+                                      companyId: actingCompanyId,
+                                      companyMemberId: membership._id,
+                                      status: "removed",
+                                    }),
+                                  )
+                                }
+                                variant="destructive"
+                              >
+                                Remove
+                              </Button> : null}
+                            </div>
+                          </details>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {visiblePeople.length === 0 ? <div className="company-quiet-empty"><UsersRound aria-hidden="true" size={18} /><div><strong>No matching people</strong><span>Change the filter or search term.</span></div></div> : null}
+              </section> : null}
+              {(peopleFilter === "all" || peopleFilter === "invited") && administration.invitations.length > 0 ? (
+                <section className="company-workspace-section company-inbox">
+                  <div className="company-section-heading"><div><span className="company-overview-section-icon"><Mail aria-hidden="true" size={20} /></span><span><h2>Pending invitations</h2><p>Invitations remain inactive until the recipient accepts.</p></span></div><span className="company-count-badge">{administration.invitations.length}</span></div>
+                  <ul className="company-request-list">
+                    {administration.invitations.map((invitation) => <li key={invitation._id}><div><strong>{invitation.normalizedEmail}</strong><span>Invited as {invitation.role} · expires {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(invitation.expiresAt)}</span></div><span className="company-state-pill proposed">Pending</span></li>)}
+                  </ul>
+                </section>
+              ) : peopleFilter === "invited" ? <section className="company-workspace-section"><div className="company-quiet-empty"><Mail aria-hidden="true" size={18} /><div><strong>No pending invitations</strong><span>Everyone invited to this Company has responded.</span></div></div></section> : null}
+              {isCompanyAdmin ? (
+                <details className="company-management-disclosure" id="invite-company-member">
+                  <summary>
+                    <span>
+                      <Plus aria-hidden="true" size={15} />
+                      Invite a Company member
+                    </span>
+                    <small>Add a person by their exact email address</small>
+                  </summary>
+                  <div className="company-management-body">
+                    <InviteMemberForm
+                      actingCompanyId={actingCompanyId}
+                      run={run}
+                    />
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
+
+          {visibleView === "relationships" &&
+          actingCompanyId &&
+          isCompanyAdmin ? (
+            <div className="company-view-stack company-directory-view">
+              <section className="company-collaboration-summary" aria-label="Relationship summary">
+                <div><span>Relationships</span><strong>{relationships?.length ?? 0}</strong></div>
+                <div><span>Active</span><strong>{activeRelationships.length}</strong></div>
+                <div><span>Shared Projects</span><strong>{(projects ?? []).filter((item) => item.project.origin === "shared").length}</strong></div>
+                <div><span>Invitations</span><strong>{relationshipInvitations?.length ?? 0}</strong></div>
+              </section>
+              <nav aria-label="Filter relationships" className="company-filter-bar">
+                <span><Filter aria-hidden="true" size={14} /> View</span>
+                {([
+                  ["all", "All", relationships?.length ?? 0],
+                  ["active", "Active", activeRelationships.length],
+                  ["forming", "Forming", (relationships ?? []).filter(({ relationship }) => relationship.status === "forming").length],
+                  ["inactive", "Inactive", (relationships ?? []).filter(({ relationship }) => relationship.status === "inactive").length],
+                ] as const).map(([value, label, count]) => (
+                  <button aria-pressed={relationshipFilter === value} className={relationshipFilter === value ? "active" : undefined} key={value} onClick={() => setRelationshipFilter(value)} type="button">{label}<small>{count}</small></button>
+                ))}
+              </nav>
+              {(relationshipInvitations ?? []).length > 0 ? (
+                <section className="company-workspace-section company-inbox">
+                  <div className="company-section-heading">
+                    <div>
+                      <span className="company-section-kicker">Inbox</span>
+                      <h2>Relationship invitations</h2>
+                    </div>
+                    <span className="company-count-badge">
+                      {relationshipInvitations?.length}
+                    </span>
+                  </div>
+                  <ul className="company-request-list">
+                    {relationshipInvitations?.map(
+                      ({ invitation, invitingCompany, relationship }) => (
+                        <li key={invitation._id}>
+                          <div>
+                            <strong>{relationship?.name}</strong>
+                            <span>
+                              {invitingCompany?.displayName} invited this exact
+                              Company.
+                            </span>
+                          </div>
+                          <div className="company-row-actions">
+                            <Button
+                              onClick={() =>
+                                void run(() =>
+                                  decideRelationshipInvitation({
+                                    actingCompanyId,
+                                    invitationId: invitation._id,
+                                    decision: "accept",
+                                  }),
+                                )
+                              }
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              onClick={() =>
+                                void run(() =>
+                                  decideRelationshipInvitation({
+                                    actingCompanyId,
+                                    invitationId: invitation._id,
+                                    decision: "decline",
+                                  }),
+                                )
+                              }
+                              variant="outline"
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </section>
+              ) : null}
+
+              <section className="company-workspace-section company-directory-panel">
+                <div className="company-section-heading">
+                  <div>
+                    <span className="company-overview-section-icon"><Handshake aria-hidden="true" size={21} /></span>
+                    <span><h2>Partner directory</h2><p>A relationship permits an invitation. Project and Channel access still require explicit grants.</p></span>
+                  </div>
+                  <span className="company-count-badge">
+                    {visibleRelationships.length} shown
+                  </span>
+                </div>
+                <div className="company-relationship-grid">
+                  {visibleRelationships.map((item) => {
+                    const partnerCompanies = item.participants.filter((company) => company._id !== actingCompanyId);
+                    const sharedProjectCount = (projects ?? []).filter((projectItem) => projectItem.project.relationshipId === item.relationship._id).length;
+                    return (
+                    <article
+                      className="company-relationship-card"
+                      key={item.relationship._id}
+                    >
+                      <header>
+                        <span className="company-relationship-icon">
+                          <Handshake aria-hidden="true" size={17} />
+                        </span>
+                        <span>
+                          <strong>{item.relationship.name}</strong>
+                          <small>{partnerCompanies.map((company) => company.displayName).join(", ") || "No partner Company"}</small>
+                        </span>
+                        <span className={`company-state-pill ${item.relationship.status}`}>{item.relationship.status}</span>
+                      </header>
+                      <div className="company-boundary-trace" aria-label="Collaboration boundary">
+                        <span><Building2 aria-hidden="true" size={14} /> {item.participants.length} Companies</span>
+                        <i aria-hidden="true" />
+                        <span><FolderKanban aria-hidden="true" size={14} /> {sharedProjectCount} shared Projects</span>
+                        <i aria-hidden="true" />
+                        <span><ShieldCheck aria-hidden="true" size={14} /> Explicit Channel access</span>
+                      </div>
+                      {item.relationship.status === "active" ? (
+                        <Button onClick={() => selectView("projects")} type="button">
+                          Create shared Project
+                        </Button>
+                      ) : null}
+                      <details className="company-card-management">
+                        <summary>Manage relationship</summary>
+                        <div>
+                          <RelationshipParticipantForm
+                            actingCompanyId={actingCompanyId}
+                            relationshipId={item.relationship._id}
+                            run={run}
+                          />
+                          <div className="company-row-actions wrap">
+                            {item.participants
+                              .filter(
+                                (company) => company._id !== actingCompanyId,
+                              )
+                              .map((company) => (
+                                <Button
+                                  key={company._id}
+                                  onClick={() =>
+                                    void run(async () => {
+                                      const requestId =
+                                        await proposeRelationshipRemoval({
+                                          actingCompanyId,
+                                          relationshipId:
+                                            item.relationship._id,
+                                          targetCompanyId: company._id,
+                                          idempotencyKey: crypto.randomUUID(),
+                                        });
+                                      await approveRelationshipRemoval({
+                                        actingCompanyId,
+                                        requestId,
+                                      });
+                                    })
+                                  }
+                                  variant="outline"
+                                >
+                                  Request removal of {company.displayName}
+                                </Button>
+                              ))}
+                            {item.pendingRemovalRequests
+                              .filter(
+                                (request) =>
+                                  request.targetCompanyId !== actingCompanyId,
+                              )
+                              .map((request) => (
+                                <Button
+                                  key={request._id}
+                                  onClick={() =>
+                                    void run(() =>
+                                      approveRelationshipRemoval({
+                                        actingCompanyId,
+                                        requestId: request._id,
+                                      }),
+                                    )
+                                  }
+                                  variant="outline"
+                                >
+                                  Approve pending removal
+                                </Button>
+                              ))}
+                            <Button
+                              onClick={() =>
+                                void run(() =>
+                                  leaveRelationship({
+                                    actingCompanyId,
+                                    relationshipId: item.relationship._id,
+                                  }),
+                                )
+                              }
+                              variant="destructive"
+                            >
+                              Leave Relationship
+                            </Button>
+                          </div>
+                        </div>
+                      </details>
+                    </article>
+                  );})}
+                </div>
+                {visibleRelationships.length === 0 ? (
+                  <div className="company-quiet-empty">
+                    <Handshake aria-hidden="true" size={18} />
+                    <div>
+                      <strong>No relationships yet</strong>
+                      <span>
+                        Connect with another exact Company before sharing a
+                        Project.
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+
+              <details className="company-management-disclosure" id="create-company-relationship">
+                <summary>
+                  <span>
+                    <Plus aria-hidden="true" size={15} />
+                    Create a relationship
+                  </span>
+                  <small>Connect through an exact private Company handle</small>
+                </summary>
+                <div className="company-management-body">
+                  <RelationshipForm
+                    actingCompanyId={actingCompanyId}
+                    run={run}
+                  />
+                </div>
+              </details>
+            </div>
+          ) : null}
+
+          {visibleView === "settings" &&
+          actingCompanyId &&
+          currentUser &&
+          administration &&
+          isCompanyAdmin ? (
+            <div className="company-view-stack company-settings-view">
+              <section className="company-workspace-section">
+                <div className="company-section-heading">
+                  <div>
+                    <span className="company-section-kicker">Identity</span>
+                    <h2>Company profile</h2>
+                    <p>
+                      The display name appears anywhere this Company represents
+                      its people.
+                    </p>
+                  </div>
+                </div>
+                <CompanyProfileForm
+                  key={actingCompanyId}
+                  actingCompanyId={actingCompanyId}
+                  description={administration.company.description ?? ""}
+                  displayName={administration.company.displayName}
+                  handle={administration.company.normalizedHandle}
+                  run={run}
+                />
+              </section>
+
+              <details className="company-management-disclosure">
+                <summary>
+                  <span>
+                    <Plus aria-hidden="true" size={15} />
+                    Create another Company
+                  </span>
+                  <small>Use a separate identity for a separate legal team</small>
+                </summary>
+                <div className="company-management-body">
+                  <CreateCompanyForm run={run} />
+                </div>
+              </details>
+
+              <details className="company-management-disclosure">
+                <summary>
+                  <span>
+                    <FolderKanban aria-hidden="true" size={15} />
+                    Assign an existing Project
+                  </span>
+                  <small>Map every person and role before activation</small>
+                </summary>
+                <div className="company-management-body migration">
+                  <MigrationPanel
+                    actingCompanyId={actingCompanyId}
+                    currentUserId={currentUser._id}
+                    relationships={activeRelationships}
+                    run={run}
+                  />
+                </div>
+              </details>
+
+              {administration.membership.role === "owner" ? (
+                <section className="company-workspace-section company-danger-zone">
+                  <div>
+                    <span className="company-section-kicker">Danger zone</span>
+                    <h2>Suspend or close Company</h2>
+                    <p>
+                      Suspension pauses access and can be reversed. Closing is a
+                      retained-history operation and requires all Projects
+                      to be exited first.
+                    </p>
+                  </div>
+                  <div className="company-row-actions">
+                    <Button
                       onClick={() =>
                         void run(() =>
-                          updateMember({
+                          setSuspended({
                             companyId: actingCompanyId,
-                            companyMemberId: membership._id,
-                            status:
-                              membership.status === "active"
-                                ? "suspended"
-                                : "active",
+                            suspended: true,
                           }),
                         )
                       }
                       variant="outline"
                     >
-                      {membership.status === "active"
-                        ? "Suspend"
-                        : "Reactivate"}
-                    </Button> : null}
-                    {memberActions.canChangeStatus ? <Button
-                      onClick={() =>
-                        void run(() =>
-                          updateMember({
-                            companyId: actingCompanyId,
-                            companyMemberId: membership._id,
-                            status: "removed",
-                          }),
-                        )
-                      }
+                      Suspend Company
+                    </Button>
+                    <Button onClick={() => setCloseCompanyOpen(true)}
                       variant="destructive"
                     >
-                      Remove
-                    </Button> : null}
-                    </div>
-                  </details>
-                ) : null}
-              </li>
-              )
-            })}
-            </ul>
-          </section>
-
-          <section className="company-panel" id="invitations">
-            <div className="company-section-heading">
-              <div>
-                <h2>Invitations</h2>
-                <p>Invite company members and review outstanding requests.</p>
-              </div>
-              {administration.membership.role !== "member" ? (
-                <CompanyActionPopover
-                  description="Invite a person as a company member or company admin. Project access stays separate."
-                  label="Invite member"
-                  title="Invite a company member"
-                >
-                  <InviteMemberForm actingCompanyId={actingCompanyId} run={run} />
-                </CompanyActionPopover>
+                      Close Company
+                    </Button>
+                  </div>
+                </section>
               ) : null}
+              <ConfirmDialog
+                confirmLabel="Close Company"
+                description="Projects must be exited first. Retained history is preserved and the close action cannot be undone."
+                onConfirm={() => run(() => closeCompany({ companyId: actingCompanyId, retentionConfirmed: true }))}
+                onOpenChange={setCloseCompanyOpen}
+                open={closeCompanyOpen}
+                title="Close this Company?"
+              />
             </div>
-            {administration.invitations.length ? (
-              <div className="company-subsection" id="company-pending-invitations">
-                <h3>Pending invitations</h3>
-                <ul className="company-list">
-                  {administration.invitations.map((invitation) => (
-                    <li key={invitation._id}>
-                      <div><strong>{invitation.normalizedEmail}</strong><span>{companyRoleLabels[invitation.role]} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</span></div>
-                      <Button onClick={() => void run(() => revokeCompanyInvitation({ companyId: actingCompanyId, invitationId: invitation._id }))} variant="outline">Revoke</Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </section>
-        </>
-      ) : null}
-
-      {(companyInvitations ?? []).length > 0 ? (
-        <section className="company-panel" id="invitations-for-you">
-          <div className="company-section-heading">
-            <div>
-              <h2>Invitations for you</h2>
-              <p>Accept or decline companies that invited your account.</p>
-            </div>
-          </div>
-          <ul className="company-list">
-            {companyInvitations?.map(({ company, invitation }) => (
-              <li key={invitation._id}>
-                <div><strong>{company?.displayName}</strong><span>{companyRoleLabels[invitation.role]} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</span></div>
-                <div>
-                  <Button onClick={() => void run(() => decideCompanyInvitation({ invitationId: invitation._id, decision: "accept" }))}>Accept</Button>
-                  <Button onClick={() => void run(() => decideCompanyInvitation({ invitationId: invitation._id, decision: "decline" }))} variant="outline">Decline</Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {actingCompanyId &&
-      administration &&
-      administration.membership.role !== "member" ? (
-        <section className="company-panel" id="relationships">
-          <div className="company-section-heading">
-            <div><h2>Relationships</h2><p>Companies approved to collaborate on shared projects.</p></div>
-            <CompanyActionPopover
-              description="Connect to one exact company handle. Track keeps company discovery private."
-              label="New relationship"
-              title="Create a relationship"
-            >
-              <RelationshipForm actingCompanyId={actingCompanyId} run={run} />
-            </CompanyActionPopover>
-          </div>
-          {(relationshipInvitations ?? []).length ? (
-            <ul className="company-list">
-              {relationshipInvitations?.map(
-                ({ invitation, invitingCompany, relationship }) => (
-                  <li key={invitation._id}>
-                    <div>
-                      <strong>{relationship?.name}</strong>
-                      <span>
-                        {invitingCompany?.displayName} invited this exact
-                        Company.
-                      </span>
-                    </div>
-                    <div>
-                      <Button
-                        onClick={() =>
-                          void run(() =>
-                            decideRelationshipInvitation({
-                              actingCompanyId,
-                              invitationId: invitation._id,
-                              decision: "accept",
-                            }),
-                          )
-                        }
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        onClick={() =>
-                          void run(() =>
-                            decideRelationshipInvitation({
-                              actingCompanyId,
-                              invitationId: invitation._id,
-                              decision: "decline",
-                            }),
-                          )
-                        }
-                        variant="outline"
-                      >
-                        Decline
-                      </Button>
-                    </div>
-                  </li>
-                ),
-              )}
-            </ul>
           ) : null}
-          <ul className="company-list">
-            {relationships?.map((item) => (
-              <li key={item.relationship._id}>
-                <div>
-                  <strong>{item.relationship.name}</strong>
-                  <span>
-                    {item.relationship.status} ·{" "}
-                    {item.participants
-                      .map((company) => company.displayName)
-                      .join(", ")}
-                  </span>
-                </div>
-                <RelationshipParticipantForm
-                  actingCompanyId={actingCompanyId}
-                  relationshipId={item.relationship._id}
-                  run={run}
-                />
-                <div>
-                  {item.participants
-                    .filter((company) => company._id !== actingCompanyId)
-                    .map((company) => (
-                      <Button
-                        key={company._id}
-                        onClick={() =>
-                          void run(async () => {
-                            const requestId = await proposeRelationshipRemoval({
-                              actingCompanyId,
-                              relationshipId: item.relationship._id,
-                              targetCompanyId: company._id,
-                              idempotencyKey: crypto.randomUUID(),
-                            });
-                            await approveRelationshipRemoval({
-                              actingCompanyId,
-                              requestId,
-                            });
-                          })
-                        }
-                        variant="outline"
-                      >
-                        Request removal of {company.displayName}
-                      </Button>
-                    ))}
-                  {item.pendingRemovalRequests
-                    .filter(
-                      (request) => request.targetCompanyId !== actingCompanyId,
-                    )
-                    .map((request) => (
-                      <Button
-                        key={request._id}
-                        onClick={() =>
-                          void run(() =>
-                            approveRelationshipRemoval({
-                              actingCompanyId,
-                              requestId: request._id,
-                            }),
-                          )
-                        }
-                        variant="outline"
-                      >
-                        Approve pending removal
-                      </Button>
-                    ))}
-                  <Button
-                    onClick={() =>
-                      void run(() =>
-                        leaveRelationship({
-                          actingCompanyId,
-                          relationshipId: item.relationship._id,
-                        }),
-                      )
-                    }
-                    variant="destructive"
-                  >
-                    Leave Relationship
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {actingCompanyId && currentUser && actingCompany?.company ? (
-        <section className="company-panel" id="shared-projects">
-          <div className="company-section-heading">
-            <div><h2>Shared projects</h2><p>Projects where this company collaborates with other companies.</p></div>
-            {canAdministerActingCompany ? (
-              <CompanyActionPopover
-                description="Choose an active relationship, then propose a project to its participating companies."
-                label="Propose project"
-                title="Propose a shared project"
-              >
-                <SharedProjectForm
-                  actingCompanyId={actingCompanyId}
-                  currentUserId={currentUser._id}
-                  relationships={(relationships ?? []).filter(
-                    (item) => item.relationship.status === "active",
-                  )}
-                  run={run}
-                />
-              </CompanyActionPopover>
-            ) : null}
-          </div>
-          {(projectInvitations ?? []).length ? (
-            <ul className="company-list">
-              {projectInvitations?.map(
-                ({ invitation, invitingCompany, project }) => (
-                  <li key={invitation._id}>
-                    <div>
-                      <strong>{project?.name}</strong>
-                      <span>
-                        {invitingCompany?.displayName} proposes shared work;
-                        accepting appoints you as the initial manager.
-                      </span>
-                    </div>
-                    <div>
-                      <Button
-                        onClick={() =>
-                          void run(() =>
-                            decideProjectInvitation({
-                              actingCompanyId,
-                              invitationId: invitation._id,
-                              decision: "accept",
-                              initialMembers: [
-                                { userId: currentUser._id, role: "manager" },
-                              ],
-                            }),
-                          )
-                        }
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        onClick={() =>
-                          void run(() =>
-                            decideProjectInvitation({
-                              actingCompanyId,
-                              invitationId: invitation._id,
-                              decision: "decline",
-                              initialMembers: [],
-                            }),
-                          )
-                        }
-                        variant="outline"
-                      >
-                        Decline
-                      </Button>
-                    </div>
-                  </li>
-                ),
-              )}
-            </ul>
-          ) : null}
-          <ul className="company-list">
-            {sharedProjects.map((item) => (
-              <li key={item.membership._id}>
-                <div>
-                  <strong>{item.project.name}</strong>
-                  <span>
-                    {item.membership.role} · {item.membership.status} ·
-                    represented by {actingCompany.company.displayName} · {item.memberCount} members · {item.channelCount} channels · updated {new Date(item.lastActivityAt).toLocaleDateString()}
-                  </span>
-                </div>
-                <Link
-                  params={{ projectId: item.project._id }}
-                  search={{
-                    companyId: actingCompanyId,
-                    groupId: '',
-                    membershipId: item.membership._id,
-                    view: 'channels',
-                  }}
-                  to="/workspace/company-projects/$projectId"
-                >
-                  Open Project
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {actingCompany?.company ? <section className="company-panel company-legacy-projects" id="projects">
-        <div className="company-section-heading">
-          <div><h2>Company projects</h2><p>Private project spaces owned by this company. Membership is granted separately from company membership.</p></div>
-          <div className="company-section-heading-actions">
-            <Link search={{ directory: true }} to="/workspace">View all projects</Link>
-            {activeActingCompanyId && canAdministerActingCompany ? (
-              <CompanyActionPopover
-                description="Create a company project. You become its first project manager."
-                label="New project"
-                title="Create a company project"
-              >
-                <CompanyProjectForm actingCompanyId={activeActingCompanyId} run={run} />
-              </CompanyActionPopover>
-            ) : null}
-          </div>
         </div>
-        <ul className="company-list">
-          {companyProjects.map((item) => <li key={item.membership._id}><div><strong>{item.project.name}</strong><span>{actingCompany?.company.displayName} · {item.role} · {item.projectStatus} · {item.memberCount} members · {item.channelCount} channels · updated {new Date(item.lastActivityAt).toLocaleDateString()}</span></div>{item.company ? <Link params={{ projectId: item.project._id }} search={{ companyId: item.company._id, groupId: '', membershipId: item.membership._id, view: 'channels' }} to="/workspace/company-projects/$projectId">Open project</Link> : null}</li>)}
-        </ul>
-        <div className="company-section-heading"><div><h3>Legacy projects</h3><p>Older projects remain available through the translated legacy access model.</p></div></div>
-        <ul className="company-list">
-          {legacyProjects.map((item) => <li key={item.membership._id}><div><strong>{item.project.name}</strong><span>Legacy · {item.role} · {item.projectStatus} · {item.memberCount} members · {item.channelCount} channels</span></div><Link params={{ projectId: item.project._id }} to="/workspace/projects/$projectId">Open project</Link></li>)}
-        </ul>
-      </section> : null}
-      {actingCompanyId && administration?.membership.role === "owner" ? (
-        <section className="company-panel company-danger-zone" aria-labelledby="company-danger-heading">
-          <div className="company-section-heading">
-            <div>
-              <h2 id="company-danger-heading">Danger zone</h2>
-              <p>Suspend access temporarily or permanently close this company.</p>
-            </div>
-          </div>
-          <div className="company-danger-actions">
-            <div><strong>Suspend company</strong><span>Pause project and channel access until an owner reactivates it.</span></div>
-            <Button onClick={() => void run(() => setSuspended({ companyId: actingCompanyId, suspended: true }))} variant="outline">Suspend company</Button>
-          </div>
-          <div className="company-danger-actions">
-            <div><strong>Close company</strong><span>Close the company after shared-project retention requirements are met.</span></div>
-            <Button
-              onClick={() => {
-                if (window.confirm("Close this company after confirming retention? Shared projects must be exited first; retained history is not erased.")) {
-                  void run(() => closeCompany({ companyId: actingCompanyId, retentionConfirmed: true }));
-                }
-              }}
-              variant="destructive"
-            >
-              Close company
-            </Button>
-          </div>
-        </section>
-      ) : null}
-      {actingCompanyId &&
-      currentUser &&
-      administration &&
-      administration.membership.role !== "member" ? (
-        <details className="company-advanced-disclosure">
-          <summary>
-            <span><strong>Legacy project upgrade</strong><small>Map an older project into the company access model.</small></span>
-            <ChevronDown aria-hidden="true" size={16} />
-          </summary>
-          <MigrationPanel
-            actingCompanyId={actingCompanyId}
-            currentUserId={currentUser._id}
-            relationships={(relationships ?? []).filter(
-              (item) => item.relationship.status === "active",
-            )}
-            run={run}
-          />
-        </details>
-      ) : null}
+      </section>
     </main>
   );
 }

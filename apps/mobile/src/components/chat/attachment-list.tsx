@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { FileAttachment } from '@/components/chat/file-attachment';
 import { ImageAttachments } from '@/components/chat/image-attachment';
+import { hasReadyAttachmentPreview } from '@/components/chat/types';
 import type { AttachmentWithUrl, ViewableImage } from '@/components/chat/types';
 import { VoiceNotePlayer } from '@/components/chat/voice-note-player';
 import { Spacing } from '@/constants/theme';
@@ -29,18 +30,34 @@ export function AttachmentList({
 
   for (const entry of attachments) {
     const { attachment, url } = entry;
-    if (!url) {
-      files.push(entry);
-      continue;
-    }
     if (isImageAttachment(attachment.contentType)) {
+      // A private derivative can remain available while the original signed
+      // URL is temporarily unavailable. Keep the image surface useful in
+      // that state; the viewer/share action will use the original only when
+      // one is present.
+      const preview = hasReadyAttachmentPreview(entry) ? entry : null;
+      const displayUrl = url ?? preview?.previewUrl ?? null;
+      if (!displayUrl) {
+        files.push(entry);
+        continue;
+      }
       images.push({
         contentType: attachment.contentType,
         filename: attachment.filename,
+        height: preview?.height ?? null,
         id: attachment._id,
+        originalUrl: url,
+        previewHeight: preview?.previewHeight ?? null,
+        previewUrl: preview?.previewUrl ?? null,
+        previewWidth: preview?.previewWidth ?? null,
         size: attachment.size,
-        url,
+        url: displayUrl,
+        width: preview?.width ?? null,
       });
+      continue;
+    }
+    if (!url) {
+      files.push(entry);
       continue;
     }
     if (isAudioAttachment(attachment)) {

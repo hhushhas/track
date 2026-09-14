@@ -5,6 +5,7 @@ import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { appendTaskActivity } from './lib/taskData'
 import { createTaskNotification, notifyTaskFollowers } from './lib/taskNotifications'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { requireEligibleTaskMember, requireTaskAccess, resolveTaskRequestContext } from './lib/taskPolicy'
 
 const identityArgs = {
@@ -29,6 +30,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canComment) throw new Error('task_comment_forbidden')
     const existing = await ctx.db.query('taskComments')
       .withIndex('by_task_idempotency', (q) =>
@@ -103,6 +105,7 @@ export const edit = mutation({
     const comment = await ctx.db.get(args.commentId)
     if (!comment) throw new Error('task_access_changed')
     const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canComment || comment.authorProjectMemberId !== access.projectMember._id) {
       throw new Error('task_comment_edit_forbidden')
     }
@@ -132,6 +135,7 @@ export const archive = mutation({
     const comment = await ctx.db.get(args.commentId)
     if (!comment) throw new Error('task_access_changed')
     const access = await requireTaskAccess(ctx, actor, comment.taskId, args)
+    await assertProjectSnapshotWritable(ctx, access.task.projectId)
     if (!access.taskCapabilities.canComment) throw new Error('task_comment_archive_forbidden')
     if (comment.originalGroupId && comment.originalGroupId !== access.task.groupId) {
       const originalAccess = await resolveTaskRequestContext(

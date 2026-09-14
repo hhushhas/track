@@ -15,14 +15,20 @@ const AVATAR_SIZE = 28;
  * Nothing here steals focus, so the keyboard stays up through the whole pick.
  */
 export function MentionSuggestions({
+  canLoadMore = false,
   candidates,
+  loadingMore = false,
+  onLoadMore,
   onSelect,
 }: {
+  canLoadMore?: boolean;
   candidates: MentionCandidate[];
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
   onSelect: (candidate: MentionCandidate) => void;
 }) {
   const theme = useTheme();
-  if (!candidates.length) return null;
+  if (!candidates.length && !canLoadMore && !loadingMore) return null;
 
   return (
     <View
@@ -57,10 +63,28 @@ export function MentionSuggestions({
             ) : null}
           </View>
           <ThemedText numberOfLines={1} style={styles.handle} themeColor="textTertiary" type="mono">
-            {`@${candidate.handle}`}
+          {`@${candidate.handle}`}
           </ThemedText>
         </Pressable>
       ))}
+      {canLoadMore || loadingMore ? (
+        <Pressable
+          accessibilityLabel={loadingMore ? 'Loading more mention suggestions' : 'Load more mention suggestions'}
+          accessibilityRole="button"
+          accessibilityState={{ busy: loadingMore, disabled: loadingMore }}
+          disabled={loadingMore}
+          onPress={() => {
+            if (!onLoadMore || loadingMore) return;
+            hapticLight();
+            onLoadMore();
+          }}
+          style={[styles.loadMore, candidates.length > 0 && { borderTopColor: theme.hairline, borderTopWidth: StyleSheet.hairlineWidth }]}
+        >
+          <ThemedText themeColor="textSecondary" type="captionBold">
+            {loadingMore ? 'Loading more members…' : 'Load more members'}
+          </ThemedText>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -74,6 +98,13 @@ const styles = StyleSheet.create({
   handle: {
     flexShrink: 0,
     marginLeft: 'auto',
+  },
+  loadMore: {
+    alignItems: 'center',
+    minHeight: TouchTarget,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
   },
   row: {
     alignItems: 'center',

@@ -1,0 +1,26 @@
+# Generated transport declarations are checked by Convex codegen, not by the
+# source architecture rules. Keep handwritten backend code in the scan.
+convex/_generated/
+**/routeTree.gen.ts
+
+# Build and fixture output are not production source.
+**/dist/
+**/build/
+**/coverage/
+**/.turbo/
+**/.wrangler/
+**/.output/
+**/.worktrees/
+**/fixtures/
+**/__fixtures__/
+
+# The current Semgrep OSS parser rejects the valid JSX entity in this legacy
+# import dialog. Keep the exception narrow and visible until that component is
+# migrated; all adjacent workspace components remain scanned.
+apps/web/src/features/workspace/components/ProjectMemoryImportDialog.tsx
+
+# The current Semgrep OSS TypeScript parser reports an invalid token offset in
+# this Convex file even though TypeScript and the runtime parser accept it.
+# Keep this core module visible in dependency/typecheck gates until the parser
+# can consume its multiline query chain reliably.
+convex/tasks.ts

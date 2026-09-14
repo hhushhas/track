@@ -1,9 +1,10 @@
 import { convexTest } from 'convex-test'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { register as registerBetterAuth } from '@convex-dev/better-auth/test'
 
 import { api } from './_generated/api'
-import { isDevAuthBypassEnabled } from './lib/devAuth'
 import schema from './schema'
+import { isDevAuthBypassEnabled } from './lib/devAuth'
 
 const modules = (import.meta as ImportMeta & {
   glob: (patterns: Array<string>) => Record<string, () => Promise<unknown>>
@@ -21,6 +22,12 @@ function restoreEnvironmentVariable(name: string, value: string | undefined) {
   process.env[name] = value
 }
 
+function createTest() {
+  const t = convexTest(schema, modules)
+  registerBetterAuth(t)
+  return t
+}
+
 beforeEach(() => {
   delete process.env.DEV_AUTH_BYPASS
   delete process.env.SITE_URL
@@ -34,25 +41,31 @@ afterEach(() => {
 })
 
 describe('development auth bypass', () => {
-  it('keeps the bypass disabled unless explicitly configured for loopback development', async () => {
+  it('enables the bypass only when explicitly configured for loopback development', () => {
     expect(isDevAuthBypassEnabled({})).toBe(false)
     expect(isDevAuthBypassEnabled({ DEV_AUTH_BYPASS: '1' })).toBe(false)
     expect(isDevAuthBypassEnabled({
       DEV_AUTH_BYPASS: '1',
       SITE_URL: 'https://track.q9labs.ai',
     })).toBe(false)
+    expect(isDevAuthBypassEnabled({
+      DEV_AUTH_BYPASS: '1',
+      SITE_URL: 'http://localhost:3000',
+    })).toBe(true)
+  })
 
-    const t = convexTest(schema, modules)
+  it('enforces the disabled bypass at the mutation boundary', async () => {
+    const t = createTest()
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',
     )
-  })
+  }, 15_000)
 
   it('binds the demo identity and never substitutes it for another authenticated user', async () => {
     process.env.DEV_AUTH_BYPASS = '1'
     process.env.SITE_URL = 'http://localhost:3000'
-    const t = convexTest(schema, modules)
+    const t = createTest()
     const authenticated = t.withIdentity({
       subject: 'demo-auth-user',
       email: 'developer@track.local',
@@ -96,8 +109,9 @@ describe('development auth bypass', () => {
     await expect(t.withIdentity({
       subject: 'other-user',
       email: 'other-user@track.test',
+      sessionId: 'missing-session',
     }).mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_identity_required',
     )
-  })
+  }, 15_000)
 })

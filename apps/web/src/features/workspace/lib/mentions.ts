@@ -1,5 +1,6 @@
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
+import type { GroupReference } from '#/features/workspace/group-types'
 import { getAvatarTone, getMentionHandle } from '#/features/workspace/identity'
 
 export type WorkspaceChannelMember = {
@@ -45,7 +46,7 @@ export type WorkspaceMentionSection = {
 
 export function buildWorkspaceMentionOptions(
   activeMembers: Array<WorkspaceChannelMember | WorkspaceProjectMember>,
-  visibleGroups: Array<Doc<'groups'>>,
+  visibleGroups: Array<GroupReference>,
 ): Array<WorkspaceMentionOption> {
   const members = activeMembers
     .filter((item) => item.user !== null)
@@ -90,9 +91,9 @@ export function buildWorkspaceMentionOptions(
 
 export function buildMentionGroups(
   activeChannelMembers: Array<WorkspaceChannelMember>,
-  visibleGroups: Array<Doc<'groups'>>,
+  visibleGroups: Array<GroupReference>,
 ) {
-  const groupsByHandle = new Map<string, Doc<'groups'>>()
+  const groupsByHandle = new Map<string, GroupReference>()
   const reservedHandles = new Set([
     'track',
     ...activeChannelMembers

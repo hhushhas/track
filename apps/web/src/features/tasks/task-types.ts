@@ -1,3 +1,6 @@
+import type { FunctionReturnType } from 'convex/server'
+
+import type { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import type { TaskCapabilities } from '@track/shared/tasks'
 
@@ -6,10 +9,7 @@ export type TaskIdentity = {
   projectMemberId?: Id<'projectMembers'>
 }
 
-export type TaskBoardView = {
-  board: Doc<'taskBoards'>
-  states: Array<Doc<'taskWorkflowStates'>>
-}
+export type TaskBoardView = FunctionReturnType<typeof api.taskBoards.list>[number]
 
 export type TaskView = {
   task: Doc<'tasks'>
@@ -44,6 +44,8 @@ export function canEditTaskView(
     item.task.assigneeProjectMemberId === currentProjectMemberId
 }
 
+export type TaskListItem = FunctionReturnType<typeof api.tasks.listPage>['page'][number]
+
 export function taskIdentity(search: {
   actingCompanyId?: string
   projectMemberId?: string
@@ -57,7 +59,7 @@ export function taskIdentity(search: {
 
 export function groupTaskViewsByState(
   states: ReadonlyArray<Doc<'taskWorkflowStates'>>,
-  tasks: ReadonlyArray<TaskView>,
+  tasks: ReadonlyArray<TaskListItem>,
   optimisticStates: Readonly<Record<string, string>> = {},
 ) {
   return new Map(states.map((state) => [

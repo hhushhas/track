@@ -10,8 +10,11 @@ import {
 
 describe('primary tab route model', () => {
   it('maps each route group to one stable peer destination', () => {
-    expect(['(home)', '(projects)', '(tasks)', '(search)'].map((route) => primaryDestinationForRoute(route).key))
-      .toEqual(['home', 'projects', 'tasks', 'evidence']);
+    const destinations = ['(home)', '(projects)', '(tasks)', '(search)']
+      .map((route) => primaryDestinationForRoute(route));
+
+    expect(destinations.map(({ key }) => key)).toEqual(['home', 'projects', 'tasks', 'evidence']);
+    expect(destinations.map(({ icon }) => icon)).toEqual(['home', 'project', 'task', 'evidence']);
   });
 
   it('keeps a disabled Tasks destination visible while the release is gated', () => {

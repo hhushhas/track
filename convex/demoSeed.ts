@@ -1,639 +1,364 @@
+import { internalMutation, mutation } from './_generated/server'
 import { v } from 'convex/values'
+import { createUniqueTaskPublicKey } from './lib/taskData'
+import { getOrCreateDefaultBoard } from './taskBoards'
 
-import type { Id } from './_generated/dataModel'
-import type { MutationCtx } from './_generated/server'
-import { internalMutation } from './_generated/server'
-import { components } from './_generated/api'
+const hour = 60 * 60 * 1000
 
-const demoCompanyHandle = 'track-demo'
-const demoProjectName = 'Track Product Launch'
-
-const workflow = [
-  { name: 'Backlog', category: 'backlog' as const, visualToken: 'slate' },
-  { name: 'Ready', category: 'unstarted' as const, visualToken: 'blue' },
-  { name: 'In progress', category: 'started' as const, visualToken: 'amber' },
-  { name: 'Done', category: 'completed' as const, visualToken: 'green' },
+const teammates = [
+  { name: 'Mia Chen', email: 'mia.chen@demo.example', subject: 'demo:mia-chen' },
+  { name: 'Leo Martinez', email: 'leo.martinez@demo.example', subject: 'demo:leo-martinez' },
+  { name: 'Priya Nair', email: 'priya.nair@demo.example', subject: 'demo:priya-nair' },
+  { name: 'Owen Brooks', email: 'owen.brooks@demo.example', subject: 'demo:owen-brooks' },
 ]
 
-const supplementalProjects = [
-  {
-    name: 'Customer Onboarding',
-    description: 'Coordinate the customer launch and rollout experience.',
-    channels: ['General', 'Customer feedback', 'Launch checklist'],
-    tasks: [
-      ['Confirm onboarding owner', 'Assign the person responsible for the first-week experience.', 'high'],
-      ['Review welcome message', 'Incorporate feedback from the pilot customer group.', 'medium'],
-      ['Publish onboarding checklist', 'Make the handoff steps visible to the whole team.', 'low'],
-    ] as const,
-  },
-  {
-    name: 'Product Discovery',
-    description: 'Capture research, decisions, and product opportunities.',
-    channels: ['General', 'Research notes', 'Design critique'],
-    tasks: [
-      ['Cluster interview insights', 'Group the recurring themes from recent conversations.', 'medium'],
-      ['Draft navigation proposal', 'Turn the strongest discovery findings into a testable flow.', 'high'],
-      ['Schedule usability review', 'Prepare the next prototype review with the product team.', 'low'],
-    ] as const,
-  },
+const channelMessages = [
+  { author: 0, hoursAgo: 70, body: 'Morning all. I have the launch checklist open and will keep the decisions here.' },
+  { author: 1, hoursAgo: 67, body: 'The release banner is ready for review. I kept the copy focused on the new project timeline.' },
+  { author: 2, hoursAgo: 64, body: 'I will run the signup flow on mobile after the next preview build lands.' },
+  { author: 3, hoursAgo: 61, body: 'Preview build is green. I am watching the invite dialog because it still clips on narrow screens.' },
+  { author: 0, hoursAgo: 58, body: '@track What are the biggest launch risks from this channel so far?' },
+  { author: 2, hoursAgo: 54, body: 'I pulled the latest prototype into the QA checklist. The empty state copy is now final.' },
+  { author: 1, hoursAgo: 50, body: 'The onboarding checklist needs one more pass for the permissions explanation.' },
+  { author: 3, hoursAgo: 46, body: 'Found a regression: accepting an invite can leave the project switcher stale until refresh.' },
+  { author: 0, hoursAgo: 42, body: 'Thanks. Please keep that fix ahead of the release notes polish.' },
+  { author: 2, hoursAgo: 38, body: 'QA is clean on Chrome and Safari. I have one Android pass left for notifications.' },
+  { author: 1, hoursAgo: 34, body: 'I updated the release notes draft with the board and thread improvements.' },
+  { author: 3, hoursAgo: 30, body: 'The invite fix is in review. It only changes the client cache after confirmation.' },
+  { author: 0, hoursAgo: 26, body: 'We need a decision on the release banner before tomorrow. Should we lead with faster project handoffs?' },
+  { author: 1, hoursAgo: 22, body: 'Yes. That is the clearest customer outcome and matches the onboarding story.' },
+  { author: 2, hoursAgo: 18, body: 'I will add the final banner copy to the review board and tag the updated screenshots.' },
+  { author: 3, hoursAgo: 14, body: 'Invite regression is fixed in the preview. I am doing one more cross-project check.' },
+  { author: 0, hoursAgo: 10, body: 'Great. Let us aim for a quiet launch morning and keep the support rotation visible.' },
+  { author: 2, hoursAgo: 7, body: 'Support rotation is set. I also added the notification checks to the release checklist.' },
+  { author: 1, hoursAgo: 4, body: 'Design review is approved. The release banner and empty states are ready to ship.' },
+  { author: 3, hoursAgo: 1, body: 'Final preview is stable. I am comfortable calling this ready once release notes are published.' },
+]
+
+const threadReplies = [
+  { author: 1, hoursAgo: 25, body: 'Yes. Lead with faster handoffs, then support it with the shared task context.' },
+  { author: 2, hoursAgo: 24, body: 'I agree. The customer proof point is fewer status meetings after the launch.' },
+  { author: 3, hoursAgo: 23, body: 'That framing also gives us room to mention the mobile workflow without overloading the banner.' },
+  { author: 0, hoursAgo: 21, body: 'Decision made. Leo owns the final copy and Priya will validate it in the preview.' },
+  { author: 1, hoursAgo: 19, body: 'Done. The final headline is in the review board and ready for approval.' },
+]
+
+const seededTasks = [
+  { title: 'Instrument launch funnel metrics', description: 'Add activation and first-task metrics to the launch dashboard.', assignee: 3, state: 'Backlog', priority: 'medium', messageIndex: undefined },
+  { title: 'Publish launch release notes', description: 'Turn the approved draft into the customer-facing release notes.', assignee: 1, state: 'To do', priority: 'high', messageIndex: 10 },
+  { title: 'Verify notification copy on Android', description: 'Confirm the notification title and body remain readable on the release build.', assignee: 2, state: 'To do', priority: 'medium', messageIndex: undefined },
+  { title: 'Fix stale project switcher after invite', description: 'Refresh the selected project after an invite is accepted without a browser reload.', assignee: 3, state: 'In progress', priority: 'urgent', messageIndex: 7 },
+  { title: 'Finalize release banner copy', description: 'Use the approved faster-handoffs headline and attach the final visual review.', assignee: 1, state: 'In progress', priority: 'high', messageIndex: 12 },
+  { title: 'Run launch-day support rotation', description: 'Keep the support owner and escalation path visible throughout launch morning.', assignee: 0, state: 'In progress', priority: 'high', messageIndex: undefined },
+  { title: 'Refresh onboarding screenshots', description: 'Replace the old project view screenshots in the onboarding checklist.', assignee: 2, state: 'Done', priority: 'low', messageIndex: undefined },
+  { title: 'Retire the legacy announcement draft', description: 'Close the old announcement that no longer matches the launch positioning.', assignee: 0, state: 'Canceled', priority: 'none', messageIndex: undefined },
 ] as const
 
-const scaleProjectNames = [
-  'Engineering',
-  'Customer Success',
-  'Marketing',
-  'Sales Operations',
-  'People & Culture',
-  'Finance',
-  'Product',
-  'Design Studio',
-  'Support',
-  'Operations',
-] as const
+export const seedLaunchWeek = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (process.env.DEV_AUTH_BYPASS !== '1') {
+      throw new Error('demo_seed_requires_dev_auth_bypass')
+    }
 
-const scaleChannelNames = ['General', 'Announcements', 'Team updates', 'Planning'] as const
+    const developer = await ctx.db
+      .query('users')
+      .withIndex('by_normalized_email', (query) => query.eq('normalizedEmail', 'developer@track.local'))
+      .unique()
+    if (!developer) throw new Error('demo_seed_developer_missing')
 
-async function findOrProvisionUser(ctx: MutationCtx, email: string) {
-  const normalizedEmail = email.trim().toLowerCase()
-  let user = await ctx.db
-    .query('users')
-    .withIndex('by_normalized_email', (q) => q.eq('normalizedEmail', normalizedEmail))
-    .unique()
-  if (!user) {
-    const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
-      model: 'user',
-      where: [{ field: 'email', value: normalizedEmail }],
-      select: ['_id', 'email', 'name'],
-    }) as { _id?: string; email?: string; name?: string } | null
-    if (!authUser?._id) throw new Error(`demo_auth_user_not_found:${normalizedEmail}`)
+    const memberships = await ctx.db
+      .query('projectMembers')
+      .withIndex('by_user', (query) => query.eq('userId', developer._id))
+      .collect()
+    let projectMember = undefined
+    let project = undefined
+    for (const membership of memberships) {
+      const candidate = await ctx.db.get(membership.projectId)
+      if (membership.status === 'active' && candidate?.name === 'Default' && candidate.status === 'active') {
+        projectMember = membership
+        project = candidate
+        break
+      }
+    }
+    if (!projectMember || !project) throw new Error('demo_seed_starter_project_missing')
+
+    const existingChannel = (await ctx.db
+      .query('groups')
+      .withIndex('by_project', (query) => query.eq('projectId', project._id))
+      .collect())
+      .find((group) => group.name === 'launch-week' && !group.archivedAt)
+    if (existingChannel) {
+      const [messages, tasks, thread] = await Promise.all([
+        ctx.db.query('messages').withIndex('by_group_created_at', (query) => query.eq('groupId', existingChannel._id)).collect(),
+        ctx.db.query('tasks').withIndex('by_project_archived', (query) => query.eq('projectId', project._id).eq('archivedAt', undefined)).collect(),
+        ctx.db.query('channelThreads').withIndex('by_group_status_updated_at', (query) => query.eq('groupId', existingChannel._id).eq('status', 'active')).first(),
+      ])
+      return {
+        alreadySeeded: true,
+        channelId: existingChannel._id,
+        messageCount: messages.filter((message) => !message.channelThreadId).length,
+        taskCount: tasks.filter((task) => task.createIdempotencyKey?.startsWith('demo-launch-week-task-')).length,
+        threadId: thread?._id,
+      }
+    }
+
     const now = Date.now()
-    const userId = await ctx.db.insert('users', {
-      googleSubject: authUser._id,
-      authUserId: authUser._id,
-      normalizedEmail,
-      email: authUser.email ?? normalizedEmail,
-      displayName: authUser.name?.trim() || 'Track Developer',
-      twoFactorEnabled: false,
-      createdAt: now,
-      updatedAt: now,
-    })
-    user = await ctx.db.get(userId)
-    if (!user) throw new Error('demo_track_user_provision_failed')
-  }
-  return user
-}
-
-async function ensureSupplementalProject(
-  ctx: MutationCtx,
-  user: NonNullable<Awaited<ReturnType<typeof findOrProvisionUser>>>,
-  input: (typeof supplementalProjects)[number],
-) {
-  const existing = (await ctx.db
-    .query('projects')
-    .withIndex('by_created_by', (q) => q.eq('createdBy', user._id))
-    .take(100)).find((project) => project.name === input.name)
-  if (existing) return
-
-  const now = Date.now()
-  const projectId = await ctx.db.insert('projects', {
-    name: input.name,
-    description: input.description,
-    accessProfile: 'legacy',
-    origin: 'single_company',
-    status: 'active',
-    participantRevision: 1,
-    revision: 1,
-    createdBy: user._id,
-    createdAt: now,
-    updatedAt: now,
-  })
-  const projectMemberId = await ctx.db.insert('projectMembers', {
-    projectId,
-    userId: user._id,
-    role: 'owner',
-    status: 'active',
-    term: 1,
-    invitedBy: user._id,
-    userDisplayNameSnapshot: user.displayName,
-    createdAt: now,
-    updatedAt: now,
-  })
-  const groupIds: Array<Id<'groups'>> = []
-  for (const [index, name] of input.channels.entries()) {
-    const groupId = await ctx.db.insert('groups', {
-      projectId,
-      kind: index === 0 ? 'general' : 'custom',
-      name,
+    const channelId = await ctx.db.insert('groups', {
+      projectId: project._id,
+      kind: 'custom',
+      name: 'launch-week',
       status: 'active',
       revision: 1,
-      createdBy: user._id,
-      createdAt: now,
+      createdBy: developer._id,
+      createdAt: now - 71 * hour,
       updatedAt: now,
     })
-    groupIds.push(groupId)
     await ctx.db.insert('groupMembers', {
-      projectId,
-      groupId,
-      userId: user._id,
-      projectMemberId,
+      projectId: project._id,
+      groupId: channelId,
+      userId: developer._id,
+      projectMemberId: projectMember._id,
       status: 'active',
-      isSteward: index === 0,
-      createdAt: now,
+      isSteward: true,
+      createdAt: now - 71 * hour,
       updatedAt: now,
     })
-  }
 
-  const boardId = await ctx.db.insert('taskBoards', {
-    projectId,
-    name: `${input.name} board`,
-    description: `Tasks for ${input.name.toLowerCase()}.`,
-    rank: '00000001',
-    isDefault: true,
-    createdByProjectMemberId: projectMemberId,
-    createdAt: now,
-    updatedAt: now,
-  })
-  const stateIds: Array<Id<'taskWorkflowStates'>> = []
-  for (const [index, state] of workflow.entries()) {
-    stateIds.push(await ctx.db.insert('taskWorkflowStates', {
-      projectId,
-      boardId,
-      name: state.name,
-      category: state.category,
-      visualToken: state.visualToken,
-      rank: String(index + 1).padStart(4, '0'),
-      isDefault: state.category === 'unstarted',
-      createdAt: now,
-      updatedAt: now,
-    }))
-  }
-  const labelId = await ctx.db.insert('taskLabels', {
-    projectId,
-    name: 'Demo',
-    colorToken: 'violet',
-    createdByProjectMemberId: projectMemberId,
-    createdAt: now,
-    updatedAt: now,
-  })
-
-  const sourceMessageId = await ctx.db.insert('messages', {
-    projectId,
-    groupId: groupIds[1]!,
-    authorId: user._id,
-    authorProjectMemberId: projectMemberId,
-    channelSequence: 1,
-    body: `Welcome to ${input.name}. Share updates and decisions here so the work stays connected.`,
-    mentions: [],
-    attachmentIds: [],
-    createdAt: now,
-  })
-  const threadId = await ctx.db.insert('channelThreads', {
-    projectId,
-    groupId: groupIds[1]!,
-    name: `${input.name} weekly update`,
-    sourceMessageId,
-    creatorUserId: user._id,
-    creatorProjectMemberId: projectMemberId,
-    status: 'active',
-    revision: 1,
-    replyCount: 2,
-    latestChannelSequence: 3,
-    idempotencyKey: `demo-seed-${input.name.toLowerCase().replaceAll(' ', '-')}-thread`,
-    createdAt: now,
-    updatedAt: now,
-  })
-  await ctx.db.patch(sourceMessageId, { channelThreadId: threadId })
-  for (const [index, body] of [
-    'I have added the latest context and next steps.',
-    'The open questions are ready for review in the task board.',
-  ].entries()) {
-    await ctx.db.insert('messages', {
-      projectId,
-      groupId: groupIds[1]!,
-      authorId: user._id,
-      authorProjectMemberId: projectMemberId,
-      channelThreadId: threadId,
-      channelSequence: index + 2,
-      body,
-      mentions: [],
-      attachmentIds: [],
-      createdAt: now + index + 1,
-    })
-  }
-
-  for (const [index, [title, description, priority]] of input.tasks.entries()) {
-    const taskId = await ctx.db.insert('tasks', {
-      projectId,
-      publicKey: `TRK-${input.name.slice(0, 3).toUpperCase()}-${String(index + 1).padStart(3, '0')}`,
-      boardId,
-      groupId: groupIds[index + 1] ?? groupIds[1]!,
-      workflowStateId: stateIds[index + 1] ?? stateIds[0]!,
-      rank: String(index + 1).padStart(8, '0'),
-      title,
-      description,
-      searchText: `${title} ${description}`.toLowerCase(),
-      assigneeProjectMemberId: projectMemberId,
-      priority,
-      createdByProjectMemberId: projectMemberId,
-      revision: 1,
-      createIdempotencyKey: `demo-seed-${input.name.toLowerCase().replaceAll(' ', '-')}-task-${index + 1}`,
-      createdAt: now + index,
-      updatedAt: now + index,
-    })
-    await ctx.db.insert('taskLabelLinks', { projectId, taskId, labelId, createdAt: now + index })
-    await ctx.db.insert('taskReferences', {
-      projectId,
-      taskId,
-      type: 'message',
-      groupId: groupIds[1]!,
-      channelThreadId: threadId,
-      messageId: sourceMessageId,
-      availability: 'available',
-      isPrimary: true,
-      actorProjectMemberId: projectMemberId,
-      rank: '00000001',
-      createdAt: now + index,
-      updatedAt: now + index,
-    })
-    await ctx.db.insert('taskFollowers', {
-      projectId,
-      taskId,
-      userId: user._id,
-      projectMemberId,
-      reason: 'creator',
-      enabled: true,
-      createdAt: now + index,
-      updatedAt: now + index,
-    })
-    await ctx.db.insert('taskActivities', {
-      projectId,
-      taskId,
-      actorProjectMemberId: projectMemberId,
-      action: 'created',
-      correlationId: `demo-seed-${input.name.toLowerCase().replaceAll(' ', '-')}-task-${index + 1}`,
-      createdAt: now + index,
-    })
-  }
-}
-
-async function ensureSupplementalProjects(
-  ctx: MutationCtx,
-  user: NonNullable<Awaited<ReturnType<typeof findOrProvisionUser>>>,
-) {
-  for (const project of supplementalProjects) {
-    await ensureSupplementalProject(ctx, user, project)
-  }
-}
-
-async function ensureScaleProjects(ctx: MutationCtx, userId: Id<'users'>) {
-  const projects: Array<{
-    projectId: Id<'projects'>
-    groupIds: Array<Id<'groups'>>
-    boardId: Id<'taskBoards'>
-    stateIds: Array<Id<'taskWorkflowStates'>>
-    labelId: Id<'taskLabels'>
-  }> = []
-
-  for (const projectName of scaleProjectNames) {
-    const existing = (await ctx.db
-      .query('projects')
-      .withIndex('by_created_by', (q) => q.eq('createdBy', userId))
-      .take(100)).find((project) => project.name === `Track ${projectName}`)
-    const projectId = existing?._id ?? await ctx.db.insert('projects', {
-      name: `Track ${projectName}`,
-      description: `Synthetic company-scale workspace for ${projectName.toLowerCase()}.`,
-      accessProfile: 'legacy',
-      origin: 'single_company',
-      status: 'active',
-      participantRevision: 1,
-      revision: 1,
-      createdBy: userId,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    })
-    const groupIds: Array<Id<'groups'>> = []
-    for (const channelName of scaleChannelNames) {
-      const existingGroup = (await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', projectId)).take(20))
-        .find((group) => group.name === channelName)
-      groupIds.push(existingGroup?._id ?? await ctx.db.insert('groups', {
-        projectId,
-        kind: channelName === 'General' ? 'general' : 'custom',
-        name: channelName,
-        status: 'active',
-        revision: 1,
-        createdBy: userId,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }))
-    }
-    const existingBoard = await ctx.db.query('taskBoards')
-      .withIndex('by_project_archived', (q) => q.eq('projectId', projectId).eq('archivedAt', undefined))
-      .first()
-    const boardId = existingBoard?._id ?? await ctx.db.insert('taskBoards', {
-      projectId,
-      name: `${projectName} board`,
-      description: `Shared work queue for the ${projectName.toLowerCase()} team.`,
-      rank: '00000001',
-      isDefault: true,
-      createdByProjectMemberId: await ctx.db.insert('projectMembers', {
-        projectId,
-        userId,
-        role: 'owner',
-        status: 'active',
-        term: 1,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    })
-    const boardOwner = existingBoard
-      ? await ctx.db.query('projectMembers').withIndex('by_project_user', (q) => q.eq('projectId', projectId).eq('userId', userId)).unique()
-      : null
-    const stateRows = await ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) => q.eq('boardId', boardId)).take(20)
-    const stateIds = stateRows.length > 0 ? stateRows.sort((a, b) => a.rank.localeCompare(b.rank)).map((state) => state._id) : []
-    if (stateIds.length === 0) {
-      for (const [index, state] of workflow.entries()) stateIds.push(await ctx.db.insert('taskWorkflowStates', {
-        projectId, boardId, name: state.name, category: state.category, visualToken: state.visualToken,
-        rank: String(index + 1).padStart(4, '0'), isDefault: state.category === 'unstarted',
-        createdAt: Date.now(), updatedAt: Date.now(),
-      }))
-    }
-    const existingLabel = await ctx.db.query('taskLabels').withIndex('by_project_name', (q) => q.eq('projectId', projectId).eq('name', 'Company scale')).unique()
-    const labelId = existingLabel?._id ?? await ctx.db.insert('taskLabels', {
-      projectId, name: 'Company scale', colorToken: 'blue',
-      createdByProjectMemberId: boardOwner?._id ?? (await ctx.db.query('projectMembers').withIndex('by_project_user', (q) => q.eq('projectId', projectId).eq('userId', userId)).unique())!._id,
-      createdAt: Date.now(), updatedAt: Date.now(),
-    })
-    projects.push({ projectId, groupIds, boardId, stateIds, labelId })
-  }
-  return projects
-}
-
-export const seedScaleBatch = internalMutation({
-  args: { start: v.number(), count: v.number() },
-  returns: v.object({ createdUsers: v.number(), createdMessages: v.number(), createdTasks: v.number() }),
-  handler: async (ctx, args) => {
-    if (!Number.isInteger(args.start) || !Number.isInteger(args.count) || args.start < 0 || args.count < 1 || args.count > 100) {
-      throw new Error('invalid_seed_batch')
-    }
-    const anchor = await findOrProvisionUser(ctx, 'developer@track.local')
-    const projects = await ensureScaleProjects(ctx, anchor._id)
-    let createdUsers = 0
-    let createdMessages = 0
-    let createdTasks = 0
-
-    for (let offset = 0; offset < args.count; offset += 1) {
-      const index = args.start + offset
-      const email = `person-${String(index + 1).padStart(4, '0')}@track.local`
-      let user = await ctx.db.query('users').withIndex('by_normalized_email', (q) => q.eq('normalizedEmail', email)).unique()
+    const seededMembers = []
+    for (const teammate of teammates) {
+      let user = await ctx.db
+        .query('users')
+        .withIndex('by_google_subject', (query) => query.eq('googleSubject', teammate.subject))
+        .unique()
       if (!user) {
-        const now = Date.now() + index
         const userId = await ctx.db.insert('users', {
-          authUserId: `scale-auth-${index + 1}`,
-          googleSubject: `scale-auth-${index + 1}`,
-          normalizedEmail: email,
-          email,
-          displayName: `Track teammate ${index + 1}`,
-          profileDesignation: ['Product manager', 'Engineer', 'Designer', 'Customer partner'][index % 4],
-          timezone: ['UTC', 'America/New_York', 'Europe/London', 'Asia/Karachi'][index % 4],
+          googleSubject: teammate.subject,
+          normalizedEmail: teammate.email,
+          email: teammate.email,
+          displayName: teammate.name,
           twoFactorEnabled: false,
-          createdAt: now,
+          createdAt: now - 71 * hour,
           updatedAt: now,
         })
         user = await ctx.db.get(userId)
-        createdUsers += 1
       }
-      if (!user) throw new Error('scale_user_create_failed')
-      const project = projects[index % projects.length]!
-      let projectMember = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
-        q.eq('projectId', project.projectId).eq('userId', user!._id),
-      ).unique()
-      if (!projectMember) {
-        const projectMemberId = await ctx.db.insert('projectMembers', {
-          projectId: project.projectId, userId: user._id, role: index % 10 === 0 ? 'admin' : 'staff', status: 'active', term: 1,
-          invitedBy: anchor._id, userDisplayNameSnapshot: user.displayName,
-          createdAt: Date.now(), updatedAt: Date.now(),
+      if (!user) throw new Error('demo_seed_teammate_missing')
+
+      let member = await ctx.db
+        .query('projectMembers')
+        .withIndex('by_project_user', (query) => query.eq('projectId', project._id).eq('userId', user._id))
+        .unique()
+      if (!member) {
+        const memberId = await ctx.db.insert('projectMembers', {
+          projectId: project._id,
+          userId: user._id,
+          role: 'staff',
+          status: 'active',
+          term: 1,
+          userDisplayNameSnapshot: teammate.name,
+          createdAt: now - 71 * hour,
+          updatedAt: now,
         })
-        projectMember = await ctx.db.get(projectMemberId)
-        for (const groupId of project.groupIds) {
-          const member = await ctx.db.query('groupMembers').withIndex('by_group_user', (q) => q.eq('groupId', groupId).eq('userId', user!._id)).unique()
-          if (!member) await ctx.db.insert('groupMembers', {
-            projectId: project.projectId, groupId, userId: user._id, projectMemberId: projectMemberId,
-            status: 'active', isSteward: false, createdAt: Date.now(), updatedAt: Date.now(),
-          })
-        }
+        member = await ctx.db.get(memberId)
       }
-      if (!projectMember) throw new Error('scale_membership_create_failed')
-      const groupId = project.groupIds[index % project.groupIds.length]!
-      const messageKey = `scale-message-${index + 1}`
-      const existingMessage = await ctx.db.query('messages').withIndex('by_author_idempotency', (q) =>
-        q.eq('authorProjectMemberId', projectMember!._id).eq('idempotencyKey', messageKey),
-      ).unique()
-      const messageId = existingMessage?._id ?? await ctx.db.insert('messages', {
-        projectId: project.projectId, groupId, authorId: user._id, authorProjectMemberId: projectMember._id,
-        idempotencyKey: messageKey, body: [`Status update: the weekly plan is on track.`, `New customer feedback is ready for review.`, `I have shared the latest handoff notes.`, `The team is aligned on the next milestone.`][index % 4],
-        mentions: [], attachmentIds: [], createdAt: Date.now() + index,
+      if (!member) throw new Error('demo_seed_project_member_missing')
+
+      await ctx.db.insert('groupMembers', {
+        projectId: project._id,
+        groupId: channelId,
+        userId: user._id,
+        projectMemberId: member._id,
+        status: 'active',
+        createdAt: now - 71 * hour,
+        updatedAt: now,
       })
-      if (!existingMessage) createdMessages += 1
-      const taskKey = `scale-task-${index + 1}`
-      const existingTask = await ctx.db.query('tasks').withIndex('by_project_idempotency', (q) =>
-        q.eq('projectId', project.projectId).eq('createIdempotencyKey', taskKey),
-      ).unique()
-      if (!existingTask) {
-        const taskId = await ctx.db.insert('tasks', {
-          projectId: project.projectId, publicKey: `TRK-${String(index + 1).padStart(5, '0')}`, boardId: project.boardId,
-          groupId, workflowStateId: project.stateIds[index % project.stateIds.length]!, rank: String(index + 1).padStart(8, '0'),
-          title: [`Review weekly update`, `Follow up on customer feedback`, `Prepare team handoff`, `Confirm next milestone`][index % 4],
-          description: `Synthetic task ${index + 1} for company-scale workspace testing.`, searchText: `synthetic task ${index + 1}`,
-          assigneeProjectMemberId: projectMember._id, priority: (['low', 'medium', 'high', 'urgent'] as const)[index % 4]!,
-          createdByProjectMemberId: projectMember._id, revision: 1, createIdempotencyKey: taskKey,
-          createdAt: Date.now() + index, updatedAt: Date.now() + index,
-        })
-        await ctx.db.insert('taskLabelLinks', { projectId: project.projectId, taskId, labelId: project.labelId, createdAt: Date.now() + index })
-        await ctx.db.insert('taskReferences', {
-          projectId: project.projectId, taskId, type: 'message', groupId, messageId,
-          availability: 'available', isPrimary: true, actorProjectMemberId: projectMember._id,
-          rank: '00000001', createdAt: Date.now() + index, updatedAt: Date.now() + index,
-        })
-        await ctx.db.insert('taskFollowers', {
-          projectId: project.projectId, taskId, userId: user._id, projectMemberId: projectMember._id,
-          reason: 'creator', enabled: true, createdAt: Date.now() + index, updatedAt: Date.now() + index,
-        })
-        await ctx.db.insert('taskActivities', {
-          projectId: project.projectId, taskId, actorProjectMemberId: projectMember._id, action: 'created',
-          correlationId: taskKey, createdAt: Date.now() + index,
-        })
-        createdTasks += 1
-      }
+      seededMembers.push({ user, member })
     }
-    return { createdUsers, createdMessages, createdTasks }
+
+    const messageIds = []
+    for (const [index, message] of channelMessages.entries()) {
+      const author = seededMembers[message.author]
+      if (!author) throw new Error('demo_seed_message_author_missing')
+      const messageId = await ctx.db.insert('messages', {
+        projectId: project._id,
+        groupId: channelId,
+        authorId: author.user._id,
+        authorProjectMemberId: author.member._id,
+        channelSequence: index + 1,
+        body: message.body,
+        mentions: [],
+        attachmentIds: [],
+        createdAt: now - message.hoursAgo * hour,
+      })
+      messageIds.push(messageId)
+    }
+
+    const assistantPromptId = messageIds[4]
+    const threadSourceMessageId = messageIds[12]
+    if (!assistantPromptId || !threadSourceMessageId) throw new Error('demo_seed_message_missing')
+    const assistantStreamId = await ctx.db.insert('assistantStreams', {
+      projectId: project._id,
+      groupId: channelId,
+      requesterId: seededMembers[0].user._id,
+      requesterProjectMemberId: seededMembers[0].member._id,
+      promptMessageId: assistantPromptId,
+      status: 'completed',
+      answer: 'Launch is on track. The active risks are publishing release notes, validating Android notifications, and shipping the invite-dialog fix. The release banner now has an approved direction.',
+      evidence: [
+        { messageId: messageIds[7], quote: channelMessages[7].body, reason: 'The invite regression needs a final cross-project check.' },
+        { messageId: messageIds[10], quote: channelMessages[10].body, reason: 'Release notes still need to be published.' },
+      ],
+      createdAt: now - 57 * hour,
+      updatedAt: now - 57 * hour,
+    })
+    await ctx.db.patch(assistantPromptId, { trackInvocationId: assistantStreamId })
+
+    const threadId = await ctx.db.insert('channelThreads', {
+      projectId: project._id,
+      groupId: channelId,
+      name: 'Release banner decision',
+      sourceMessageId: threadSourceMessageId,
+      creatorUserId: seededMembers[0].user._id,
+      creatorProjectMemberId: seededMembers[0].member._id,
+      status: 'active',
+      revision: 1,
+      replyCount: threadReplies.length,
+      latestReplyAt: now - 19 * hour,
+      latestChannelSequence: channelMessages.length + threadReplies.length,
+      idempotencyKey: 'demo-launch-week-release-banner-thread',
+      createdAt: now - 26 * hour,
+      updatedAt: now - 19 * hour,
+    })
+    for (const [index, reply] of threadReplies.entries()) {
+      const author = seededMembers[reply.author]
+      if (!author) throw new Error('demo_seed_thread_author_missing')
+      await ctx.db.insert('messages', {
+        projectId: project._id,
+        groupId: channelId,
+        authorId: author.user._id,
+        authorProjectMemberId: author.member._id,
+        channelThreadId: threadId,
+        channelSequence: channelMessages.length + index + 1,
+        body: reply.body,
+        mentions: [],
+        attachmentIds: [],
+        replyToMessageId: index === 0 ? threadSourceMessageId : undefined,
+        createdAt: now - reply.hoursAgo * hour,
+      })
+    }
+    await ctx.db.patch(channelId, { nextChannelSequence: channelMessages.length + threadReplies.length })
+
+    const board = await getOrCreateDefaultBoard(ctx, {
+      projectId: project._id,
+      groupId: channelId,
+      projectMemberId: projectMember._id,
+      channelName: 'launch-week',
+    })
+    const workflowStates = await ctx.db
+      .query('taskWorkflowStates')
+      .withIndex('by_board_rank', (query) => query.eq('boardId', board._id))
+      .collect()
+    for (const [index, task] of seededTasks.entries()) {
+      const assignee = seededMembers[task.assignee]
+      const workflowState = workflowStates.find((state) => state.name === task.state)
+      if (!assignee || !workflowState) throw new Error('demo_seed_task_configuration_missing')
+      const createdAt = now - (18 - index) * hour
+      const taskId = await ctx.db.insert('tasks', {
+        projectId: project._id,
+        publicKey: await createUniqueTaskPublicKey(ctx, project._id),
+        boardId: board._id,
+        groupId: channelId,
+        workflowStateId: workflowState._id,
+        rank: String(index + 1).padStart(4, '0'),
+        title: task.title,
+        description: task.description,
+        searchText: `${task.title} ${task.description}`.toLowerCase(),
+        assigneeProjectMemberId: assignee.member._id,
+        priority: task.priority,
+        createdByProjectMemberId: projectMember._id,
+        revision: 1,
+        terminalAt: workflowState.category === 'completed' || workflowState.category === 'canceled' ? createdAt : undefined,
+        createIdempotencyKey: `demo-launch-week-task-${index + 1}`,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      if (task.messageIndex === undefined) continue
+      const messageId = messageIds[task.messageIndex]
+      if (!messageId) throw new Error('demo_seed_task_message_missing')
+      await ctx.db.insert('taskReferences', {
+        projectId: project._id,
+        taskId,
+        type: 'message',
+        groupId: channelId,
+        messageId,
+        quote: channelMessages[task.messageIndex].body,
+        availability: 'available',
+        isPrimary: true,
+        actorProjectMemberId: projectMember._id,
+        rank: '0001',
+        createdAt,
+        updatedAt: createdAt,
+      })
+    }
+
+    return {
+      alreadySeeded: false,
+      projectId: project._id,
+      channelId,
+      boardId: board._id,
+      threadId,
+      messageCount: channelMessages.length,
+      threadReplyCount: threadReplies.length,
+      taskCount: seededTasks.length,
+    }
   },
 })
 
-async function seedForUser(ctx: MutationCtx, email: string) {
-  const user = await findOrProvisionUser(ctx, email)
-
-  const existingCompany = await ctx.db
-    .query('companies')
-    .withIndex('by_handle', (q) => q.eq('normalizedHandle', demoCompanyHandle))
-    .unique()
-  if (existingCompany) {
-    const projects = await ctx.db.query('projects').withIndex('by_created_by', (q) => q.eq('createdBy', user._id)).take(100)
-    const existingProject = projects.find((project) => project.name === demoProjectName)
-    if (existingProject) {
-      // The demo workspace is consumed by the legacy web and mobile workspace
-      // surfaces. Repair older demo data that was seeded as a company project.
-      if (existingProject.accessProfile !== 'legacy') {
-        await ctx.db.patch(existingProject._id, {
-          accessProfile: 'legacy',
-        })
-      }
-      const existingProjectMember = await ctx.db
-        .query('projectMembers')
-        .withIndex('by_project_user', (q) =>
-          q.eq('projectId', existingProject._id).eq('userId', user._id),
-        )
-        .unique()
-      if (existingProjectMember && existingProjectMember.role === 'manager') {
-        await ctx.db.patch(existingProjectMember._id, { role: 'owner' })
-      }
-      await ensureSupplementalProjects(ctx, user)
-      const tasks = await ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', existingProject._id)).take(100)
-      return { seeded: false, companyId: existingCompany._id, projectId: existingProject._id, taskCount: tasks.length }
-    }
-  }
-
-  const now = Date.now()
-  const companyId = existingCompany?._id ?? await ctx.db.insert('companies', {
-    displayName: 'Track Demo Company', normalizedHandle: demoCompanyHandle, status: 'active', revision: 1,
-    createdBy: user._id, createdAt: now, updatedAt: now,
-  })
-  const companyMember = await ctx.db.query('companyMembers').withIndex('by_company_user', (q) => q.eq('companyId', companyId).eq('userId', user._id)).unique()
-  if (!companyMember) await ctx.db.insert('companyMembers', {
-    companyId, userId: user._id, role: 'owner', status: 'active', userDisplayNameSnapshot: user.displayName,
-    companyDisplayNameSnapshot: 'Track Demo Company', createdAt: now, updatedAt: now,
-  })
-
-  const projectId = await ctx.db.insert('projects', {
-    name: demoProjectName, clientLabel: 'Internal launch workspace',
-    description: 'A complete seeded workflow for exploring Track on mobile and web.',
-    accessProfile: 'legacy', origin: 'single_company', status: 'active',
-    participantRevision: 1, revision: 1, createdBy: user._id, createdAt: now, updatedAt: now,
-  })
-  await ctx.db.insert('projectCompanies', {
-    projectId, companyId, term: 1, status: 'active', acceptedBy: user._id, acceptedAt: now,
-    createdAt: now, updatedAt: now,
-  })
-  const projectMemberId = await ctx.db.insert('projectMembers', {
-    projectId, userId: user._id, role: 'owner', status: 'active', term: 1,
-    invitedBy: user._id, userDisplayNameSnapshot: user.displayName,
-    createdAt: now, updatedAt: now,
-  })
-
-  const channelIds: Array<Id<'groups'>> = []
-  for (const [index, name] of ['General', 'Launch planning', 'Design review'].entries()) {
-    const groupId = await ctx.db.insert('groups', {
-      projectId, kind: index === 0 ? 'general' : 'custom', name, status: 'active', revision: 1,
-      createdBy: user._id, createdAt: now, updatedAt: now,
-    })
-    channelIds.push(groupId)
-    await ctx.db.insert('groupMembers', {
-      projectId, groupId, userId: user._id, projectMemberId, status: 'active', isSteward: index === 0,
-      createdAt: now, updatedAt: now,
-    })
-  }
-
-  const boardId = await ctx.db.insert('taskBoards', {
-    projectId, name: 'Launch board', description: 'Seeded product-launch workflow', rank: '00000001', isDefault: true,
-    createdByProjectMemberId: projectMemberId, actingCompanyId: companyId, createdAt: now, updatedAt: now,
-  })
-  const stateIds: Array<Id<'taskWorkflowStates'>> = []
-  for (const [index, state] of workflow.entries()) stateIds.push(await ctx.db.insert('taskWorkflowStates', {
-    projectId, boardId, name: state.name, category: state.category, visualToken: state.visualToken,
-    rank: String(index + 1).padStart(4, '0'), isDefault: state.category === 'unstarted', createdAt: now, updatedAt: now,
-  }))
-
-  const labelIds = new Map<string, Id<'taskLabels'>>()
-  for (const [name, colorToken] of [['Launch', 'violet'], ['Design', 'pink'], ['Engineering', 'blue']] as const) {
-    labelIds.set(name, await ctx.db.insert('taskLabels', { projectId, name, colorToken, createdByProjectMemberId: projectMemberId, createdAt: now, updatedAt: now }))
-  }
-
-  const taskInputs = [
-    ['Confirm launch scope', 'Agree on the v1 launch checklist and owners.', 1, 'high', 'Launch'],
-    ['Polish mobile task board', 'Review loading, empty, and error states on iOS.', 2, 'medium', 'Design'],
-    ['Validate Convex development environment', 'Confirm auth, data, and mobile configuration use the same deployment.', 2, 'urgent', 'Engineering'],
-    ['Prepare launch notes', 'Write the internal release summary and testing instructions.', 0, 'low', 'Launch'],
-  ] as const
-  for (const [index, [title, description, stateIndex, priority, label]] of taskInputs.entries()) {
-    const taskId = await ctx.db.insert('tasks', {
-      projectId, publicKey: `TRK-${String(index + 1).padStart(3, '0')}`, boardId,
-      workflowStateId: stateIds[stateIndex]!, rank: String(index + 1).padStart(8, '0'), title, description,
-      searchText: `${title} ${description}`.toLowerCase(), assigneeProjectMemberId: projectMemberId,
-      priority, dueDate: `2026-09-${String(10 + index).padStart(2, '0')}`, createdByProjectMemberId: projectMemberId,
-      actingCompanyId: companyId, revision: 1, createIdempotencyKey: `demo-seed-task-${index + 1}`,
-      createdAt: now + index, updatedAt: now + index,
-    })
-    await ctx.db.insert('taskLabelLinks', { projectId, taskId, labelId: labelIds.get(label)!, createdAt: now + index })
-    await ctx.db.insert('taskFollowers', { projectId, taskId, userId: user._id, projectMemberId, reason: 'creator', enabled: true, createdAt: now + index, updatedAt: now + index })
-    await ctx.db.insert('taskActivities', { projectId, taskId, actorProjectMemberId: projectMemberId, actingCompanyId: companyId, action: 'created', correlationId: `demo-seed-task-${index + 1}`, createdAt: now + index })
-  }
-
-  const messageId = await ctx.db.insert('messages', {
-    projectId, groupId: channelIds[1]!, authorId: user._id, authorProjectMemberId: projectMemberId,
-    actingCompanyId: companyId, channelSequence: 1,
-    body: 'Welcome to the seeded Track launch workspace. Use this channel to coordinate the rollout.',
-    mentions: [], attachmentIds: [], createdAt: now,
-  })
-  const threadId = await ctx.db.insert('channelThreads', {
-    projectId, groupId: channelIds[1]!, name: 'Launch readiness checklist', sourceMessageId: messageId,
-    creatorUserId: user._id, creatorProjectMemberId: projectMemberId, actingCompanyId: companyId, status: 'active',
-    revision: 1, replyCount: 0, latestChannelSequence: 1, idempotencyKey: 'demo-seed-launch-readiness-thread',
-    createdAt: now, updatedAt: now,
-  })
-  await ctx.db.patch(messageId, { channelThreadId: threadId })
-  await ensureSupplementalProjects(ctx, user)
-
-  return { seeded: true, companyId, projectId, taskCount: taskInputs.length }
-}
-
+// Kept for deterministic test fixtures from the earlier demo harness.
 export const seed = internalMutation({
   args: { email: v.string() },
-  returns: v.object({ seeded: v.boolean(), companyId: v.id('companies'), projectId: v.id('projects'), taskCount: v.number() }),
-  handler: async (ctx, args) => await seedForUser(ctx, args.email),
-})
-
-export const addManager = internalMutation({
-  args: { email: v.string() },
-  returns: v.object({ added: v.boolean(), companyId: v.id('companies'), projectId: v.id('projects') }),
   handler: async (ctx, args) => {
-    const manager = await findOrProvisionUser(ctx, args.email)
-    const company = await ctx.db.query('companies').withIndex('by_handle', (q) => q.eq('normalizedHandle', demoCompanyHandle)).unique()
-    if (!company) throw new Error('demo_company_not_found')
-    const projectCompanies = await ctx.db.query('projectCompanies').withIndex('by_company_status', (q) => q.eq('companyId', company._id).eq('status', 'active')).take(20)
-    const project = (await Promise.all(projectCompanies.map((membership) => ctx.db.get(membership.projectId)))).find((item) => item?.name === demoProjectName)
-    if (!project) throw new Error('demo_project_not_found')
-    const now = Date.now()
-    const companyMember = await ctx.db.query('companyMembers').withIndex('by_company_user', (q) => q.eq('companyId', company._id).eq('userId', manager._id)).unique()
-    if (!companyMember) await ctx.db.insert('companyMembers', {
-      companyId: company._id, userId: manager._id, role: 'member', status: 'active',
-      userDisplayNameSnapshot: manager.displayName, companyDisplayNameSnapshot: company.displayName,
-      createdAt: now, updatedAt: now,
-    })
-    const existingProjectMember = (await ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', project._id)).take(100)).find((item) => item.userId === manager._id)
-    const projectMemberId = existingProjectMember?._id ?? await ctx.db.insert('projectMembers', {
-      projectId: project._id, companyId: company._id, userId: manager._id, role: 'staff', status: 'active', term: 1,
-      invitedBy: manager._id, userDisplayNameSnapshot: manager.displayName, companyDisplayNameSnapshot: company.displayName,
-      createdAt: now, updatedAt: now,
-    })
-    const groups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', project._id)).take(20)
-    for (const group of groups) {
-      const membership = await ctx.db.query('groupMembers').withIndex('by_group_user', (q) => q.eq('groupId', group._id).eq('userId', manager._id)).unique()
-      if (!membership) await ctx.db.insert('groupMembers', {
-        projectId: project._id, groupId: group._id, userId: manager._id, projectMemberId, status: 'active',
-        isSteward: false, createdAt: now, updatedAt: now,
-      })
+    const normalizedEmail = args.email.trim().toLowerCase()
+    const user = await ctx.db.query('users').withIndex('by_normalized_email', (q) => q.eq('normalizedEmail', normalizedEmail)).unique()
+    if (!user) throw new Error('demo_seed_fixture_missing')
+    const existing = (await ctx.db.query('projects').withIndex('by_created_by', (q) => q.eq('createdBy', user._id)).collect())
+      .find((item) => item.name === 'Track Product Launch')
+    if (existing) {
+      const member = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) => q.eq('projectId', existing._id).eq('userId', user._id)).unique()
+      const company = member?.companyId ? await ctx.db.get(member.companyId) : await ctx.db.query('companies').withIndex('by_handle', (q) => q.eq('normalizedHandle', 'track-demo')).unique()
+      const tasks = await ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', existing._id).eq('archivedAt', undefined)).collect()
+      if (member && company && tasks.length > 0) return { seeded: false, companyId: company._id, projectId: existing._id, taskCount: tasks.length }
     }
-    return { added: !existingProjectMember, companyId: company._id, projectId: project._id }
+    const now = Date.now()
+    const companyId = await ctx.db.insert('companies', {
+      displayName: 'Track Demo Company', normalizedHandle: `track-demo-${user._id}`, status: 'active', revision: 1,
+      createdBy: user._id, createdAt: now, updatedAt: now,
+    })
+    await ctx.db.insert('companyMembers', {
+      companyId, userId: user._id, role: 'owner', status: 'active', userDisplayNameSnapshot: user.displayName,
+      companyDisplayNameSnapshot: 'Track Demo Company', createdAt: now, updatedAt: now,
+    })
+    const projectId = await ctx.db.insert('projects', {
+      name: 'Track Product Launch', description: 'Deterministic demo workspace', accessProfile: 'legacy', origin: 'single_company', status: 'active',
+      participantRevision: 1, revision: 1, createdBy: user._id, createdAt: now, updatedAt: now,
+    })
+    await ctx.db.insert('projectCompanies', { projectId, companyId, term: 1, status: 'active', acceptedBy: user._id, acceptedAt: now, createdAt: now, updatedAt: now })
+    const projectMemberId = await ctx.db.insert('projectMembers', {
+      projectId, userId: user._id, role: 'owner', status: 'active', term: 1, invitedBy: user._id,
+      userDisplayNameSnapshot: user.displayName, createdAt: now, updatedAt: now,
+    })
+    const groupId = await ctx.db.insert('groups', { projectId, kind: 'general', name: 'General', status: 'active', revision: 1, createdBy: user._id, createdAt: now, updatedAt: now })
+    await ctx.db.insert('groupMembers', { projectId, groupId, userId: user._id, projectMemberId, status: 'active', isSteward: true, createdAt: now, updatedAt: now })
+    const board = await getOrCreateDefaultBoard(ctx, { projectId, groupId, projectMemberId, channelName: 'General' })
+    const state = (await ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).first())
+    if (!state) throw new Error('demo_seed_workflow_missing')
+    const taskId = await ctx.db.insert('tasks', {
+      projectId, publicKey: await createUniqueTaskPublicKey(ctx, projectId), boardId: board._id, groupId, workflowStateId: state._id,
+      rank: '0001', title: 'Seeded launch task', description: 'Deterministic task fixture', searchText: 'seeded launch task deterministic task fixture',
+      assigneeProjectMemberId: projectMemberId, priority: 'medium', createdByProjectMemberId: projectMemberId, actingCompanyId: companyId,
+      revision: 1, createIdempotencyKey: 'demo-seed-task-1', createdAt: now, updatedAt: now,
+    })
+    return { seeded: true, companyId, projectId, taskCount: taskId ? 1 : 0 }
   },
 })

@@ -1,17 +1,17 @@
-import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Pencil, Search, Trash2 } from 'lucide-react'
-import { useMutation } from 'convex/react'
+import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
-import { api } from '../../../../../../convex/_generated/api'
-import { appToast } from '#/components/ui/app-toast'
+import type { Id } from '../../../../../../convex/_generated/dataModel'
+import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Button } from '#/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from '#/components/ui/popover'
 import { Textarea } from '#/components/ui/textarea'
+import type { TaskIdentity } from '#/features/tasks/task-types'
 import type { GroupMessageItem, ReplyToMessagePreview } from '../thread-item-components'
 import { getGroupAvatar } from '../group-avatar'
+import type { GroupReference } from '../group-types'
 import { CreateTaskFromMessage } from '#/features/tasks/ConversationTaskActions'
 
 export function MessageActions({
@@ -19,8 +19,12 @@ export function MessageActions({
   busyAction,
   canDelete,
   canForward,
+  canReply = true,
+  canCreateTasks = true,
   groups,
+  identity,
   item,
+  linkedTasks,
   onDeleteMessage,
   onForwardMessage,
   onReplyMessage,
@@ -29,8 +33,12 @@ export function MessageActions({
   busyAction: string | null
   canDelete: boolean
   canForward: boolean
-  groups: Array<Doc<'groups'>>
+  canReply?: boolean
+  canCreateTasks?: boolean
+  groups: Array<GroupReference>
+  identity?: TaskIdentity
   item: GroupMessageItem
+  linkedTasks?: ReadonlyArray<{ task: { publicKey: string; title: string } }>
   onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
@@ -39,18 +47,31 @@ export function MessageActions({
   }) => Promise<boolean>
   onReplyMessage: (item: GroupMessageItem) => void
 }) {
-  const editMessage = useMutation(api.messages.edit)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  function selectMessageText() {
+    const messageNode = document.getElementById(`message-${String(item.message._id)}`)?.querySelector('.track-markdown')
+    if (!messageNode) return
+    const range = document.createRange()
+    range.selectNodeContents(messageNode)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
+
   return (
     <div className="track-message-actions" aria-label="Message actions">
-      <Button
-        aria-label="Reply to message"
-        className="icon-button track-message-action-button"
-        onClick={() => onReplyMessage(item)}
-        title="Reply"
-        type="button"
-      >
-        <CornerUpLeft size={14} />
-      </Button>
+      {canReply ? (
+        <Button
+          aria-label="Reply to message"
+          className="icon-button track-message-action-button"
+          onClick={() => onReplyMessage(item)}
+          title="Reply"
+          type="button"
+        >
+          <CornerUpLeft size={14} />
+        </Button>
+      ) : null}
       <ForwardMessagePopover
         activeGroupId={activeGroupId}
         busyAction={busyAction}
@@ -59,31 +80,7 @@ export function MessageActions({
         item={item}
         onForwardMessage={onForwardMessage}
       />
-      <CreateTaskFromMessage message={item.message} />
-      {canDelete ? (
-        <Button
-          aria-label="Edit message"
-          className="icon-button track-message-action-button"
-          onClick={() => {
-            const body = window.prompt('Edit message', item.message.body)
-            if (body === null || body === item.message.body) return
-            void editMessage({
-              actorId: item.message.authorId,
-              body,
-              messageId: item.message._id,
-              ...(item.message.actingCompanyId && item.message.authorProjectMemberId
-                ? { actingCompanyId: item.message.actingCompanyId, projectMemberId: item.message.authorProjectMemberId }
-                : {}),
-            })
-              .then(() => appToast.success('Message updated'))
-              .catch(() => appToast.error('Message not updated', 'Check your access and try again.'))
-          }}
-          title="Edit message"
-          type="button"
-        >
-          <Pencil size={14} />
-        </Button>
-      ) : null}
+      {canCreateTasks ? <CreateTaskFromMessage identity={identity} message={item.message} /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -102,22 +99,31 @@ export function MessageActions({
             <DropdownMenuItem
               onClick={() => {
                 const text = item.message.body || item.forwardedFrom?.originalBody || ''
-                if (text) {
-                  void navigator.clipboard?.writeText(text)
-                    .then(() => appToast.success('Message copied'))
-                    .catch(() => appToast.error('Message not copied', 'Your browser blocked clipboard access.'))
-                }
+                if (text) void navigator.clipboard?.writeText(text)
               }}
             >
               Copy text
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={selectMessageText}>Select message</DropdownMenuItem>
+            {linkedTasks?.length ? (
+              <DropdownMenuItem
+                onClick={() => {
+                  const task = linkedTasks[0]?.task
+                  if (!task) return
+                  const identityQuery = identity?.actingCompanyId && identity.projectMemberId
+                    ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}`
+                    : ''
+                  const taskUrl = `${window.location.origin}/workspace/projects/${item.message.projectId}/tasks?view=board&task=${encodeURIComponent(task.publicKey)}&groupId=${encodeURIComponent(String(item.message.groupId))}${identityQuery}`
+                  void navigator.clipboard?.writeText(taskUrl)
+                }}
+              >
+                Copy task link
+              </DropdownMenuItem>
+            ) : null}
             {canDelete ? (
               <DropdownMenuItem
                 disabled={busyAction === `delete-${item.message._id}`}
-                onClick={() => {
-                  if (!window.confirm('Delete this message? This can’t be undone.')) return
-                  void onDeleteMessage(item.message._id)
-                }}
+                onClick={() => setDeleteOpen(true)}
                 variant="destructive"
               >
                 <Trash2 />
@@ -127,6 +133,14 @@ export function MessageActions({
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ConfirmDialog
+        confirmLabel="Delete message"
+        description="This removes the message from the conversation. The action cannot be undone."
+        onConfirm={() => onDeleteMessage(item.message._id)}
+        onOpenChange={setDeleteOpen}
+        open={deleteOpen}
+        title="Delete this message?"
+      />
     </div>
   )
 }
@@ -142,7 +156,7 @@ function ForwardMessagePopover({
   activeGroupId: Id<'groups'> | null
   busyAction: string | null
   canForward: boolean
-  groups: Array<Doc<'groups'>>
+  groups: Array<GroupReference>
   item: GroupMessageItem
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
@@ -215,7 +229,7 @@ function ForwardMessagePopover({
                 focusTargetAt(0)
               }
             }}
-            placeholder="Search groups..."
+            placeholder="Search groups…"
             value={query}
           />
         </div>
@@ -224,7 +238,7 @@ function ForwardMessagePopover({
           aria-label="Optional forwarding note"
           className="track-forward-note"
           onChange={(event) => setNote(event.currentTarget.value)}
-          placeholder="Add a note for this Group..."
+          placeholder="Add a note for this Group…"
           value={note}
         />
         <div

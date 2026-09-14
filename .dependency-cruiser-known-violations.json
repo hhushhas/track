@@ -1,0 +1,361 @@
+[
+  {
+    "type": "cycle",
+    "from": "apps/web/src/features/workspace/components/AssistantAnswer.tsx",
+    "to": "apps/web/src/features/workspace/thread-item-components.tsx",
+    "unresolvedTo": "../thread-item-components",
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/web/src/features/workspace/thread-item-components.tsx",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/web/src/features/workspace/components/AssistantAnswer.tsx",
+        "dependencyTypes": [
+          "local",
+          "export"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "cycle",
+    "from": "apps/web/src/features/workspace/components/MessageActions.tsx",
+    "to": "apps/web/src/features/workspace/thread-item-components.tsx",
+    "unresolvedTo": "../thread-item-components",
+    "dependencyTypes": [
+      "local",
+      "type-only",
+      "import"
+    ],
+    "rule": {
+      "severity": "error",
+      "name": "no-circular"
+    },
+    "cycle": [
+      {
+        "name": "apps/web/src/features/workspace/thread-item-components.tsx",
+        "dependencyTypes": [
+          "local",
+          "type-only",
+          "import"
+        ]
+      },
+      {
+        "name": "apps/web/src/features/workspace/components/MessageActions.tsx",
+        "dependencyTypes": [
+          "local",
+          "import"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/app.config.ts",
+    "to": "apps/mobile/app.config.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/expo-env.d.ts",
+    "to": "apps/mobile/expo-env.d.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/components/chat/types.ts",
+    "to": "apps/mobile/src/components/chat/types.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/components/platform-icon.tsx",
+    "to": "apps/mobile/src/components/platform-icon.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/components/task-detail-types.ts",
+    "to": "apps/mobile/src/components/task-detail-types.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/hooks/use-color-scheme.ts",
+    "to": "apps/mobile/src/hooks/use-color-scheme.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/hooks/use-color-scheme.web.ts",
+    "to": "apps/mobile/src/hooks/use-color-scheme.web.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/attachment-actions.ts",
+    "to": "apps/mobile/src/lib/attachment-actions.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/attachment-upload.ts",
+    "to": "apps/mobile/src/lib/attachment-upload.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/email-auth.ts",
+    "to": "apps/mobile/src/lib/email-auth.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/haptics.ts",
+    "to": "apps/mobile/src/lib/haptics.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/idempotency.ts",
+    "to": "apps/mobile/src/lib/idempotency.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/mention-autocomplete.ts",
+    "to": "apps/mobile/src/lib/mention-autocomplete.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/platform-storage.ts",
+    "to": "apps/mobile/src/lib/platform-storage.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/task-navigation.ts",
+    "to": "apps/mobile/src/lib/task-navigation.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/theme-preference.ts",
+    "to": "apps/mobile/src/lib/theme-preference.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/lib/timezones.ts",
+    "to": "apps/mobile/src/lib/timezones.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/src/types/css.d.ts",
+    "to": "apps/mobile/src/types/css.d.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/mobile/vitest.config.ts",
+    "to": "apps/mobile/vitest.config.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/public/service-worker.js",
+    "to": "apps/web/public/service-worker.js",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/hooks/use-mobile.ts",
+    "to": "apps/web/src/hooks/use-mobile.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/about.tsx",
+    "to": "apps/web/src/routes/about.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/deletion.tsx",
+    "to": "apps/web/src/routes/deletion.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/index.tsx",
+    "to": "apps/web/src/routes/index.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/privacy.tsx",
+    "to": "apps/web/src/routes/privacy.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/support.tsx",
+    "to": "apps/web/src/routes/support.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/terms.tsx",
+    "to": "apps/web/src/routes/terms.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/routes/workspace.projects.$projectId.tsx",
+    "to": "apps/web/src/routes/workspace.projects.$projectId.tsx",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/src/types/qrcode.d.ts",
+    "to": "apps/web/src/types/qrcode.d.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "apps/web/vitest.config.ts",
+    "to": "apps/web/vitest.config.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "convex/crons.ts",
+    "to": "convex/crons.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "convex/lib/projectExitArchive.ts",
+    "to": "convex/lib/projectExitArchive.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  },
+  {
+    "type": "module",
+    "from": "packages/shared/vitest.config.ts",
+    "to": "packages/shared/vitest.config.ts",
+    "rule": {
+      "severity": "warn",
+      "name": "no-orphans"
+    }
+  }
+]

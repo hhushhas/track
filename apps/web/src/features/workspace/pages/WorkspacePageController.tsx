@@ -1,10 +1,18 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation } from 'convex/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 
 import { api } from '../../../../../../convex/_generated/api'
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { getActiveMention } from '#/features/workspace/identity'
+import {
+  clearAllComposerDrafts,
+  clearComposerDraft,
+  getComposerDraftKey,
+  readComposerDraft,
+  writeComposerDraft,
+} from '#/features/workspace/chat/composer-drafts'
 import {
   buildMentionGroups,
   buildMentionSections,
@@ -23,7 +31,7 @@ import { useWorkspaceTypingIndicators } from '#/features/workspace/hooks/useWork
 import { useWorkspaceSynchronization } from '#/features/workspace/hooks/useWorkspaceSynchronization'
 import { useWorkspaceThreadInteractions } from '#/features/workspace/hooks/useWorkspaceThreadInteractions'
 import { useWorkspaceNavigation } from '#/features/workspace/hooks/useWorkspaceNavigation'
-import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
+import type { ProjectSearchFilter, ProjectSearchResult } from '#/features/workspace/search/ProjectSearchDialog'
 import { authClient } from '#/lib/auth-client'
 import { disableDevAuthBypass, useDevAuthBypass } from '#/lib/dev-auth-bypass'
 import { useOAuthCallbackPending } from '#/lib/oauth-callback'
@@ -35,6 +43,7 @@ import {
 } from '#/features/workspace/workspace-session'
 import { WorkspacePageSurface } from './WorkspacePageSurface'
 import { getStoredActingCompanyId } from '#/features/company/use-acting-company'
+import { getStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH } from '#/features/workspace/sidebar-sizing'
 
 type WorkspacePageProps = {
   directoryOnly?: boolean
@@ -50,6 +59,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   const syncDevUser = useMutation(api.auth.syncDevUser)
   const ensureStarterProject = useMutation(api.projects.ensureStarter)
   const acceptPendingInvitations = useMutation(api.invitations.acceptPendingForCurrentUser)
+  const markGroupRead = useMutation(api.mobile.markGroupRead)
 
   const [trackUserId, setTrackUserId] = useState<Id<'users'> | null>(() => {
     const sessionUser = getSessionUser(authClient.getSessionData?.())
@@ -58,11 +68,11 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   const [activeProjectId, setActiveProjectId] = useState<Id<'projects'> | null>(null)
   const [actingCompanyId] = useState(getStoredActingCompanyId)
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
-  const [composer, setComposer] = useState('')
-  const [replyToMessage, setReplyToMessage] = useState<GroupMessageItem | null>(null)
+  const [composerState, setComposerState] = useState<{ scopeKey: string | null; value: string }>({ scopeKey: null, value: '' })
+  const [replyState, setReplyState] = useState<{ scopeKey: string | null; value: GroupMessageItem | null }>({ scopeKey: null, value: null })
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [uiError, setUiError] = useState<string | null>(null)
-  const [composerCursor, setComposerCursor] = useState(0)
+  const [composerCursorState, setComposerCursorState] = useState<{ scopeKey: string | null; value: number }>({ scopeKey: null, value: 0 })
   const [mentionIndex, setMentionIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [chatSearchQuery, setChatSearchQuery] = useState('')
@@ -74,6 +84,11 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('track-nav-collapsed') === 'true'
   })
+  const [navWidth, setNavWidth] = useState(() => {
+    if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH
+    return getStoredSidebarWidth(window.localStorage.getItem('track-nav-width'))
+  })
+  const [navResizing, setNavResizing] = useState(false)
   const [railCollapsed, setRailCollapsed] = useState(false)
   const [railWidth, setRailWidth] = useState(312)
   const [railResizing, setRailResizing] = useState(false)
@@ -83,18 +98,34 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [flashingMessageId, setFlashingMessageId] = useState<string | null>(null)
-  const [pendingFocusMessageId, setPendingFocusMessageId] = useState<string | null>(null)
+  const [pendingFocusMessageId, setPendingFocusMessageId] = useState<Id<'messages'> | null>(null)
+  const [tabVisible, setTabVisible] = useState(
+    () => typeof document === 'undefined' || document.visibilityState === 'visible',
+  )
   const [voiceRecordingActive, setVoiceRecordingActive] = useState(false)
   const [memoryImportOpen, setMemoryImportOpen] = useState(false)
   const navigation = useWorkspaceNavigation({ activeProjectId, setActiveGroupId, setMobileNavOpen })
   const { navigateToGroup, navigateToProject, navigateToProjectSettings } = navigation
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const projectSearchReturnFocusRef = useRef<HTMLElement | null>(null)
   const threadScrollRef = useRef<HTMLDivElement | null>(null)
   const mentionOptionRefs = useRef<Array<HTMLButtonElement | null>>([])
   const shouldFollowLatestRef = useRef(true)
   const lastLoadedGroupIdRef = useRef<Id<'groups'> | null>(null)
   const flashMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const historyAnchorRef = useRef<{ count: number; height: number; top: number } | null>(null)
+  const historyLoadingRef = useRef(false)
+  const viewedGroupSequenceRef = useRef(0)
+  const acknowledgedGroupSequenceRef = useRef(0)
+  const groupReadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previousReadGroupIdRef = useRef<Id<'groups'> | null>(null)
+  const openProjectSearch = useCallback(() => {
+    const activeElement = typeof document === 'undefined' ? null : document.activeElement
+    projectSearchReturnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null
+    setMobileNavOpen(false)
+    setProjectSearchOpen(true)
+  }, [])
   const attachments = usePendingAttachments({
     activeGroupId,
     composerRef,
@@ -106,9 +137,10 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   } = attachments
 
   useEffect(() => {
+    const timeoutRef = flashMessageTimeoutRef
     return () => {
-      if (flashMessageTimeoutRef.current) {
-        clearTimeout(flashMessageTimeoutRef.current)
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
       }
     }
   }, [])
@@ -140,6 +172,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     projectSearchFilter,
     projectSearchOpen,
     projectSearchQuery,
+    targetMessageId: pendingFocusMessageId,
     trackUserId,
   })
   const {
@@ -154,6 +187,9 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     groupAssistantStreams,
     groupMessages,
     groups,
+    hasMoreMessages,
+    loadMoreMessages,
+    messagePageStatus,
     messages,
     projectItems,
     projectMembers,
@@ -161,6 +197,106 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     projects,
     visibleGroups,
   } = workspaceData
+  const loadingOlderMessages = messagePageStatus === 'LoadingMore'
+
+  useEffect(() => {
+    if (previousReadGroupIdRef.current === confirmedActiveGroupId) return
+    previousReadGroupIdRef.current = confirmedActiveGroupId
+    historyLoadingRef.current = false
+    historyAnchorRef.current = null
+    viewedGroupSequenceRef.current = 0
+    acknowledgedGroupSequenceRef.current = 0
+  }, [confirmedActiveGroupId])
+
+  const loadOlderMessages = useCallback(() => {
+    const element = threadScrollRef.current
+    if (!element || !hasMoreMessages || messagePageStatus !== 'CanLoadMore' || historyLoadingRef.current) return
+    historyLoadingRef.current = true
+    historyAnchorRef.current = {
+      height: element.scrollHeight,
+      count: (messages?.length ?? 0) + groupAssistantStreams.length,
+      top: element.scrollTop,
+    }
+    loadMoreMessages(80)
+  }, [groupAssistantStreams.length, hasMoreMessages, loadMoreMessages, messagePageStatus, messages])
+
+  useEffect(() => {
+    const anchor = historyAnchorRef.current
+    if (!anchor || !messages || messagePageStatus === 'LoadingMore') return
+    const currentCount = messages.length + groupAssistantStreams.length
+    if (currentCount <= anchor.count && messagePageStatus !== 'Exhausted') return
+    historyAnchorRef.current = null
+    historyLoadingRef.current = false
+    requestAnimationFrame(() => {
+      const element = threadScrollRef.current
+      if (!element) return
+      element.scrollTop = anchor.top + (element.scrollHeight - anchor.height)
+    })
+  }, [groupAssistantStreams.length, messagePageStatus, messages])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return () => {}
+    const handleVisibilityChange = () => setTabVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+  const composerDraftScope = useMemo(
+    () => trackUserId && activeProjectId && confirmedActiveGroupId
+      ? {
+          actorId: trackUserId,
+          groupId: confirmedActiveGroupId,
+          projectId: activeProjectId,
+          projectMemberId: activeProject?.membership._id,
+        }
+      : null,
+    [activeProject?.membership._id, activeProjectId, confirmedActiveGroupId, trackUserId],
+  )
+  const composerScopeKey = composerDraftScope ? getComposerDraftKey(composerDraftScope) : null
+  const composerDraft = useMemo(
+    () => composerDraftScope ? readComposerDraft(composerDraftScope) : null,
+    [composerDraftScope],
+  )
+  const composer = composerState.scopeKey === composerScopeKey
+    ? composerState.value
+    : composerDraft?.composer ?? ''
+  const setComposer = useCallback<Dispatch<SetStateAction<string>>>((nextComposer) => {
+    setComposerState((current) => {
+      const currentValue = current.scopeKey === composerScopeKey
+        ? current.value
+        : composerDraft?.composer ?? ''
+      const nextValue = typeof nextComposer === 'function' ? nextComposer(currentValue) : nextComposer
+      return current.scopeKey === composerScopeKey && current.value === nextValue
+        ? current
+        : { scopeKey: composerScopeKey, value: nextValue }
+    })
+  }, [composerDraft?.composer, composerScopeKey])
+  const composerCursor = composerCursorState.scopeKey === composerScopeKey
+    ? composerCursorState.value
+    : composer.length
+  const setComposerCursor = useCallback<Dispatch<SetStateAction<number>>>((nextCursor) => {
+    setComposerCursorState((current) => {
+      const currentValue = current.scopeKey === composerScopeKey ? current.value : composer.length
+      const nextValue = typeof nextCursor === 'function' ? nextCursor(currentValue) : nextCursor
+      return current.scopeKey === composerScopeKey && current.value === nextValue
+        ? current
+        : { scopeKey: composerScopeKey, value: nextValue }
+    })
+  }, [composer, composerScopeKey])
+  const draftReply = composerDraft?.replyToMessageId
+    ? groupMessages.find((item) => item.message._id === composerDraft.replyToMessageId) ?? null
+    : null
+  const replyToMessage = replyState.scopeKey === composerScopeKey ? replyState.value : draftReply
+  const setReplyToMessage = useCallback<Dispatch<SetStateAction<GroupMessageItem | null>>>((nextReply) => {
+    setReplyState((current) => {
+      const currentValue = current.scopeKey === composerScopeKey ? current.value : null
+      const nextValue = typeof nextReply === 'function' ? nextReply(currentValue) : nextReply
+      return current.scopeKey === composerScopeKey && current.value === nextValue
+        ? current
+        : { scopeKey: composerScopeKey, value: nextValue }
+    })
+  }, [composerScopeKey])
+  const previousComposerScopeKeyRef = useRef<string | null>(null)
+  const previousComposerDraftScopeRef = useRef<typeof composerDraftScope>(null)
   const mentionOptions = useMemo(
     () => buildWorkspaceMentionOptions(activeChannelMembers, visibleGroups),
     [activeChannelMembers, visibleGroups],
@@ -211,6 +347,53 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     voiceRecordingActive,
   })
 
+  const navigateToSearchResult = useCallback((result: ProjectSearchResult) => {
+    if (!activeProjectId) return
+    if (result.kind === 'task' && result.taskKey) {
+      void navigate({
+        to: '/workspace/projects/$projectId/tasks',
+        params: { projectId: activeProjectId },
+        search: { task: result.taskKey, view: 'all' },
+      })
+      return
+    }
+    if (result.threadId && result.groupId) {
+      void navigate({
+        to: '/workspace/projects/$projectId/groups/$groupId/threads/$threadId',
+        params: {
+          groupId: result.groupId,
+          projectId: activeProjectId,
+          threadId: result.threadId,
+        },
+        search: { companyId: '', membershipId: '' },
+        hash: result.messageId ? `message-${result.messageId}` : undefined,
+      })
+      return
+    }
+    if (result.groupId) {
+      void navigate({
+        to: '/workspace/projects/$projectId/groups/$groupId',
+        params: { groupId: result.groupId, projectId: activeProjectId },
+        hash: result.messageId ? `message-${result.messageId}` : undefined,
+      })
+      return
+    }
+    if (result.kind === 'person') {
+      void navigate({
+        to: '/workspace/projects/$projectId/settings',
+        params: { projectId: activeProjectId },
+        hash: 'people',
+      })
+      return
+    }
+    if (result.kind === 'project') {
+      void navigate({
+        to: '/workspace/projects/$projectId',
+        params: { projectId: activeProjectId },
+      })
+    }
+  }, [activeProjectId, navigate])
+
   useWorkspaceSynchronization({
     acceptPendingInvitations,
     actingCompanyId,
@@ -226,6 +409,8 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     mentionIndex,
     mentionOptionRefs,
     navCollapsed,
+    navResizing,
+    navWidth,
     projectItems,
     projects,
     railResizing,
@@ -237,9 +422,11 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     setActionError,
     setLogoutConfirmOpen,
     setMentionIndex,
+    setNavCollapsed,
+    setNavResizing,
+    setNavWidth,
     setRailResizing,
     setRailWidth,
-    setReplyToMessage,
     setShowJumpToLatest,
     setTrackUserId,
     setUiError,
@@ -250,6 +437,30 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     view,
     visibleGroups,
   })
+
+  useEffect(() => {
+    const previousKey = previousComposerScopeKeyRef.current
+    if (
+      previousKey &&
+      composerScopeKey === null &&
+      groups !== undefined &&
+      activeGroupId !== null &&
+      confirmedActiveGroupId === null
+    ) {
+      const previousDraftScope = previousComposerDraftScopeRef.current
+      if (previousDraftScope) clearComposerDraft(previousDraftScope)
+    }
+    previousComposerScopeKeyRef.current = composerScopeKey
+    previousComposerDraftScopeRef.current = composerDraftScope
+  }, [activeGroupId, composerDraftScope, composerScopeKey, confirmedActiveGroupId, groups])
+
+  useEffect(() => {
+    if (!composerDraftScope || !composerScopeKey) return
+    writeComposerDraft(composerDraftScope, {
+      composer,
+      replyToMessageId: replyToMessage?.message._id ?? null,
+    })
+  }, [composer, composerDraftScope, composerScopeKey, replyToMessage])
 
   const dialogState = useWorkspaceDialogState({ activeGroupId })
   const {
@@ -272,7 +483,8 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   const isProjectRouteLoading =
     trackUserId !== null &&
     (projects === undefined ||
-      (activeProjectId !== null && (groups === undefined || projectMembers === undefined)))
+      (activeProject?.projectType === 'legacy' &&
+        (groups === undefined || projectMembers === undefined)))
   const isGroupRouteLoading =
     view === 'group' &&
     activeGroupId !== null &&
@@ -297,6 +509,8 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     latestThreadItemKey,
     messagesLoaded: messages !== undefined,
     navigateToGroup,
+    navigateToSearchResult,
+    openProjectSearch,
     pendingFocusMessageId,
     setActiveChatMatchIndex,
     setComposer,
@@ -317,6 +531,57 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     visibleMessages,
   })
   const { handleMessageSent } = threadInteractions
+
+  useEffect(() => {
+    const scrollElement = threadScrollRef.current
+    if (
+      view !== 'group' ||
+      !scrollElement ||
+      !tabVisible ||
+      !trackUserId ||
+      !activeGroupId ||
+      activeGroup?.status === 'archived'
+    ) return () => {}
+    const messageBySequence = new Map(
+      visibleMessages.flatMap((item) => item.message.channelSequence
+        ? [[item.message.channelSequence, item.message._id] as const]
+        : []),
+    )
+    const observer = new IntersectionObserver((entries) => {
+      let highestSequence = viewedGroupSequenceRef.current
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        const sequenceValue = entry.target.getAttribute('data-channel-sequence')
+        const sequence = sequenceValue ? Number(sequenceValue) : 0
+        if (Number.isInteger(sequence)) highestSequence = Math.max(highestSequence, sequence)
+      }
+      if (highestSequence <= acknowledgedGroupSequenceRef.current) return
+      viewedGroupSequenceRef.current = highestSequence
+      if (groupReadTimeoutRef.current) return
+      groupReadTimeoutRef.current = setTimeout(() => {
+        groupReadTimeoutRef.current = null
+        const messageId = messageBySequence.get(viewedGroupSequenceRef.current)
+        if (!messageId || viewedGroupSequenceRef.current <= acknowledgedGroupSequenceRef.current) return
+        const acknowledgedSequence = viewedGroupSequenceRef.current
+        acknowledgedGroupSequenceRef.current = acknowledgedSequence
+        void markGroupRead({
+          groupId: activeGroupId,
+          lastReadMessageId: messageId,
+          userId: trackUserId,
+        }).catch(() => {
+          acknowledgedGroupSequenceRef.current = Math.min(acknowledgedGroupSequenceRef.current, acknowledgedSequence - 1)
+        })
+      }, 150)
+    }, { root: scrollElement, threshold: 0.6 })
+    for (const element of scrollElement.querySelectorAll<HTMLElement>('[data-channel-sequence]')) {
+      observer.observe(element)
+    }
+    return () => observer.disconnect()
+  }, [activeGroup?.status, activeGroupId, markGroupRead, tabVisible, trackUserId, view, visibleMessages])
+
+  useEffect(() => () => {
+    if (groupReadTimeoutRef.current) clearTimeout(groupReadTimeoutRef.current)
+  }, [])
 
   const activeProjectRole = activeProject?.membership.role
   const canManageProject = activeProjectRole === 'owner' || activeProjectRole === 'admin'
@@ -355,7 +620,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
       }
     },
     onGroupDialogOpenChange: setGroupDialogOpen,
-    onGroupUpdated: () => undefined,
+    onGroupUpdated: () => {},
     onInviteDialogOpenChange: setInviteDialogOpen,
     onProjectDeleted: (deletedProjectId) => {
       setActiveProjectId(null)
@@ -376,7 +641,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
       navigateToProject(projectIdToOpen)
     },
     onProjectDialogOpenChange: setProjectDialogOpen,
-    onProjectUpdated: () => undefined,
+    onProjectUpdated: () => {},
     projectClientLabel,
     projectDialogMode,
     projectName,
@@ -408,6 +673,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
     setLogoutConfirmOpen(false)
     disableDevAuthBypass()
     clearResolvedTrackUserIds()
+    clearAllComposerDrafts()
     setTrackUserId(null)
     setActiveProjectId(null)
     setActiveGroupId(null)
@@ -441,6 +707,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
         navigation,
         notifications,
         presentation,
+        projectSearchReturnFocusRef,
         route: {
           canDeleteProject,
           canManageProject,
@@ -464,6 +731,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
           emojiPickerOpen,
           fileInputRef,
           flashingMessageId,
+          loadingOlderMessages,
           logoutConfirmOpen,
           memoryImportOpen,
           mentionIndex,
@@ -471,6 +739,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
           mobileNavOpen,
           mobileRailOpen,
           navCollapsed,
+          navWidth,
           projectSearchFilter,
           projectSearchOpen,
           projectSearchQuery,
@@ -485,6 +754,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
         },
         threadInteractions,
         update: {
+          loadOlderMessages,
           onActionError: setActionError,
           onComposerChange: (value, cursor) => {
             setComposer(value)
@@ -494,10 +764,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
             setBusyAction(busy ? 'memory-import' : null)
             if (busy) setUiError(null)
           },
-          onOpenProjectSearch: () => {
-            setMobileNavOpen(false)
-            setProjectSearchOpen(true)
-          },
+          onOpenProjectSearch: openProjectSearch,
           onSearchClose: () => {
             setChatSearchQuery('')
             setSearchOpen(false)
@@ -517,6 +784,8 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
           setMobileNavOpen,
           setMobileRailOpen,
           setNavCollapsed,
+          setNavResizing,
+          setNavWidth,
           setLogoutConfirmOpen,
           setProjectSearchFilter,
           setProjectSearchOpen,

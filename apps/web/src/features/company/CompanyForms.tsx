@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
-import { useState, type FormEvent } from "react";
+import type { FunctionReturnType } from "convex/server";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
@@ -9,7 +10,24 @@ import { Label } from "#/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
 import { Textarea } from "#/components/ui/textarea";
 
-type AsyncAction = (action: () => Promise<unknown>) => Promise<void>;
+type AsyncAction = (action: () => Promise<unknown>) => Promise<void | boolean>;
+
+function formatProjectInvitationError(error: unknown) {
+  if (!(error instanceof Error)) return "The invitation could not be sent.";
+  if (error.message.includes("company_invitation_pending")) {
+    return "An invitation for this Company is already pending.";
+  }
+  if (error.message.includes("company_already_participating")) {
+    return "This Company already participates in the Project.";
+  }
+  if (error.message.includes("owning_company_required")) {
+    return "Only the owning Company can invite collaborators.";
+  }
+  if (error.message.includes("project_relationship_conflict")) {
+    return "This Project is already linked to a different Relationship.";
+  }
+  return "The invitation could not be sent. Try again.";
+}
 
 export function CreateCompanyForm({ run }: { run: AsyncAction }) {
   const createCompany = useMutation(api.companies.create);
@@ -27,13 +45,14 @@ export function CreateCompanyForm({ run }: { run: AsyncAction }) {
 
   return (
     <form
-      className="company-inline-form company-form-create"
+      className="company-inline-form"
       onSubmit={(event) => void submit(event)}
     >
       <div>
         <Label htmlFor="company-name">Company name</Label>
         <Input
           id="company-name"
+          name="companyName"
           onChange={(event) => setDisplayName(event.target.value)}
           required
           value={displayName}
@@ -43,13 +62,16 @@ export function CreateCompanyForm({ run }: { run: AsyncAction }) {
         <Label htmlFor="company-handle">Private handle</Label>
         <Input
           autoCapitalize="none"
+          autoComplete="organization"
           id="company-handle"
+          name="companyHandle"
+          spellCheck={false}
           onChange={(event) => setHandle(event.target.value)}
           required
           value={handle}
         />
       </div>
-      <Button type="submit">Create company</Button>
+      <Button type="submit">Create Company</Button>
     </form>
   );
 }
@@ -66,7 +88,7 @@ export function InviteMemberForm({
   const [role, setRole] = useState<"admin" | "member">("member");
   return (
     <form
-      className="company-inline-form company-form-invite"
+      className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
         void run(async () => {
@@ -77,9 +99,12 @@ export function InviteMemberForm({
     >
       <div>
         <Label htmlFor="member-email">Email</Label>
-        <Input
+          <Input
+            autoComplete="email"
           id="member-email"
-          onChange={(event) => setEmail(event.target.value)}
+            name="email"
+            onChange={(event) => setEmail(event.target.value)}
+            spellCheck={false}
           required
           type="email"
           value={email}
@@ -87,53 +112,19 @@ export function InviteMemberForm({
       </div>
       <div>
         <Label htmlFor="member-role">Role</Label>
-        <NativeSelect
-          id="member-role"
-          onChange={(event) =>
-            setRole(event.target.value as "admin" | "member")
-          }
-          value={role}
-        >
-          <NativeSelectOption value="member">Member</NativeSelectOption>
-          <NativeSelectOption value="admin">Admin</NativeSelectOption>
-        </NativeSelect>
+          <NativeSelect
+            aria-label="Company role"
+            autoComplete="off"
+            id="member-role"
+            name="role"
+            onChange={(event) => setRole(event.target.value as "admin" | "member")}
+            value={role}
+          >
+            <NativeSelectOption value="member">Member</NativeSelectOption>
+            <NativeSelectOption value="admin">Admin</NativeSelectOption>
+          </NativeSelect>
       </div>
       <Button type="submit">Invite member</Button>
-    </form>
-  );
-}
-
-export function CompanyProjectForm({
-  actingCompanyId,
-  run,
-}: {
-  actingCompanyId: Id<"companies">;
-  run: AsyncAction;
-}) {
-  const createProject = useMutation(api.sharedProjects.createCompanyProject);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  return (
-    <form
-      className="company-inline-form company-form-project"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void run(async () => {
-          await createProject({ actingCompanyId, name, description });
-          setName("");
-          setDescription("");
-        });
-      }}
-    >
-      <div>
-        <Label htmlFor="company-project-name">Project name</Label>
-        <Input id="company-project-name" maxLength={120} onChange={(event) => setName(event.target.value)} required value={name} />
-      </div>
-      <div>
-        <Label htmlFor="company-project-description">Description</Label>
-        <Textarea id="company-project-description" maxLength={2000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
-      </div>
-      <Button type="submit">Create project</Button>
     </form>
   );
 }
@@ -148,54 +139,45 @@ export function CompanyProfileForm({
   actingCompanyId: Id<"companies">;
   displayName: string;
   description?: string;
-  handle: string;
+  handle?: string;
   run: AsyncAction;
 }) {
   const updateProfile = useMutation(api.companies.updateProfile);
-  const generateLogoUploadUrl = useMutation(api.companies.generateLogoUploadUrl);
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [description, setDescription] = useState(initialDescription ?? "");
-  const [handle, setHandle] = useState(initialHandle);
+  const [handle, setHandle] = useState(initialHandle ?? "");
+  useEffect(() => {
+    setDisplayName(initialDisplayName);
+    setDescription(initialDescription ?? "");
+    setHandle(initialHandle ?? "");
+  }, [actingCompanyId, initialDescription, initialDisplayName, initialHandle]);
   return (
     <form
-      className="company-inline-form company-form-profile"
+      className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
-        void run(() => updateProfile({ companyId: actingCompanyId, displayName, description, handle }));
+        void run(() =>
+          updateProfile({ companyId: actingCompanyId, displayName, description, handle }),
+        );
       }}
     >
       <div>
         <Label htmlFor="company-profile-name">Company display name</Label>
-        <Input id="company-profile-name" onChange={(event) => setDisplayName(event.target.value)} required value={displayName} />
+          <Input
+            id="company-profile-name"
+            name="companyName"
+          onChange={(event) => setDisplayName(event.target.value)}
+          required
+          value={displayName}
+        />
       </div>
       <div>
         <Label htmlFor="company-profile-handle">Company handle</Label>
-        <Input autoCapitalize="none" id="company-profile-handle" onChange={(event) => setHandle(event.target.value)} required value={handle} />
+        <Input autoComplete="organization" id="company-profile-handle" name="companyHandle" onChange={(event) => setHandle(event.target.value)} required spellCheck={false} value={handle} />
       </div>
       <div>
         <Label htmlFor="company-profile-description">Description</Label>
-        <Textarea id="company-profile-description" maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
-      </div>
-      <div>
-        <Label htmlFor="company-profile-logo">Company logo</Label>
-        <Input
-          accept="image/*"
-          id="company-profile-logo"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            void run(async () => {
-              if (!file.type.startsWith("image/") || file.size > 5_000_000) throw new Error("Choose an image smaller than 5 MB");
-              const uploadUrl = await generateLogoUploadUrl({ companyId: actingCompanyId });
-              const response = await fetch(uploadUrl, { body: file, headers: { "Content-Type": file.type }, method: "POST" });
-              if (!response.ok) throw new Error("Company logo upload failed");
-              const { storageId } = await response.json() as { storageId: Id<"_storage"> };
-              await updateProfile({ companyId: actingCompanyId, logoStorageId: storageId });
-            });
-            event.target.value = "";
-          }}
-          type="file"
-        />
+        <Textarea autoComplete="off" className="company-profile-description-input" id="company-profile-description" name="description" onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
       </div>
       <Button type="submit">Save profile</Button>
     </form>
@@ -218,7 +200,7 @@ export function RelationshipForm({
   );
   return (
     <form
-      className="company-inline-form company-form-relationship"
+      className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
         if (!match) return;
@@ -243,7 +225,10 @@ export function RelationshipForm({
         />
       </div>
       <div>
-        <Label htmlFor="target-handle">Exact company handle</Label>
+        <Label htmlFor="target-handle">Exact Company handle</Label>
+        <span className="company-field-hint">
+          Enter the private handle of the Company you want to collaborate with.
+        </span>
         <Input
           autoCapitalize="none"
           id="target-handle"
@@ -255,12 +240,12 @@ export function RelationshipForm({
           {match
             ? `${match.displayName} · @${match.normalizedHandle}`
             : handle.length >= 3
-              ? "No exact active company match."
-              : "Enter the exact handle. Company search is private."}
+              ? "No exact active Company match."
+              : "Track has no public Company directory."}
         </span>
       </div>
       <Button disabled={!match} type="submit">
-        Create relationship
+        Create Relationship
       </Button>
     </form>
   );
@@ -283,7 +268,7 @@ export function RelationshipParticipantForm({
   );
   return (
     <form
-      className="company-inline-form company-form-relationship-participant"
+      className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
         if (!match) return;
@@ -299,7 +284,7 @@ export function RelationshipParticipantForm({
     >
       <div>
         <Label htmlFor={`relationship-participant-${relationshipId}`}>
-          Add exact company handle
+          Add exact Company handle
         </Label>
         <Input
           autoCapitalize="none"
@@ -310,13 +295,235 @@ export function RelationshipParticipantForm({
         <span className="company-field-hint">
           {match
             ? `${match.displayName} · @${match.normalizedHandle}`
-            : "Enter the exact handle to invite a company."}
+            : "No public directory is exposed."}
         </span>
       </div>
       <Button disabled={!match} type="submit">
-        Invite company
+        Invite Company
       </Button>
     </form>
+  );
+}
+
+export function InternalProjectForm({
+  actingCompanyId,
+  currentUserId,
+  run,
+}: {
+  actingCompanyId: Id<"companies">;
+  currentUserId: Id<"users">;
+  run: AsyncAction;
+}) {
+  const createProject = useMutation(api.sharedProjects.createInternal);
+  const [name, setName] = useState("");
+
+  return (
+    <form
+      className="company-inline-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void run(async () => {
+          await createProject({
+            actingCompanyId,
+            initialMembers: [{ userId: currentUserId, role: "manager" }],
+            name,
+          });
+          setName("");
+        });
+      }}
+    >
+      <div>
+        <Label htmlFor="company-project-name">Project name</Label>
+        <span className="company-field-hint">
+          Starts inside this Company. You can invite collaborators later.
+        </span>
+        <Input
+          id="company-project-name"
+          onChange={(event) => setName(event.target.value)}
+          placeholder="e.g. Website launch"
+          required
+          value={name}
+        />
+      </div>
+      <Button type="submit">Create Project</Button>
+    </form>
+  );
+}
+
+export function ProjectCompanyInviteForm({
+  actingCompanyId,
+  options,
+  projectId,
+  projectMemberId,
+  run,
+}: {
+  actingCompanyId: Id<"companies">;
+  options: FunctionReturnType<
+    typeof api.sharedProjects.getCollaborationOptions
+  >;
+  projectId: Id<"projects">;
+  projectMemberId: Id<"projectMembers">;
+  run: (action: () => Promise<unknown>) => Promise<boolean>;
+}) {
+  const inviteCompanies = useMutation(api.sharedProjects.inviteCompanies);
+  const projectRelationshipId = options.projectRelationshipId ?? undefined;
+  const [relationshipId, setRelationshipId] = useState<
+    Id<"relationships"> | ""
+  >(projectRelationshipId ?? "");
+  const [targetCompanyId, setTargetCompanyId] = useState<Id<"companies"> | "">(
+    "",
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const eligibleRelationships = options.relationships.filter(
+    (item) => item.companies.length > 0,
+  );
+  const selectedRelationshipId =
+    projectRelationshipId ??
+    (eligibleRelationships.some(
+      (item) => item.relationship._id === relationshipId,
+    )
+      ? relationshipId
+      : (eligibleRelationships[0]?.relationship._id ?? ""));
+  const selectedRelationship = eligibleRelationships.find(
+    (item) => item.relationship._id === selectedRelationshipId,
+  );
+  const selectedCompanyId = selectedRelationship?.companies.some(
+    (company) => company._id === targetCompanyId,
+  )
+    ? targetCompanyId
+    : (selectedRelationship?.companies[0]?._id ?? "");
+  const pendingCount = options.pendingInvitations.length;
+  const relationshipSelectId = "project-relationship-" + projectId;
+  const companySelectId = "project-partner-company-" + projectId;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedRelationshipId || !selectedCompanyId || submitting) return;
+    let invitationError: unknown;
+    setSubmitting(true);
+    setError(null);
+    const saved = await run(async () => {
+      try {
+        await inviteCompanies({
+          actingCompanyId,
+          projectId,
+          projectMemberId,
+          relationshipId: selectedRelationshipId,
+          targetCompanyIds: [selectedCompanyId],
+        });
+      } catch (caughtError) {
+        invitationError = caughtError;
+        throw caughtError;
+      }
+    });
+    if (!saved) setError(formatProjectInvitationError(invitationError));
+    setTargetCompanyId("");
+    setSubmitting(false);
+  }
+
+  return (
+    <section className="company-admin-card">
+      <strong>Invite a partner Company</strong>
+      <p>
+        Invite an existing Relationship partner into this same Project. Their
+        Company must accept before its members gain access.
+      </p>
+
+      {pendingCount > 0 ? (
+        <div>
+          <span className="company-field-hint">
+            {pendingCount} pending{" "}
+            {pendingCount === 1 ? "invitation" : "invitations"}
+          </span>
+          <ul>
+            {options.pendingInvitations.map(({ invitation, targetCompany }) => (
+              <li key={invitation._id}>
+                {targetCompany?.displayName ?? "Unavailable Company"} · pending
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {eligibleRelationships.length > 0 ? (
+        <form
+          className="company-inline-form"
+          onSubmit={(event) => void submit(event)}
+        >
+          <div>
+            <Label htmlFor={relationshipSelectId}>Relationship</Label>
+            <NativeSelect
+              aria-label="Project relationship"
+              disabled={Boolean(projectRelationshipId) || submitting}
+              id={relationshipSelectId}
+              onChange={(event) => {
+                const selected = eligibleRelationships.find(
+                  (item) => item.relationship._id === event.target.value,
+                );
+                setRelationshipId(selected?.relationship._id ?? "");
+                setTargetCompanyId("");
+                setError(null);
+              }}
+              value={selectedRelationshipId}
+            >
+            {eligibleRelationships.map((item) => (
+                <NativeSelectOption
+                  key={item.relationship._id}
+                  value={item.relationship._id}
+                >
+                  {item.relationship.name}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <span className="company-field-hint">
+              {projectRelationshipId
+                ? "Invitations stay within this Project’s Relationship."
+                : "The first invitation links this Project to the selected Relationship."}
+            </span>
+          </div>
+          <div>
+            <Label htmlFor={companySelectId}>Company</Label>
+            <NativeSelect
+              aria-label="Company to invite"
+              disabled={submitting}
+              id={companySelectId}
+              onChange={(event) => {
+                const selected = selectedRelationship?.companies.find(
+                  (company) => company._id === event.target.value,
+                );
+                setTargetCompanyId(selected?._id ?? "");
+                setError(null);
+              }}
+              value={selectedCompanyId}
+            >
+              {selectedRelationship?.companies.map((company) => (
+                <NativeSelectOption key={company._id} value={company._id}>
+                  {company.displayName}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </div>
+          <Button disabled={!selectedCompanyId || submitting} type="submit">
+            {submitting ? "Sending invitation…" : "Invite Company"}
+          </Button>
+        </form>
+      ) : (
+        <p>
+          {pendingCount > 0
+            ? "No other partner Companies are available to invite."
+            : options.relationships.length > 0
+              ? "Every Company in this Relationship already participates in this Project."
+              : "No eligible partner Companies. Create an active Relationship in the Company workspace first."}
+        </p>
+      )}
+
+      {error ? (
+        <p aria-live="polite" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -348,7 +555,7 @@ export function SharedProjectForm({
     ) ?? [];
   return (
     <form
-      className="company-inline-form company-form-shared-project"
+      className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
         if (!relationshipId || targets.length === 0) return;
@@ -368,6 +575,7 @@ export function SharedProjectForm({
         <Label htmlFor="shared-project-name">Project name</Label>
         <Input
           id="shared-project-name"
+          name="projectName"
           onChange={(event) => setName(event.target.value)}
           required
           value={name}
@@ -376,14 +584,17 @@ export function SharedProjectForm({
       <div>
         <Label htmlFor="shared-project-relationship">Relationship</Label>
         <NativeSelect
+          aria-label="Project relationship"
+          autoComplete="off"
           id="shared-project-relationship"
+          name="relationshipId"
           onChange={(event) =>
             setRelationshipId(event.target.value as Id<"relationships">)
           }
           required
           value={relationshipId}
         >
-          <NativeSelectOption value="">Select relationship</NativeSelectOption>
+          <NativeSelectOption value="">Select Relationship</NativeSelectOption>
           {relationships.map((item) => (
             <NativeSelectOption key={item.relationship._id} value={item.relationship._id}>
               {item.relationship.name}
@@ -393,11 +604,11 @@ export function SharedProjectForm({
         <span className="company-field-hint">
           {targets.length
             ? `Invites ${targets.map((company) => company.displayName).join(", ")}`
-            : "Choose an active relationship with another company."}
+            : "Choose an active multi-Company Relationship."}
         </span>
       </div>
       <Button disabled={!relationshipId || targets.length === 0} type="submit">
-        Propose shared project
+        Propose shared Project
       </Button>
     </form>
   );

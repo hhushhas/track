@@ -147,18 +147,18 @@ export function ChannelThreadBrowser({
           <MessageSquare aria-hidden="true" size={13} />
           <strong>{item.thread.name}</strong>
           <span>{item.replyCount} {item.replyCount === 1 ? 'reply' : 'replies'}</span>
-          {item.unread ? <i aria-label="Unread thread" /> : null}
+          {item.unread ? <span aria-label="Unread thread" className="track-unread-marker" role="img" /> : null}
         </ThreadLink></li>)}</ul>
       ) : <p className="track-rail-empty">No {status} threads.</p>}
       <details className="track-rail-thread-tools">
         <summary><Search size={12} /> Find or start a thread</summary>
-        <div className="track-thread-tabs" role="tablist" aria-label="Thread status">
-          {(['active', 'archived'] as const).map((value) => <button aria-selected={status === value} className={status === value ? 'active' : ''} key={value} onClick={() => setStatus(value)} role="tab" type="button">{value}</button>)}
+        <div className="track-thread-tabs" role="group" aria-label="Thread status">
+          {(['active', 'archived'] as const).map((value) => <button aria-pressed={status === value} className={status === value ? 'active' : ''} key={value} onClick={() => setStatus(value)} type="button">{value === 'active' ? 'Active' : 'Archived'}</button>)}
         </div>
-        <Input aria-label="Search Project threads and replies" onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search threads" value={searchQuery} />
+        <Input aria-label="Search Project threads and replies" autoComplete="off" name="threadSearch" onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search threads…" value={searchQuery} />
         {searchTerm.length >= 2 ? <ul className="track-thread-list">{searchRows.slice(0, 4).map((item) => <li key={item.id}><ThreadLink context={context} groupId={item.groupId} messageId={item.messageId} projectId={projectId} threadId={item.threadId}><span><strong>{item.title}</strong><small>{item.detail}</small></span></ThreadLink></li>)}</ul> : null}
         {!readOnly && status === 'active' ? <form className="track-thread-create" onSubmit={(event) => void submit(event)}>
-          <Input aria-label="Thread name" maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Thread name" required value={name} />
+          <Input aria-label="Thread name" autoComplete="off" maxLength={100} name="threadName" onChange={(event) => setName(event.target.value)} placeholder="Name this Channel thread…" required value={name} />
           <label><span className="sr-only">Optional source message</span><NativeSelect aria-label="Optional source message" onChange={(event) => setSourceMessageId(event.target.value as Id<'messages'> | '')} value={sourceMessageId}><NativeSelectOption value="">Start directly in this Channel</NativeSelectOption>{availableSources.map((item) => <NativeSelectOption key={item.message._id} value={item.message._id}>{item.author?.displayName ?? 'Unknown member'}: {item.message.body || 'Attachment message'}</NativeSelectOption>)}</NativeSelect></label>
           <Button disabled={saving || !name.trim()} size="sm" type="submit"><Plus size={12} /> {saving ? 'Starting…' : 'Start thread'}</Button>
         </form> : null}
@@ -174,28 +174,30 @@ export function ChannelThreadBrowser({
           <span className="mono-label">Threads</span>
           <p>Focused conversations with the same Channel access.</p>
         </div>
-        <div className="track-thread-tabs" role="tablist" aria-label="Thread status">
-          {(['active', 'archived'] as const).map((value) => (
-            <button
-              aria-selected={status === value}
-              className={status === value ? 'active' : ''}
-              key={value}
-              onClick={() => setStatus(value)}
-              role="tab"
-              type="button"
-            >
-              {value === 'active' ? 'Active' : 'Archived'}
-            </button>
-          ))}
+        <div className="track-thread-toolbar">
+          <Input
+            aria-label="Search Project threads and replies"
+            autoComplete="off"
+            name="threadSearch"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search threads…"
+            value={searchQuery}
+          />
+          <div className="track-thread-tabs" role="group" aria-label="Thread status">
+            {(['active', 'archived'] as const).map((value) => (
+              <button
+                aria-pressed={status === value}
+                className={status === value ? 'active' : ''}
+                key={value}
+                onClick={() => setStatus(value)}
+                type="button"
+              >
+                {value === 'active' ? 'Active' : 'Archived'}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
-
-      <Input
-        aria-label="Search Project threads and replies"
-        onChange={(event) => setSearchQuery(event.target.value)}
-        placeholder="Search Project threads and replies"
-        value={searchQuery}
-      />
 
       {searchTerm.length >= 2 ? searchResults === undefined ? (
         <p role="status">Searching threads…</p>
@@ -238,9 +240,11 @@ export function ChannelThreadBrowser({
         <form className="track-thread-create" onSubmit={(event) => void submit(event)}>
           <Input
             aria-label="Thread name"
+            autoComplete="off"
             maxLength={100}
+            name="threadName"
             onChange={(event) => setName(event.target.value)}
-            placeholder="Thread name"
+            placeholder="Name this Channel thread…"
             required
             value={name}
           />
@@ -269,7 +273,7 @@ export function ChannelThreadBrowser({
   )
 }
 
-function ThreadLink({
+export function ThreadLink({
   children,
   context,
   groupId,

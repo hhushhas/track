@@ -1,36 +1,43 @@
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { FlatList, StyleSheet, TextInput, View } from 'react-native';
 import { useEffect, useMemo, useState } from 'react';
+import { FlatList, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
-import { AdaptiveListRow } from '@/components/adaptive-list-row';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import {
+  EvidenceAuditCard,
+  type EvidenceAuditItem,
+  EvidenceEndMarker,
+  EvidenceHeaderTitle,
+  EvidenceProtocolIntro,
+  EvidenceResultsHeader,
+  EvidenceScopeCard,
+} from '@/components/evidence-dashboard';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
-import { OptionsSheet, SheetFieldButton, SheetRow, SheetSection } from '@/components/options-sheet';
+import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
+import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import { SkeletonList } from '@/components/skeleton-row';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref } from '@/lib/company-navigation';
+import { findProjectScope } from '@/lib/project-scope';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
-import { findProjectScope } from '@/lib/project-scope';
 
 type ProjectRow = {
   project: { _id: Id<'projects'>; name: string };
   membership: Doc<'projectMembers'>;
 };
 
-type GroupRow = {
-  group: { _id: Id<'groups'>; name: string };
-};
+type GroupRow = { group: { _id: Id<'groups'>; name: string } };
 
 type EvidenceRow = {
   reference: Doc<'taskReferences'>;
@@ -41,13 +48,18 @@ type EvidenceRow = {
 };
 
 type SearchResult = {
+  attachmentId?: Id<'attachments'>;
+  contentType?: string;
+  createdAt?: number;
   groupId?: Id<'groups'>;
+  groupName?: string;
   id: string;
   kind: 'file' | 'message';
   messageId?: Id<'messages'>;
   preview: string;
   subtitle: string;
   threadId?: Id<'channelThreads'>;
+  threadName?: string;
   title: string;
 };
 
@@ -60,23 +72,23 @@ function isPresent<T>(value: T | null | undefined): value is T {
 
 export default function EvidenceScreen() {
   const theme = useTheme();
+  const largeText = useWindowDimensions().fontScale > 1.25;
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const params = useLocalSearchParams<{ projectId?: string; companyId?: string; membershipId?: string; archive?: string }>();
-  const { trackUserId } = useTrackUser();
+  const { trackUserId, openProfileSheet } = useTrackUser();
+  const { actingCompanyId } = useCompany();
+  const profileStatus = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
   const [query, setQuery] = useState('');
-  const [projectId, setProjectId] = useState<Id<'projects'> | null>(
-    typeof params.projectId === 'string' ? params.projectId as Id<'projects'> : null,
-  );
-  const [projectMembershipId, setProjectMembershipId] = useState<Id<'projectMembers'> | null>(
-    typeof params.membershipId === 'string' ? params.membershipId as Id<'projectMembers'> : null,
-  );
+  const [projectId, setProjectId] = useState<Id<'projects'> | null>(typeof params.projectId === 'string' ? params.projectId as Id<'projects'> : null);
+  const [projectMembershipId, setProjectMembershipId] = useState<Id<'projectMembers'> | null>(typeof params.membershipId === 'string' ? params.membershipId as Id<'projectMembers'> : null);
   const [groupId, setGroupId] = useState<Id<'groups'> | null>(null);
   const [scopePicker, setScopePicker] = useState<ScopePicker>(null);
+  const routeCompanyId = typeof params.companyId === 'string' ? params.companyId as Id<'companies'> : undefined;
 
   const projectPages = usePaginatedQuery(
     api.mobile.listProjects,
-    trackUserId ? { userId: trackUserId } : 'skip',
+    trackUserId ? { userId: trackUserId, actingCompanyId: routeCompanyId ?? actingCompanyId ?? undefined } : 'skip',
     { initialNumItems: 50 },
   );
   const projects = projectPages.results.filter(isPresent);
@@ -118,6 +130,7 @@ export default function EvidenceScreen() {
       if (!search) return undefined;
       return [...search.messages, ...search.files]
         .filter((item) => !groupId || item.groupId === groupId)
+        .sort((left, right) => right.createdAt - left.createdAt)
         .map((item) => ({ type: 'search' as const, item: item as SearchResult }));
     }
     return (evidence.results as EvidenceRow[])
@@ -125,10 +138,12 @@ export default function EvidenceScreen() {
       .map((item) => ({ type: 'evidence' as const, item }));
   }, [evidence.results, groupId, search, searchTerm.length]);
 
+  const normalizedRows = useMemo(() => rows?.map(normalizeRow), [rows]);
   const selectedGroup = groups?.find((row) => row.group._id === groupId);
+  const companyName = selectedProject?.membership.companyDisplayNameSnapshot ?? undefined;
   const projectSections = useMemo(() => {
     const byCompany = new Map<string, ProjectRow[]>();
-    for (const row of projects ?? []) {
+    for (const row of projects) {
       const company = row.membership.companyDisplayNameSnapshot ?? 'Independent Projects';
       byCompany.set(company, [...(byCompany.get(company) ?? []), row]);
     }
@@ -152,7 +167,7 @@ export default function EvidenceScreen() {
         : channelHref(project, item.reference.groupId, context, item.reference.messageId)) as Href);
       return;
     }
-    router.push(taskDetailHref(project, item.task.publicKey, identity) as Href);
+    openTask(item);
   }
 
   function openSearchResult(item: SearchResult) {
@@ -163,106 +178,93 @@ export default function EvidenceScreen() {
       : channelHref(project, item.groupId, context, item.messageId)) as Href);
   }
 
+  function openTask(item: EvidenceRow) {
+    if (!selectedProject) return;
+    router.push(taskDetailHref(selectedProject.project._id, item.task.publicKey, identity) as Href);
+  }
+
   return (
     <ThemedView style={styles.screen}>
-      <Stack.Screen options={{ title: 'Evidence', headerLargeTitle: false, headerTransparent: false }} />
+      <Stack.Screen options={{
+        title: 'Evidence',
+        headerTitle: () => <EvidenceHeaderTitle />,
+        headerBackVisible: false,
+        headerLargeTitle: false,
+        headerTransparent: false,
+        headerRight: () => <View style={styles.headerActions}>
+          <IconButton accessibilityLabel="Open inbox" icon="inbox" onPress={() => router.push('/inbox')} />
+          <ProjectAccountButton label={profileStatus?.user.displayName || profileStatus?.user.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
+        </View>,
+      }} />
       <ConnectivityBanner style={styles.connection} />
       <FlatList
         contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
+        contentInsetAdjustmentBehavior="automatic"
         data={rows}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         keyExtractor={(row) => row.type === 'evidence' ? `evidence:${row.item.reference._id}` : `search:${row.item.id}`}
-        ListHeaderComponent={(
-          <View style={styles.header}>
-            <ThemedText themeColor="textSecondary">Find the messages, files, and references that explain why work exists.</ThemedText>
-            <View style={[styles.searchField, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-              <PlatformIcon color={theme.textSecondary} name="search" size={20} />
-              <TextInput accessibilityLabel="Search evidence" autoCapitalize="none" autoCorrect={false} maxLength={200} maxFontSizeMultiplier={MaxFontScale} onChangeText={setQuery} placeholder="Search messages, files, and references" placeholderTextColor={theme.textTertiary} returnKeyType="search" selectionColor={theme.accent} style={[styles.input, { color: theme.text }]} value={query} />
-              {query ? <IconButton accessibilityLabel="Clear search" icon="close" onPress={() => setQuery('')} size={18} /> : null}
-            </View>
-            <SheetFieldButton icon="briefcase-outline" label="Project" onPress={() => setScopePicker('project')} placeholder="Choose a Project" value={selectedProject ? `${selectedProject.membership.companyDisplayNameSnapshot ? `${selectedProject.membership.companyDisplayNameSnapshot} · ` : ''}${selectedProject.project.name}` : undefined} />
-            {selectedProject ? <SheetFieldButton icon="forum-outline" label="Channel" onClear={groupId ? () => setGroupId(null) : undefined} onPress={() => setScopePicker('channel')} placeholder="All accessible Channels" value={selectedGroup?.group.name} /> : null}
+        ListHeaderComponent={<View style={styles.header}>
+          <EvidenceProtocolIntro />
+          <View style={[styles.searchField, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+            <PlatformIcon color={theme.textSecondary} name="search" size={20} />
+            <TextInput accessibilityLabel="Search evidence" autoCapitalize="none" autoCorrect={false} cursorColor={theme.accent} maxLength={200} maxFontSizeMultiplier={MaxFontScale} multiline={false} numberOfLines={1} onChangeText={setQuery} placeholder={largeText ? 'Search evidence' : 'Try “launch decision” or “homepage.png”'} placeholderTextColor={theme.textTertiary} returnKeyType="search" selectionColor={theme.accent} selectionHandleColor={theme.accent} style={[styles.input, { color: theme.text }]} value={query} />
+            {query ? <IconButton accessibilityLabel="Clear search" icon="close" onPress={() => setQuery('')} size={18} /> : null}
           </View>
-        )}
+          <EvidenceScopeCard channelCount={groups?.length ?? 0} channelName={selectedGroup?.group.name} companyName={companyName} onChannelPress={() => setScopePicker('channel')} onProjectPress={() => setScopePicker('project')} projectName={selectedProject?.project.name} />
+          {selectedProject && normalizedRows !== undefined ? <EvidenceResultsHeader count={normalizedRows.length} searching={searchTerm.length >= 2} /> : null}
+        </View>}
         ListEmptyComponent={projectPages.status === 'LoadingFirstPage' || (selectedProject && (searchTerm.length >= 2 ? search === undefined : evidence.status === 'LoadingFirstPage'))
           ? <SkeletonList count={3} label="Loading evidence" />
-          : <EmptyState icon="file-document-outline" title={selectedProject ? searchTerm.length >= 2 ? 'No matching evidence' : 'No evidence yet' : 'Choose a Project'} body={selectedProject ? searchTerm.length >= 2 ? `No accessible messages or files match “${searchTerm}”.` : 'Messages and files linked to tasks will appear here with their source context.' : 'Evidence is permission-scoped. Choose a Project, then optionally narrow to one Channel.'} />}
+          : <EmptyState icon={selectedProject ? 'evidence' : 'project'} title={selectedProject ? searchTerm.length >= 2 ? 'No matching evidence' : 'No evidence yet' : 'Choose a Project'} body={selectedProject ? searchTerm.length >= 2 ? `No accessible messages or files match “${searchTerm}”.` : 'Messages and files linked to tasks will appear here with their source context.' : 'Evidence is permission-scoped. Choose a Project, then optionally narrow to one Channel.'} />}
+        ListFooterComponent={selectedProject && normalizedRows?.length && (searchTerm.length >= 2 || evidence.status === 'Exhausted') ? <EvidenceEndMarker companyName={companyName} /> : null}
         onEndReached={() => { if (searchTerm.length < 2 && evidence.status === 'CanLoadMore') evidence.loadMore(20); }}
         onEndReachedThreshold={0.35}
-        renderItem={({ item: row }) => row.type === 'evidence'
-          ? <EvidenceCard item={row.item} onPress={() => openEvidence(row.item)} />
-          : <SearchCard item={row.item} onPress={() => openSearchResult(row.item)} />}
+        renderItem={({ item: row, index }) => <EvidenceAuditCard item={normalizedRows?.[index] ?? normalizeRow(row)} onOpenSource={() => row.type === 'evidence' ? openEvidence(row.item) : openSearchResult(row.item)} onOpenTask={row.type === 'evidence' && row.item.reference.groupId && row.item.reference.messageId ? () => openTask(row.item) : undefined} />}
       />
 
       <OptionsSheet onClose={() => setScopePicker(null)} title={scopePicker === 'project' ? 'Choose Project' : 'Choose Channel'} visible={scopePicker !== null}>
-        {scopePicker === 'project' ? projectSections.map((section) => (
-          <SheetSection key={section.title} title={section.title}>
-            {section.data.map((row) => <SheetRow detail={row.membership.status === 'archived' ? 'Read-only archive' : undefined} icon="briefcase-outline" key={row.membership._id} label={row.project.name} onPress={() => { setProjectId(row.project._id); setProjectMembershipId(row.membership._id); setGroupId(null); setScopePicker(null); }} selected={row.membership._id === selectedProject?.membership._id} />)}
-          </SheetSection>
-        )) : null}
-        {scopePicker === 'project' && projectPages.status === 'CanLoadMore' ? (
-          <SheetSection>
-            <SheetRow icon="chevron-down" label="Load more Projects" onPress={() => projectPages.loadMore(50)} />
-          </SheetSection>
-        ) : null}
+        {scopePicker === 'project' ? projectSections.map((section) => <SheetSection key={section.title} title={section.title}>{section.data.map((row) => <SheetRow detail={row.membership.status === 'archived' ? 'Read-only archive' : undefined} icon="project" key={row.membership._id} label={row.project.name} onPress={() => { setProjectId(row.project._id); setProjectMembershipId(row.membership._id); setGroupId(null); setScopePicker(null); }} selected={row.membership._id === selectedProject?.membership._id} />)}</SheetSection>) : null}
+        {scopePicker === 'project' && projectPages.status === 'CanLoadMore' ? <SheetSection><SheetRow icon="chevron-down" label="Load more Projects" onPress={() => projectPages.loadMore(50)} /></SheetSection> : null}
         {scopePicker === 'channel' ? <SheetSection>
-          <SheetRow icon="forum-outline" label="All accessible Channels" onPress={() => { setGroupId(null); setScopePicker(null); }} selected={!groupId} />
-          {groups?.map((row) => <SheetRow icon="forum-outline" key={row.group._id} label={row.group.name} onPress={() => { setGroupId(row.group._id); setScopePicker(null); }} selected={row.group._id === groupId} />)}
+          <SheetRow icon="channel" label="All accessible Channels" onPress={() => { setGroupId(null); setScopePicker(null); }} selected={!groupId} />
+          {groups?.map((row) => <SheetRow icon="channel" key={row.group._id} label={row.group.name} onPress={() => { setGroupId(row.group._id); setScopePicker(null); }} selected={row.group._id === groupId} />)}
         </SheetSection> : null}
       </OptionsSheet>
     </ThemedView>
   );
 }
 
-function EvidenceCard({ item, onPress }: { item: EvidenceRow; onPress: () => void }) {
-  const theme = useTheme();
-  const kind = item.reference.attachmentId ? 'File' : 'Reference';
-  const context = [item.group?.name, item.thread?.name, item.creator?.displayName]
-    .filter(Boolean)
-    .join(' · ') || 'Project evidence';
-  return (
-    <AdaptiveListRow
-      accessibilityHint="Opens the exact evidence source"
-      accessibilityLabel={`${kind}. ${item.reference.quote || item.task.title}. ${context}. Linked to ${item.task.publicKey}`}
-      leading={(
-        <View style={[styles.cardIcon, { backgroundColor: theme.accentSoft }]}>
-          <PlatformIcon color={theme.accentStrong} name={item.reference.attachmentId ? 'file-document-outline' : 'link'} size={19} />
-        </View>
-      )}
-      onPress={onPress}
-      subtitle={context}
-      title={item.reference.quote || item.task.title}
-      trailingBottom={<ThemedText numberOfLines={1} themeColor="textSecondary" type="mono">{item.task.publicKey}</ThemedText>}
-      trailingTop={<ThemedText themeColor="accentStrong" type="captionBold">{kind}</ThemedText>}
-    />
-  );
+function normalizeRow(row: EvidenceListRow): EvidenceAuditItem {
+  if (row.type === 'search') return {
+    body: row.item.preview || row.item.subtitle,
+    createdAt: row.item.createdAt,
+    id: row.item.id,
+    kind: row.item.kind === 'file' ? 'search_file' : 'search_message',
+    location: row.item.subtitle || [row.item.groupName ? `#${row.item.groupName}` : undefined, row.item.threadName].filter(Boolean).join(' · ') || undefined,
+    title: row.item.title,
+  };
+  return {
+    actor: row.item.creator?.displayName ?? undefined,
+    availability: row.item.reference.availability,
+    body: row.item.reference.quote || row.item.task.title,
+    createdAt: row.item.reference.createdAt,
+    id: row.item.reference._id,
+    kind: row.item.reference.type,
+    location: [row.item.group ? `#${row.item.group.name}` : undefined, row.item.thread?.name].filter(Boolean).join(' · ') || undefined,
+    opensTask: !(row.item.reference.groupId && row.item.reference.messageId),
+    primary: row.item.reference.isPrimary,
+    taskKey: row.item.task.publicKey,
+    title: row.item.reference.sourceIdentifier || row.item.task.title,
+  };
 }
 
-function SearchCard({ item, onPress }: { item: SearchResult; onPress: () => void }) {
-  const theme = useTheme();
-  const kind = item.kind === 'file' ? 'File' : 'Message';
-  return (
-    <AdaptiveListRow
-      accessibilityHint="Opens the exact search result"
-      accessibilityLabel={`${kind}. ${item.title}. ${item.subtitle || item.preview}`}
-      leading={(
-        <View style={[styles.cardIcon, { backgroundColor: theme.backgroundSelected }]}>
-          <PlatformIcon color={theme.textSecondary} name={item.kind === 'file' ? 'file-document-outline' : 'forum-outline'} size={19} />
-        </View>
-      )}
-      onPress={onPress}
-      subtitle={item.subtitle || item.preview}
-      title={item.title}
-      trailingBottom={<PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />}
-      trailingTop={<ThemedText themeColor="textSecondary" type="captionBold">{kind}</ThemedText>}
-    />
-  );
-}
 const styles = StyleSheet.create({
-  cardIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
   connection: { marginHorizontal: Spacing.four, marginTop: Spacing.two },
-  header: { gap: Spacing.three, paddingBottom: Spacing.one },
+  header: { gap: Spacing.four, paddingBottom: Spacing.two },
+  headerActions: { alignItems: 'center', flexDirection: 'row' },
   input: { flex: 1, minHeight: TouchTarget, minWidth: 0, paddingVertical: Spacing.two },
-  list: { gap: Spacing.two, padding: Spacing.four },
-  searchField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
+  list: { gap: Spacing.three, padding: Spacing.four },
+  searchField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three, shadowColor: '#000', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.04, shadowRadius: 8 },
   screen: { flex: 1 },
 });

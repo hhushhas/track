@@ -14,6 +14,7 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { threadsEnabled } from './lib/channelThreadPolicy'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { appendTaskActivity, createUniqueTaskPublicKey, getDefaultWorkflowState, rankForIndex } from './lib/taskData'
 import { createTaskNotification } from './lib/taskNotifications'
 import {
@@ -86,6 +87,7 @@ export const createExplicit = internalMutation({
     await requireEligibleTaskMember(ctx, {
       projectId: args.projectId, groupId: args.groupId, projectMemberId: projectMember._id,
     })
+    await assertProjectSnapshotWritable(ctx, args.projectId)
     const requested = args.question.replace(/@track/gi, '').replace(/\b(create|make|add)\s+(a\s+)?task\b/gi, '').replace(/\b(for|from)\s+this\b/gi, '').trim()
     const messages = await ctx.db.query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).order('desc').take(20)
@@ -193,6 +195,7 @@ export const hide = mutation({
     const suggestion = await ctx.db.get(args.suggestionId)
     if (!suggestion || suggestion.status !== 'pending') throw new Error('task_access_changed')
     const access = await suggestionAccess(ctx, actor, suggestion, args)
+    await assertProjectSnapshotWritable(ctx, suggestion.projectId)
     const existing = await ctx.db.query('taskSuggestionHides')
       .withIndex('by_member_suggestion', (q) =>
         q.eq('projectMemberId', access.projectMember._id).eq('suggestionId', suggestion._id),
@@ -217,6 +220,7 @@ export const dismiss = mutation({
     const suggestion = await ctx.db.get(args.suggestionId)
     if (!suggestion) throw new Error('task_access_changed')
     const access = await suggestionAccess(ctx, actor, suggestion, args)
+    await assertProjectSnapshotWritable(ctx, suggestion.projectId)
     if (suggestion.status !== 'pending') return terminalResult(suggestion)
     const references = await ctx.db.query('taskSuggestionReferences')
       .withIndex('by_suggestion_rank', (q) => q.eq('suggestionId', suggestion._id)).collect()
@@ -257,6 +261,7 @@ export const accept = mutation({
     const suggestion = await ctx.db.get(args.suggestionId)
     if (!suggestion) throw new Error('task_access_changed')
     const access = await suggestionAccess(ctx, actor, suggestion, args)
+    await assertProjectSnapshotWritable(ctx, suggestion.projectId)
     if (suggestion.status !== 'pending') return terminalResult(suggestion)
     if (!isTaskTitle(args.title) || (args.description && !isTaskDescription(args.description)) ||
       (args.dueDate && !isTaskDueDate(args.dueDate))) throw new Error('task_fields_invalid')
@@ -382,6 +387,7 @@ export const linkToExisting = mutation({
     const suggestionPolicy = await suggestionAccess(ctx, actor, suggestion, args)
     if (suggestion.status !== 'pending') return terminalResult(suggestion)
     const taskPolicy = await requireTaskAccess(ctx, actor, args.taskId, args)
+    await assertProjectSnapshotWritable(ctx, suggestion.projectId)
     if (!taskPolicy.taskCapabilities.canEdit || taskPolicy.task.projectId !== suggestion.projectId ||
       taskPolicy.task.groupId !== suggestion.groupId) throw new Error('task_access_changed')
     const references = await ctx.db.query('taskSuggestionReferences')

@@ -42,6 +42,17 @@ describe('taskDetailHref', () => {
 });
 
 describe('taskListHref', () => {
+  it('opens the default Project board while preserving represented Company context', () => {
+    expect(taskListHref(
+      'project-1' as Id<'projects'>,
+      {
+        archived: true,
+        companyId: 'company-1' as Id<'companies'>,
+        membershipId: 'member-1' as Id<'projectMembers'>,
+      },
+    )).toBe('/tasks?projectId=project-1&companyId=company-1&membershipId=member-1&archive=1');
+  });
+
   it('targets the exact board and task without losing represented Company context', () => {
     expect(taskListHref(
       'project-1' as Id<'projects'>,

@@ -9,6 +9,7 @@ import { internalMutation, internalQuery, mutation, query } from './_generated/s
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { appendAuditEvent } from './lib/audit'
 import { threadsEnabled } from './lib/channelThreadPolicy'
+import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { requireEligibleTaskMember, requireTasksEnabled, resolveTaskRequestContext } from './lib/taskPolicy'
 import { taskPriority } from './schema/taskValidators'
 
@@ -275,6 +276,7 @@ export const commitRun = internalMutation({
       await ctx.db.patch(run._id, { status: 'canceled', updatedAt: Date.now() })
       return false
     }
+    await assertProjectSnapshotWritable(ctx, run.projectId)
     const windowMessages = await ctx.db.query('messages')
       .withIndex('by_group_created_at', (q) => q.eq('groupId', run.groupId)).collect()
     const allowed = new Map(windowMessages.filter((message) => {

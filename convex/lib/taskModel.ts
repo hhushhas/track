@@ -1,4 +1,4 @@
-import { isTaskDueDate, isTaskTitle } from '@track/shared/tasks'
+import { isTaskDueDate, isTaskTitle, taskPriorities, type TaskPriority } from '@track/shared/tasks'
 
 export type TaskDetectionMessage = Readonly<{
   id: string
@@ -11,7 +11,7 @@ export type TaskDetectionMessage = Readonly<{
 export type TaskModelCandidate = Readonly<{
   title: string
   description?: string
-  priority?: 'none' | 'urgent' | 'high' | 'medium' | 'low'
+  priority?: TaskPriority
   assigneeProjectMemberId?: string
   dueDate?: string
   sourceMessageIds: ReadonlyArray<string>
@@ -28,38 +28,49 @@ export interface TaskModelAdapter {
   detect(messages: ReadonlyArray<TaskDetectionMessage>): Promise<TaskModelResult>
 }
 
-const priorities = new Set(['none', 'urgent', 'high', 'medium', 'low'])
-
 export function parseTaskModelCandidates(
   raw: string,
   allowedMessageIds: ReadonlySet<string>,
 ): ReadonlyArray<TaskModelCandidate> {
   const normalized = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-  const parsed = JSON.parse(normalized) as { candidates?: Array<Record<string, unknown>> }
-  if (!Array.isArray(parsed.candidates)) throw new Error('task_model_output_invalid')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(normalized)
+  } catch (cause) {
+    throw new Error('task_model_output_invalid', { cause })
+  }
+  if (!parsed || typeof parsed !== 'object' || !('candidates' in parsed) || !Array.isArray(parsed.candidates)) {
+    throw new Error('task_model_output_invalid')
+  }
+  const rawCandidates: ReadonlyArray<unknown> = parsed.candidates
   const candidates: Array<TaskModelCandidate> = []
-  for (const value of parsed.candidates.slice(0, 8)) {
-    if (typeof value.title !== 'string' || !isTaskTitle(value.title)) continue
-    if (typeof value.confidence !== 'number' || value.confidence < 0 || value.confidence > 1) continue
-    if (typeof value.groundingReason !== 'string' || !value.groundingReason.trim()) continue
-    if (!Array.isArray(value.sourceMessageIds) || !value.sourceMessageIds.length) continue
-    const sourceMessageIds = value.sourceMessageIds.filter(
+  for (const value of rawCandidates.slice(0, 8)) {
+    if (!value || typeof value !== 'object') continue
+    if (!('title' in value) || typeof value.title !== 'string' || !isTaskTitle(value.title)) continue
+    if (!('confidence' in value) || typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1) continue
+    if (!('groundingReason' in value) || typeof value.groundingReason !== 'string' || !value.groundingReason.trim()) continue
+    if (!('sourceMessageIds' in value) || !Array.isArray(value.sourceMessageIds) || !value.sourceMessageIds.length) continue
+    const rawSourceIds: ReadonlyArray<unknown> = value.sourceMessageIds
+    const sourceMessageIds = rawSourceIds.filter(
+      // nosemgrep: q9.javascript.no-unvalidated-json-parse -- safe because the string guard precedes the scoped source-ID lookup.
       (id): id is string => typeof id === 'string' && allowedMessageIds.has(id),
     )
-    if (!sourceMessageIds.length || sourceMessageIds.length !== value.sourceMessageIds.length) continue
-    const dueDate = typeof value.dueDate === 'string' && isTaskDueDate(value.dueDate)
+    // nosemgrep: q9.javascript.no-unvalidated-json-parse -- safe because every source ID was type-guarded and membership-checked above.
+    if (!sourceMessageIds.length || sourceMessageIds.length !== rawSourceIds.length) continue
+    const dueDate = 'dueDate' in value && typeof value.dueDate === 'string' && isTaskDueDate(value.dueDate)
       ? value.dueDate : undefined
-    const priority = typeof value.priority === 'string' && priorities.has(value.priority)
-      ? value.priority as TaskModelCandidate['priority'] : undefined
-    const assigneeProjectMemberId = typeof value.assigneeProjectMemberId === 'string'
+    const priority = 'priority' in value ? taskPriorities.find((candidatePriority) => candidatePriority === value.priority) : undefined
+    const assigneeProjectMemberId = 'assigneeProjectMemberId' in value && typeof value.assigneeProjectMemberId === 'string'
       ? value.assigneeProjectMemberId : undefined
     candidates.push({
+      // nosemgrep: q9.javascript.no-unvalidated-json-parse -- safe because title is narrowed to a string and validated by isTaskTitle above.
       title: value.title.trim(),
-      description: typeof value.description === 'string' ? value.description.slice(0, 20_000) : undefined,
+      description: 'description' in value && typeof value.description === 'string' ? value.description.slice(0, 20_000) : undefined,
       priority,
       assigneeProjectMemberId,
       dueDate,
       sourceMessageIds,
+      // nosemgrep: q9.javascript.no-unvalidated-json-parse -- safe because confidence was narrowed to a finite number in the inclusive range above.
       confidence: value.confidence,
       groundingReason: value.groundingReason.slice(0, 500),
     })

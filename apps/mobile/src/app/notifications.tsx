@@ -1,17 +1,21 @@
 import { useMutation, useQuery } from 'convex/react';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '../../../../convex/_generated/api';
 import { ActionButton } from '@/components/action-button';
+import { useAppToast } from '@/components/app-toast';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { ProjectAccountButton } from '@/components/project-overview-dashboard';
+import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import { SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Spacing } from '@/constants/theme';
+import { BottomTabInset, Radius, Spacing } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { usePushNotifications } from '@/lib/push-notifications';
@@ -22,15 +26,18 @@ type TaskMode = 'important' | 'all' | 'muted';
 type PreviewMode = 'full' | 'context' | 'hidden';
 
 export default function NotificationSettingsScreen() {
+  const { showToast } = useAppToast();
+  const insets = useSafeAreaInsets();
   const theme = useTheme();
-  const { trackUserId } = useTrackUser();
+  const { openProfileSheet, trackUserId } = useTrackUser();
   const router = useRouter();
   const push = usePushNotifications();
+  const profile = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
   const settings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId } : 'skip');
-  const diagnostics = useQuery(api.pushDelivery.getDiagnostics, trackUserId ? { userId: trackUserId } : 'skip');
   const setPreferences = useMutation(api.notifications.setMobilePreferences);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [preferenceStatus, setPreferenceStatus] = useState<'error' | 'success' | null>(null);
+  const [testing, setTesting] = useState(false);
   const global = settings?.global ?? {
     globalMode: 'all' as const,
     taskMode: 'all' as const,
@@ -60,15 +67,20 @@ export default function NotificationSettingsScreen() {
   }
 
   async function sendTest() {
+    if (testing) return;
+    setTesting(true);
     try {
       const result = await push.sendTestNotification();
       if (!result) return;
-      Alert.alert(
-        result.queued > 0 ? 'Test queued' : 'Test not queued',
-        `${result.queued} queued · ${result.failed} failed across ${result.attempted} target${result.attempted === 1 ? '' : 's'}.`,
-      );
+      showToast({
+        message: `${result.queued} queued · ${result.failed} failed across ${result.attempted} target${result.attempted === 1 ? '' : 's'}.`,
+        title: result.queued > 0 ? 'Test queued' : 'Test not queued',
+        tone: result.queued > 0 ? 'success' : 'info',
+      });
     } catch (failure) {
-      Alert.alert('Test notification unavailable', notificationErrorMessage(failure));
+      showToast({ title: 'Test notification unavailable', message: notificationErrorMessage(failure), tone: 'error' });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -87,7 +99,8 @@ export default function NotificationSettingsScreen() {
 
   return (
     <ThemedView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+      <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label={profile?.user?.displayName || profile?.user?.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'Notifications' }} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Spacing.six + BottomTabInset + Math.max(insets.bottom, Spacing.two) }]} contentInsetAdjustmentBehavior="automatic">
         <ConnectivityBanner message="You’re offline. Notification changes will be available after you reconnect." />
         <View style={[styles.permissionCard, { backgroundColor: theme.backgroundElement }]}>
           <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>
@@ -113,16 +126,37 @@ export default function NotificationSettingsScreen() {
           <SkeletonList count={3} label="Loading notification settings" />
         ) : (
           <>
-          <SheetSection title="Conversation default">
+          <SheetSection title="Mentions, replies, and Channels">
             {(['all', 'mentions', 'none'] as const).map((mode) => (
-              <SheetRow disabled={savingPreferences} key={mode} label={mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions and replies' : 'Off'} selected={global.globalMode === mode} onPress={() => void update({ conversationMode: mode })} />
+              <SheetRow
+                detail={mode === 'all' ? 'All eligible Channel and Thread activity' : mode === 'mentions' ? 'Only mentions and direct replies' : 'No conversation alerts'}
+                disabled={savingPreferences}
+                icon={mode === 'none' ? 'bell-off-outline' : mode === 'mentions' ? 'message' : 'bell-outline'}
+                key={mode}
+                label={mode === 'all' ? 'All messages' : mode === 'mentions' ? 'Mentions and replies' : 'Off'}
+                selected={global.globalMode === mode}
+                onPress={() => void update({ conversationMode: mode })}
+              />
             ))}
           </SheetSection>
 
-          <SheetSection title="Task default">
+          <SheetSection title="Assignments and task updates">
             {(['important', 'all', 'muted'] as const).map((mode) => (
-              <SheetRow disabled={savingPreferences} key={mode} label={mode === 'important' ? 'Important activity' : mode === 'all' ? 'All followed activity' : 'Off'} selected={global.taskMode === mode} onPress={() => void update({ taskMode: mode })} />
+              <SheetRow
+                detail={mode === 'important' ? 'Assignments, mentions, and due changes' : mode === 'all' ? 'Every update on followed tasks' : 'No task alerts'}
+                disabled={savingPreferences}
+                icon={mode === 'muted' ? 'bell-off-outline' : 'task'}
+                key={mode}
+                label={mode === 'important' ? 'Important activity' : mode === 'all' ? 'All followed activity' : 'Off'}
+                selected={global.taskMode === mode}
+                onPress={() => void update({ taskMode: mode })}
+              />
             ))}
+          </SheetSection>
+
+          <SheetSection title="Inbox coverage">
+            <SheetRow detail="Thread activity follows the conversation setting above." icon="thread" label="Thread activity" />
+            <SheetRow detail="Company invitations remain visible in Inbox. Project invitations are managed from Companies." icon="account-group" label="Invitations" />
           </SheetSection>
 
           <SheetSection title="Privacy">
@@ -132,8 +166,8 @@ export default function NotificationSettingsScreen() {
           </SheetSection>
 
           <SheetSection title="Presentation">
-            <SheetRow label="Sound" trailing={<Switch accessibilityLabel="Notification sound" disabled={savingPreferences} onValueChange={(value) => void update({ soundEnabled: value })} value={global.soundEnabled} />} />
-            <SheetRow label="Badges" trailing={<Switch accessibilityLabel="Notification badges" disabled={savingPreferences} onValueChange={(value) => void update({ badgesEnabled: value })} value={global.badgesEnabled} />} />
+            <SheetRow label="Sound" trailing={<Switch accessibilityLabel="Notification sound" disabled={savingPreferences} onValueChange={(value) => void update({ soundEnabled: value })} thumbColor={global.soundEnabled ? theme.backgroundElevated : theme.textTertiary} trackColor={{ false: theme.backgroundSelected, true: theme.accent }} value={global.soundEnabled} />} />
+            <SheetRow label="Badges" trailing={<Switch accessibilityLabel="Notification badges" disabled={savingPreferences} onValueChange={(value) => void update({ badgesEnabled: value })} thumbColor={global.badgesEnabled ? theme.backgroundElevated : theme.textTertiary} trackColor={{ false: theme.backgroundSelected, true: theme.accent }} value={global.badgesEnabled} />} />
           </SheetSection>
           {preferenceStatus ? (
             <ThemedText accessibilityLiveRegion={preferenceStatus === 'error' ? 'assertive' : 'polite'} style={{ color: preferenceStatus === 'error' ? theme.danger : theme.success }} type="small">
@@ -143,15 +177,22 @@ export default function NotificationSettingsScreen() {
           </>
         )}
 
-        {__DEV__ ? <SheetSection title="Development diagnostics">
-          <SheetRow disabled={push.availability !== 'available'} label="Send test notification" onPress={() => void sendTest()} />
-          <SheetRow label="Recent delivery state" trailing={<ThemedText themeColor="textSecondary" type="caption">{diagnostics ? `${diagnostics.sampleSize} intents` : 'Loading…'}</ThemedText>} />
-        </SheetSection> : null}
+        <SheetSection title="Verify delivery">
+          <SheetRow
+            detail="Send one test alert to this device"
+            disabled={push.availability !== 'available'}
+            icon="bell-outline"
+            label="Send test notification"
+            loading={testing}
+            onPress={() => void sendTest()}
+          />
+        </SheetSection>
 
         <ThemedText style={styles.footnote} themeColor="textSecondary" type="caption">
           Push delivery is best effort. Track records provider acceptance, but Apple and Google control final device presentation. Payloads contain the preview level selected above.
         </ThemedText>
       </ScrollView>
+      <StandalonePrimaryNavigation active="home" />
     </ThemedView>
   );
 }

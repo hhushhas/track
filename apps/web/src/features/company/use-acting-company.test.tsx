@@ -41,4 +41,15 @@ describe('web Acting Company selection', () => {
 
     expect(window.localStorage.getItem('track-acting-company-id')).toBe(second)
   })
+
+  it('does not clear the stored Company while memberships are still loading', () => {
+    window.localStorage.setItem('track-acting-company-id', second)
+    const { result, rerender } = renderHook(({ available }) => useActingCompany(available), {
+      initialProps: { available: [] as Array<Id<'companies'>> },
+    })
+
+    expect(result.current.actingCompanyId).toBe(second)
+    rerender({ available: [first, second] })
+    expect(result.current.actingCompanyId).toBe(second)
+  })
 })

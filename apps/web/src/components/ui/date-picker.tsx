@@ -1,5 +1,5 @@
 import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover'
 
@@ -18,11 +18,29 @@ function formatValue(date: Date) {
 
 function formatLabel(value: string) {
   const date = parseDate(value)
-  return date ? new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' }).format(date) : 'Choose date'
+  return date ? new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date) : 'Choose date'
 }
 
 function monthLabel(date: Date) {
-  return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(date)
+  return new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(date)
+}
+
+function daysInMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function clampToMonth(date: Date, month: Date) {
+  return new Date(
+    month.getFullYear(),
+    month.getMonth(),
+    Math.min(date.getDate(), daysInMonth(month)),
+  )
 }
 
 function DatePicker({
@@ -40,10 +58,27 @@ function DatePicker({
 }) {
   const selectedDate = parseDate(value)
   const [open, setOpen] = useState(false)
+  const monthHeadingId = useId()
+  const dayRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const date = selectedDate ?? new Date()
     return new Date(date.getFullYear(), date.getMonth(), 1)
   })
+  const [activeDate, setActiveDate] = useState(() => selectedDate ?? new Date())
+  const [announcement, setAnnouncement] = useState('')
+  useEffect(() => {
+    const nextDate = selectedDate ?? new Date()
+    setActiveDate(nextDate)
+    if (!selectedDate) return
+    setVisibleMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1))
+  }, [value])
+  useEffect(() => {
+    if (!open) return
+    const nextDate = selectedDate ?? new Date()
+    setActiveDate(nextDate)
+    setVisibleMonth(new Date(nextDate.getFullYear(), nextDate.getMonth(), 1))
+    requestAnimationFrame(() => dayRefs.current[formatValue(nextDate)]?.focus())
+  }, [open])
   const days = useMemo(() => {
     const firstDay = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1)
     const offset = (firstDay.getDay() + 6) % 7
@@ -54,66 +89,121 @@ function DatePicker({
     })
   }, [visibleMonth])
   const todayValue = formatValue(new Date())
+  const activeValue = formatValue(activeDate)
+  const dayRows = useMemo(() => {
+    const rows: Array<Array<Date | null>> = []
+    for (let index = 0; index < days.length; index += 7) rows.push(days.slice(index, index + 7))
+    return rows
+  }, [days])
 
   function selectDate(date: Date) {
-    onChange(formatValue(date))
+    const nextValue = formatValue(date)
+    onChange(nextValue)
+    setAnnouncement(`Selected ${formatLabel(nextValue)}`)
     setOpen(false)
   }
 
+  function clearDate() {
+    onChange('')
+    setAnnouncement('Date cleared')
+    setOpen(false)
+  }
+
+  function focusDate(date: Date) {
+    setActiveDate(date)
+    setVisibleMonth(new Date(date.getFullYear(), date.getMonth(), 1))
+    requestAnimationFrame(() => dayRefs.current[formatValue(date)]?.focus())
+  }
+
   function shiftMonth(amount: number) {
-    setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1))
+    const nextMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + amount, 1)
+    const nextDate = clampToMonth(activeDate, nextMonth)
+    setVisibleMonth(nextMonth)
+    setActiveDate(nextDate)
+    requestAnimationFrame(() => dayRefs.current[formatValue(nextDate)]?.focus())
+  }
+
+  function handleDayKeyDown(event: KeyboardEvent<HTMLButtonElement>, date: Date) {
+    let nextDate: Date | null = null
+    if (event.key === 'ArrowLeft') nextDate = addDays(date, -1)
+    if (event.key === 'ArrowRight') nextDate = addDays(date, 1)
+    if (event.key === 'ArrowUp') nextDate = addDays(date, -7)
+    if (event.key === 'ArrowDown') nextDate = addDays(date, 7)
+    if (event.key === 'Home') nextDate = addDays(date, -((date.getDay() + 6) % 7))
+    if (event.key === 'End') nextDate = addDays(date, 6 - ((date.getDay() + 6) % 7))
+    if (event.key === 'PageUp') nextDate = clampToMonth(date, new Date(date.getFullYear(), date.getMonth() - 1, 1))
+    if (event.key === 'PageDown') nextDate = clampToMonth(date, new Date(date.getFullYear(), date.getMonth() + 1, 1))
+    if (nextDate) {
+      event.preventDefault()
+      focusDate(nextDate)
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      selectDate(date)
+    }
   }
 
   return (
-    <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger
-        render={
-          <button
-            aria-label={ariaLabel}
-            className={`track-date-picker-trigger${className ? ` ${className}` : ''}`}
-            disabled={disabled}
-            type="button"
-          />
-        }
-      >
-        <CalendarDays aria-hidden="true" size={14} />
-        <span>{formatLabel(value)}</span>
-        {value ? <X aria-hidden="true" className="track-date-picker-clear-icon" size={13} /> : null}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="track-date-picker-popover" sideOffset={6}>
-        <div className="track-date-picker-header">
-          <button aria-label="Previous month" onClick={() => shiftMonth(-1)} type="button"><ChevronLeft size={15} /></button>
-          <strong>{monthLabel(visibleMonth)}</strong>
-          <button aria-label="Next month" onClick={() => shiftMonth(1)} type="button"><ChevronRight size={15} /></button>
-        </div>
-        <div aria-label={monthLabel(visibleMonth)} className="track-date-picker-grid" role="grid">
-          {weekdayLabels.map((label) => <span aria-hidden="true" className="track-date-picker-weekday" key={label}>{label}</span>)}
-          {days.map((date, index) => {
-            const dateValue = date ? formatValue(date) : ''
-            const isSelected = dateValue === value
-            const isToday = dateValue === todayValue
-            return date ? (
-              <button
-                aria-current={isToday ? 'date' : undefined}
-                aria-label={date.toLocaleDateString('en', { dateStyle: 'full' })}
-                aria-selected={isSelected}
-                className={`track-date-picker-day${isSelected ? ' selected' : ''}${isToday ? ' today' : ''}`}
-                key={dateValue}
-                onClick={() => selectDate(date)}
-                role="gridcell"
-                type="button"
-              >
-                {date.getDate()}
-              </button>
-            ) : <span aria-hidden="true" className="track-date-picker-day empty" key={`empty-${index}`} />
-          })}
-        </div>
-        <div className="track-date-picker-footer">
-          <button onClick={() => selectDate(new Date())} type="button">Today</button>
-          {value ? <button onClick={() => { onChange(''); setOpen(false) }} type="button">Clear</button> : null}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <>
+      <span aria-live="polite" className="sr-only" role="status">{announcement}</span>
+      <Popover onOpenChange={setOpen} open={open}>
+        <PopoverTrigger
+          render={
+            <button
+              aria-label={ariaLabel}
+              className={`track-date-picker-trigger${className ? ` ${className}` : ''}`}
+              disabled={disabled}
+              type="button"
+            />
+          }
+        >
+          <CalendarDays aria-hidden="true" size={14} />
+          <span>{formatLabel(value)}</span>
+          {value ? <X aria-hidden="true" className="track-date-picker-clear-icon" size={13} /> : null}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="track-date-picker-popover" sideOffset={6}>
+          <div className="track-date-picker-header">
+            <button aria-label="Previous month" onClick={() => shiftMonth(-1)} type="button"><ChevronLeft size={15} /></button>
+            <strong aria-live="polite" id={monthHeadingId}>{monthLabel(visibleMonth)}</strong>
+            <button aria-label="Next month" onClick={() => shiftMonth(1)} type="button"><ChevronRight size={15} /></button>
+          </div>
+          <div aria-labelledby={monthHeadingId} className="track-date-picker-grid" role="grid">
+            <div className="track-date-picker-grid-row" role="row">
+              {weekdayLabels.map((label) => <span aria-label={label} className="track-date-picker-weekday" key={label} role="columnheader">{label}</span>)}
+            </div>
+            {dayRows.map((row, rowIndex) => <div className="track-date-picker-grid-row" key={`row-${rowIndex}`} role="row">
+              {row.map((date, index) => {
+                const dateValue = date ? formatValue(date) : ''
+                const isSelected = dateValue === value
+                const isToday = dateValue === todayValue
+                return date ? (
+                  <button
+                    aria-current={isToday ? 'date' : undefined}
+                    aria-label={new Intl.DateTimeFormat(undefined, { dateStyle: 'full' }).format(date)}
+                    aria-selected={isSelected}
+                    className={`track-date-picker-day${isSelected ? ' selected' : ''}${isToday ? ' today' : ''}`}
+                    key={dateValue}
+                    onClick={() => selectDate(date)}
+                    onKeyDown={(event) => handleDayKeyDown(event, date)}
+                    ref={(element) => { dayRefs.current[dateValue] = element }}
+                    role="gridcell"
+                    tabIndex={dateValue === activeValue ? 0 : -1}
+                    type="button"
+                  >
+                    {date.getDate()}
+                  </button>
+                ) : <span aria-hidden="true" className="track-date-picker-day empty" key={`empty-${rowIndex}-${index}`} role="gridcell" />
+              })}
+            </div>)}
+          </div>
+          <div className="track-date-picker-footer">
+            <button onClick={() => selectDate(new Date())} type="button">Today</button>
+            {value ? <button onClick={clearDate} type="button">Clear</button> : null}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </>
   )
 }
 

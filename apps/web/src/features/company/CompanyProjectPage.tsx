@@ -1,141 +1,289 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowUpRight, Menu, MessageSquareText, Paperclip, Plus, SlidersHorizontal } from "lucide-react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
-import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
-import { Button } from "#/components/ui/button";
-import { Input } from "#/components/ui/input";
-import { resolveReleaseConfig, useReleaseConfigProjection } from "#/lib/release-config";
-import { ChannelTaskPanel, CreateTaskFromMessage, MessageInlineTasks } from "#/features/tasks/ConversationTaskActions";
-import { ChannelThreadBrowser } from "#/features/threads/ChannelThreadBrowser";
-import { threadHref } from "#/features/threads/thread-navigation";
-import { ProjectEvidencePage } from "#/features/workspace/pages/ProjectEvidencePage";
-import { AttachmentTypeIcon } from "#/features/workspace/attachment-ui";
-import { resolveActiveCompanyProjectChannel } from "./company-project-channel-state";
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import TrackLoader from "#/components/TrackLoader";
+import { queueToastAfterNavigation } from "#/components/ui/app-toast";
+import { ConfirmDialog } from "#/components/ui/confirm-dialog";
+import { useReleaseConfigState } from "#/lib/release-config";
+import type { ConversationComposerReply } from "#/features/workspace/components/ConversationComposer";
+import type { GroupMessageItem } from "#/features/workspace/thread-items";
+import { CompanyProjectAdministration } from "./CompanyProjectAdministration";
+import { CompanyProjectConversation } from "./CompanyProjectConversation";
+import { CompanyProjectEvidence } from "./CompanyProjectEvidence";
+import { CompanyProjectOverview } from "./CompanyProjectOverview";
+import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
+import { formatCompanyError } from "./company-errors";
+import {
+  getCompanyProjectScopeKey,
+  getMessageIdFromHash,
+} from "./company-project-context";
+import {
+  canQueryPendingChannelArchives,
+  resolveActiveActingCompanyId,
+  resolveCompanyAdministrationId,
+} from "./company-query-scope";
+import {
+  companyProjectContextTabToSearch,
+  type CompanyProjectContextTab,
+  type CompanyProjectView,
+} from "./company-view-state";
 
 type Props = {
   actingCompanyId: Id<"companies">;
   initialGroupId?: Id<"groups">;
   projectId: Id<"projects">;
   projectMemberId: Id<"projectMembers">;
-  view?: "overview" | "channels" | "evidence" | "settings";
+  contextTab?: CompanyProjectContextTab;
+  view?: CompanyProjectView;
 };
 
-function projectRoleLabel(role: Doc<'projectMembers'>['role']) {
-  if (role === 'manager') return 'Project manager'
-  if (role === 'member') return 'Project member'
-  if (role === 'owner') return 'Project owner'
-  if (role === 'admin') return 'Project admin'
-  if (role === 'staff') return 'Project staff'
-  return 'Project client'
-}
+type ForwardRequest = {
+  actingCompanyId: Id<"companies">;
+  actorId: Id<"users">;
+  body?: string;
+  idempotencyKey: string;
+  projectId: Id<"projects">;
+  projectMemberId: Id<"projectMembers">;
+  sourceMessageId: Id<"messages">;
+  targetGroupId: Id<"groups">;
+  audienceExpansionConfirmed?: boolean;
+};
 
 export function CompanyProjectPage({
   actingCompanyId,
   initialGroupId,
   projectId,
   projectMemberId,
+  contextTab = "tasks",
   view = "channels",
 }: Props) {
+  const releaseState = useReleaseConfigState();
   const navigate = useNavigate();
-  const releaseConfigProjection = useReleaseConfigProjection();
-  const releaseConfig = resolveReleaseConfig(releaseConfigProjection);
+  const releaseConfig = releaseState.config;
   const currentUser = useQuery(api.auth.getCurrentUser);
+  const companies = useQuery(
+    api.companies.listMine,
+    releaseConfig.companyModel ? {} : "skip",
+  );
+  const actingCompany = companies?.find(
+    (candidate) => candidate.company?._id === actingCompanyId,
+  );
+  const canAdministerActingCompany =
+    actingCompany?.membership.role === "owner" ||
+    actingCompany?.membership.role === "admin";
+  const activeActingCompanyId = resolveActiveActingCompanyId(
+    companies,
+    actingCompanyId,
+  );
+  const companyAdministrationId = resolveCompanyAdministrationId(
+    companies,
+    actingCompanyId,
+  );
   const projects = useQuery(
     api.sharedProjects.listForActingCompany,
-    releaseConfig.companyModel ? { actingCompanyId } : "skip",
+    releaseConfig.companyModel && activeActingCompanyId
+      ? { actingCompanyId: activeActingCompanyId }
+      : "skip",
   );
   const item = projects?.find(
     (candidate) =>
       candidate.project._id === projectId &&
       candidate.membership._id === projectMemberId,
   );
-  const overview = useQuery(
-    api.sharedProjects.getOverview,
-    releaseConfig.companyModel && item
-      ? { actingCompanyId, projectId, projectMemberId }
+  const snapshotState = useQuery(
+    api.projects.getSnapshotState,
+    releaseConfig.projectSnapshots && activeActingCompanyId && item
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          projectId,
+          projectMemberId,
+        }
       : "skip",
   );
   const exitStatus = useQuery(
     api.projectExit.getStatus,
-    releaseConfig.companyModel && item
-      ? { actingCompanyId, projectId, projectMemberId }
+    releaseConfig.companyModel && activeActingCompanyId && item
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          projectId,
+          projectMemberId,
+        }
       : "skip",
   );
-  const canReadChannels =
-    exitStatus != null && exitStatus.status !== "exit_pending";
-  const isActiveProjectManager =
+  const canReadChannels = exitStatus !== null && exitStatus !== undefined;
+  const canManageActiveProject =
     exitStatus?.status === "active" &&
     item?.membership.role === "manager" &&
     item.membership.status === "active";
-  const canManageActiveProject =
-    isActiveProjectManager &&
-    (item.project.status === "active" || item.project.status === "proposed");
   const channels = useQuery(
     api.channels.list,
-    canReadChannels
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canReadChannels
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const projectMembers = useQuery(
     api.sharedProjects.listMembers,
-    canManageActiveProject
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canManageActiveProject
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const companyMembers = useQuery(
-    api.sharedProjects.listEligibleCompanyMembers,
-    canManageActiveProject
-      ? { actingCompanyId, projectId, projectMemberId }
+    api.companies.getAdministration,
+    companyAdministrationId &&
+      canAdministerActingCompany &&
+      item?.membership.status === "active"
+      ? { companyId: companyAdministrationId }
+      : "skip",
+  );
+  const projectOverview = useQuery(
+    api.sharedProjects.getOverview,
+    activeActingCompanyId && item
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
+  const canonicalItem = projects?.find(
+    (candidate) => candidate.project._id === projectId && candidate.membership.status === "active",
+  );
+  useEffect(() => {
+    if (!projects || item || !canonicalItem) return;
+    queueToastAfterNavigation({
+      type: "info",
+      title: "Project link refreshed",
+      description: "This Project link was outdated. We refreshed it for you.",
+    });
+    void navigate({
+      replace: true,
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId },
+      search: {
+        companyId: actingCompanyId,
+        groupId: initialGroupId ?? "",
+        membershipId: canonicalItem.membership._id,
+        view,
+        ...(contextTab ? { context: companyProjectContextTabToSearch(contextTab) } : {}),
+      },
+    });
+  }, [actingCompanyId, canonicalItem, contextTab, initialGroupId, item, navigate, projectId, projects, view]);
+  const canManageExit =
+    item?.membership.status === "active" &&
+    (companyMembers?.membership.role === "owner" ||
+      companyMembers?.membership.role === "admin");
+  const canConfirmProjectOwnership =
+    canManageActiveProject &&
+    (companyMembers?.membership.role === "owner" ||
+      companyMembers?.membership.role === "admin");
+  const canInvitePartnerCompanies =
+    canManageActiveProject &&
+    item?.participationRole === "owner" &&
+    (item.project.status === "active" || item.project.status === "proposed");
+  const collaborationOptions = useQuery(
+    api.sharedProjects.getCollaborationOptions,
+    activeActingCompanyId && canInvitePartnerCompanies
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const pendingProjectArchives = useQuery(
     api.projectArchives.listPending,
-    isActiveProjectManager
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canManageActiveProject
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const channelParticipationInvitations = useQuery(
     api.channels.listParticipationInvitations,
-    canManageActiveProject
-      ? { actingCompanyId, projectId, projectMemberId }
+    activeActingCompanyId && canManageActiveProject
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
       : "skip",
   );
   const [activeChannelId, setActiveChannelId] = useState<Id<"groups"> | null>(
     initialGroupId ?? null,
   );
-  const [composer, setComposer] = useState("");
   const [channelName, setChannelName] = useState("");
-  const [editingMessageId, setEditingMessageId] = useState<Id<"messages"> | null>(null);
-  const [editingMessageBody, setEditingMessageBody] = useState("");
-  const [pendingDeleteMessageId, setPendingDeleteMessageId] = useState<Id<"messages"> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [channelDrawerOpen, setChannelDrawerOpen] = useState(false);
-  const [controlsDrawerOpen, setControlsDrawerOpen] = useState(false);
-  const channelDrawerTriggerRef = useRef<HTMLButtonElement>(null);
-  const controlsDrawerTriggerRef = useRef<HTMLButtonElement>(null);
-  const channelDrawerRef = useRef<HTMLElement>(null);
-  const controlsDrawerRef = useRef<HTMLElement>(null);
-  const messages = useQuery(
-    api.messages.listDetailed,
-    activeChannelId && currentUser
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [pendingForward, setPendingForward] = useState<ForwardRequest | null>(null);
+  useEffect(() => {
+    setActiveChannelId(initialGroupId ?? null);
+  }, [initialGroupId, projectId, projectMemberId]);
+  useEffect(() => {
+    if (view !== "settings") return;
+    void navigate({
+      replace: true,
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId },
+      search: {
+        companyId: actingCompanyId,
+        groupId: activeChannelId ?? initialGroupId ?? "",
+        membershipId: projectMemberId,
+        view: "channels",
+        context: "management",
+      },
+    });
+  }, [actingCompanyId, activeChannelId, initialGroupId, navigate, projectId, projectMemberId, view]);
+  function updateContextTab(nextTab: CompanyProjectContextTab) {
+    void navigate({
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId },
+      search: {
+        companyId: actingCompanyId,
+        groupId: activeChannelId ?? "",
+        membershipId: projectMemberId,
+        view: "channels",
+        context: companyProjectContextTabToSearch(nextTab),
+      },
+    });
+  }
+  const [replyToMessageByScope, setReplyToMessageByScope] = useState<
+    Map<string, ConversationComposerReply>
+  >(() => new Map());
+  const targetMessageId =
+    typeof window === "undefined"
+      ? undefined
+      : getMessageIdFromHash(window.location.hash);
+  const readableActiveChannelId =
+    activeActingCompanyId &&
+    canReadChannels &&
+    activeActingCompanyId &&
+    activeChannelId &&
+    channels?.some(
+      (entry) =>
+        ("channel" in entry ? entry.channel._id : entry._id) ===
+        activeChannelId,
+    )
+      ? activeChannelId
+      : null;
+  const {
+    results: pagedMessages,
+    status: messagePageStatus,
+    loadMore: loadMoreMessages,
+  } = usePaginatedQuery(
+    api.messages.listPage,
+    activeActingCompanyId && readableActiveChannelId && currentUser
       ? {
-          actingCompanyId,
-          groupId: activeChannelId,
-          limit: 80,
+          actingCompanyId: activeActingCompanyId,
+          groupId: readableActiveChannelId,
           projectMemberId,
+          targetMessageId,
           userId: currentUser._id,
         }
       : "skip",
+    { initialNumItems: 50 },
   );
+  const messages = useMemo(() => {
+    const uniqueMessages = new Map<Id<"messages">, GroupMessageItem>();
+    for (const message of pagedMessages) {
+      uniqueMessages.set(message.message._id, message);
+    }
+    return [...uniqueMessages.values()];
+  }, [pagedMessages]);
   const threadUnread = useQuery(
     api.channelThreads.listGroupUnread,
-    releaseConfig.threads && currentUser && canReadChannels
+    releaseConfig.threads && currentUser && activeActingCompanyId && canReadChannels
       ? {
-          actingCompanyId,
+          actingCompanyId: activeActingCompanyId,
           projectId,
           projectMemberId,
           userId: currentUser._id,
@@ -143,7 +291,10 @@ export function CompanyProjectPage({
       : "skip",
   );
   const threadUnreadByChannel = useMemo(
-    () => new Map((threadUnread ?? []).map((entry) => [entry.groupId, entry.unreadCount])),
+    () =>
+      new Map(
+        (threadUnread ?? []).map((entry) => [entry.groupId, entry.unreadCount]),
+      ),
     [threadUnread],
   );
   const createChannel = useMutation(api.channels.create);
@@ -158,8 +309,7 @@ export function CompanyProjectPage({
   const requestChannelArchive = useMutation(api.channels.requestArchive);
   const approveChannelArchive = useMutation(api.channels.approveArchive);
   const cancelChannelArchive = useMutation(api.channels.cancelArchive);
-  const sendMessage = useMutation(api.messages.send);
-  const editMessage = useMutation(api.messages.edit);
+  const forwardMessage = useMutation(api.messages.forwardMessage);
   const deleteMessage = useMutation(api.messages.remove);
   const requestProjectArchive = useMutation(api.projectArchives.request);
   const approveProjectArchive = useMutation(api.projectArchives.approve);
@@ -170,80 +320,33 @@ export function CompanyProjectPage({
   const cancelExit = useMutation(api.projectExit.cancel);
 
   useEffect(() => {
-    const nextChannelId = resolveActiveCompanyProjectChannel(
-      activeChannelId,
-      channels?.map((entry) =>
-        "channel" in entry ? entry.channel._id : (entry._id as Id<"groups">),
-      ),
+    if (
+      activeChannelId &&
+      channels?.some(
+        (entry) =>
+          ("channel" in entry && entry.channel._id === activeChannelId) ||
+          ("_id" in entry && entry._id === activeChannelId),
+      )
+    )
+      return;
+    const first = channels?.[0];
+    setActiveChannelId(
+      first
+        ? "channel" in first
+          ? first.channel._id
+          : first._id
+        : null,
     );
-    if (nextChannelId !== activeChannelId) setActiveChannelId(nextChannelId);
   }, [activeChannelId, channels]);
   useEffect(() => {
-    if (!messages || typeof window === "undefined" || !window.location.hash.startsWith("#message-")) return;
+    if (typeof window === "undefined" || !targetMessageId || messages.length === 0)
+      return;
     requestAnimationFrame(() => {
-      const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+      const target = document.getElementById(`message-${targetMessageId}`);
       target?.scrollIntoView({ block: "center" });
       target?.focus({ preventScroll: true });
     });
-  }, [messages]);
-  useEffect(() => {
-    if (!channelDrawerOpen && !controlsDrawerOpen) return;
-    const mobileViewport = window.matchMedia("(max-width: 820px)");
-    if (!mobileViewport.matches) {
-      setChannelDrawerOpen(false);
-      setControlsDrawerOpen(false);
-      return;
-    }
-    const drawer = channelDrawerOpen ? channelDrawerRef.current : controlsDrawerRef.current;
-    const trigger = channelDrawerOpen ? channelDrawerTriggerRef.current : controlsDrawerTriggerRef.current;
-    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    drawer?.querySelector<HTMLElement>(focusableSelector)?.focus();
-    function handleDrawerKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setChannelDrawerOpen(false);
-        setControlsDrawerOpen(false);
-        trigger?.focus();
-        return;
-      }
-      if (event.key !== "Tab" || !drawer) return;
-      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>(focusableSelector))
-        .filter((element) => element.getClientRects().length > 0);
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    function handleViewportChange(event: MediaQueryListEvent) {
-      if (!event.matches) {
-        setChannelDrawerOpen(false);
-        setControlsDrawerOpen(false);
-      }
-    }
-    window.addEventListener("keydown", handleDrawerKeyDown);
-    mobileViewport.addEventListener("change", handleViewportChange);
-    return () => {
-      window.removeEventListener("keydown", handleDrawerKeyDown);
-      mobileViewport.removeEventListener("change", handleViewportChange);
-      if (mobileViewport.matches) {
-        trigger?.focus();
-      } else {
-        requestAnimationFrame(() => {
-          const visibleDesktopTarget = document.querySelector<HTMLElement>(
-            '.company-project-view-nav [aria-current="page"], .company-project-view-nav a',
-          );
-          visibleDesktopTarget?.focus();
-        });
-      }
-    };
-  }, [channelDrawerOpen, controlsDrawerOpen]);
-
+  }, [messages, targetMessageId]);
   const channelItems = useMemo(
     () =>
       (channels ?? []).map((entry) =>
@@ -254,6 +357,16 @@ export function CompanyProjectPage({
   const activeChannel = channelItems.find(
     (channel) => channel._id === activeChannelId,
   );
+  const projectContext = useMemo(
+    () => ({ actingCompanyId, projectId, projectMemberId }),
+    [actingCompanyId, projectId, projectMemberId],
+  );
+  const activeConversationScopeKey = getCompanyProjectScopeKey(
+    projectContext,
+    activeChannelId ?? undefined,
+  );
+  const replyToMessage =
+    replyToMessageByScope.get(activeConversationScopeKey) ?? null;
   const activeChannelEntry = channels?.find(
     (entry) =>
       ("channel" in entry ? entry.channel._id : entry._id) === activeChannelId,
@@ -263,14 +376,22 @@ export function CompanyProjectPage({
     "membership" in activeChannelEntry &&
     activeChannelEntry.membership.isSteward,
   );
+  const canManageChannelArchive = canQueryPendingChannelArchives({
+    channelSteward: isChannelSteward,
+    exitStatus: exitStatus?.status,
+    projectMemberRole: item?.membership.role,
+    projectMemberStatus: item?.membership.status,
+    projectStatus: item?.project.status,
+  });
   const participationOptions = useQuery(
     api.channels.getParticipationOptions,
-    activeChannelId &&
+    activeActingCompanyId &&
+      activeChannelId &&
       isChannelSteward &&
       exitStatus?.status === "active" &&
       activeChannel?.status === "active"
       ? {
-          actingCompanyId,
+          actingCompanyId: activeActingCompanyId,
           groupId: activeChannelId,
           projectId,
           projectMemberId,
@@ -279,9 +400,9 @@ export function CompanyProjectPage({
   );
   const pendingChannelArchives = useQuery(
     api.channels.listPendingArchive,
-    activeChannelId && isChannelSteward
+    activeActingCompanyId && activeChannelId && canManageChannelArchive
       ? {
-          actingCompanyId,
+          actingCompanyId: activeActingCompanyId,
           groupId: activeChannelId,
           projectId,
           projectMemberId,
@@ -290,814 +411,484 @@ export function CompanyProjectPage({
   );
   const readOnly =
     item?.membership.status === "archived" ||
-    item?.project.status !== "active" ||
+    item?.project.status === "archived" ||
+    exitStatus?.status === "exit_pending" ||
     Boolean(activeChannel && activeChannel.status !== "active");
-  const showProjectRail = view === "channels" || (view === "settings" && canManageActiveProject);
-  const recentReferences = useMemo(
-    () => (messages ?? []).flatMap((detail) => detail.attachments.map(({ attachment, url }) => ({
-      attachment,
-      author: detail.author?.displayName ?? "Unknown member",
-      createdAt: detail.message.createdAt,
-      url,
-    }))).slice(0, 4),
-    [messages],
-  );
 
-  async function run(
-    action: () => Promise<unknown>,
-    { successNotice = "Saved." }: { successNotice?: string | null } = {},
-  ) {
+  async function run(action: () => Promise<unknown>, actionLabel?: string) {
     setBusy(true);
+    if (actionLabel) setBusyAction(actionLabel);
     setNotice(null);
     try {
       await action();
-      if (successNotice) setNotice(successNotice);
+      setNotice("Saved.");
       return true;
     } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message.replaceAll("_", " ")
-          : "The action failed.",
-      );
+      setNotice(formatCompanyError(error));
       return false;
     } finally {
       setBusy(false);
+      if (actionLabel) setBusyAction(null);
     }
-  }
-
-  async function submitMessage(event: FormEvent) {
-    event.preventDefault();
-    if (!activeChannelId || !currentUser || !composer.trim()) return;
-    const saved = await run(() =>
-      sendMessage({
-        actingCompanyId,
-        authorId: currentUser._id,
-        body: composer.trim(),
-        groupId: activeChannelId,
-        projectId,
-        projectMemberId,
-      }),
-      { successNotice: null },
-    );
-    if (saved) setComposer("");
   }
 
   async function deleteAuthoredMessage(messageId: Id<"messages">) {
-    if (!currentUser) return;
-    const deleted = await run(() =>
-      deleteMessage({
-        actingCompanyId,
-        actorId: currentUser._id,
-        messageId,
-        projectMemberId,
-      }),
+    if (!currentUser) return false;
+    return await run(
+      () =>
+        deleteMessage({
+          actingCompanyId,
+          actorId: currentUser._id,
+          messageId,
+          projectMemberId,
+        }),
+      `delete-${messageId}`,
     );
-    if (deleted) setPendingDeleteMessageId(null);
   }
 
-  function beginEditingMessage(messageId: Id<"messages">, currentBody: string) {
-    setPendingDeleteMessageId(null);
-    setEditingMessageId(messageId);
-    setEditingMessageBody(currentBody);
-  }
-
-  async function saveEditedMessage(messageId: Id<"messages">) {
-    if (!currentUser) return;
-    const saved = await run(() => editMessage({
+  async function forwardChannelMessage(input: {
+    sourceMessageId: Id<"messages">;
+    targetGroupId: Id<"groups">;
+    body: string;
+  }) {
+    if (!currentUser) return false;
+    const actionLabel = `forward-${input.sourceMessageId}`;
+    const request = {
       actingCompanyId,
       actorId: currentUser._id,
-      body: editingMessageBody,
-      messageId,
+      body: input.body.trim() || undefined,
+      idempotencyKey: crypto.randomUUID(),
+      projectId,
       projectMemberId,
-    }));
-    if (saved) {
-      setEditingMessageId(null);
-      setEditingMessageBody("");
+      sourceMessageId: input.sourceMessageId,
+      targetGroupId: input.targetGroupId,
+    };
+    setBusy(true);
+    setBusyAction(actionLabel);
+    setNotice(null);
+    try {
+      try {
+        await forwardMessage(request);
+      } catch (error) {
+        const audienceExpanded =
+          error instanceof Error &&
+          error.message.includes("audience_expansion_confirmation_required");
+        if (!audienceExpanded) throw error;
+        setPendingForward(request);
+        return false;
+      }
+      setNotice("Saved.");
+      return true;
+    } catch (error) {
+      setNotice(formatCompanyError(error));
+      return false;
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
     }
   }
 
-  if (releaseConfigProjection === undefined)
-    return (
-      <main className="company-hub">
-        <section className="track-guided-empty" role="status">
-          <h1>Loading project…</h1>
-          <p>Checking your company and project access.</p>
-        </section>
-      </main>
-    );
+  function openMessageSource(groupId: Id<"groups">, messageId: Id<"messages">) {
+    setActiveChannelId(groupId);
+    window.history.replaceState(null, "", `#message-${messageId}`);
+  }
+
+  async function createProjectChannel() {
+    await createChannel({
+      actingCompanyId,
+      name: channelName.trim(),
+      ownCompanyMemberIds: [],
+      projectId,
+      projectMemberId,
+    });
+    setChannelName("");
+  }
+
+  async function addProjectMemberToProject(userId: Id<"users">) {
+    return await addProjectMember({
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+      role: "member",
+      userId,
+    });
+  }
+
+  async function updateProjectMemberStatus(
+    targetProjectMemberId: Id<"projectMembers">,
+    status: "active" | "suspended",
+  ) {
+    return await updateProjectMember({
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+      status,
+      targetProjectMemberId,
+    });
+  }
+
+  async function decideProjectChannelParticipation(input: {
+    decision: "accept" | "decline";
+    groupId: Id<"groups">;
+    requestId: Id<"channelParticipationRequests">;
+    selectedProjectMemberIds: Array<Id<"projectMembers">>;
+  }) {
+    return await decideChannelParticipation({
+      actingCompanyId,
+      decision: input.decision,
+      groupId: input.groupId,
+      projectId,
+      projectMemberId,
+      requestId: input.requestId,
+      selectedProjectMemberIds: input.selectedProjectMemberIds,
+    });
+  }
+
+  async function requestProjectChannelParticipation(input: {
+    selectedProjectMemberIds: Array<Id<"projectMembers">>;
+    targetProjectCompanyId: Id<"projectCompanies">;
+  }) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await requestChannelParticipation({
+      actingCompanyId,
+      groupId: activeChannelId,
+      idempotencyKey: crypto.randomUUID(),
+      projectId,
+      projectMemberId,
+      selectedProjectMemberIds: input.selectedProjectMemberIds,
+      targetProjectCompanyId: input.targetProjectCompanyId,
+    });
+  }
+
+  async function requestProjectChannelArchive(
+    operation: "archive" | "restore",
+  ) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await requestChannelArchive({
+      actingCompanyId,
+      groupId: activeChannelId,
+      idempotencyKey: crypto.randomUUID(),
+      operation,
+      projectId,
+      projectMemberId,
+    });
+  }
+
+  async function approveProjectChannelArchive(
+    requestId: Id<"channelArchiveRequests">,
+  ) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await approveChannelArchive({
+      actingCompanyId,
+      groupId: activeChannelId,
+      projectId,
+      projectMemberId,
+      requestId,
+    });
+  }
+
+  async function cancelProjectChannelArchive(
+    requestId: Id<"channelArchiveRequests">,
+  ) {
+    if (!activeChannelId) throw new Error("channel_unavailable");
+    return await cancelChannelArchive({
+      actingCompanyId,
+      groupId: activeChannelId,
+      projectId,
+      projectMemberId,
+      requestId,
+    });
+  }
+
+  async function requestProjectLifecycleArchive(operation: "archive" | "restore") {
+    return await requestProjectArchive({
+      actingCompanyId,
+      idempotencyKey: crypto.randomUUID(),
+      operation,
+      projectId,
+      projectMemberId,
+    });
+  }
+
+  async function approveProjectLifecycleArchive(
+    requestId: Id<"projectArchiveRequests">,
+  ) {
+    return await approveProjectArchive({
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+      requestId,
+    });
+  }
+
+  async function prepareProjectExit() {
+    return await prepareExit({ actingCompanyId, projectId });
+  }
+
+  async function retryProjectExitSnapshot() {
+    return await retryExit({ actingCompanyId, projectId });
+  }
+
+  async function retryProjectExitCleanup() {
+    return await retryExitCleanup({ actingCompanyId, projectId });
+  }
+
+  async function finalizeProjectExit() {
+    return await finalizeExit({ actingCompanyId, projectId });
+  }
+
+  async function cancelProjectExit() {
+    return await cancelExit({ actingCompanyId, projectId });
+  }
+
+  if (releaseState.status === "loading")
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
 
   if (!releaseConfig.companyModel)
     return (
       <main className="company-hub">
         <h1>Company Project unavailable</h1>
-        <p>This capability is currently disabled by the server release configuration.</p>
+        <p>
+          This capability is currently disabled by the server release
+          configuration.
+        </p>
         <Link to="/workspace">Return to Projects</Link>
       </main>
     );
 
-  if (projects === undefined)
+  if (companies === undefined)
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
+
+  if (actingCompany?.company?.status === "suspended")
     return (
-      <main className="company-hub">
-        <p>Loading Project…</p>
+      <main className="company-hub-shell company-unified-shell">
+        <CompanyProjectNavigation
+          actingCompanyId={actingCompanyId}
+          activeArea="company"
+          tasksEnabled={releaseConfig.tasks}
+        />
+        <section className="company-hub">
+          <header className="company-hub-header">
+            <div>
+              <span className="company-eyebrow">
+                {actingCompany.company.displayName}
+              </span>
+              <h1>Company suspended</h1>
+              <p>
+                Project and Channel access is paused. Open the Company workspace
+                to reactivate it if you are an owner.
+              </p>
+            </div>
+            <Link className="company-header-link" to="/workspace/company">
+              Open Company workspace
+            </Link>
+          </header>
+        </section>
       </main>
     );
-  if (!item)
+
+  if (!activeActingCompanyId)
     return (
       <main className="company-hub">
         <h1>Project unavailable</h1>
-        <p>This represented membership is no longer authorized.</p>
+        <p>This Company representation is no longer available.</p>
+        <Link to="/workspace/company">Return to Company workspace</Link>
+      </main>
+    );
+
+  if (projects === undefined)
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
+  if (!item) {
+    if (canonicalItem) return <TrackLoader label="Refreshing this Project link" timeoutMs={8000} />;
+    return (
+      <main className="company-hub">
+        <h1>Project unavailable</h1>
+        <p>This Project link is outdated or your access has changed.</p>
+        <Link to="/workspace/company">Return to Company hub</Link>
+      </main>
+    );
+  }
+
+  if (exitStatus === null)
+    return (
+      <main className="company-hub">
+        <h1>Project unavailable</h1>
+        <p>This represented Project membership is no longer available.</p>
         <Link to="/workspace/company">Return to Company hub</Link>
       </main>
     );
 
+  if (
+    currentUser === undefined ||
+    exitStatus === undefined ||
+    (canReadChannels && channels === undefined)
+  )
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
+
+  if (!currentUser)
+    return (
+      <main className="company-hub">
+        <h1>Sign in required</h1>
+        <p>Sign in again to open this Company Project.</p>
+        <Link to="/">Return to sign in</Link>
+      </main>
+    );
+
   return (
-    <main aria-busy={busy} className={`company-project-shell${showProjectRail ? "" : " company-project-shell-no-rail"}`}>
-      <div aria-label="Mobile project navigation" className="company-project-mobile-bar">
-        <Button aria-controls="company-channel-drawer" aria-expanded={channelDrawerOpen} onClick={() => setChannelDrawerOpen(true)} ref={channelDrawerTriggerRef} type="button" variant="outline">
-          <Menu aria-hidden="true" size={16} /> Channel menu
-        </Button>
-        <strong>{item.project.name}</strong>
-        {showProjectRail ? <Button aria-controls="company-controls-drawer" aria-expanded={controlsDrawerOpen} onClick={() => setControlsDrawerOpen(true)} ref={controlsDrawerTriggerRef} type="button" variant="outline">
-          <SlidersHorizontal aria-hidden="true" size={16} /> Project controls
-        </Button> : <span aria-hidden="true" />}
-      </div>
-      {channelDrawerOpen || controlsDrawerOpen ? (
-        <button
-          aria-label="Close project drawer"
-          className="company-project-drawer-backdrop"
-          onClick={() => {
-            setChannelDrawerOpen(false);
-            setControlsDrawerOpen(false);
-          }}
-          type="button"
+    <main
+      aria-busy={busy}
+      className={
+        canManageActiveProject || canManageExit || canConfirmProjectOwnership
+          ? "company-project-shell company-unified-shell"
+          : "company-project-shell company-unified-shell company-project-shell-member"
+      }
+    >
+      {view === "overview" ? (
+        <CompanyProjectOverview
+          actingCompanyId={actingCompanyId}
+          actingCompanyName={actingCompany?.company?.displayName ?? "Represented Company"}
+          channelItems={channelItems}
+          currentUser={currentUser}
+          item={item}
+          projectId={projectId}
+          projectMemberId={projectMemberId}
+          projectMembers={projectMembers}
+          projectOverview={projectOverview}
+          tasksEnabled={releaseConfig.tasks}
+          threadUnreadByChannel={threadUnreadByChannel}
         />
-      ) : null}
-      <aside aria-label={channelDrawerOpen ? "Channel menu" : "Project navigation"} aria-modal={channelDrawerOpen || undefined} className={`company-channel-sidebar${channelDrawerOpen ? " drawer-open" : ""}`} id="company-channel-drawer" ref={channelDrawerRef} role={channelDrawerOpen ? "dialog" : undefined}>
-        <Button className="company-drawer-close" onClick={() => setChannelDrawerOpen(false)} type="button" variant="outline">Close menu</Button>
-        <Link to="/workspace/company">← Back to company</Link>
-        <h1>{item.project.name}</h1>
-        <span className="company-badge">
-          {item.membership.companyDisplayNameSnapshot} · {projectRoleLabel(item.membership.role)}
-        </span>
-        {item.membership.status === "archived" ? (
-          <p className="company-read-only">Read-only exit archive</p>
-        ) : null}
-        <nav aria-label="Channels">
-          <h2>Channels</h2>
-          {channelItems.map((channel) => (
-            <button
-              aria-current={
-                channel._id === activeChannelId ? "page" : undefined
-              }
-              className={channel._id === activeChannelId ? "active" : ""}
-              key={channel._id}
-              onClick={() => {
-                setActiveChannelId(channel._id);
-                setChannelDrawerOpen(false);
-                void navigate({
-                  params: { projectId },
-                  replace: view === "channels",
-                  search: { companyId: actingCompanyId, groupId: channel._id, membershipId: projectMemberId, view: "channels" },
-                  to: "/workspace/company-projects/$projectId",
-                });
-              }}
-              type="button"
-            >
-              #{channel.name}
-              {channel.status === "archived" ? " · archived" : ""}
-              {threadUnreadByChannel.get(channel._id)
-                ? ` · ${threadUnreadByChannel.get(channel._id)} unread ${threadUnreadByChannel.get(channel._id) === 1 ? "thread" : "threads"}`
-                : ""}
-            </button>
-          ))}
-        </nav>
-        <nav aria-label="Project views" className="company-project-view-nav">
-          <Link
-            aria-current={view === "overview" ? "page" : undefined}
-            params={{ projectId }}
-            search={{ companyId: actingCompanyId, groupId: activeChannelId ?? "", membershipId: projectMemberId, view: "overview" }}
-            to="/workspace/company-projects/$projectId"
-          >Overview</Link>
-          {releaseConfig.tasks ? <>
-            <Link params={{ projectId }} search={{ actingCompanyId, projectMemberId, view: "board" }} to="/workspace/projects/$projectId/tasks">Board</Link>
-            <Link params={{ projectId }} search={{ actingCompanyId, projectMemberId, view: "all" }} to="/workspace/projects/$projectId/tasks">List</Link>
-          </> : null}
-          <Link
-            aria-current={view === "channels" ? "page" : undefined}
-            params={{ projectId }}
-            search={{ companyId: actingCompanyId, groupId: activeChannelId ?? "", membershipId: projectMemberId, view: "channels" }}
-            to="/workspace/company-projects/$projectId"
-          >Channels</Link>
-          <Link
-            aria-current={view === "evidence" ? "page" : undefined}
-            params={{ projectId }}
-            search={{ companyId: actingCompanyId, groupId: activeChannelId ?? "", membershipId: projectMemberId, view: "evidence" }}
-            to="/workspace/company-projects/$projectId"
-          >Evidence</Link>
-          <Link
-            aria-current={view === "settings" ? "page" : undefined}
-            params={{ projectId }}
-            search={{ companyId: actingCompanyId, groupId: activeChannelId ?? "", membershipId: projectMemberId, view: "settings" }}
-            to="/workspace/company-projects/$projectId"
-          >Settings</Link>
-        </nav>
-        {canManageActiveProject ? (
-          <details className="company-channel-create">
-            <summary><Plus aria-hidden="true" size={13} /> New channel</summary>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run(async () => {
-                  await createChannel({
-                    actingCompanyId,
-                    name: channelName,
-                    ownCompanyMemberIds: [],
-                    projectId,
-                    projectMemberId,
-                  });
-                  setChannelName("");
-                });
-              }}
-            >
-              <Input
-                aria-label="New channel name"
-                onChange={(event) => setChannelName(event.target.value)}
-                placeholder="Channel name"
-                required
-                value={channelName}
-              />
-              <Button type="submit">Create channel</Button>
-            </form>
-          </details>
-        ) : null}
-      </aside>
-
-      <section className={`company-conversation company-conversation-${view}`}>
-        {notice ? (
-          <p aria-live="polite" className="company-notice">
-            {notice}
-          </p>
-        ) : null}
-        {view === "overview" ? (
-          <div className="track-project-overview">
-            <header className="track-project-overview-hero">
-              <div>
-                <p className="mono-label">Project overview</p>
-                <h2>{item.project.name}</h2>
-                <p>{item.project.description?.trim() || "No description has been added yet."}</p>
-              </div>
-              <div className="track-project-overview-actions">
-                <span className="track-status-stamp"><i aria-hidden="true" />{item.project.status.replaceAll("_", " ")}</span>
-                <Link
-                  className="track-inline-action"
-                  params={{ projectId }}
-                  search={{ companyId: actingCompanyId, groupId: activeChannelId ?? "", membershipId: projectMemberId, view: "channels" }}
-                  to="/workspace/company-projects/$projectId"
-                >Open channels</Link>
-              </div>
-            </header>
-            <section aria-label="Project summary" className="track-project-summary-grid">
-              <article><span><strong>{overview ? `${overview.memberCount}${overview.memberCountTruncated ? "+" : ""}` : "—"}</strong><small>Members</small></span></article>
-              <article><span><strong>{channelItems.length}</strong><small>Channels</small></span></article>
-              <article><span><strong>{projectRoleLabel(item.membership.role)}</strong><small>Your role</small></span></article>
-            </section>
-            <section className="track-overview-section">
-              <div className="track-section-heading"><div><h3>Project manager</h3><p>The people responsible for project administration.</p></div></div>
-              <p>{overview?.managers.map((manager) => manager.displayName).join(", ") || "No active project manager is available."}{overview?.managersTruncated ? " and others" : ""}</p>
-            </section>
-            <section className="track-overview-section">
-              <div className="track-section-heading"><div><h3>Participating companies</h3><p>Companies currently represented in this project.</p></div></div>
-              <p>{overview?.companies.map((company) => company.displayName).join(", ") || item.membership.companyDisplayNameSnapshot}{overview?.participantsTruncated ? " and others" : ""}</p>
-            </section>
-            <section className="track-overview-section">
-              <div className="track-section-heading"><div><h3>Recent activity</h3><p>The latest recorded project change.</p></div></div>
-              <time dateTime={new Date(item.project.updatedAt).toISOString()}>{new Date(item.project.updatedAt).toLocaleString()}</time>
-            </section>
-          </div>
-        ) : view === "evidence" ? (
-          <ProjectEvidencePage
-            actingCompanyId={actingCompanyId}
-            firstGroup={channelItems[0]}
-            projectId={projectId}
-            projectMemberId={projectMemberId}
-          />
-        ) : view === "settings" ? (
-          <div className="track-settings-page">
-            <header className="track-page-intro"><p className="mono-label">Project settings</p><h2>Settings</h2><p>{canManageActiveProject ? "Manage project details, membership, access, channels, evidence, notifications, and archive actions." : "Review your project access and the settings that apply to this membership."}</p></header>
-            <nav aria-label="Project settings sections" className="track-settings-nav">
-              <a href="#general">General</a>{canManageActiveProject ? <a href="#members">Members</a> : null}<a href="#access">Access</a><a href="#channels">Channels</a><a href="#evidence">Evidence</a><a href="#notifications">Notifications</a>{canManageActiveProject ? <a href="#danger-zone">Danger zone</a> : null}
-            </nav>
-            <section className="track-settings-panel">
-              <div className="track-settings-section" id="general"><span className="mono-label">General</span><h3>Project details</h3><p>{item.project.description?.trim() || "No project description has been added."}</p></div>
-              {canManageActiveProject ? <div className="track-settings-section" id="members"><span className="mono-label">Members</span><h3>Project membership</h3><p>Project roles and membership are managed independently from company membership.</p></div> : null}
-              <div className="track-settings-section" id="access"><span className="mono-label">Project access</span><h3>Access and roles</h3><p>Companies, project members, roles, channel access, pending access, and archived access remain separate.</p></div>
-              <div className="track-settings-section" id="channels"><span className="mono-label">Channels</span><h3>Channel access</h3><p>Channel membership inherits this project’s access boundary.</p></div>
-              <div className="track-settings-section" id="evidence"><span className="mono-label">Evidence</span><h3>Evidence access</h3><p>Evidence remains scoped to its source project, channel, message, and thread.</p></div>
-              <div className="track-settings-section" id="notifications"><span className="mono-label">Notifications</span><h3>Notification preferences</h3><p>Project notification controls are kept separate from access management.</p></div>
-              {canManageActiveProject ? <div className="track-settings-section track-danger-zone" id="danger-zone"><span className="mono-label">Danger zone</span><h3>Archive and company exit</h3><p>Archive-specific actions are available in Project controls to authorized managers.</p></div> : null}
-            </section>
-          </div>
-        ) : (
-          <>
-        <header>
-          <div>
-            <span className="company-eyebrow">Channel</span>
-            <h2>{activeChannel?.name ?? "Select a Channel"}</h2>
-          </div>
-          {readOnly ? (
-            <span className="company-read-only">Read only</span>
-          ) : null}
-        </header>
-        {activeChannelId && !releaseConfig.threads ? (
-          <section className="track-feature-unavailable" role="status">
-            <strong>Threads are unavailable</strong>
-            <span>This project feature is disabled for the current environment.</span>
-          </section>
-        ) : null}
-        <div className="company-message-list" role="log">
-          {messages === undefined && activeChannelId ? (
-            <p>Loading messages…</p>
-          ) : messages?.length === 0 ? (
-            <div className="company-message-empty">
-              <span aria-hidden="true"><MessageSquareText size={18} /></span>
-              <strong>No messages yet</strong>
-              <p>Start the conversation below. New tasks and evidence can stay linked to what is discussed here.</p>
-            </div>
-          ) : (
-            messages
-              ?.slice()
-              .reverse()
-              .map((detail) => (
-                <article id={`message-${detail.message._id}`} key={detail.message._id} tabIndex={-1}>
-                  <div>
-                    <strong>
-                      {detail.author?.displayName ?? "Unknown member"}
-                    </strong>
-                    {detail.authorCompany ? (
-                      <span className="company-badge">
-                        {detail.authorCompany.displayName}
-                      </span>
-                    ) : null}
-                    <time>
-                      {new Date(detail.message.createdAt).toLocaleString()}
-                    </time>
-                  </div>
-                  {editingMessageId === detail.message._id ? (
-                    <form
-                      className="company-message-edit"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveEditedMessage(detail.message._id);
-                      }}
-                    >
-                      <label className="sr-only" htmlFor={`edit-message-${detail.message._id}`}>Edit message</label>
-                      <Input
-                        autoFocus
-                        id={`edit-message-${detail.message._id}`}
-                        onChange={(event) => setEditingMessageBody(event.target.value)}
-                        value={editingMessageBody}
-                      />
-                      <Button disabled={busy || !editingMessageBody.trim()} type="submit">Save</Button>
-                      <Button
-                        disabled={busy}
-                        onClick={() => {
-                          setEditingMessageId(null);
-                          setEditingMessageBody("");
-                        }}
-                        type="button"
-                        variant="outline"
-                      >
-                        Cancel
-                      </Button>
-                    </form>
-                  ) : <p>{detail.message.body || "Attachment message"}</p>}
-                  {!readOnly &&
-                  (detail.message.authorProjectMemberId
-                    ? detail.message.authorProjectMemberId === projectMemberId
-                    : detail.message.authorId === currentUser?._id) ? (
-                    <div className="company-message-actions">
-                      <Button disabled={busy} onClick={() => beginEditingMessage(detail.message._id, detail.message.body)} variant="outline">Edit</Button>
-                      {pendingDeleteMessageId === detail.message._id ? <>
-                        <span role="status">Delete this message?</span>
-                        <Button disabled={busy} onClick={() => void deleteAuthoredMessage(detail.message._id)} variant="destructive">Confirm delete</Button>
-                        <Button disabled={busy} onClick={() => setPendingDeleteMessageId(null)} variant="outline">Cancel</Button>
-                      </> : (
-                        <Button disabled={busy} onClick={() => setPendingDeleteMessageId(detail.message._id)} variant="destructive">Delete</Button>
-                      )}
-                    </div>
-                  ) : null}
-                  {releaseConfig.tasks && !readOnly ? (
-                    <CreateTaskFromMessage
-                      identity={{ actingCompanyId, projectMemberId }}
-                      message={detail.message}
-                    />
-                  ) : null}
-                  {releaseConfig.tasks ? (
-                    <MessageInlineTasks
-                      identity={{ actingCompanyId, projectMemberId }}
-                      message={detail.message}
-                    />
-                  ) : null}
-                  {releaseConfig.threads && detail.channelThread ? (
-                    <a href={threadHref(projectId, activeChannelId!, detail.channelThread.threadId, {
-                      actingCompanyId,
-                      projectMemberId,
-                    })}>
-                      {detail.channelThread.name} · {detail.channelThread.replyCount} replies
-                    </a>
-                  ) : null}
-                </article>
-              ))
-          )}
-        </div>
-        {activeChannelId && !readOnly ? (
-          <form
-            className="company-composer"
-            onSubmit={(event) => void submitMessage(event)}
-          >
-            <label className="sr-only" htmlFor="company-message">
-              Message
-            </label>
-            <Input
-              id="company-message"
-              onChange={(event) => setComposer(event.target.value)}
-              placeholder={`Message #${activeChannel?.name ?? "Channel"}`}
-              value={composer}
-            />
-            <Button disabled={!composer.trim()} type="submit">
-              Send
-            </Button>
-          </form>
-        ) : null}
-          </>
-        )}
-      </section>
-
-      {showProjectRail ? <aside aria-label="Project controls" aria-modal={controlsDrawerOpen || undefined} className={`company-project-admin${controlsDrawerOpen ? " drawer-open" : ""}`} id="company-controls-drawer" ref={controlsDrawerRef} role={controlsDrawerOpen ? "dialog" : undefined}>
-        <Button className="company-drawer-close" onClick={() => setControlsDrawerOpen(false)} type="button" variant="outline">Close controls</Button>
-        <h2>{view === "settings" ? "Project administration" : "Project context"}</h2>
-        {view === "channels" && activeChannel ? (
-          <section aria-labelledby="company-references-heading" className="company-project-references">
-            <header>
-              <div><h3 id="company-references-heading">Recent references</h3><p>Files shared in #{activeChannel.name}</p></div>
-              {recentReferences.length ? <span>{recentReferences.length}</span> : null}
-            </header>
-            {recentReferences.length ? (
-              <ul>
-                {recentReferences.map(({ attachment, author, createdAt, url }) => {
-                  const sharedAt = new Date(createdAt);
-                  const content = <>
-                    <span className="company-project-reference-icon"><AttachmentTypeIcon contentType={attachment.contentType} filename={attachment.filename} /></span>
-                    <span className="company-project-reference-copy"><strong title={attachment.filename}>{attachment.filename}</strong><small><span>{author}</span><span aria-hidden="true">·</span><time dateTime={sharedAt.toISOString()}>{sharedAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</time></small></span>
-                    {url ? <ArrowUpRight aria-hidden="true" size={14} /> : null}
-                  </>;
-                  return <li key={attachment._id}>{url ? <a aria-label={`Open ${attachment.filename} in a new tab`} href={url} rel="noreferrer" target="_blank">{content}</a> : <span>{content}</span>}</li>;
-                })}
-              </ul>
-            ) : (
-              <div className="company-project-references-empty" role="status"><span><Paperclip aria-hidden="true" size={15} /></span><div><strong>No references yet</strong><p>Files shared in this channel will appear here.</p></div></div>
-            )}
-          </section>
-        ) : null}
-        {view === "channels" && activeChannel && releaseConfig.tasks ? (
-          <ChannelTaskPanel group={activeChannel} identity={{ actingCompanyId, projectMemberId }} variant="rail" />
-        ) : null}
-        {view === "channels" && releaseConfig.threads && activeChannelId && currentUser ? (
-          <ChannelThreadBrowser
-            context={{ actingCompanyId, projectMemberId }}
-            groupId={activeChannelId}
-            projectId={projectId}
-            readOnly={readOnly}
-            timelineMessages={messages ?? []}
-            userId={currentUser._id}
-            variant="rail"
-          />
-        ) : null}
-        {view === "settings" ? <>
-        {projectMembers ? (
-          <>
-            <h3>Your Company members</h3>
-            <ul>
-              {projectMembers.map(({ membership, user }) => (
-                <li key={membership._id}>
-                  {user?.displayName} <span>{projectRoleLabel(membership.role)}</span>
-                  {membership._id !== projectMemberId ? (
-                    <Button
-                      onClick={() =>
-                        void run(() =>
-                          updateProjectMember({
-                            actingCompanyId,
-                            projectId,
-                            projectMemberId,
-                            targetProjectMemberId: membership._id,
-                            status:
-                              membership.status === "active"
-                                ? "suspended"
-                                : "active",
-                          }),
-                        )
-                      }
-                      variant="outline"
-                    >
-                      {membership.status === "active"
-                        ? "Suspend"
-                        : "Reactivate"}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            <h3>Add your Company members</h3>
-            {(companyMembers ?? [])
-              .filter(
-                ({ membership }) =>
-                  membership.status === "active" &&
-                  !projectMembers.some(
-                    (row) => row.membership.userId === membership.userId,
-                  ),
-              )
-              .map(({ membership, user }) => (
-                <Button
-                  key={membership._id}
-                  onClick={() =>
-                    void run(() =>
-                      addProjectMember({
-                        actingCompanyId,
-                        projectId,
-                        projectMemberId,
-                        role: "member",
-                        userId: membership.userId,
-                      }),
-                    )
-                  }
-                  variant="outline"
-                >
-                  Add {user?.displayName ?? "Company member"}
-                </Button>
-              ))}
-          </>
-        ) : null}
-        {channelParticipationInvitations?.map((request) => (
-          <div className="company-admin-card" key={request._id}>
-            <strong>Channel participation requested</strong>
-            <p>
-              The requesting Company selected{" "}
-              {request.selectedProjectMemberIds.length} member(s).
-            </p>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  decideChannelParticipation({
-                    actingCompanyId,
-                    decision: "accept",
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                    selectedProjectMemberIds: request.selectedProjectMemberIds,
-                  }),
-                )
-              }
-            >
-              Accept for Company
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  decideChannelParticipation({
-                    actingCompanyId,
-                    decision: "decline",
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                    selectedProjectMemberIds: [],
-                  }),
-                )
-              }
-              variant="outline"
-            >
-              Decline
-            </Button>
-          </div>
-        ))}
-        {participationOptions?.map((option) => (
-          <div className="company-admin-card" key={option.projectCompany._id}>
-            <strong>
-              Add {option.company?.displayName} to #{activeChannel?.name}
-            </strong>
-            <p>
-              {option.members.length} Project member(s) will be selected for
-              their manager to confirm.
-            </p>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  requestChannelParticipation({
-                    actingCompanyId,
-                    groupId: activeChannelId!,
-                    idempotencyKey: crypto.randomUUID(),
-                    projectId,
-                    projectMemberId,
-                    selectedProjectMemberIds: option.members.map(
-                      ({ membership }) => membership._id,
-                    ),
-                    targetProjectCompanyId: option.projectCompany._id,
-                  }),
-                )
-              }
-              variant="outline"
-            >
-              Request participation
-            </Button>
-          </div>
-        ))}
-        {pendingChannelArchives?.map((request) => (
-          <div className="company-admin-card" key={request._id}>
-            <strong>
-              {request.operation === "archive"
-                ? "Channel archive"
-                : "Channel restore"}{" "}
-              requested
-            </strong>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  approveChannelArchive({
-                    actingCompanyId,
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                  }),
-                )
-              }
-            >
-              Approve for Company
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  cancelChannelArchive({
-                    actingCompanyId,
-                    groupId: request.groupId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                  }),
-                )
-              }
-              variant="outline"
-            >
-              Cancel request
-            </Button>
-          </div>
-        ))}
-        {activeChannelId &&
-        isChannelSteward &&
-        activeChannel?.kind !== "general" &&
-        (activeChannel.status === "active" ||
-          activeChannel.status === "archived") &&
-        !pendingChannelArchives?.length ? (
-          <Button
-            onClick={() =>
-              void run(async () => {
-                const requestId = await requestChannelArchive({
-                  actingCompanyId,
-                  groupId: activeChannelId,
-                  idempotencyKey: crypto.randomUUID(),
-                  operation:
-                    activeChannel.status === "archived" ? "restore" : "archive",
-                  projectId,
-                  projectMemberId,
-                });
-                await approveChannelArchive({
-                  actingCompanyId,
-                  groupId: activeChannelId,
-                  projectId,
-                  projectMemberId,
-                  requestId,
-                });
-              })
-            }
-            variant="outline"
-          >
-            Request Channel{" "}
-            {activeChannel.status === "archived" ? "restore" : "archive"}
-          </Button>
-        ) : null}
-        {pendingProjectArchives?.map((request) => (
-          <div className="company-admin-card" key={request._id}>
-            <strong>
-              {request.operation === "archive" ? "Archive" : "Restore"} approval
-              requested
-            </strong>
-            <Button
-              onClick={() =>
-                void run(() =>
-                  approveProjectArchive({
-                    actingCompanyId,
-                    projectId,
-                    projectMemberId,
-                    requestId: request._id,
-                  }),
-                )
-              }
-            >
-              Approve for Company
-            </Button>
-          </div>
-        ))}
-        {isActiveProjectManager &&
-        (item.project.status === "active" ||
-          item.project.status === "archived") ? (
-          <Button
-            onClick={() =>
-              void run(async () => {
-                const requestId = await requestProjectArchive({
-                  actingCompanyId,
-                  idempotencyKey: crypto.randomUUID(),
-                  operation:
-                    item.project.status === "archived" ? "restore" : "archive",
-                  projectId,
-                  projectMemberId,
-                });
-                await approveProjectArchive({
-                  actingCompanyId,
-                  projectId,
-                  projectMemberId,
-                  requestId,
-                });
-              })
-            }
-            variant="outline"
-          >
-            Request Project{" "}
-            {item.project.status === "archived" ? "restore" : "archive"}
-          </Button>
-        ) : null}
-        {item.project.origin === "shared" &&
-        item.membership.status === "active" &&
-        exitStatus?.status === "active" ? (
-          <Button
-            onClick={() =>
-              void run(() => prepareExit({ actingCompanyId, projectId }))
-            }
-            variant="destructive"
-          >
-            Start Company exit
-          </Button>
-        ) : null}
-        {exitStatus?.status === "active" &&
-        exitStatus.snapshotError?.startsWith("snapshot_cleanup") ? (
-          <div className="company-admin-card">
-            <strong>Exit snapshot cleanup needs attention</strong>
-            <p>{exitStatus.snapshotError}</p>
-            <Button
-              onClick={() =>
-                void run(() => retryExitCleanup({ actingCompanyId, projectId }))
-              }
-              variant="outline"
-            >
-              Retry cleanup
-            </Button>
-          </div>
-        ) : null}
-        {exitStatus?.status === "exit_pending" ? (
-          <div className="company-admin-card">
-            <strong>Company exit prepared</strong>
-            <p>Snapshot: {exitStatus.snapshotStatus ?? "pending"}</p>
-            {exitStatus.snapshotError ? (
-              <p>{exitStatus.snapshotError}</p>
-            ) : null}
-            <Button
-              disabled={exitStatus.snapshotStatus !== "verified"}
-              onClick={() =>
-                void run(() => finalizeExit({ actingCompanyId, projectId }))
-              }
-            >
-              Finalize exit
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() => retryExit({ actingCompanyId, projectId }))
-              }
-              variant="outline"
-            >
-              Retry snapshot
-            </Button>
-            <Button
-              onClick={() =>
-                void run(() => cancelExit({ actingCompanyId, projectId }))
-              }
-              variant="outline"
-            >
-              Cancel safely
-            </Button>
-          </div>
-        ) : null}
-        </> : null}
-      </aside> : null}
+      ) : view === "evidence" ? (
+        <CompanyProjectEvidence
+          actingCompanyId={actingCompanyId}
+          actingCompanyName={actingCompany?.company?.displayName ?? "Represented Company"}
+          channelItems={channelItems}
+          currentUser={currentUser}
+          projectId={projectId}
+          projectMemberId={projectMemberId}
+          projectName={item.project.name}
+          tasksEnabled={releaseConfig.tasks}
+        />
+      ) : (
+      <CompanyProjectConversation
+        actingCompanyId={actingCompanyId}
+        activeChannel={activeChannel}
+        activeChannelId={activeChannelId}
+        busyAction={busyAction}
+        channelItems={channelItems}
+        channelName={channelName}
+        contextManagement={canManageActiveProject || canManageExit || canConfirmProjectOwnership ? <CompanyProjectAdministration
+          actingCompanyId={actingCompanyId}
+          activeChannel={activeChannel}
+          activeChannelId={activeChannelId}
+          canConfirmProjectOwnership={canConfirmProjectOwnership}
+          canInvitePartnerCompanies={canInvitePartnerCompanies}
+          channelParticipationInvitations={channelParticipationInvitations}
+          collaborationOptions={collaborationOptions}
+          companyMembers={companyMembers}
+          exitStatus={exitStatus}
+          item={item}
+          isChannelSteward={isChannelSteward}
+          canManageExit={canManageExit}
+          participationOptions={participationOptions}
+          pendingChannelArchives={pendingChannelArchives}
+          pendingProjectArchives={pendingProjectArchives}
+          projectId={projectId}
+          projectMemberId={projectMemberId}
+          projectMembers={projectMembers}
+          run={run}
+          onAddProjectMember={addProjectMemberToProject}
+          onApproveChannelArchive={approveProjectChannelArchive}
+          onApproveProjectArchive={approveProjectLifecycleArchive}
+          onCancelChannelArchive={cancelProjectChannelArchive}
+          onCancelExit={cancelProjectExit}
+          onDecideChannelParticipation={decideProjectChannelParticipation}
+          onFinalizeExit={finalizeProjectExit}
+          onPrepareExit={prepareProjectExit}
+          onRequestChannelArchive={requestProjectChannelArchive}
+          onRequestChannelParticipation={requestProjectChannelParticipation}
+          onRequestProjectArchive={requestProjectLifecycleArchive}
+          onRetryExit={retryProjectExitSnapshot}
+          onRetryExitCleanup={retryProjectExitCleanup}
+          onUpdateProjectMember={updateProjectMemberStatus}
+        /> : <aside className="company-project-details" aria-label="Project details">
+          <h2>Project details</h2>
+          <strong>Member access</strong>
+          <p>You have read-only Project access. Project managers and Company admins manage ownership and settings.</p>
+          {item.participationRole === "unassigned_legacy" ? <p>Project ownership is not assigned. A Company admin who is also a Project manager must confirm the owner.</p> : null}
+        </aside>}
+        contextManagementLabel={canManageActiveProject || canManageExit || canConfirmProjectOwnership ? "Manage" : "Project info"}
+        contextTab={contextTab}
+        currentUser={currentUser}
+        item={item}
+        messages={messages}
+        messagePageStatus={messagePageStatus}
+        notice={notice}
+        onBusyActionChange={setBusyAction}
+        onChannelNameChange={setChannelName}
+        onCreateChannel={() => run(createProjectChannel, "create-channel")}
+        onDeleteMessage={deleteAuthoredMessage}
+        onForwardMessage={forwardChannelMessage}
+        onNotice={setNotice}
+        onContextTabChange={updateContextTab}
+        onOpenGroup={setActiveChannelId}
+        onOpenMessageSource={openMessageSource}
+        onLoadMoreMessages={loadMoreMessages}
+        onReplyChange={(reply) => {
+          setReplyToMessageByScope((previous) => {
+            const next = new Map(previous);
+            if (reply) next.set(activeConversationScopeKey, reply);
+            else next.delete(activeConversationScopeKey);
+            return next;
+          });
+        }}
+        onReplyMessage={(message) => {
+          setReplyToMessageByScope((previous) => {
+            const next = new Map(previous);
+            next.set(activeConversationScopeKey, {
+              authorName: message.author?.displayName ?? "Unknown Member",
+              body: message.message.body || "Attachment message",
+              messageId: message.message._id,
+            });
+            return next;
+          });
+        }}
+        projectId={projectId}
+        projectMemberId={projectMemberId}
+        readOnly={readOnly}
+        releaseConfig={{
+          tasks: releaseConfig.tasks,
+          threads: releaseConfig.threads,
+        }}
+        replyToMessage={replyToMessage}
+        snapshotState={snapshotState}
+        targetMessageId={targetMessageId}
+        threadUnreadByChannel={threadUnreadByChannel}
+      />
+      )}
+      <ConfirmDialog
+        confirmLabel="Forward snapshot"
+        description="The target Channel includes people who cannot read the source Channel. Track will copy the message as a snapshot to the larger audience."
+        onConfirm={async () => {
+          if (!pendingForward) return false;
+          setBusy(true);
+          setBusyAction(`forward-${pendingForward.sourceMessageId}`);
+          try {
+            await forwardMessage({ ...pendingForward, audienceExpansionConfirmed: true });
+            setNotice("Message forwarded as a scoped snapshot.");
+            setPendingForward(null);
+            return true;
+          } catch (error) {
+            setNotice(formatCompanyError(error));
+            return false;
+          } finally {
+            setBusy(false);
+            setBusyAction(null);
+          }
+        }}
+        onOpenChange={(open) => { if (!open) setPendingForward(null); }}
+        open={Boolean(pendingForward)}
+        title="Forward to a larger audience?"
+      />
     </main>
   );
 }

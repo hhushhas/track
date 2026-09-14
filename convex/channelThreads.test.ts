@@ -104,6 +104,113 @@ describe('Channel threads', () => {
     await expect(actor.query(api.taskBoards.list, { projectId }))
       .rejects.toThrow('tasks_disabled')
   })
+
+  it('lists visible project threads with their channel context', async () => {
+    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    const secondGroupId = await t.run(async (ctx) => {
+      const now = Date.now()
+      const createdGroupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: 'custom',
+        name: 'Design review',
+        status: 'active',
+        revision: 1,
+        createdBy: owner,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('groupMembers', {
+        projectId,
+        groupId: createdGroupId,
+        userId: owner,
+        projectMemberId: ownerMembershipId,
+        status: 'active',
+        isSteward: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return createdGroupId
+    })
+    const actor = asUser(t, owner)
+    const firstThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'project-thread-first',
+      name: 'Launch checklist',
+      projectId,
+    })
+    const secondThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId: secondGroupId,
+      idempotencyKey: 'project-thread-second',
+      name: 'Design review notes',
+      projectId,
+    })
+
+    const result = await actor.query(api.channelThreads.listProject, { projectId, userId: owner })
+    expect(result.map((item) => item.thread._id)).toEqual(expect.arrayContaining([firstThreadId, secondThreadId]))
+    expect(result.find((item) => item.thread._id === secondThreadId)?.channel).toMatchObject({ name: 'Design review' })
+  })
+
+  it('pages project threads without dropping the project scope', async () => {
+    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    const secondGroupId = await t.run(async (ctx) => {
+      const now = Date.now()
+      const createdGroupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: 'custom',
+        name: 'Design review page',
+        status: 'active',
+        revision: 1,
+        createdBy: owner,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('groupMembers', {
+        projectId,
+        groupId: createdGroupId,
+        userId: owner,
+        projectMemberId: ownerMembershipId,
+        status: 'active',
+        isSteward: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return createdGroupId
+    })
+    const actor = asUser(t, owner)
+    const firstThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'project-thread-page-first',
+      name: 'Page one',
+      projectId,
+    })
+    const secondThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId: secondGroupId,
+      idempotencyKey: 'project-thread-page-second',
+      name: 'Page two',
+      projectId,
+    })
+
+    const firstPage = await actor.query(api.channelThreads.listProjectPage, {
+      paginationOpts: { cursor: null, numItems: 1 },
+      projectId,
+      userId: owner,
+    })
+    expect(firstPage.page).toHaveLength(1)
+    expect(firstPage.isDone).toBe(false)
+
+    const secondPage = await actor.query(api.channelThreads.listProjectPage, {
+      paginationOpts: { cursor: firstPage.continueCursor, numItems: 1 },
+      projectId,
+      userId: owner,
+    })
+    const pagedIds = [...firstPage.page, ...secondPage.page].map((item) => item.thread._id)
+    expect(pagedIds).toEqual(expect.arrayContaining([firstThreadId, secondThreadId]))
+  })
+
   it('preserves channel sequence and converges create/send retries', async () => {
     {
       const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
@@ -188,6 +295,135 @@ describe('Channel threads', () => {
       .map((item) => item.message._id)).toEqual([replyId])
     expect(memberThreads[0]).toMatchObject({ following: true, replyCount: 1, unread: true })
     expect(memberThreads[0].thread).toMatchObject({ name: 'Decision log', sourceMessageId })
+  })
+
+  it('acknowledges only an explicitly viewed thread sequence and keeps the cursor monotonic', async () => {
+    const { groupId, member, owner, projectId, t } = await seedLegacyChannel()
+    const ownerActor = asUser(t, owner)
+    const memberActor = asUser(t, member)
+    const threadId = await ownerActor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'read-cursor-thread',
+      name: 'Read cursor',
+      projectId,
+    })
+    const firstReplyId = await ownerActor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'First visible reply',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'read-cursor-first',
+      projectId,
+    })
+    const secondReplyId = await ownerActor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'Second visible reply',
+      channelThreadId: threadId,
+      groupId,
+      idempotencyKey: 'read-cursor-second',
+      projectId,
+    })
+    const firstReply = await t.run(async (ctx) => await ctx.db.get(firstReplyId))
+    const secondReply = await t.run(async (ctx) => await ctx.db.get(secondReplyId))
+    const firstSequence = firstReply?.channelSequence ?? 0
+    const secondSequence = secondReply?.channelSequence ?? 0
+    const readStateId = await memberActor.mutation(api.channelThreads.markRead, {
+      threadId,
+      userId: member,
+      viewedChannelSequence: firstSequence,
+    })
+    if (!readStateId) throw new Error('expected a read state')
+    const beforeNoOp = await t.run(async (ctx) => await ctx.db.get(readStateId))
+    expect(beforeNoOp).toMatchObject({ lastReadChannelSequence: firstSequence })
+
+    expect(await memberActor.mutation(api.channelThreads.markRead, {
+      threadId,
+      userId: member,
+      viewedChannelSequence: firstSequence,
+    })).toBe(readStateId)
+    const afterNoOp = await t.run(async (ctx) => await ctx.db.get(readStateId))
+    expect(afterNoOp).toEqual(beforeNoOp)
+
+    await expect(memberActor.mutation(api.channelThreads.markRead, {
+      threadId,
+      userId: member,
+      viewedChannelSequence: secondSequence + 1,
+    })).rejects.toThrow('read_sequence_unavailable')
+    expect((await t.run(async (ctx) => await ctx.db.get(readStateId)))?.lastReadChannelSequence)
+      .toBe(firstSequence)
+  })
+
+  it('returns bounded Channel context around an older target message', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const messageIds: Array<Id<'messages'>> = []
+    for (const [index, body] of ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].entries()) {
+      messageIds.push(await actor.mutation(api.messages.send, {
+        authorId: owner,
+        body,
+        groupId,
+        idempotencyKey: `bounded-history-${index}`,
+        projectId,
+      }))
+    }
+    const page = await actor.query(api.messages.listPage, {
+      groupId,
+      userId: owner,
+      targetMessageId: messageIds[2],
+      paginationOpts: { cursor: null, numItems: 5 },
+    })
+    const pageIds = page.page.map((item) => item.message._id)
+    expect(pageIds).toContain(messageIds[2])
+    expect(pageIds.length).toBeLessThanOrEqual(5)
+    expect(pageIds).toEqual(expect.arrayContaining([messageIds[1], messageIds[3]]))
+  })
+
+  it('atomically links uploaded attachments and converges a send retry', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+    const storageId = await t.run(async (ctx) =>
+      await ctx.storage.store(new Blob(['atomic attachment'], { type: 'text/plain' })),
+    )
+    const uploadIntent = await actor.mutation(api.messages.generateUploadUrl, {
+      contentType: 'text/plain',
+      filename: 'atomic.txt',
+      groupId,
+      intentKey: 'atomic-send-attachment',
+      size: 17,
+      userId: owner,
+    })
+    await actor.mutation(api.messages.claimUploadIntent, {
+      intentId: uploadIntent.intentId,
+      storageId,
+      userId: owner,
+    })
+    const sendArgs = {
+      authorId: owner,
+      attachments: [{
+        contentType: 'text/plain',
+        filename: 'atomic.txt',
+        size: 17,
+        uploadIntentId: uploadIntent.intentId,
+      }],
+      body: 'Atomic send',
+      groupId,
+      idempotencyKey: 'atomic-send-retry',
+      projectId,
+    }
+    const firstMessageId = await actor.mutation(api.messages.send, sendArgs)
+    expect(await actor.mutation(api.messages.send, sendArgs)).toBe(firstMessageId)
+    const message = await t.run(async (ctx) => await ctx.db.get(firstMessageId))
+    expect(message?.attachmentIds).toHaveLength(1)
+    const attachment = message?.attachmentIds[0]
+      ? await t.run(async (ctx) => await ctx.db.get(message.attachmentIds[0]))
+      : null
+    expect(attachment).toMatchObject({
+      contentType: 'text/plain',
+      filename: 'atomic.txt',
+      messageId: firstMessageId,
+      storageId,
+    })
   })
 
   it('enforces creator or steward lifecycle authority and revision conflicts', async () => {

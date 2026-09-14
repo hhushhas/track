@@ -1,4 +1,4 @@
-import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import type { Id } from '../../../../convex/_generated/dataModel';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -10,8 +10,8 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 type ForwardTarget = {
-  group: Doc<'groups'>;
-  membership: Doc<'groupMembers'>;
+  group: { _id: Id<'groups'>; name: string; kind: string; status?: string };
+  membership: object;
 };
 
 export function ForwardMessageSheet({
@@ -44,10 +44,9 @@ export function ForwardMessageSheet({
 
   const targets = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
-    return (groups ?? []).filter(({ group, membership }) =>
+    return (groups ?? []).filter(({ group }) =>
       group._id !== currentGroupId
       && (!group.status || group.status === 'active')
-      && (!membership.status || membership.status === 'active')
       && (!search || group.name.toLocaleLowerCase().includes(search)),
     );
   }, [currentGroupId, groups, query]);

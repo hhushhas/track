@@ -70,10 +70,12 @@ function stateGlyph(category?: TaskStateCategory) {
 }
 
 export function TaskStatusPill({
+  appearance = 'soft',
   category,
   label,
   onPress,
 }: {
+  appearance?: 'plain' | 'soft';
   category?: TaskStateCategory;
   label: string;
   onPress?: () => void;
@@ -93,7 +95,8 @@ export function TaskStatusPill({
       {onPress ? <PlatformIcon color={palette.foreground} name="selector" size={13} /> : null}
     </>
   );
-  if (!onPress) return <View style={[styles.pill, { backgroundColor: palette.background }]}>{body}</View>;
+  const backgroundColor = appearance === 'plain' ? 'transparent' : palette.background;
+  if (!onPress) return <View style={[styles.pill, { backgroundColor }]}>{body}</View>;
   return (
     <Pressable
       accessibilityHint="Opens the move menu"
@@ -104,22 +107,25 @@ export function TaskStatusPill({
         hapticLight();
         onPress();
       }}
-      style={[styles.pill, { backgroundColor: palette.background }]}>
+      style={[styles.pill, { backgroundColor }]}>
       {body}
     </Pressable>
   );
 }
 
 export function TaskPriorityBadge({
+  compact = false,
   onPress,
   priority,
 }: {
+  compact?: boolean;
   onPress?: () => void;
   priority: TaskPriority;
 }) {
   const theme = useTheme();
   if (priority === 'none' && !onPress) return null;
   const color = priority === 'urgent' ? theme.danger : priority === 'high' ? theme.warning : theme.textSecondary;
+  const backgroundColor = priority === 'urgent' ? theme.dangerSoft : priority === 'high' ? theme.accentSoft : theme.backgroundElement;
   const body = (
     <>
       <ThemedText style={[styles.priorityGlyph, { color }]} type="captionBold">
@@ -130,7 +136,7 @@ export function TaskPriorityBadge({
   );
   if (!onPress) {
     return (
-      <View accessibilityLabel={`${taskPriorityLabel(priority)} priority`} style={styles.priority}>
+      <View accessibilityLabel={`${taskPriorityLabel(priority)} priority`} style={[styles.priority, compact && styles.priorityBadge, compact && { backgroundColor }]}>
         {body}
       </View>
     );
@@ -145,7 +151,7 @@ export function TaskPriorityBadge({
         hapticLight();
         onPress();
       }}
-      style={styles.priority}>
+      style={[styles.priority, compact && styles.priorityBadge, compact && { backgroundColor }]}>
       {body}
     </Pressable>
   );
@@ -202,6 +208,7 @@ export function TaskCard({
   onStatusPress,
   priority,
   publicKey,
+  referenceCount = 0,
   stateName,
   title,
   variant = 'list',
@@ -218,6 +225,7 @@ export function TaskCard({
   onStatusPress?: () => void;
   priority: TaskPriority;
   publicKey: string;
+  referenceCount?: number;
   stateName: string;
   title: string;
   variant?: 'list' | 'board';
@@ -285,10 +293,12 @@ export function TaskCard({
       ) : null}
       <View style={styles.boardMeta}>
         <View style={styles.cardKey}>
-          <ThemedText themeColor="textSecondary" type="mono">{shortTaskKey(publicKey)}</ThemedText>
+          <View style={[styles.cardKeyBadge, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText themeColor="textSecondary" type="mono">{shortTaskKey(publicKey)}</ThemedText>
+          </View>
           {evidence ? <View accessibilityLabel="Has evidence" style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
         </View>
-        <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />
+        <TaskPriorityBadge compact priority={priority} />
       </View>
       <Pressable
         accessibilityHint={onLongPress ? 'Opens the task. Touch and hold to move it.' : 'Opens the task'}
@@ -298,7 +308,7 @@ export function TaskCard({
         delayLongPress={350}
         onLongPress={onLongPress ? () => { hapticLight(); onLongPress(); } : undefined}
         onPress={onPress}
-        style={[styles.cardPressable, board && styles.boardCardPressable]}>
+        style={({ pressed }) => [styles.cardPressable, board && styles.boardCardPressable, { opacity: pressed ? 0.84 : 1 }]}>
         <View style={styles.titleRow}>
           {board ? <PlatformIcon color={theme.text} name="check-box-outline" size={17} /> : null}
           <ThemedText numberOfLines={2} style={styles.cardTitle} type="smallBold">{title}</ThemedText>
@@ -313,15 +323,23 @@ export function TaskCard({
             {description}
           </ThemedText>
         ) : null}
+        {board && referenceCount > 0 ? (
+          <View style={[styles.boardReference, { backgroundColor: theme.backgroundElement }]}>
+            <PlatformIcon color={theme.accentStrong} name="link" size={14} />
+            <ThemedText numberOfLines={1} style={styles.cardDescription} themeColor="accentStrong" type="caption">
+              {referenceCount} {referenceCount === 1 ? 'reference' : 'references'} attached
+            </ThemedText>
+          </View>
+        ) : null}
         <View style={styles.cardFooter}>
           {board ? (
             <View style={styles.boardAssignee}>
-              {assignee ? <ColoredAvatar label={assignee} seed={assignee} size={24} /> : null}
-              <TaskDueChip category={category} dueDate={dueDate} />
+              {assignee ? <ColoredAvatar label={assignee} seed={assignee} size={24} /> : <PlatformIcon color={theme.textSecondary} name="person" size={16} />}
+              <ThemedText numberOfLines={1} style={styles.assigneeName} themeColor="textSecondary" type="caption">{assignee ?? 'Unassigned'}</ThemedText>
             </View>
           ) : <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />}
           <View style={styles.cardTrailing}>
-            {board ? <TaskPriorityBadge priority={priority} /> : null}
+            {board ? <TaskDueChip category={category} dueDate={dueDate} /> : null}
             {!board ? <TaskDueChip category={category} dueDate={dueDate} /> : null}
             {!board && assignee ? <ColoredAvatar label={assignee} seed={assignee} size={22} /> : null}
           </View>
@@ -416,21 +434,24 @@ export function TaskAction({
 }
 
 const styles = StyleSheet.create({
-  action: { alignItems: 'center', alignSelf: 'stretch', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
+  action: { alignItems: 'center', alignSelf: 'stretch', borderCurve: 'continuous', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   actionPrimaryText: { color: Colors.light.text },
-  banner: { alignItems: 'center', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  banner: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   bannerText: { flex: 1 },
   boardCard: { minHeight: 0 },
   boardCardPressable: { justifyContent: 'space-between' },
-  boardMeta: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
-  card: { borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  boardMeta: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: 30, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
+  card: { borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   cardFooter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
   cardKey: { alignItems: 'center', flex: 1, flexDirection: 'row', flexShrink: 1, gap: Spacing.one, minWidth: 0 },
+  cardKeyBadge: { borderRadius: Radius.small, paddingHorizontal: Spacing.one, paddingVertical: 2 },
   cardPressable: { gap: Spacing.two, padding: Spacing.three },
   cardTitle: { flexShrink: 1 },
   cardDescription: { flexShrink: 1 },
-  boardAssignee: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
+  boardAssignee: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one, minWidth: 0 },
+  boardReference: { alignItems: 'center', borderRadius: Radius.small, flexDirection: 'row', gap: Spacing.one, minWidth: 0, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
   cardTrailing: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.two, justifyContent: 'flex-end' },
+  assigneeName: { flexShrink: 1, maxWidth: 90 },
   focusedTask: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: Radius.pill, flexDirection: 'row', gap: 3, marginHorizontal: Spacing.three, marginTop: Spacing.two, paddingHorizontal: Spacing.two, paddingVertical: 3 },
   inlineMeta: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one },
   listContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
@@ -443,13 +464,14 @@ const styles = StyleSheet.create({
   listTrailing: { alignItems: 'flex-end', gap: 3, justifyContent: 'center', maxWidth: 116, minHeight: TouchTarget, minWidth: 88, paddingRight: Spacing.three, paddingVertical: Spacing.two },
   listTrailingLine: { alignItems: 'flex-end', justifyContent: 'center', minHeight: 18, maxWidth: '100%' },
   originDot: { borderRadius: Radius.pill, borderWidth: 2, height: 8, width: 8 },
-  pill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: 5, maxWidth: 168, paddingHorizontal: Spacing.two, paddingVertical: 5 },
+  pill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: 5, maxWidth: 168, minHeight: 28, paddingHorizontal: Spacing.two, paddingVertical: 5 },
   pillDot: { borderRadius: Radius.pill, height: 8, width: 8 },
   pillLabel: { flexShrink: 1 },
   priority: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  priorityBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.two, paddingVertical: 2 },
   priorityGlyph: { fontWeight: '800' },
   segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.small, borderWidth: StyleSheet.hairlineWidth, flex: 1, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.two },
-  segmented: { borderRadius: Radius.medium, flexDirection: 'row', padding: 3 },
+  segmented: { borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', padding: 3 },
   skeletonAvatar: { borderRadius: Radius.pill, height: 24, width: 24 },
   skeletonBottom: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.one },
   skeletonCard: { borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.three },

@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -44,6 +44,8 @@ export function TaskCreateDialog({
   const [labelIds, setLabelIds] = useState<Array<Id<'taskLabels'>>>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const createIntentRef = useRef(crypto.randomUUID())
+  const pendingRef = useRef(false)
   const board = boards.find((item) => item.board._id === boardId)
   const assignees = useQuery(
     api.tasks.listEligibleAssignees,
@@ -65,6 +67,12 @@ export function TaskCreateDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (pendingRef.current) return
+    if (!title.trim()) {
+      setError('Enter a task title.')
+      return
+    }
+    pendingRef.current = true
     setSaving(true)
     setError('')
     try {
@@ -72,13 +80,13 @@ export function TaskCreateDialog({
         projectId,
         boardId: boardId ? boardId as Id<'taskBoards'> : undefined,
         workflowStateId: workflowStateId ? workflowStateId as Id<'taskWorkflowStates'> : undefined,
-        title,
-        description: description || undefined,
+        title: title.trim(),
+        description: description.trim() || undefined,
         priority,
         dueDate: dueDate || undefined,
         assigneeProjectMemberId: assignee ? assignee as Id<'projectMembers'> : undefined,
         labelIds,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: createIntentRef.current,
         ...identity,
       })
       setTitle('')
@@ -86,6 +94,7 @@ export function TaskCreateDialog({
       setDueDate('')
       setAssignee('')
       setLabelIds([])
+      createIntentRef.current = crypto.randomUUID()
       onCreated(result.publicKey)
       appToast.success('Task created', `${result.publicKey} is ready.`)
     } catch (failure) {
@@ -93,6 +102,7 @@ export function TaskCreateDialog({
       setError(message)
       appToast.error('Task not created', message)
     } finally {
+      pendingRef.current = false
       setSaving(false)
     }
   }
@@ -102,10 +112,10 @@ export function TaskCreateDialog({
       <DialogContent className="task-create-dialog">
         <DialogHeader><DialogTitle>Create task</DialogTitle><DialogDescription>Turn work into a durable Project task. Channel scope follows the selected board.</DialogDescription></DialogHeader>
         <form className="task-form" onSubmit={(event) => void submit(event)}>
-          <label>Title<Input autoFocus maxLength={180} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
-          <label>Description<Textarea maxLength={20_000} onChange={(event) => setDescription(event.target.value)} value={description} /></label>
+          <label>Title<Input autoComplete="off" maxLength={180} name="title" onChange={(event) => { setTitle(event.target.value); if (error && event.target.value.trim()) setError('') }} placeholder="For example, review the launch checklist…" required value={title} /></label>
+          <label>Description<Textarea autoComplete="off" maxLength={20_000} name="description" onChange={(event) => setDescription(event.target.value)} placeholder="Add the outcome, context, or acceptance criteria…" value={description} /></label>
           <div className="task-form-grid">
-            <label>Board<NativeSelect disabled={!boards.length} onChange={(event) => {
+            <label>Board<NativeSelect autoComplete="off" disabled={!boards.length} name="boardId" onChange={(event) => {
               const nextBoard = boards.find((item) => item.board._id === event.target.value)
               setBoardId(event.target.value)
               setWorkflowStateId(nextBoard?.states.find((item) => item.isDefault)?._id ?? nextBoard?.states[0]?._id ?? '')
@@ -113,21 +123,28 @@ export function TaskCreateDialog({
               {!boards.length ? <NativeSelectOption value="">Project tasks (create automatically)</NativeSelectOption> : null}
               {boards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}
             </NativeSelect></label>
-            <label>Status<NativeSelect disabled={!board?.states.length} onChange={(event) => setWorkflowStateId(event.target.value)} value={workflowStateId}>
-              {board?.states.map((item) => <NativeSelectOption key={item._id} value={item._id}>{item.name}</NativeSelectOption>)}
+            <label>Status<NativeSelect aria-label="Task status" autoComplete="off" disabled={!board?.states.length} name="workflowStateId" onChange={(event) => setWorkflowStateId(event.target.value)} value={workflowStateId}>
+              {board?.states.length ? board.states.map((item) => <NativeSelectOption key={item._id} value={item._id}>{item.name}</NativeSelectOption>) : <NativeSelectOption value="">No workflow status available</NativeSelectOption>}
             </NativeSelect></label>
-            <label>Priority<NativeSelect onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}>
+            <label>Priority<NativeSelect autoComplete="off" name="priority" onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}>
               {['none', 'urgent', 'high', 'medium', 'low'].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
             </NativeSelect></label>
-            <label>Assignee<NativeSelect onChange={(event) => setAssignee(event.target.value)} value={assignee}>
+            <label>Assignee<NativeSelect autoComplete="off" name="assigneeProjectMemberId" onChange={(event) => setAssignee(event.target.value)} value={assignee}>
               <NativeSelectOption value="">Unassigned</NativeSelectOption>
               {assignees?.map((item) => <NativeSelectOption key={item.member._id} value={item.member._id}>{item.user.displayName}{item.company ? ` · ${item.company.displayName}` : ''}</NativeSelectOption>)}
             </NativeSelect></label>
             <label>Due date<DatePicker aria-label="Due date" onChange={setDueDate} value={dueDate} /></label>
           </div>
-          <fieldset><legend>Labels</legend><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => setLabelIds((current) => current.includes(label._id) ? current.filter((id) => id !== label._id) : [...current, label._id])} size="sm" type="button" variant={labelIds.includes(label._id) ? 'default' : 'outline'}>{label.name}</Button>)}</div></fieldset>
-          {error ? <p className="task-form-error">{error}</p> : null}
-          <DialogFooter><Button disabled={saving || !title.trim()} type="submit">{saving ? 'Creating…' : 'Create task'}</Button></DialogFooter>
+          <fieldset aria-label="Task labels" className="task-label-picker">
+            <legend>Labels</legend>
+            <div className="task-label-picker-options">
+              {labels?.map((label) => <Button aria-pressed={labelIds.includes(label._id)} key={label._id} onClick={() => setLabelIds((current) => current.includes(label._id) ? current.filter((id) => id !== label._id) : [...current, label._id])} size="sm" type="button" variant={labelIds.includes(label._id) ? 'default' : 'outline'}>{label.name}</Button>)}
+              {labels?.length === 0 ? <span className="task-label-picker-empty">No labels yet. Add them from Task settings.</span> : null}
+              {labels === undefined ? <span className="task-label-picker-empty">Loading labels…</span> : null}
+            </div>
+          </fieldset>
+          {error ? <p className="task-form-error" role="alert">{error}</p> : null}
+          <DialogFooter><Button disabled={saving} onClick={() => onOpenChange(false)} type="button" variant="outline">Cancel</Button><Button disabled={saving || !title.trim()} type="submit">{saving ? 'Creating…' : 'Create task'}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

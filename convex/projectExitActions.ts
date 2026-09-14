@@ -18,7 +18,7 @@ function shellQuote(value: string) {
 export const snapshot = internalAction({
   args: { projectCompanyId: v.id('projectCompanies'), operationId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const input = await ctx.runQuery((internal as any).projectExit.getSnapshotInput, args) as any
+    const input = await ctx.runQuery(internal.projectExit.getSnapshotInput, args)
     if (!input) return
     if (!args.operationId || input.participation.exitOperationId !== args.operationId) return
     const snapshotPath = input.participation.memorySnapshotPath
@@ -51,10 +51,10 @@ export const snapshot = internalAction({
         }
         const context = await adapter.readFile(input.memoryBox.boxId, 'context.md')
         await adapter.writeFile(input.memoryBox.boxId, `${snapshotPath}/context.md`, context)
-        const recheck = await ctx.runQuery((internal as any).projectExit.getSnapshotInput, {
+        const recheck = await ctx.runQuery(internal.projectExit.getSnapshotInput, {
           projectCompanyId: args.projectCompanyId,
           operationId: args.operationId,
-        }) as any
+        })
         if (
           !recheck ||
           recheck.memoryBox?.contextWritePendingRevision ||
@@ -135,7 +135,7 @@ export const snapshot = internalAction({
         const persisted = await adapter.readFile(input.memoryBox.boxId, `${snapshotPath}/manifest.json`)
         if (persisted !== serialized) throw new Error('snapshot_manifest_verification_failed')
       }
-      await ctx.runMutation((internal as any).projectExit.markSnapshotVerified, {
+      await ctx.runMutation(internal.projectExit.markSnapshotVerified, {
         projectCompanyId: input.participation._id,
         manifest,
         manifestHash: await contentHash(serialized),
@@ -144,7 +144,7 @@ export const snapshot = internalAction({
         operationId: args.operationId,
       })
     } catch (error) {
-      await ctx.runMutation((internal as any).projectExit.markSnapshotFailed, {
+      await ctx.runMutation(internal.projectExit.markSnapshotFailed, {
         projectCompanyId: input.participation._id,
         operationId: args.operationId,
         snapshotPath,
@@ -169,12 +169,12 @@ export const cleanupSnapshot = internalAction({
         })
         if (result.exitCode !== 0) throw new Error('snapshot_cleanup_command_failed')
       }
-      await ctx.runMutation((internal as any).projectExit.markSnapshotCleaned, {
+      await ctx.runMutation(internal.projectExit.markSnapshotCleaned, {
         projectCompanyId: args.projectCompanyId,
         snapshotPath: args.snapshotPath,
       })
     } catch (error) {
-      await ctx.runMutation((internal as any).projectExit.markSnapshotCleanupFailed, {
+      await ctx.runMutation(internal.projectExit.markSnapshotCleanupFailed, {
         projectCompanyId: args.projectCompanyId,
         snapshotPath: args.snapshotPath,
         error: error instanceof Error ? error.message : 'snapshot_cleanup_failed',

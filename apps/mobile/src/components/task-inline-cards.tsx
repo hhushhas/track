@@ -5,14 +5,14 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { PlatformIcon } from '@/components/platform-icon';
+import { TaskStatusPill } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { shortTaskKey } from '@/lib/task-presentation';
-import { displayText } from '@/lib/display-text';
+import { useTaskLinkBatch } from '@/lib/task-link-context';
 
 /** Matches the avatar column MessageBubble reserves, so cards line up with bubbles. */
 const GUTTER = 40;
@@ -41,19 +41,22 @@ export function TaskInlineCards({
 }: Props) {
   const theme = useTheme();
   const router = useRouter();
+  const batch = useTaskLinkBatch();
   const queryIdentity = identity ? {
     actingCompanyId: identity.companyId,
     projectMemberId: identity.membershipId,
   } : {};
   const messageTasks = useQuery(
     api.tasks.listForMessage,
-    messageId ? { messageId, ...queryIdentity } : 'skip',
+    messageId && !batch ? { messageId, ...queryIdentity } : 'skip',
   );
   const assistantTasks = useQuery(
     api.tasks.listForAssistant,
-    assistantStreamId ? { assistantStreamId, ...queryIdentity } : 'skip',
+    assistantStreamId && !batch ? { assistantStreamId, ...queryIdentity } : 'skip',
   );
-  const tasks = messageId ? messageTasks : assistantTasks;
+  const tasks = messageId
+    ? batch?.messageTasks.get(String(messageId)) ?? messageTasks
+    : batch?.assistantTasks.get(String(assistantStreamId)) ?? assistantTasks;
   const hasCards = Boolean(tasks?.length);
   const rowId = messageId ?? assistantStreamId;
 
@@ -80,17 +83,16 @@ export function TaskInlineCards({
                 hapticLight();
                 router.push(taskDetailHref(projectId, item.task.publicKey, identity));
               }}
-              style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-              <PlatformIcon color={theme.textSecondary} name="check-circle" size={16} />
-              <View style={styles.body}>
-                <ThemedText numberOfLines={1} type="smallBold">
-                  {displayText(item.task.title)}
+              style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+              <View style={styles.header}>
+                <ThemedText numberOfLines={1} style={styles.key} themeColor="textSecondary" type="mono">
+                  {shortTaskKey(item.task.publicKey)}
                 </ThemedText>
-                <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
-                  {`${shortTaskKey(item.task.publicKey)} · ${status}`}
-                </ThemedText>
+                <TaskStatusPill category={item.state?.category} label={status} />
               </View>
-              <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />
+              <ThemedText numberOfLines={2} type="small">
+                {item.task.title}
+              </ThemedText>
             </Pressable>
           );
         })}
@@ -101,18 +103,23 @@ export function TaskInlineCards({
 
 const styles = StyleSheet.create({
   card: {
-    alignItems: 'center',
-    borderRadius: Radius.medium,
-    flexDirection: 'row',
+    borderRadius: Radius.large,
     borderWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.two,
+    gap: Spacing.one,
     paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.two,
   },
   gutter: {
     width: GUTTER,
   },
-  body: {
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.two,
+    justifyContent: 'space-between',
+    minWidth: 0,
+  },
+  key: {
     flexShrink: 1,
     minWidth: 0,
   },

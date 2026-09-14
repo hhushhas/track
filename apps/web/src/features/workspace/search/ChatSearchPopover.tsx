@@ -41,7 +41,7 @@ export function ChatSearchPopover({
             onClose()
           }
         }}
-        placeholder="Search this chat..."
+        placeholder="Search this chat…"
         value={query}
       />
       <span className="track-chat-search-count">

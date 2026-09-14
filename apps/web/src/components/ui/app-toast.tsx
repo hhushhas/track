@@ -12,11 +12,22 @@ type PendingToast = { description?: string; title: string; type: Exclude<AppToas
 function addToast(type: AppToastType, title: string, description?: string) {
   return toastManager.add({
     description,
+    id: toastIdentity(type, title, description),
     priority: type === 'error' ? 'high' : 'low',
     timeout: type === 'error' ? 7000 : 4500,
     title,
     type,
   })
+}
+
+function toastIdentity(type: AppToastType, title: string, description?: string) {
+  const value = `${type}\u0000${title}\u0000${description ?? ''}`
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `track-toast-${(hash >>> 0).toString(36)}-${value.length}`
 }
 
 export const appToast = {
@@ -104,15 +115,15 @@ function AppToastList() {
         {toast.description ? <Toast.Description className="track-toast-description" /> : null}
       </Toast.Content>
       <Toast.Close aria-label="Dismiss notification" className="track-toast-close">
-        <X size={16} strokeWidth={1.8} />
+        <X size={14} strokeWidth={1.9} />
       </Toast.Close>
     </Toast.Root>
   ))
 }
 
 function ToastIcon({ type }: { type?: AppToastType }) {
-  if (type === 'success') return <CheckCircle2 size={18} strokeWidth={1.9} />
-  if (type === 'error') return <AlertCircle size={18} strokeWidth={1.9} />
-  if (type === 'loading') return <LoaderCircle className="track-toast-spinner" size={18} strokeWidth={1.9} />
-  return <Info size={18} strokeWidth={1.9} />
+  if (type === 'success') return <CheckCircle2 size={16} strokeWidth={2} />
+  if (type === 'error') return <AlertCircle size={16} strokeWidth={2} />
+  if (type === 'loading') return <LoaderCircle className="track-toast-spinner" size={16} strokeWidth={2} />
+  return <Info size={16} strokeWidth={2} />
 }

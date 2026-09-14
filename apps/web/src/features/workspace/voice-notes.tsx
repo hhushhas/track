@@ -203,13 +203,14 @@ export function VoiceRecorder({
   return (
     <>
       <Button
+        aria-label="Record voice note"
         className="icon-button"
         disabled={disabled || status === 'requesting'}
         onClick={() => void startRecording()}
         title="Record voice note"
         type="button"
       >
-        <Mic size={15} />
+        <Mic aria-hidden="true" size={15} />
       </Button>
       {error ? <p className="track-voice-error">{error}</p> : null}
     </>

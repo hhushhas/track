@@ -1,0 +1,20 @@
+{
+  "$schema": "https://oxc.rs/schema/oxlintrc.json",
+  "extends": ["./node_modules/@q9labsai/config-oxlint/oxlint.json"],
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/coverage/**",
+    "**/.worktrees/**",
+    ".turbo/**",
+    "**/.wrangler/**",
+    "**/.output/**",
+    "**/routeTree.gen.ts",
+    "**/fixtures/**",
+    "**/__fixtures__/**",
+    "convex/_generated/**",
+    ".dependency-cruiser.cjs",
+    "e2e/**",
+    "scripts/perf/**"
+  ]
+}

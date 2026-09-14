@@ -18,8 +18,14 @@ export const listProjectEvents = query({
       actingCompanyId: args.actingCompanyId,
       projectMemberId: args.projectMemberId,
     }, 'readProject')
+    const operationId = access.companyAccess?.entitlement?.snapshotOperationId
+    const archivedMemberId = access.companyAccess?.projectMember._id
+    const archiveVisibility = operationId && archivedMemberId
+      ? await ctx.db.query('projectExitChannelVisibility').withIndex('by_operation_member', (q) =>
+          q.eq('operationId', operationId).eq('projectMemberId', archivedMemberId)).collect()
+      : null
     const visibleGroups = access.companyAccess
-      ? access.companyAccess.entitlement?.channelIds ?? (await ctx.db
+      ? archiveVisibility?.map((row) => row.groupId) ?? access.companyAccess.entitlement?.channelIds ?? (await ctx.db
           .query('groupMembers')
           .withIndex('by_project_member_status', (q) =>
             q.eq('projectMemberId', access.companyAccess!.projectMember._id).eq('status', 'active'),

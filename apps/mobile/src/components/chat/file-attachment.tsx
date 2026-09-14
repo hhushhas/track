@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import type { AttachmentWithUrl } from '@/components/chat/types';
+import type { AttachmentReference } from '@/components/chat/types';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
@@ -15,7 +15,7 @@ export function FileAttachment({
   attachment,
   onLongPress,
   url,
-}: AttachmentWithUrl & { onLongPress?: () => void }) {
+}: AttachmentReference & { onLongPress?: () => void }) {
   const theme = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

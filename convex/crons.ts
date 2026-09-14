@@ -17,5 +17,11 @@ crons.interval(
   internal.pushDelivery.recoverStaleSendingIntents,
   {},
 )
+crons.interval(
+  'message upload intent cleanup',
+  { minutes: 5 },
+  internal.messages.cleanupExpiredUploadIntents,
+  {},
+)
 
 export default crons

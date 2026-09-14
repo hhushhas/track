@@ -1,9 +1,10 @@
 import type { TaskPriority } from '@track/shared/tasks';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useNetworkState } from 'expo-network';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { FlatList, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -12,7 +13,7 @@ import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
 import { SkeletonList } from '@/components/skeleton-row';
 import { OptionsSheet, SheetFieldButton, SheetInput, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
-import { PlatformIcon } from '@/components/platform-icon';
+import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import type { TaskMoveInput } from '@/components/task-board';
 import {
   SuggestionInbox,
@@ -22,11 +23,18 @@ import {
   type MobileTaskView,
 } from '@/components/task-list-content';
 import { TaskAction, TaskCard, TaskStateBanner } from '@/components/task-ui';
+import {
+  SprintFlowHeader,
+  TaskCreateContext,
+  TaskSuggestionBanner,
+  TasksHeaderTitle,
+  TasksToolbar,
+  type TaskViewMode,
+} from '@/components/tasks-dashboard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, TouchTarget } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
-import { useTheme } from '@/hooks/use-theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
@@ -45,12 +53,7 @@ type TaskTab = 'board' | 'inbox';
 type CreatePicker = 'assignee' | 'board' | 'priority' | 'status' | null;
 type BoardSort = 'manual' | 'due' | 'priority';
 type BoardFilter = 'all' | 'open' | 'completed' | 'high';
-type GlobalTaskView = MobileTaskView & {
-  project: { _id: Id<'projects'>; name: string };
-  companyName: string;
-  companyId?: Id<'companies'>;
-  projectMemberId: Id<'projectMembers'>;
-};
+type GlobalTaskView = FunctionReturnType<typeof api.mobile.listMyTasks>['page'][number];
 const priorities: TaskPriority[] = ['none', 'urgent', 'high', 'medium', 'low'];
 
 function readableError(failure: unknown) {
@@ -58,13 +61,13 @@ function readableError(failure: unknown) {
 }
 
 export default function TasksScreen() {
-  const theme = useTheme();
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const release = useReleaseConfig();
   const network = useNetworkState();
-  const { trackUserId } = useTrackUser();
-  const { projectId, companyId, membershipId, archive, tab: tabParam, suggestionId, boardId: routeBoardId, taskId: focusedTaskId } = useLocalSearchParams<{
+  const { trackUserId, openProfileSheet } = useTrackUser();
+  const largeText = useWindowDimensions().fontScale > 1.2;
+  const { projectId, companyId, membershipId, archive, tab: tabParam, suggestionId, boardId: routeBoardId, taskId: focusedTaskId, create: createParam } = useLocalSearchParams<{
     projectId?: string;
     companyId?: string;
     membershipId?: string;
@@ -73,6 +76,7 @@ export default function TasksScreen() {
     suggestionId?: string;
     boardId?: string;
     taskId?: string;
+    create?: string;
   }>();
   const project = projectId as Id<'projects'>;
   const identity: MobileTaskIdentity | null = companyId && membershipId ? {
@@ -87,6 +91,12 @@ export default function TasksScreen() {
   const readOnly = archive === '1';
   const offline = network.isConnected === false || network.isInternetReachable === false;
   const currentUser = useQuery(api.auth.getCurrentUser);
+  const projectNavigation = useQuery(api.mobile.resolveNavigation, trackUserId && projectId ? {
+    userId: trackUserId,
+    projectId: project,
+    actingCompanyId: identity?.companyId,
+    projectMemberId: identity?.membershipId,
+  } : 'skip');
   const boards = useQuery(api.taskBoards.list, release.tasks && projectId ? {
     projectId: project,
     ...queryIdentity,
@@ -119,7 +129,7 @@ export default function TasksScreen() {
   useEffect(() => {
     if (myTaskStatus === 'CanLoadMore') loadMoreMyTasks(10);
   }, [loadMoreMyTasks, myTaskStatus]);
-  const suggestions = useQuery(api.taskSuggestions.list, release.tasks && projectId && tab === 'inbox' && !readOnly ? {
+  const suggestions = useQuery(api.taskSuggestions.list, release.tasks && projectId && !readOnly ? {
     projectId: project,
     ...queryIdentity,
   } : 'skip') as MobileSuggestionView[] | undefined;
@@ -145,10 +155,11 @@ export default function TasksScreen() {
   const [boardSort, setBoardSort] = useState<BoardSort>('manual');
   const [boardFilter, setBoardFilter] = useState<BoardFilter>('all');
   const [statusFilterId, setStatusFilterId] = useState('');
-  const [hideEmptyColumns, setHideEmptyColumns] = useState(false);
+  const [hideEmptyColumns, setHideEmptyColumns] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [createPicker, setCreatePicker] = useState<CreatePicker>(null);
+  const [viewMode, setViewMode] = useState<TaskViewMode>('board');
 
   // Keep route-driven navigation authoritative when the bottom bar changes
   // project or opens/closes the task suggestion inbox without remounting this
@@ -158,6 +169,12 @@ export default function TasksScreen() {
     setBoardId(routeBoardId ?? '');
     setError('');
   }, [projectId, routeBoardId, tabParam]);
+
+  useEffect(() => {
+    if (createParam !== '1' || !projectId || readOnly) return;
+    setCreateOpen(true);
+    router.setParams({ create: undefined });
+  }, [createParam, projectId, readOnly, router]);
 
   const selectedCreateBoard = boards?.find((item) => item.board._id === createBoardId)
     ?? selectedBoard;
@@ -195,7 +212,7 @@ export default function TasksScreen() {
     const search = boardSearch.trim().toLowerCase();
     const priorityRank: Record<TaskPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
     const visibleTasks = (tasks ?? [])
-      .filter((item) => !search || `${item.task.title} ${item.task.description ?? ''}`.toLowerCase().includes(search))
+      .filter((item) => !search || `${item.task.title} ${'description' in item.task ? item.task.description ?? '' : ''}`.toLowerCase().includes(search))
       .filter((item) => boardFilter === 'all'
         || (boardFilter === 'completed' && item.state?.category === 'completed')
         || (boardFilter === 'open' && item.state?.category !== 'completed' && item.state?.category !== 'canceled')
@@ -224,6 +241,20 @@ export default function TasksScreen() {
   const statusStates = boards?.find((item) =>
     item.board._id === statusTarget?.task.boardId,
   )?.states ?? [];
+  const visibleTaskCount = columns.reduce((count, column) => count + column.tasks.length, 0);
+  const visibleProjectTasks = useMemo(() => {
+    const list = columns.flatMap((column) => column.tasks);
+    if (boardSort === 'due') {
+      return list.sort((left, right) =>
+        (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31'));
+    }
+    if (boardSort === 'priority') {
+      const rank: Record<TaskPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
+      return list.sort((left, right) => rank[left.task.priority] - rank[right.task.priority]);
+    }
+    return list;
+  }, [boardSort, columns]);
+  const ambientSuggestion = suggestions?.[0];
 
   async function move(input: TaskMoveInput) {
     await moveTask({ ...input, ...queryIdentity });
@@ -323,8 +354,8 @@ export default function TasksScreen() {
   if (!release.tasks) {
     return (
       <ThemedView style={styles.screen}>
-        <Stack.Screen options={{ title: 'Tasks unavailable' }} />
-        <EmptyState icon="file-document-outline" title="Tasks unavailable" body="Conversation remains available while the task release is disabled." />
+        <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label="Track member" onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'Tasks unavailable' }} />
+        <EmptyState icon="task" title="Tasks unavailable" body="Conversation remains available while the task release is disabled." />
       </ThemedView>
     );
   }
@@ -332,7 +363,7 @@ export default function TasksScreen() {
   if (!projectId) {
     return (
       <ThemedView style={styles.screen}>
-        <Stack.Screen options={{ title: 'My tasks' }} />
+        <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label="Track member" onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'My tasks' }} />
         <FlatList
           contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]}
           contentInsetAdjustmentBehavior="automatic"
@@ -356,9 +387,9 @@ export default function TasksScreen() {
             assignee="You"
             category={item.state?.category}
             contextLabel={`${item.companyName} · ${item.project.name}`}
-            description={item.task.description}
+            description={'description' in item.task ? item.task.description : undefined}
             dueDate={item.task.dueDate}
-            evidence={item.references.length > 0}
+            evidence={'references' in item && item.references.length > 0}
             onPress={() => router.push(taskDetailHref(item.project._id, item.task.publicKey, item.companyId ? {
               companyId: item.companyId,
               membershipId: item.projectMemberId,
@@ -379,23 +410,34 @@ export default function TasksScreen() {
       {readOnly ? <TaskStateBanner icon="shield-lock-outline" message="Read-only Company exit archive" /> : null}
       {tab !== 'inbox' ? (
         <>
-          {tab === 'board' ? (
-            <View style={styles.boardToolbar}>
-              <Pressable
-                accessibilityLabel={`Board: ${selectedBoard?.board.name ?? 'none'}`}
-                accessibilityRole="button"
-                onPress={() => setBoardOpen(true)}
-                style={styles.boardViewButton}>
-                <PlatformIcon color={theme.text} name="view-board" size={18} />
-                <ThemedText numberOfLines={1} style={styles.boardViewLabel} type="smallBold">{selectedBoard?.board.name ?? 'Board'}</ThemedText>
-                <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
-              </Pressable>
-              <View style={styles.boardTools}>
-                <IconButton accessibilityLabel="Search tasks" icon="search" onPress={() => setSearchOpen(true)} selected={Boolean(boardSearch)} size={19} />
-                <IconButton accessibilityLabel="Filter and sort tasks" icon="filter" onPress={() => setFilterOpen(true)} selected={boardFilter !== 'all' || Boolean(statusFilterId) || boardSort !== 'manual' || hideEmptyColumns} size={19} />
-              </View>
-            </View>
+          <TasksToolbar
+            boardName={selectedBoard?.board.name ?? 'Board'}
+            filterActive={boardFilter !== 'all' || Boolean(statusFilterId) || boardSort !== 'manual'}
+            mode={viewMode}
+            onBoardPress={() => setBoardOpen(true)}
+            onFilterPress={() => setFilterOpen(true)}
+            onModeChange={setViewMode}
+            onSearchPress={() => setSearchOpen(true)}
+            onSuggestionsPress={() => setTab('inbox')}
+            projectName={projectNavigation?.available && projectNavigation.project
+              ? projectNavigation.project.name
+              : 'Project tasks'}
+            searchActive={Boolean(boardSearch)}
+            suggestionCount={suggestions?.length ?? 0}
+          />
+          {ambientSuggestion ? (
+            <TaskSuggestionBanner
+              onDismiss={ambientSuggestion.canDismiss ? () => void runSuggestion(() => dismissSuggestion({
+                suggestionId: ambientSuggestion.suggestion._id,
+                reason: 'not_actionable',
+                idempotencyKey: `${Date.now()}-dismiss`,
+                ...queryIdentity,
+              })) : undefined}
+              onReview={() => setTab('inbox')}
+              title={ambientSuggestion.suggestion.proposedTitle}
+            />
           ) : null}
+          <SprintFlowHeader columnCount={columns.length} taskCount={visibleTaskCount} />
         </>
       ) : (
         <View style={styles.inboxHeading}>
@@ -428,44 +470,37 @@ export default function TasksScreen() {
       onViewAll={() => undefined}
       readOnly={readOnly}
       selectedBoard={selectedBoard}
-      tab="board"
-      tasks={boards === undefined ? undefined : tasks}
+      tab={viewMode === 'board' ? 'board' : 'all'}
+      tasks={boards === undefined ? undefined : viewMode === 'board' ? tasks : visibleProjectTasks}
     />
   );
 
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
-        title: tab === 'inbox' ? 'Task suggestions' : 'Tasks',
+        title: 'Tasks',
+        headerTitle: () => <TasksHeaderTitle />,
+        headerBackVisible: false,
         headerLargeTitle: false,
         headerTransparent: false,
         headerRight: () => (
           <View style={styles.headerActions}>
-            {!readOnly ? (
-              <IconButton
-                accessibilityLabel={tab === 'inbox' ? 'Return to board' : 'Review task suggestions'}
-                icon="lightbulb-outline"
-                onPress={() => {
-                  setTab((current) => current === 'inbox' ? 'board' : 'inbox');
-                }}
-                selected={tab === 'inbox'}
-              />
+            {tab === 'inbox' ? (
+              <IconButton accessibilityLabel="Return to task board" icon="arrow-left" onPress={() => setTab('board')} />
             ) : null}
-            {!readOnly ? (
-              <IconButton accessibilityLabel="Create task" icon="plus" onPress={() => setCreateOpen(true)} size={24} />
-            ) : null}
+            <ProjectAccountButton label="Track member" onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
           </View>
         ),
       }} />
 
-      {tab === 'board' ? (
-        <View style={styles.boardScreen}>
+      {tab === 'board' && viewMode === 'board' ? (
+        <View style={[styles.boardScreen, { paddingBottom: bottomContentInset + TouchTarget + Spacing.four }]}>
           {heading}
           {collection}
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]}
+          contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset + TouchTarget + Spacing.four }]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled">
@@ -496,6 +531,12 @@ export default function TasksScreen() {
             : collection}
         </ScrollView>
       )}
+
+      {!readOnly && tab === 'board' ? (
+        <View pointerEvents="box-none" style={[styles.createDock, { bottom: bottomContentInset + Spacing.two }]}>
+          <TaskAction label="New task" onPress={() => setCreateOpen(true)} primary />
+        </View>
+      ) : null}
 
       <OptionsSheet onClose={() => setStatusTarget(null)} title="Move to" visible={Boolean(statusTarget)}>
         <SheetSection title={statusTarget?.task.title}>
@@ -539,7 +580,7 @@ export default function TasksScreen() {
       <OptionsSheet
         onClose={() => { setCreatePicker(null); setCreateOpen(false); }}
         showScrollProgress
-        title={createPicker ? `Choose ${createPicker}` : 'Create task'}
+        title={createPicker ? `Choose ${createPicker}` : 'New task'}
         visible={createOpen}>
         {createPicker ? (
           <>
@@ -565,17 +606,27 @@ export default function TasksScreen() {
           </>
         ) : (
           <>
-            <View style={styles.sheetIntro}>
-              <ThemedText type="subtitle">Turn work into a clear next step</ThemedText>
-              <ThemedText themeColor="textSecondary" type="small">Only the title is required. Structured details use compact pickers.</ThemedText>
-            </View>
-            <SheetInput label="Title" maxLength={180} onChangeText={setTitle} value={title} />
+            <TaskCreateContext
+              boardName={selectedCreateBoard?.board.name}
+              projectName={projectNavigation?.available && projectNavigation.project
+                ? projectNavigation.project.name
+                : 'Project'}
+            />
+            <SheetInput label="Task title" maxLength={180} onChangeText={setTitle} value={title} />
             <SheetInput label="Description" maxLength={4000} multiline onChangeText={setDescription} value={description} />
-            <SheetFieldButton icon="person" label="Assignee" onClear={selectedCreateAssigneeId ? () => setAssigneeId('') : undefined} onPress={() => setCreatePicker('assignee')} placeholder="Unassigned" value={assignableCreateAssignees?.find((item) => item.member._id === selectedCreateAssigneeId)?.user.displayName} />
-            <SheetFieldButton icon="flag" label="Priority" onPress={() => setCreatePicker('priority')} value={taskPriorityLabel(priority)} />
-            <SheetFieldButton icon="circle-outline" label="Status" onPress={() => setCreatePicker('status')} value={selectedCreateBoard?.states.find((state) => state._id === createWorkflowStateId)?.name} />
+            <View style={[styles.fieldGrid, largeText && styles.fieldGridLarge]}>
+              <View style={styles.fieldCell}>
+                <SheetFieldButton icon="person" label="Assignee" onClear={selectedCreateAssigneeId ? () => setAssigneeId('') : undefined} onPress={() => setCreatePicker('assignee')} placeholder="Unassigned" value={assignableCreateAssignees?.find((item) => item.member._id === selectedCreateAssigneeId)?.user.displayName} />
+              </View>
+              <View style={styles.fieldCell}><DateField onChange={setDueDate} value={dueDate} /></View>
+              <View style={styles.fieldCell}>
+                <SheetFieldButton icon="circle-outline" label="Status" onPress={() => setCreatePicker('status')} value={selectedCreateBoard?.states.find((state) => state._id === createWorkflowStateId)?.name} />
+              </View>
+              <View style={styles.fieldCell}>
+                <SheetFieldButton icon="flag" label="Priority" onPress={() => setCreatePicker('priority')} value={taskPriorityLabel(priority)} />
+              </View>
+            </View>
             {boards && boards.length > 1 ? <SheetFieldButton icon="view-board" label="Board" onPress={() => setCreatePicker('board')} value={selectedCreateBoard?.board.name} /> : null}
-            <DateField onChange={setDueDate} value={dueDate} />
             {error ? <ThemedText themeColor="danger" type="small">{error}</ThemedText> : null}
             <TaskAction disabled={busy || !title.trim()} label={busy ? 'Creating…' : 'Create task'} onPress={() => void create()} primary />
           </>
@@ -618,19 +669,15 @@ export default function TasksScreen() {
 }
 
 const styles = StyleSheet.create({
-  boardToolbar: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 40 },
-  boardTools: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
-  boardViewButton: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, maxWidth: 220, minHeight: TouchTarget },
-  boardViewLabel: { flexShrink: 1 },
-  boardScreen: { flex: 1, gap: Spacing.three, padding: Spacing.four },
+  boardScreen: { flex: 1, gap: Spacing.two, padding: Spacing.three },
   content: { gap: Spacing.three, padding: Spacing.four },
-  contextHeading: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
-  contextTitle: { flex: 1, gap: 2 },
+  createDock: { alignItems: 'flex-end', paddingHorizontal: Spacing.four, position: 'absolute', right: 0 },
+  fieldCell: { flex: 1, minWidth: 150 },
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  fieldGridLarge: { flexDirection: 'column' },
   headerActions: { alignItems: 'center', flexDirection: 'row' },
   inboxHeading: { gap: Spacing.one },
   globalHeading: { gap: Spacing.one },
-  globalList: { gap: Spacing.two },
   projectBoardPrompt: { gap: Spacing.two, marginTop: Spacing.two },
   screen: { flex: 1 },
-  sheetIntro: { gap: Spacing.one },
 });
