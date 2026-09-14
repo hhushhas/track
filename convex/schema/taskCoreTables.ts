@@ -75,12 +75,15 @@ export const taskCoreTables = {
     .index('by_board', ['boardId'])
     .index('by_board_archived', ['boardId', 'archivedAt'])
     .index('by_board_archived_rank', ['boardId', 'archivedAt', 'rank'])
+    .index('by_board_priority_archived_rank', ['boardId', 'priority', 'archivedAt', 'rank'])
     .index('by_board_state_rank', ['boardId', 'workflowStateId', 'rank'])
     .index('by_board_state_archived_rank', ['boardId', 'workflowStateId', 'archivedAt', 'rank'])
+    .index('by_board_state_priority_archived_rank', ['boardId', 'workflowStateId', 'priority', 'archivedAt', 'rank'])
     .index('by_assignee_archived', ['assigneeProjectMemberId', 'archivedAt'])
     .index('by_parent', ['parentTaskId'])
     .index('by_parent_rank', ['parentTaskId', 'rank'])
     .index('by_project_idempotency', ['projectId', 'createIdempotencyKey'])
+    .index('by_project_priority_archived_rank', ['projectId', 'priority', 'archivedAt', 'rank'])
     .searchIndex('search_tasks', {
       searchField: 'searchText',
       filterFields: ['projectId', 'groupId', 'archivedAt'],

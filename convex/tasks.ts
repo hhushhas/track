@@ -258,11 +258,26 @@ function taskListQuery(ctx: QueryCtx, filters: TaskListFilters) {
   const includeArchived = filters.includeArchived === true
   const boardId = filters.boardId
   const workflowStateId = filters.workflowStateId
+  const priority = filters.priority
   const assigneeProjectMemberId = filters.assigneeProjectMemberId
   const groupId = filters.groupId
+  if (boardId && workflowStateId && priority) {
+    return ctx.db.query('tasks').withIndex('by_board_state_priority_archived_rank', (q) => {
+      const indexed = q.eq('boardId', boardId).eq('workflowStateId', workflowStateId).eq('priority', priority)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
   if (boardId && workflowStateId) {
     return ctx.db.query('tasks').withIndex('by_board_state_archived_rank', (q) => {
       const indexed = q.eq('boardId', boardId).eq('workflowStateId', workflowStateId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (boardId && priority) {
+    return ctx.db.query('tasks').withIndex('by_board_priority_archived_rank', (q) => {
+      const indexed = q.eq('boardId', boardId).eq('priority', priority)
       // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
       return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
     })
@@ -284,6 +299,13 @@ function taskListQuery(ctx: QueryCtx, filters: TaskListFilters) {
   if (groupId) {
     return ctx.db.query('tasks').withIndex('by_project_scope_archived', (q) => {
       const indexed = q.eq('projectId', filters.projectId).eq('groupId', groupId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (priority) {
+    return ctx.db.query('tasks').withIndex('by_project_priority_archived_rank', (q) => {
+      const indexed = q.eq('projectId', filters.projectId).eq('priority', priority)
       // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
       return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
     })
