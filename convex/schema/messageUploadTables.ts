@@ -33,6 +33,8 @@ export const messageUploadTables = {
     claimedAt: v.optional(v.number()),
   })
     .index('by_uploader_intent_key', ['uploaderProjectMemberId', 'intentKey'])
+    .index('by_group', ['groupId'])
+    .index('by_project', ['projectId'])
     .index('by_storage', ['storageId'])
     .index('by_message', ['messageId'])
     .index('by_status_expires_at', ['status', 'expiresAt']),

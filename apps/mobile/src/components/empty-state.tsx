@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   body: { maxWidth: 360, textAlign: 'center' },
   iconWrap: {
     alignItems: 'center',
-    borderRadius: Radius.pill,
+    borderRadius: Radius.medium,
     height: 56,
     justifyContent: 'center',
     width: 56,

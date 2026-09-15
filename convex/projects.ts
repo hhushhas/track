@@ -1,6 +1,7 @@
 import { v } from 'convex/values'
 import { canAdministerCompany } from '@track/shared/company'
 import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
+import type { Id } from './_generated/dataModel'
 
 import { mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
@@ -205,6 +206,10 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.userId)
+    const name = args.name.trim()
+    if (!name) throw new Error('project_name_required')
+    if (name.length > 120) throw new Error('project_name_too_long')
+    const clientLabel = args.clientLabel?.trim() || undefined
     const now = Date.now()
     const existingMembership = await ctx.db
       .query('projectMembers')
@@ -223,8 +228,8 @@ export const create = mutation({
     }
 
     const projectId = await ctx.db.insert('projects', {
-      name: args.name,
-      clientLabel: args.clientLabel,
+      name,
+      clientLabel,
       accessProfile: 'legacy',
       origin: 'single_company',
       status: 'active',
@@ -276,7 +281,7 @@ export const create = mutation({
       entityType: 'project',
       entityId: projectId,
       action: 'project.created',
-      after: { name: args.name, clientLabel: args.clientLabel },
+      after: { name, clientLabel },
     })
 
     return projectId
@@ -332,8 +337,8 @@ export const remove = mutation({
     const project = await ctx.db.get(args.projectId)
     if (!project) throw new Error('project_not_found')
 
+    const groups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect()
     const [
-      groups,
       projectMembers,
       invitations,
       messages,
@@ -341,15 +346,15 @@ export const remove = mutation({
       typingIndicators,
       assistantStreams,
       auditEvents,
-      groupNotificationSettings,
       memoryBoxes,
       memoryImports,
       memoryPathLocks,
       channelThreads,
       channelThreadFollowers,
       channelThreadReadStates,
+      groupReadStates,
+      uploadIntents,
     ] = await Promise.all([
-      ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('projectMembers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       Promise.all(
         (['pending', 'accepted', 'revoked', 'expired'] as const).map((status) =>
@@ -357,19 +362,22 @@ export const remove = mutation({
         ),
       ).then((rows) => rows.flat()),
       ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
-      ctx.db.query('attachments').collect(),
-      ctx.db.query('typingIndicators').collect(),
-      ctx.db.query('assistantStreams').collect(),
+      ctx.db.query('attachments').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('typingIndicators').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      ctx.db.query('assistantStreams').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('auditEvents').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
-      ctx.db.query('groupNotificationSettings').collect(),
       ctx.db.query('projectMemoryBoxes').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('memoryImports').withIndex('by_project_created_at', (q) => q.eq('projectId', args.projectId)).collect(),
-      ctx.db.query('memoryPathLocks').collect(),
+      ctx.db.query('memoryPathLocks').withIndex('by_project_path', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('channelThreads').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('channelThreadFollowers').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
       ctx.db.query('channelThreadReadStates').withIndex('by_project', (q) => q.eq('projectId', args.projectId)).collect(),
+      Promise.all(groups.map((group) => ctx.db.query('groupReadStates').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect())).then((rows) => rows.flat()),
+      Promise.all(groups.map((group) => ctx.db.query('messageUploadIntents').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect())).then((rows) => rows.flat()),
     ])
-    const groupIds = new Set(groups.map((group) => group._id))
+    const groupNotificationSettings = (await Promise.all(groups.map((group) =>
+      ctx.db.query('groupNotificationSettings').withIndex('by_group', (q) => q.eq('groupId', group._id)).collect(),
+    ))).flat()
 
     await appendAuditEvent(ctx, {
       projectId: args.projectId,
@@ -380,11 +388,13 @@ export const remove = mutation({
       before: { name: project.name, clientLabel: project.clientLabel },
     })
 
-    const projectAttachments = attachments.filter((attachment) => attachment.projectId === args.projectId)
-    await Promise.all(projectAttachments.map((attachment) => ctx.storage.delete(attachment.storageId).catch(() => undefined)))
+    const projectAttachments = attachments
+    await Promise.all(projectAttachments.flatMap((attachment) => [attachment.storageId, attachment.previewStorageId]
+      .filter((storageId): storageId is Id<'_storage'> => Boolean(storageId))
+      .map((storageId) => ctx.storage.delete(storageId).catch(() => undefined))))
     for (const message of messages) await invalidateTaskEvidence(ctx, { messageId: message._id })
     for (const attachment of projectAttachments) await invalidateTaskEvidence(ctx, { attachmentId: attachment._id })
-    for (const stream of assistantStreams.filter((candidate) => candidate.projectId === args.projectId)) {
+    for (const stream of assistantStreams) {
       await invalidateTaskEvidence(ctx, { assistantStreamId: stream._id })
     }
     await deleteTaskProjectData(ctx, args.projectId)
@@ -396,23 +406,20 @@ export const remove = mutation({
       })
     }
 
-    for (const row of groupNotificationSettings) {
-      if (groupIds.has(row.groupId)) await ctx.db.delete(row._id)
-    }
-    for (const row of memoryPathLocks) {
-      if (row.projectId === args.projectId) await ctx.db.delete(row._id)
-    }
+    for (const row of groupNotificationSettings) await ctx.db.delete(row._id)
+    for (const row of memoryPathLocks) await ctx.db.delete(row._id)
     for (const row of memoryImports) await ctx.db.delete(row._id)
     for (const row of memoryBoxes) await ctx.db.delete(row._id)
     for (const row of channelThreadReadStates) await ctx.db.delete(row._id)
     for (const row of channelThreadFollowers) await ctx.db.delete(row._id)
     for (const row of channelThreads) await ctx.db.delete(row._id)
-    for (const row of assistantStreams) {
-      if (row.projectId === args.projectId) await ctx.db.delete(row._id)
+    for (const row of groupReadStates) await ctx.db.delete(row._id)
+    for (const row of uploadIntents) {
+      if (row.storageId) await ctx.storage.delete(row.storageId).catch(() => undefined)
+      await ctx.db.delete(row._id)
     }
-    for (const row of typingIndicators) {
-      if (row.projectId === args.projectId) await ctx.db.delete(row._id)
-    }
+    for (const row of assistantStreams) await ctx.db.delete(row._id)
+    for (const row of typingIndicators) await ctx.db.delete(row._id)
     for (const row of projectAttachments) await ctx.db.delete(row._id)
     for (const row of messages) await ctx.db.delete(row._id)
     for (const row of invitations) await ctx.db.delete(row._id)

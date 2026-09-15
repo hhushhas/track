@@ -334,6 +334,45 @@ export const list = query({
   },
 })
 
+export const listPage = query({
+  args: {
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    status: v.optional(threadStatus),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (!threadsEnabled()) return { page: [], isDone: true, continueCursor: '' }
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const status = args.status ?? 'active'
+    const result = await ctx.db.query('channelThreads')
+      .withIndex('by_group_status_updated_at', (q) => q.eq('groupId', group._id).eq('status', status))
+      .order('desc')
+      .paginate(args.paginationOpts)
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    const snapshotOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+    const snapshots = snapshotOperationId
+      ? await getArchiveThreadSnapshots(ctx, snapshotOperationId, access.projectMember._id, result.page.map((thread) => thread._id))
+      : new Map<string, ThreadSnapshot>((access.companyAccess?.entitlement?.threadSnapshots ?? [])
+          .map((snapshot) => decodeLegacyThreadSnapshot(ctx, snapshot))
+          .map((snapshot) => [String(snapshot._id), snapshot]))
+    const page = await Promise.all(result.page
+      .filter((thread) => !cutoff || (thread.createdAt <= cutoff && (snapshots.get(String(thread._id))?.status ?? thread.status) === status))
+      .map((thread) => buildThreadSummary(ctx, thread, access.projectMember, cutoff, snapshots.get(String(thread._id)))))
+    return { ...result, page }
+  },
+})
+
 type ProjectThreadListArgs = {
   projectId: Id<'projects'>
   userId: Id<'users'>
@@ -577,8 +616,7 @@ export const listMessages = query({
   },
   handler: async (ctx, args) => {
     if (!threadsEnabled()) return []
-    try {
-      const { access, cutoff, thread } = await authorizeThread(ctx, args)
+    const { access, cutoff, thread } = await authorizeThread(ctx, args)
       const archivedThread = cutoff && access.companyAccess?.entitlement?.snapshotOperationId
         ? await getArchivedThreadSnapshot(
             ctx,
@@ -600,7 +638,7 @@ export const listMessages = query({
           : q.eq('channelThreadId', thread._id))
         .order('desc')
         .take(boundedThreadMessageLimit(args.limit))
-      return await Promise.all(messages.filter((message) => message._id !== thread.sourceMessageId).map(async (message) =>
+    return await Promise.all(messages.filter((message) => message._id !== thread.sourceMessageId).map(async (message) =>
         await buildMessageDetail(
           ctx,
           message,
@@ -612,10 +650,7 @@ export const listMessages = query({
           access.companyAccess?.entitlement?.memberSnapshots,
           access.companyAccess?.entitlement?.snapshotOperationId,
         ),
-      ))
-    } catch {
-      return []
-    }
+    ))
   },
 })
 
@@ -632,8 +667,7 @@ export const listMessagePage = query({
     if (!threadsEnabled()) {
       return { page: [], isDone: true, continueCursor: '' }
     }
-    try {
-      const { access, cutoff, thread } = await authorizeThread(ctx, args)
+    const { access, cutoff, thread } = await authorizeThread(ctx, args)
       const archivedThread = cutoff && access.companyAccess?.entitlement?.snapshotOperationId
         ? await getArchivedThreadSnapshot(
             ctx,
@@ -692,7 +726,7 @@ export const listMessagePage = query({
           page.splice(0, page.length, ...reversedNewer, target, ...older)
         }
       }
-      return {
+    return {
         ...result,
         page: await Promise.all(page.map(async (message) =>
           await buildMessageDetail(
@@ -707,9 +741,6 @@ export const listMessagePage = query({
             access.companyAccess?.entitlement?.snapshotOperationId,
           ),
         )),
-      }
-    } catch {
-      return { page: [], isDone: true, continueCursor: '' }
     }
   },
 })

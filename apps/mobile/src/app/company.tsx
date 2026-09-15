@@ -8,8 +8,6 @@ import { useAppToast } from '@/components/app-toast';
 import {
   ActingCompanyCard,
   CompanyChoice,
-  CompanyHeaderTitle,
-  CompanyPageIntro,
   CompanySectionHeading,
   CompanyTrustNotice,
   CompanyWebNote,
@@ -88,9 +86,8 @@ export default function CompanyScreen() {
   </ThemedView>;
 
   return <ThemedView style={styles.screen}>
-    <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label={accountLabel} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, headerTitle: () => <CompanyHeaderTitle /> }} />
+    <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label={accountLabel} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'Companies' }} />
     <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Spacing.six + BottomTabInset + Math.max(insets.bottom, Spacing.two) }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
-      <CompanyPageIntro />
       <ConnectivityBanner />
       <CompanyTrustNotice />
       <ActingCompanyCard companyId={actingCompany?.company?._id} companyName={actingCompany?.company?.displayName} projectCount={projectCount} role={actingCompany ? companyRoleLabel(actingCompany.membership.role) : 'Individual workspace'} status={actingCompany?.company?.status} />
@@ -134,7 +131,7 @@ export default function CompanyScreen() {
         <CompanyWebNote />
       </View> : null}
     </ScrollView>
-    <StandalonePrimaryNavigation active="tasks" />
+    <StandalonePrimaryNavigation active="projects" />
   </ThemedView>;
 }
 

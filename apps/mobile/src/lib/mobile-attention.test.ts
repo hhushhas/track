@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   attentionContext,
   attentionSection,
+  uniqueAttentionIdentities,
   uniqueAttentionItems,
   type MobileAttentionItem,
 } from './mobile-attention';
@@ -59,5 +60,12 @@ describe('mobile attention presentation', () => {
     } as unknown as MobileAttentionItem;
     const second = { ...first, id: 'notification-2', eventType: 'due_soon' } as MobileAttentionItem;
     expect(uniqueAttentionItems([first, second])).toEqual([first]);
+  });
+
+  it('deduplicates repeated rows by kind and identity', () => {
+    const first = { kind: 'message', id: 'message-1' };
+    const duplicate = { kind: 'message', id: 'message-1' };
+    const differentKind = { kind: 'task', id: 'message-1' };
+    expect(uniqueAttentionIdentities([first, duplicate, differentKind])).toEqual([first, differentKind]);
   });
 });

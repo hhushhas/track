@@ -55,32 +55,45 @@ export function StandalonePrimaryNavigation({ active }: { active: StandaloneTabK
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const selectedIndex = standaloneTabs.findIndex((tab) => tab.key === active);
+  const tabItems = standaloneTabs.map((tab) => {
+    const selected = tab.key === active;
+    return (
+      <Pressable
+        accessibilityLabel={tab.label}
+        accessibilityRole="tab"
+        accessibilityState={{ selected }}
+        android_ripple={Platform.OS === 'android' ? { color: theme.backgroundSelected, borderless: false } : undefined}
+        key={tab.key}
+        onPress={() => { hapticLight(); router.replace(tab.href as never); }}
+        style={({ pressed }) => [styles.item, { opacity: pressed ? 0.62 : 1 }]}
+      >
+        <View style={[styles.icon, Platform.OS === 'android' && styles.androidIcon]}>
+          <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={tab.icon} size={IconSize.large} variant={selected ? 'filled' : 'outline'} weight={selected ? 'medium' : 'regular'} />
+        </View>
+        <ThemedText themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">{tab.label}</ThemedText>
+      </Pressable>
+    );
+  });
 
-  return (
-    <View style={[styles.standalonePositioner, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-      <View accessibilityRole="tablist" style={[styles.standaloneRow, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
-        {standaloneTabs.map((tab) => {
-          const selected = tab.key === active;
-          return (
-            <Pressable
-              accessibilityLabel={tab.label}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              android_ripple={Platform.OS === 'android' ? { color: theme.backgroundSelected, borderless: false } : undefined}
-              key={tab.key}
-              onPress={() => router.replace(tab.href as never)}
-              style={({ pressed }) => [styles.item, selected && styles.standaloneItemSelected, selected && { backgroundColor: theme.accentSoft, borderColor: theme.hairline }, { opacity: pressed ? 0.72 : 1 }]}
-            >
-              <View style={[styles.icon, styles.androidIcon]}>
-                <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={tab.icon} size={IconSize.large} variant={selected ? 'filled' : 'outline'} weight={selected ? 'medium' : 'regular'} />
-              </View>
-              <ThemedText themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">{tab.label}</ThemedText>
-            </Pressable>
-          );
-        })}
+  if (Platform.OS === 'android') {
+    return <View style={[styles.androidPositioner, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+      <View style={[styles.androidChrome, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+        <View accessibilityRole="tablist" style={styles.androidRow}>
+          <View pointerEvents="none" style={[styles.androidIndicator, { backgroundColor: theme.accentSoft, borderColor: theme.hairline, left: `${selectedIndex * 25 + 8.5}%`, width: '8%' }]} />
+          {tabItems}
+        </View>
       </View>
+    </View>;
+  }
+
+  return <View style={[styles.iosPositioner, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
+    <View style={[styles.iosChrome, { backgroundColor: theme.backgroundElevated }]}>
+      <View pointerEvents="none" style={[styles.iosIndicator, { backgroundColor: theme.accentSoft, left: `${selectedIndex * 25 + 1}%`, width: '23%' }]} />
+      <View accessibilityRole="tablist" style={styles.iosRow}>{tabItems}</View>
+      <View pointerEvents="none" style={[styles.iosChromeBorder, { borderColor: theme.hairline }]} />
     </View>
-  );
+  </View>;
 }
 
 /** Global peer navigation. Each destination owns an independent nested stack. */
@@ -546,28 +559,5 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderCurve: 'continuous',
     borderRadius: Radius.pill,
-  },
-  standalonePositioner: {
-    bottom: 0,
-    left: 0,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.two,
-    position: 'absolute',
-    right: 0,
-    zIndex: 50,
-  },
-  standaloneItemSelected: {
-    borderCurve: 'continuous',
-    borderRadius: Radius.large,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginVertical: Spacing.one,
-  },
-  standaloneRow: {
-    borderCurve: 'continuous',
-    borderRadius: Radius.xlarge,
-    borderWidth: StyleSheet.hairlineWidth,
-    boxShadow: '0 6px 22px rgba(0,0,0,0.16)',
-    flexDirection: 'row',
-    overflow: 'visible',
   },
 });

@@ -171,6 +171,7 @@ async function getGroupUnreadCount(
   projectMemberId?: Id<'projectMembers'>,
   cutoff?: number,
 ) {
+  const MAX_UNREAD_MESSAGES_TO_SCAN = 1_001
   const group = await ctx.db.get(groupId)
   if (!group) return 0
   const resolvedProjectMemberId = projectMemberId ?? (await ctx.db
@@ -188,10 +189,14 @@ async function getGroupUnreadCount(
       ).unique()
   const messages = await ctx.db
     .query('messages')
-    .withIndex('by_group_thread_created_at', (q) =>
-      q.eq('groupId', groupId).eq('channelThreadId', undefined),
-    )
-    .collect()
+    .withIndex('by_group_thread_created_at', (q) => {
+      const range = q.eq('groupId', groupId)
+        .eq('channelThreadId', undefined)
+        .gt('createdAt', readState?.lastReadAt ?? 0)
+      return cutoff === undefined ? range : range.lte('createdAt', cutoff)
+    })
+    .order('desc')
+    .take(MAX_UNREAD_MESSAGES_TO_SCAN)
 
   const timelineUnread = messages.filter((message) => {
     if (cutoff && message.createdAt > cutoff) return false
@@ -235,7 +240,7 @@ async function getGroupUnreadCount(
         return latestChannelSequence > (readState?.lastReadChannelSequence ?? 0) ? 1 : 0
       }),
   )).reduce<number>((total, count) => total + count, 0)
-  return timelineUnread + threadUnread
+  return Math.min(MAX_UNREAD_MESSAGES_TO_SCAN - 1, timelineUnread + threadUnread)
 }
 
 export const listProjects = query({
@@ -460,7 +465,9 @@ export const listAttention = query({
         }
       }
     }
-    return { ...memberships, page: [...invitationRows, ...taskRows, ...suggestionRows, ...messageRows].sort((a, b) => attentionPriority(a) - attentionPriority(b) || b.createdAt - a.createdAt) }
+    const rows = [...invitationRows, ...taskRows, ...suggestionRows, ...messageRows]
+      .sort((a, b) => attentionPriority(a) - attentionPriority(b) || b.createdAt - a.createdAt)
+    return { ...memberships, page: rows.slice(0, 100) }
   },
 })
 

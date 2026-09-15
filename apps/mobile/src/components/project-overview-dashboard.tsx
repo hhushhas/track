@@ -9,29 +9,21 @@ import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import { attentionAction, attentionContext, attentionTitle, relativeAttentionTime, type MobileAttentionItem } from '@/lib/mobile-attention';
 
-export function ProjectHeaderTitle() {
-  const theme = useTheme();
-  return <View style={styles.headerTitle}>
-    <View style={[styles.headerMark, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.text} name="clock-outline" size={17} /></View>
-    <View><ThemedText numberOfLines={1} style={styles.headerHeading} type="title">Projects</ThemedText></View>
-  </View>;
-}
-
 export function ProjectAccountButton({ label, onPress, seed }: { label: string; onPress: () => void; seed: string }) {
   return <Pressable accessibilityLabel="Open account" accessibilityRole="button" hitSlop={4} onPress={() => { hapticLight(); onPress(); }} style={({ pressed }) => [styles.accountButton, { opacity: pressed ? 0.62 : 1 }]}>
     <ColoredAvatar label={label} seed={seed} shape="rounded" size={32} />
   </Pressable>;
 }
 
-export function ProjectHero({ archived, company, description, name, onBack, role }: { archived: boolean; company: string; description?: string; name: string; onBack: () => void; role: string }) {
+export function ProjectHero({ archived, company, description, memberCount, name, onBack, role }: { archived: boolean; company: string; description?: string; memberCount?: number | string; name: string; onBack: () => void; role: string }) {
   const theme = useTheme();
   const largeText = useWindowDimensions().fontScale > 1.2;
   return <View style={styles.hero}>
     <View style={[styles.heroTopline, largeText && styles.heroToplineLarge]}>
       <Pressable accessibilityLabel="Back to Projects" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.backLink}><PlatformIcon color={theme.textSecondary} name="chevron-left" size={15} /><ThemedText themeColor="textSecondary" type="caption">Projects</ThemedText></Pressable>
-      <View style={styles.statusLine}><View style={[styles.roleBadge, { backgroundColor: archived ? theme.backgroundSelected : theme.accentSoft }]}><ThemedText themeColor={archived ? 'textSecondary' : 'accentStrong'} type="captionBold">{role}</ThemedText></View><View style={[styles.statusDot, { backgroundColor: archived ? theme.textTertiary : theme.accent }]} /><ThemedText themeColor="textSecondary" type="caption">{archived ? 'Archived' : 'Active'}</ThemedText></View>
+      <View style={styles.statusLine}><ThemedText themeColor={archived ? 'textSecondary' : 'accentStrong'} type="captionBold">{role}</ThemedText><View style={[styles.statusDot, { backgroundColor: archived ? theme.textTertiary : theme.accent }]} /><ThemedText themeColor="textSecondary" type="caption">{archived ? 'Archived' : 'Active'}</ThemedText>{memberCount !== undefined ? <><View style={[styles.statusDot, { backgroundColor: theme.hairline }]} /><ThemedText themeColor="textSecondary" type="caption">{memberCount} {memberCount === 1 || memberCount === '1' ? 'member' : 'members'}</ThemedText></> : null}</View>
     </View>
-    <View style={styles.companyLine}><PlatformIcon color={theme.textTertiary} name="office-building" size={12} /><ThemedText numberOfLines={largeText ? undefined : 1} style={styles.company} themeColor="textSecondary" type="mono">{company}</ThemedText></View>
+    <View style={styles.companyLine}><PlatformIcon color={theme.textTertiary} name="office-building" size={12} /><ThemedText numberOfLines={largeText ? undefined : 1} style={styles.company} themeColor="textSecondary" type="captionBold">{company}</ThemedText></View>
     <ThemedText numberOfLines={largeText ? undefined : 2} type="titleLarge">{name}</ThemedText>
     <ThemedText numberOfLines={largeText ? undefined : 3} themeColor="textSecondary" type="caption">{description || 'Conversation, tasks, and references for this Project.'}</ThemedText>
   </View>;
@@ -48,25 +40,25 @@ export function ProjectMetrics({ channels, people, tasks, tasksEnabled, unread }
 
 function Metric({ detail, emphasis, label, value }: { detail: string; emphasis?: boolean; label: string; value: number | string }) {
   const theme = useTheme();
-  return <View style={[styles.metric, { backgroundColor: theme.backgroundElevated }]}><ThemedText style={styles.metricLabel} themeColor="textSecondary" type="mono">{label}</ThemedText><View style={styles.metricResult}><ThemedText style={styles.metricValue}>{value}</ThemedText><ThemedText numberOfLines={1} themeColor={emphasis ? 'accentStrong' : 'textSecondary'} type="caption">{detail}</ThemedText></View></View>;
+  return <View style={[styles.metric, { backgroundColor: theme.backgroundElevated }]}><ThemedText style={styles.metricLabel} themeColor="textSecondary" type="captionBold">{label}</ThemedText><View style={styles.metricResult}><ThemedText style={styles.metricValue}>{value}</ThemedText><ThemedText numberOfLines={1} themeColor={emphasis ? 'accentStrong' : 'textSecondary'} type="caption">{detail}</ThemedText></View></View>;
 }
 
 export function ProjectWorkHub({ channelCount, dueSoonCount, evidenceCount, onChannels, onEvidence, onTasks, openTaskCount, tasksEnabled, unreadCount }: { channelCount: number; dueSoonCount: number; evidenceCount: number | string; onChannels: () => void; onEvidence: () => void; onTasks: () => void; openTaskCount: number; tasksEnabled: boolean; unreadCount: number }) {
   return <View>
-    <SectionHeading meta={`${tasksEnabled ? 3 : 2} hubs`} title="Continue working" />
+    <SectionHeading title="Continue working" />
     <View style={styles.hub}>
-      <HubRow badge={unreadCount > 0 ? `${unreadCount} unread` : undefined} detail={`${channelCount} ${channelCount === 1 ? 'Channel' : 'Channels'} \u00b7 ${unreadCount} unread`} icon="channel" label="Channels" onPress={onChannels} />
+      <HubRow detail={`${channelCount} ${channelCount === 1 ? 'Channel' : 'Channels'}${unreadCount ? ` \u00b7 ${unreadCount} unread` : ''}`} icon="channel" label="Channels" onPress={onChannels} />
       {tasksEnabled ? <HubRow detail={`${openTaskCount} open ${openTaskCount === 1 ? 'task' : 'tasks'}${dueSoonCount ? ` \u00b7 ${dueSoonCount} due in 7 days` : ''}`} icon="view-board" label="Open Board" onPress={onTasks} /> : null}
       <HubRow detail={`${evidenceCount} linked references`} icon="evidence" label="Evidence" onPress={onEvidence} />
     </View>
   </View>;
 }
 
-function HubRow({ badge, detail, icon, label, onPress }: { badge?: string; detail: string; icon: IconName; label: string; onPress: () => void }) {
+function HubRow({ detail, icon, label, onPress }: { detail: string; icon: IconName; label: string; onPress: () => void }) {
   const theme = useTheme();
   return <Pressable accessibilityLabel={`${label}. ${detail}`} accessibilityRole="button" android_ripple={{ color: theme.backgroundSelected }} key={`${label}:${theme.backgroundElevated}`} onPress={onPress} style={[styles.hubRow, { backgroundColor: theme.backgroundElevated }]}>
     <View style={[styles.hubIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.text} name={icon} size={17} /></View>
-    <View style={styles.flex}><View style={styles.hubTitleLine}><ThemedText type="title">{label}</ThemedText>{badge ? <View style={[styles.unreadBadge, { backgroundColor: theme.accent }]}><ThemedText style={styles.badgeInk} type="mono">{badge}</ThemedText></View> : null}</View><ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{detail}</ThemedText></View>
+    <View style={styles.flex}><ThemedText type="title">{label}</ThemedText><ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{detail}</ThemedText></View>
     <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />
   </Pressable>;
 }
@@ -74,7 +66,7 @@ function HubRow({ badge, detail, icon, label, onPress }: { badge?: string; detai
 export function ProjectAttention({ items, onOpen }: { items: MobileAttentionItem[]; onOpen: (item: MobileAttentionItem) => void }) {
   const theme = useTheme();
   return <View style={styles.attentionSection}>
-    <SectionHeading meta={`${items.length} ${items.length === 1 ? 'item' : 'items'}`} title="Your attention" />
+    <SectionHeading title="Your attention" />
     {items.length ? items.map((item) => <AttentionCard item={item} key={`${item.kind}:${item.id}`} onPress={() => onOpen(item)} />) : <View style={[styles.clearState, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.success} name="check-circle" size={17} /><ThemedText themeColor="textSecondary" type="caption">Nothing else needs your attention in this Project.</ThemedText></View>}
   </View>;
 }
@@ -101,14 +93,14 @@ function AttentionCard({ item, onPress }: { item: MobileAttentionItem; onPress: 
   </View>;
 }
 
-function SectionHeading({ meta, title }: { meta: string; title: string }) {
-  return <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle} themeColor="textSecondary" type="captionBold">{title}</ThemedText><ThemedText themeColor="textTertiary" type="caption">{meta}</ThemedText></View>;
+function SectionHeading({ title }: { title: string }) {
+  return <View style={styles.sectionHeading}><ThemedText style={styles.sectionTitle} themeColor="textSecondary" type="captionBold">{title}</ThemedText></View>;
 }
 
 const styles = StyleSheet.create({
-  accountButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget }, actionInk: { color: '#1b1917' }, attentionCard: { gap: Spacing.two, padding: Spacing.three }, attentionFooter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' }, attentionFooterLarge: { alignItems: 'flex-start', flexDirection: 'column' }, attentionIcon: { alignItems: 'center', borderRadius: Radius.small, height: 24, justifyContent: 'center', width: 24 }, attentionIdentity: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0 }, attentionSection: { gap: Spacing.two }, attentionSurface: { borderCurve: 'continuous', borderLeftWidth: 3, borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }, attentionTopline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two }, badgeInk: { color: '#261900', fontSize: 10, lineHeight: 13 },
+  accountButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget }, actionInk: { color: '#1b1917' }, attentionCard: { gap: Spacing.two, padding: Spacing.three }, attentionFooter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' }, attentionFooterLarge: { alignItems: 'flex-start', flexDirection: 'column' }, attentionIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 24, justifyContent: 'center', width: 24 }, attentionIdentity: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0 }, attentionSection: { gap: Spacing.two }, attentionSurface: { borderCurve: 'continuous', borderLeftWidth: 3, borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }, attentionTopline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   backLink: { alignItems: 'center', flexDirection: 'row', minHeight: TouchTarget }, clearState: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: 52, padding: Spacing.three }, company: { textTransform: 'uppercase' }, companyLine: { alignItems: 'center', flexDirection: 'row', gap: 6 }, flex: { flex: 1, minWidth: 0 },
-  headerHeading: { lineHeight: 17 }, headerMark: { alignItems: 'center', borderRadius: Radius.large, height: 36, justifyContent: 'center', width: 36 }, headerTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two }, hero: { gap: Spacing.one }, heroTopline: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, heroToplineLarge: { alignItems: 'flex-start', flexDirection: 'column' },
-  hub: { gap: Spacing.two }, hubIcon: { alignItems: 'center', borderRadius: Radius.small, height: 40, justifyContent: 'center', width: 40 }, hubRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', flexDirection: 'row', gap: Spacing.three, minHeight: 76, overflow: 'hidden', padding: Spacing.four }, hubTitleLine: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two }, inlineAction: { borderRadius: Radius.small, minHeight: 30, paddingHorizontal: Spacing.two, paddingVertical: 7 },
-  metric: { borderCurve: 'continuous', borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', flex: 1, gap: 2, minWidth: 0, padding: Spacing.three }, metricLabel: { fontSize: 10, lineHeight: 14, textTransform: 'uppercase' }, metricResult: { alignItems: 'baseline', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one }, metrics: { flexDirection: 'row', gap: Spacing.three }, metricsLarge: { flexDirection: 'column' }, metricValue: { fontSize: 16, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 22 }, roleBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.two, paddingVertical: 2 }, sectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.three, marginTop: Spacing.two }, sectionTitle: { letterSpacing: 1, textTransform: 'uppercase' }, statusDot: { borderRadius: Radius.pill, height: 6, width: 6 }, statusLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one }, unreadBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.two, paddingVertical: 2 },
+  hero: { gap: Spacing.one }, heroTopline: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, heroToplineLarge: { alignItems: 'flex-start', flexDirection: 'column' },
+  hub: { gap: Spacing.two }, hubIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 }, hubRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', flexDirection: 'row', gap: Spacing.three, minHeight: 76, overflow: 'hidden', padding: Spacing.four }, inlineAction: { borderRadius: Radius.small, minHeight: 30, paddingHorizontal: Spacing.two, paddingVertical: 7 },
+  metric: { borderCurve: 'continuous', borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', flex: 1, gap: 2, minWidth: 0, padding: Spacing.three }, metricLabel: { fontSize: 10, lineHeight: 14, textTransform: 'uppercase' }, metricResult: { alignItems: 'baseline', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one }, metrics: { flexDirection: 'row', gap: Spacing.three }, metricsLarge: { flexDirection: 'column' }, metricValue: { fontSize: 16, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 22 }, sectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.three, marginTop: Spacing.two }, sectionTitle: { letterSpacing: 1, textTransform: 'uppercase' }, statusDot: { borderRadius: Radius.pill, height: 6, width: 6 }, statusLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
 });

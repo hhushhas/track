@@ -105,6 +105,27 @@ describe('Channel threads', () => {
       .rejects.toThrow('tasks_disabled')
   })
 
+  it('rejects blank and oversized messages before persistence', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+
+    await expect(actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: '   \n\t',
+      groupId,
+      idempotencyKey: 'blank-message',
+      projectId,
+    })).rejects.toThrow('message_body_required')
+
+    await expect(actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'x'.repeat(10_001),
+      groupId,
+      idempotencyKey: 'oversized-message',
+      projectId,
+    })).rejects.toThrow('message_body_too_long')
+  })
+
   it('lists visible project threads with their channel context', async () => {
     const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
     const secondGroupId = await t.run(async (ctx) => {
@@ -509,8 +530,8 @@ describe('Channel threads', () => {
 
     expect(await asUser(t, outsider).query(api.channelThreads.get, { threadId, userId: outsider }))
       .toBeNull()
-    expect(await asUser(t, outsider).query(api.channelThreads.listMessages, { threadId, userId: outsider }))
-      .toEqual([])
+    await expect(asUser(t, outsider).query(api.channelThreads.listMessages, { threadId, userId: outsider }))
+      .rejects.toThrow()
     expect(await asUser(t, outsider).query(api.assistant.listForThread, { threadId, userId: outsider }))
       .toEqual([])
     await t.run(async (ctx) => await ctx.db.delete(sourceMessageId))

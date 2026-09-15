@@ -14,12 +14,14 @@ import { IconButton } from '@/components/icon-button';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import { channelHref, type RepresentedProjectContext } from '@/lib/company-navigation';
+import { uniqueAttentionIdentities } from '@/lib/mobile-attention';
 import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
@@ -141,12 +143,14 @@ export default function InboxScreen() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [invitationBusy, setInvitationBusy] = useState<string | null>(null);
   const visibleItems = useMemo(() => {
-    return items.filter((item) => filter === 'all'
-      || (filter === 'tasks' && item.kind === 'task')
-      || (filter === 'mentions' && item.kind === 'message' && item.eventType === 'mention')
-      || (filter === 'replies' && item.kind === 'message' && item.eventType === 'direct_reply')
-      || (filter === 'suggestions' && item.kind === 'suggestion')
-      || (filter === 'invitations' && item.kind === 'invitation'))
+    return uniqueAttentionIdentities(items).filter((item) => {
+      return filter === 'all'
+        || (filter === 'tasks' && item.kind === 'task')
+        || (filter === 'mentions' && item.kind === 'message' && item.eventType === 'mention')
+        || (filter === 'replies' && item.kind === 'message' && item.eventType === 'direct_reply')
+        || (filter === 'suggestions' && item.kind === 'suggestion')
+        || (filter === 'invitations' && item.kind === 'invitation');
+    })
       .sort((a, b) => {
         const pinnedInvitation = Number(b.kind === 'invitation' && b.invitationId === params.invitationId) -
           Number(a.kind === 'invitation' && a.invitationId === params.invitationId);
@@ -211,12 +215,12 @@ export default function InboxScreen() {
         headerRight: () => <IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} />,
       }} />
       <ConnectivityBanner style={styles.connection} />
-      {itemStatus === 'LoadingFirstPage' ? <SkeletonList label="Loading attention" /> : (
-        <FlatList
+      {itemStatus === 'LoadingFirstPage' ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading attention" /></ScreenEntrance> : (
+        <ScreenEntrance style={styles.screenContent}><FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
           data={visibleItems}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => `${item.kind}:${item.id}`}
           renderItem={({ index, item }) => {
             const section = dayLabel(item.createdAt);
             const previousSection = index > 0 && visibleItems
@@ -287,7 +291,7 @@ export default function InboxScreen() {
           ListFooterComponent={itemStatus === 'LoadingMore' ? <View style={styles.footer}><ActivityIndicator color={theme.accentStrong} /></View> : null}
           onEndReached={() => { if (itemStatus === 'CanLoadMore') loadMoreItems(10); }}
           onEndReachedThreshold={0.6}
-        />
+        /></ScreenEntrance>
       )}
       <OptionsSheet onClose={() => setFilterSheetOpen(false)} title="Filter Inbox" visible={filterSheetOpen}>
         <SheetSection title="Show">
@@ -405,11 +409,11 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 2, minWidth: 0 },
   card: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   cardPressable: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 76, padding: Spacing.three },
-  filter: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  filter: { alignItems: 'center', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   footer: { alignItems: 'center', minHeight: TouchTarget, paddingVertical: Spacing.two },
   header: { gap: Spacing.two },
-  iconWrap: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  iconWrap: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 },
   invitationActions: { borderTopColor: 'rgba(128,128,128,0.18)', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, justifyContent: 'flex-end', padding: Spacing.two },
   invitationButton: { flex: 1, paddingHorizontal: Spacing.three },
   intro: { gap: Spacing.one, paddingBottom: Spacing.two },
@@ -417,4 +421,5 @@ const styles = StyleSheet.create({
   metaRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   project: { flex: 1 },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
 });

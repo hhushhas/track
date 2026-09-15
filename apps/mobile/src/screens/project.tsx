@@ -12,11 +12,10 @@ import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet
 import {
   ProjectAttention,
   ProjectAccountButton,
-  ProjectHeaderTitle,
   ProjectHero,
-  ProjectMetrics,
   ProjectWorkHub,
 } from '@/components/project-overview-dashboard';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -83,6 +82,7 @@ export default function ProjectOverviewScreen() {
   const dueSoonCount = tasks?.filter((item) => item.task.dueDate && item.task.dueDate >= todayDate && item.task.dueDate <= dueSoonDate).length ?? 0;
   const projectCompany = project?.membership.companyDisplayNameSnapshot ?? 'Independent Project';
   const projectRole = projectRoleLabel(project?.membership.role);
+  const memberCount = `${members.results.length}${members.status === 'CanLoadMore' ? '+' : ''}`;
   const loading = !projectId || navigation === undefined;
 
   function openTasks() {
@@ -108,23 +108,21 @@ export default function ProjectOverviewScreen() {
   return <ThemedView style={styles.screen}>
     <Stack.Screen options={{
       headerBackVisible: false,
-      headerTitle: () => <ProjectHeaderTitle />,
       headerRight: () => <View style={styles.headerActions}>
         <IconButton accessibilityLabel="Project options" icon="tune" onPress={() => setOptionsOpen(true)} />
         <ProjectAccountButton label={profileStatus?.user.displayName || profileStatus?.user.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
       </View>,
-      title: 'Projects',
+      title: projectName,
     }} />
     <ConnectivityBanner style={styles.connection} />
-    {loading ? <SkeletonList label="Loading Project" /> : navigation && !navigation.available ? (
+    {loading ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading Project" /></ScreenEntrance> : navigation && !navigation.available ? (
       <View style={styles.centered}><EmptyState body="This Project is not available for the represented membership." icon="shield-lock-outline" title="Project unavailable" /></View>
     ) : projectId && project ? (
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
-        <ProjectHero archived={navigation.archived} company={project.project.clientLabel ?? projectCompany} description={project.project.description} name={projectName} onBack={() => router.back()} role={projectRole} />
-        <ProjectMetrics channels={channelCount} people={`${members.results.length}${members.status === 'CanLoadMore' ? '+' : ''}`} tasks={openTaskCount} tasksEnabled={release.tasks} unread={unreadCount} />
+      <ScreenEntrance style={styles.screenContent}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
+        <ProjectHero archived={navigation.archived} company={project.project.clientLabel ?? projectCompany} description={project.project.description} memberCount={memberCount} name={projectName} onBack={() => router.back()} role={projectRole} />
         <ProjectWorkHub channelCount={channelCount} dueSoonCount={dueSoonCount} evidenceCount={evidenceCount} onChannels={openChannels} onEvidence={openEvidence} onTasks={openTasks} openTaskCount={openTaskCount} tasksEnabled={release.tasks} unreadCount={unreadCount} />
         <ProjectAttention items={projectAttention} onOpen={openAttention} />
-      </ScrollView>
+      </ScrollView></ScreenEntrance>
     ) : <View style={styles.centered}><EmptyState body="Select a Project from Projects to see its work hub." icon="project" title="Choose a Project" /></View>}
     <OptionsSheet onClose={() => setOptionsOpen(false)} title="Project options" visible={optionsOpen}>
       <SheetSection title={projectName}>
@@ -149,4 +147,5 @@ const styles = StyleSheet.create({
   content: { gap: Spacing.four, padding: Spacing.four },
   headerActions: { alignItems: 'center', flexDirection: 'row' },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
 });

@@ -19,6 +19,7 @@ import {
   type DirectoryProject,
 } from '@/components/projects-directory';
 import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useCompany } from '@/contexts/company-context';
@@ -36,7 +37,7 @@ export default function ProjectsScreen() {
   const { trackUserId, openProfileSheet } = useTrackUser();
   const { actingCompanyId, actingCompany, companyModelEnabled } = useCompany();
   const [createOpen, setCreateOpen] = useState(false);
-  const [expandedMembershipId, setExpandedMembershipId] = useState<Id<'projectMembers'> | null | undefined>(undefined);
+  const [expandedMembershipId, setExpandedMembershipId] = useState<Id<'projectMembers'> | null>(null);
   const [projectName, setProjectName] = useState('');
   const [projectClientLabel, setProjectClientLabel] = useState('');
   const [creating, setCreating] = useState(false);
@@ -81,8 +82,8 @@ export default function ProjectsScreen() {
   }, [projects.loadMore, projects.status]);
 
   useEffect(() => {
-    if (expandedMembershipId === undefined || expandedMembershipId && !sortedProjects.some((item) => item.membership._id === expandedMembershipId)) {
-      setExpandedMembershipId(sortedProjects.find((item) => item.membership.status !== 'archived')?.membership._id ?? null);
+    if (expandedMembershipId && !sortedProjects.some((item) => item.membership._id === expandedMembershipId)) {
+      setExpandedMembershipId(null);
     }
   }, [expandedMembershipId, sortedProjects]);
 
@@ -132,9 +133,9 @@ export default function ProjectsScreen() {
     router.push(channelHref(project.project._id, channel.group._id, projectIdentity(project)) as never);
   }
 
+  const companyLabel = actingCompany?.company?.displayName ?? 'All Companies';
   const activeProjects = sortedProjects.filter((item) => item.membership.status !== 'archived');
   const visibleChannels = activeProjects.reduce((sum, item) => sum + item.groupCount, 0);
-  const companyLabel = actingCompany?.company?.displayName ?? 'All Companies';
 
   return (
     <ThemedView style={styles.screen}>
@@ -150,8 +151,8 @@ export default function ProjectsScreen() {
       }} />
       <ConnectivityBanner style={styles.connection} />
 
-      {projects.status === 'LoadingFirstPage' ? <SkeletonList label="Loading Projects" /> : (
-        <FlatList
+      {projects.status === 'LoadingFirstPage' ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading Projects" /></ScreenEntrance> : (
+        <ScreenEntrance style={styles.screenContent}><FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
           data={sortedProjects}
@@ -169,9 +170,7 @@ export default function ProjectsScreen() {
               <View style={styles.directoryTitle}>
                 <PlatformIcon color={theme.accentStrong} name="project" size={17} />
                 <ThemedText style={styles.directoryTitleText} type="title">Projects & Channels</ThemedText>
-                <View style={[styles.count, { backgroundColor: theme.backgroundElement }]}><ThemedText themeColor="textSecondary" type="captionBold">{sortedProjects.length}</ThemedText></View>
               </View>
-              <View style={styles.sortLabel}><PlatformIcon color={theme.textSecondary} name="sort" size={14} /><ThemedText themeColor="textSecondary" type="caption">Recent & unread</ThemedText></View>
             </View>
           </View>}
           ListEmptyComponent={<EmptyState
@@ -196,7 +195,7 @@ export default function ProjectsScreen() {
             onOpenProject={() => openProject(item)}
             onToggle={() => setExpandedMembershipId((current) => current === item.membership._id ? null : item.membership._id)}
           />}
-        />
+        /></ScreenEntrance>
       )}
 
       <OptionsSheet onClose={closeCreateProject} title="Create Project" visible={createOpen}>
@@ -230,7 +229,6 @@ function isLastContext(item: DirectoryProject, context: { projectId?: Id<'projec
 const styles = StyleSheet.create({
   addProject: { alignItems: 'center', alignSelf: 'center', borderRadius: Radius.large, flexDirection: 'row', gap: Spacing.two, justifyContent: 'center', marginTop: Spacing.five, minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   connection: { marginHorizontal: Spacing.four, marginTop: Spacing.two },
-  count: { borderRadius: Radius.small, paddingHorizontal: Spacing.two, paddingVertical: 2 },
   createInputs: { gap: Spacing.three, padding: Spacing.three },
   directoryHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.five },
   directoryTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
@@ -239,6 +237,6 @@ const styles = StyleSheet.create({
   list: { padding: Spacing.four, paddingTop: Spacing.two },
   listHeader: { marginBottom: Spacing.three },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
   separator: { height: Spacing.three },
-  sortLabel: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
 });

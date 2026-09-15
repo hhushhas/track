@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useNetworkState } from 'expo-network';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
@@ -17,6 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
@@ -103,12 +104,14 @@ export default function ThreadsScreen() {
       ? { userId: trackUserId, projectId: pid, actingCompanyId: cid, projectMemberId: pmid }
       : 'skip',
   );
-  const threads = useQuery(
-    api.channelThreads.list,
+  const threadPage = usePaginatedQuery(
+    api.channelThreads.listPage,
     releaseConfig.threads && trackUserId && gid && navigation?.available
       ? { userId: trackUserId, groupId: gid, actingCompanyId: cid, projectMemberId: pmid, status }
       : 'skip',
+    { initialNumItems: 50 },
   );
+  const threads = threadPage.status === 'LoadingFirstPage' ? undefined : threadPage.results;
   const searchTerm = searchQuery.trim();
   const searchResults = useQuery(
     api.search.project,
@@ -287,9 +290,11 @@ export default function ThreadsScreen() {
         </Pressable>
       </View>
       {error ? <ThemedText accessibilityLiveRegion="polite" style={[styles.error, { color: theme.danger }]} type="small">{error}. Retry keeps the same request.</ThemedText> : null}
-      <FlatList
+      <ScreenEntrance style={styles.screenContent}><FlatList
         contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
         data={visibleRows}
+        onEndReached={() => { if (threadPage.status === 'CanLoadMore') threadPage.loadMore(50); }}
+        onEndReachedThreshold={0.5}
         keyExtractor={(item) => item.key}
         ListEmptyComponent={(searchActive ? searchResults : threads) === undefined
           ? <SkeletonList count={3} label={searchActive ? 'Searching' : 'Loading threads'} />
@@ -319,7 +324,7 @@ export default function ThreadsScreen() {
             trailingTop={!item.unread ? <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} /> : null}
           />
         )}
-      />
+      /></ScreenEntrance>
       <OptionsSheet onClose={() => setFilterOpen(false)} title="Thread filters" visible={filterOpen}>
         <SheetSection>
           {threadFilters.map((filter) => <SheetRow
@@ -358,8 +363,9 @@ const styles = StyleSheet.create({
   searchRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, marginHorizontal: Spacing.three, marginTop: Spacing.three },
   searchWrap: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
   sourceNotice: { margin: Spacing.three, marginBottom: 0, padding: Spacing.three, borderRadius: Radius.large },
   tab: { alignItems: 'center', borderBottomWidth: 2, flex: 1, minHeight: TouchTarget, justifyContent: 'center' },
   tabs: { borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
-  threadIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  threadIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 },
 });

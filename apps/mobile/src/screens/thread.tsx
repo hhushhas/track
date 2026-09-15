@@ -32,6 +32,7 @@ import { threadConversationHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
 import { useComposerDraft } from '@/hooks/use-composer-draft';
 import { TaskLinkBatchProvider } from '@/lib/task-link-context';
+import { communicationErrorMessage, taskErrorMessage } from '@/lib/user-facing-error';
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 
@@ -119,6 +120,7 @@ export default function ThreadScreen() {
   const sendSignatureRef = useRef<string | null>(null);
   const [replySelection, setReplySelection] = useState<{ scopeKey: string; message: DetailedMessage } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [creatingTaskKey, setCreatingTaskKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -348,11 +350,19 @@ export default function ThreadScreen() {
 
       const { parseMentions } = await import('@track/shared');
       if (result.messageId && parseMentions(body).includes('track')) {
-        await askTrack({
-          projectId: pid, groupId: gid, channelThreadId: tid, requesterId: trackUserId,
-          actingCompanyId: cid, projectMemberId: pmid,
-          promptMessageId: result.messageId, question: body,
-        });
+        try {
+          await askTrack({
+            projectId: pid, groupId: gid, channelThreadId: tid, requesterId: trackUserId,
+            actingCompanyId: cid, projectMemberId: pmid,
+            promptMessageId: result.messageId, question: body,
+          });
+        } catch {
+          showToast({
+            title: 'Message sent',
+            message: 'Track Assistant could not respond. Retry the Assistant request.',
+            tone: 'error',
+          });
+        }
       }
       // Only retire the idempotency key once every attachment landed; a retry reuses the same message.
       if (result.failedIds.length === 0) {
@@ -361,7 +371,7 @@ export default function ThreadScreen() {
       }
       return result;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't save");
+      setError(communicationErrorMessage(caught, 'send this message'));
       return { failedIds: payload.attachments.map((a) => a.id), messageId: null };
     } finally {
       setBusy(false);
@@ -389,7 +399,7 @@ export default function ThreadScreen() {
       setForwardTarget(null);
       showToast({ icon: 'forward', message: `Copied to ${target.group.name}.`, title: 'Message forwarded', tone: 'success' });
     } catch (caught) {
-      setForwardError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : 'Could not forward this message');
+      setForwardError(communicationErrorMessage(caught, 'forward this message'));
     } finally {
       setForwardBusyGroupId(null);
     }
@@ -403,22 +413,32 @@ export default function ThreadScreen() {
       ...(!readOnly && releaseConfig.tasks ? [{
         label: 'Create task',
         icon: 'plus' as const,
-        onPress: () => {
+        onPress: async () => {
           if (!pid || !gid) return;
           const source = actionTarget.kind === 'message' ? actionTarget.item.message.body : actionTarget.stream.answer;
           const reference = actionTarget.kind === 'message'
             ? { type: 'message' as const, messageId: actionTarget.item.message._id, isPrimary: true }
             : { type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true };
-          void createTask({
-            projectId: pid,
-            groupId: gid,
-            title: source.trim().slice(0, 180) || 'Follow up',
-            priority: 'none',
-            references: [reference],
-            idempotencyKey: `${actionTarget.key}:${Date.now()}`,
-            actingCompanyId: cid,
-            projectMemberId: pmid,
-          });
+          const taskKey = `message-task:${actionTarget.key}`;
+          if (creatingTaskKey === taskKey) return;
+          setCreatingTaskKey(taskKey);
+          try {
+            const task = await createTask({
+              projectId: pid,
+              groupId: gid,
+              title: source.trim().slice(0, 180) || 'Follow up',
+              priority: 'none',
+              references: [reference],
+              idempotencyKey: taskKey,
+              actingCompanyId: cid,
+              projectMemberId: pmid,
+            });
+            showToast({ title: 'Task created', message: `Task ${task.publicKey} is ready to review.`, tone: 'success' });
+          } catch (failure) {
+            showToast({ title: 'Task not created', message: taskErrorMessage(failure, 'The task could not be created. Check your connection and try again.'), tone: 'error' });
+          } finally {
+            setCreatingTaskKey(null);
+          }
         },
       }] : []),
       ...(!readOnly &&
@@ -450,7 +470,7 @@ export default function ThreadScreen() {
                     if (replyMessageId === actionTarget.item.message._id) setReplyTo(null);
                     setNotice('Message deleted.');
                   }).catch((caught) => {
-                    setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't delete message");
+                    setError(communicationErrorMessage(caught, 'delete this message'));
                   }).finally(() => setBusy(false));
                 },
               },
@@ -472,11 +492,11 @@ export default function ThreadScreen() {
         }).then(() => {
           showToast({ icon: 'flag', message: 'Thanks. The report was submitted for review.', title: 'Message reported', tone: 'success' });
         }).catch((caught) => {
-          setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : 'Could not submit the report');
+          setError(communicationErrorMessage(caught, 'submit this report'));
         });
       } },
     ];
-  }, [actionTarget, cid, createReport, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, replyMessageId, setReplyTo, showToast, trackUserId]);
+  }, [actionTarget, cid, createReport, createTask, creatingTaskKey, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, replyMessageId, setReplyTo, showToast, trackUserId]);
 
   const renderItem = useCallback<ListRenderItem<GroupedThreadItem>>(({ item }) => {
     if (item.kind === 'date-sep') return <DateSeparator label={item.label} />;
@@ -505,7 +525,7 @@ export default function ThreadScreen() {
       setNotice(thread.following ? 'Thread unfollowed.' : 'Thread followed.');
       setToolsOpen(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't update follow state");
+      setError(communicationErrorMessage(caught, 'update the follow state'));
     }
   }
 
@@ -517,7 +537,7 @@ export default function ThreadScreen() {
       setNotice(result.conflict ? 'Thread changed elsewhere. Refreshed current state.' : result.status === 'archived' ? 'Thread archived.' : 'Thread reopened.');
       setToolsOpen(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't update thread");
+      setError(communicationErrorMessage(caught, 'update this thread'));
     }
   }
 
@@ -531,7 +551,7 @@ export default function ThreadScreen() {
       setRenameOpen(false);
       if (!result.conflict) showToast({ icon: 'check-circle', message: 'The new name is visible to everyone with access.', title: 'Thread renamed', tone: 'success' });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message.replaceAll('_', ' ') : "Couldn't rename thread");
+      setError(communicationErrorMessage(caught, 'rename this thread'));
     }
   }
 
@@ -573,7 +593,7 @@ export default function ThreadScreen() {
         ) as never)}
         style={[styles.source, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline, borderLeftColor: theme.accent }]}>
         <View style={styles.sourceHeader}>
-          <ThemedText themeColor="accentStrong" type="mono">SOURCE MESSAGE</ThemedText>
+          <ThemedText themeColor="accentStrong" type="captionBold">Source message</ThemedText>
           {sourceDate ? <ThemedText themeColor="textTertiary" type="caption">{new Date(sourceDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}</ThemedText> : null}
         </View>
         <View style={styles.sourceContext}>
@@ -586,7 +606,7 @@ export default function ThreadScreen() {
         </View>
         {firstLinkedTask ? <View style={[styles.sourceTaskLink, { backgroundColor: theme.accentSoft }]}>
           <PlatformIcon color={theme.accentStrong} name="link" size={14} />
-          <ThemedText numberOfLines={1} style={styles.sourceTaskLabel} themeColor="accentStrong" type="mono">
+          <ThemedText numberOfLines={1} style={styles.sourceTaskLabel} themeColor="accentStrong" type="captionBold">
             Linked to {firstLinkedTask.publicKey} · {firstLinkedTask.title}
           </ThemedText>
           <PlatformIcon color={theme.accentStrong} name="chevron-right" size={16} />

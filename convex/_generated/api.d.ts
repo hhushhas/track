@@ -12,6 +12,7 @@ import type * as assistant from "../assistant.js";
 import type * as assistantNode from "../assistantNode.js";
 import type * as audit from "../audit.js";
 import type * as auth from "../auth.js";
+import type * as busyDemoSeed from "../busyDemoSeed.js";
 import type * as channelThreads from "../channelThreads.js";
 import type * as channels from "../channels.js";
 import type * as companies from "../companies.js";
@@ -116,6 +117,7 @@ declare const fullApi: ApiFromModules<{
   assistantNode: typeof assistantNode;
   audit: typeof audit;
   auth: typeof auth;
+  busyDemoSeed: typeof busyDemoSeed;
   channelThreads: typeof channelThreads;
   channels: typeof channels;
   companies: typeof companies;

@@ -10,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { isCompactTaskBoard } from '@/lib/task-board-layout';
+import { taskErrorMessage } from '@/lib/user-facing-error';
 
 const ColumnWidth = 280;
 const ColumnGap = Spacing.three;
@@ -57,8 +58,7 @@ function moveFailureMessage(reason: string) {
     return 'That column is no longer part of this board. Reopen the board and try again.';
   }
   if (reason === 'task_access_changed') return 'Your access to this task changed. Refresh and try again.';
-  if (!reason) return 'The move could not be saved.';
-  return `The move could not be saved: ${reason.replaceAll('_', ' ')}`;
+  return taskErrorMessage(new Error(reason), 'The move could not be saved. Check your connection and try again.');
 }
 
 export function TaskBoard({

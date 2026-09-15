@@ -549,6 +549,13 @@ describe('task management authorization and invariants', () => {
       idempotencyKey: 'message-task-1',
     })
     expect(repeated.taskId).toBe(created.taskId)
+    await expect(fixture.t.withIdentity({ subject: 'outsider' }).mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      title: 'Unauthorized idempotent retry',
+      priority: 'none',
+      idempotencyKey: 'message-task-1',
+    })).rejects.toThrow()
 
     const detail = await owner.query(api.tasks.getByKey, {
       projectId: fixture.projectId,

@@ -1123,12 +1123,6 @@ export const create = mutation({
     await assertProjectSnapshotWritable(ctx, args.projectId)
     validateTaskFields(args)
     if ((args.references?.length ?? 0) > 20) throw new Error('task_references_limit_exceeded')
-    const existing = await ctx.db.query('tasks')
-      .withIndex('by_project_idempotency', (q) =>
-        q.eq('projectId', args.projectId).eq('createIdempotencyKey', args.idempotencyKey),
-      ).unique()
-    if (existing) return { publicKey: existing.publicKey, taskId: existing._id }
-
     let initialAccess
     let board: Doc<'taskBoards'>
     if (args.boardId) {
@@ -1155,6 +1149,12 @@ export const create = mutation({
     })
     if (!baseCapabilities.canCreate) throw new Error('task_access_changed')
 
+    const existing = await ctx.db.query('tasks')
+      .withIndex('by_project_idempotency', (q) =>
+        q.eq('projectId', args.projectId).eq('createIdempotencyKey', args.idempotencyKey),
+      ).unique()
+    if (existing) return { publicKey: existing.publicKey, taskId: existing._id }
+
     if (board.projectId !== args.projectId || board.groupId !== groupId || board.archivedAt) {
       throw new Error('task_destination_invalid')
     }
@@ -1179,7 +1179,7 @@ export const create = mutation({
     if (args.parentTaskId) {
       parent = await ctx.db.get(args.parentTaskId)
       if (!parent || parent.parentTaskId || parent.projectId !== args.projectId ||
-        parent.boardId !== board._id || parent.groupId !== groupId) {
+        parent.boardId !== board._id || parent.groupId !== groupId || parent.archivedAt) {
         throw new Error('task_parent_invalid')
       }
     }

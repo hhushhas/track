@@ -15,6 +15,8 @@ describe('user-facing errors', () => {
 
   it('maps task policy failures and uses a stable fallback', () => {
     expect(taskErrorMessage(new Error('task_access_changed'))).toBe('Your access changed. Refresh and try again.');
+    expect(taskErrorMessage(new Error('task_edit_forbidden'))).toBe('You are not allowed to make this task change.');
+    expect(taskErrorMessage(new Error('task_destination_invalid'))).toBe('That status is no longer available. Refresh and try again.');
     expect(taskErrorMessage(new Error('internal_database_failure'))).toBe('The task could not be updated. Check your connection and try again.');
   });
 

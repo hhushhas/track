@@ -10,7 +10,6 @@ import {
   EvidenceAuditCard,
   type EvidenceAuditItem,
   EvidenceEndMarker,
-  EvidenceHeaderTitle,
   EvidenceProtocolIntro,
   EvidenceResultsHeader,
   EvidenceScopeCard,
@@ -21,6 +20,7 @@ import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet
 import { PlatformIcon } from '@/components/platform-icon';
 import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useCompany } from '@/contexts/company-context';
@@ -187,7 +187,6 @@ export default function EvidenceScreen() {
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
         title: 'Evidence',
-        headerTitle: () => <EvidenceHeaderTitle />,
         headerBackVisible: false,
         headerLargeTitle: false,
         headerTransparent: false,
@@ -197,7 +196,7 @@ export default function EvidenceScreen() {
         </View>,
       }} />
       <ConnectivityBanner style={styles.connection} />
-      <FlatList
+      <ScreenEntrance style={styles.screenContent}><FlatList
         contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
         contentInsetAdjustmentBehavior="automatic"
         data={rows}
@@ -216,12 +215,12 @@ export default function EvidenceScreen() {
         </View>}
         ListEmptyComponent={projectPages.status === 'LoadingFirstPage' || (selectedProject && (searchTerm.length >= 2 ? search === undefined : evidence.status === 'LoadingFirstPage'))
           ? <SkeletonList count={3} label="Loading evidence" />
-          : <EmptyState icon={selectedProject ? 'evidence' : 'project'} title={selectedProject ? searchTerm.length >= 2 ? 'No matching evidence' : 'No evidence yet' : 'Choose a Project'} body={selectedProject ? searchTerm.length >= 2 ? `No accessible messages or files match “${searchTerm}”.` : 'Messages and files linked to tasks will appear here with their source context.' : 'Evidence is permission-scoped. Choose a Project, then optionally narrow to one Channel.'} />}
+          : <EmptyState icon={selectedProject ? 'evidence' : 'project'} title={selectedProject ? searchTerm.length >= 2 ? 'No matching evidence' : 'No evidence yet' : 'No project selected'} body={selectedProject ? searchTerm.length >= 2 ? `No accessible messages or files match “${searchTerm}”.` : 'Messages and files linked to tasks will appear here with their source context.' : 'Select a Project above to view its permission-scoped evidence.'} />}
         ListFooterComponent={selectedProject && normalizedRows?.length && (searchTerm.length >= 2 || evidence.status === 'Exhausted') ? <EvidenceEndMarker companyName={companyName} /> : null}
         onEndReached={() => { if (searchTerm.length < 2 && evidence.status === 'CanLoadMore') evidence.loadMore(20); }}
         onEndReachedThreshold={0.35}
         renderItem={({ item: row, index }) => <EvidenceAuditCard item={normalizedRows?.[index] ?? normalizeRow(row)} onOpenSource={() => row.type === 'evidence' ? openEvidence(row.item) : openSearchResult(row.item)} onOpenTask={row.type === 'evidence' && row.item.reference.groupId && row.item.reference.messageId ? () => openTask(row.item) : undefined} />}
-      />
+      /></ScreenEntrance>
 
       <OptionsSheet onClose={() => setScopePicker(null)} title={scopePicker === 'project' ? 'Choose Project' : 'Choose Channel'} visible={scopePicker !== null}>
         {scopePicker === 'project' ? projectSections.map((section) => <SheetSection key={section.title} title={section.title}>{section.data.map((row) => <SheetRow detail={row.membership.status === 'archived' ? 'Read-only archive' : undefined} icon="project" key={row.membership._id} label={row.project.name} onPress={() => { setProjectId(row.project._id); setProjectMembershipId(row.membership._id); setGroupId(null); setScopePicker(null); }} selected={row.membership._id === selectedProject?.membership._id} />)}</SheetSection>) : null}
@@ -267,4 +266,5 @@ const styles = StyleSheet.create({
   list: { gap: Spacing.three, padding: Spacing.four },
   searchField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three, shadowColor: '#000', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.04, shadowRadius: 8 },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
 });

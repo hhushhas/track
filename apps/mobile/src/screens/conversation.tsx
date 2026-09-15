@@ -28,6 +28,7 @@ import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
+import { taskErrorMessage } from '@/lib/user-facing-error';
 import { useComposerDraft } from '@/hooks/use-composer-draft';
 
 /** WhatsApp-style grouping gap: a longer pause re-states who is speaking. */
@@ -157,6 +158,7 @@ export default function ConversationScreen() {
   const sendSignatureRef = useRef<string | null>(null);
   const [replySelection, setReplySelection] = useState<{ scopeKey: string; message: DetailedMessage } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [creatingTaskKey, setCreatingTaskKey] = useState<string | null>(null);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [groupSwitchOpen, setGroupSwitchOpen] = useState(false);
@@ -322,22 +324,32 @@ export default function ConversationScreen() {
       ...(!readOnly && releaseConfig.tasks ? [{
         label: 'Create task',
         icon: 'plus' as const,
-        onPress: () => {
+        onPress: async () => {
           const source = actionTarget.kind === 'message' ? actionTarget.item.message.body : actionTarget.stream.answer;
           const reference = actionTarget.kind === 'message'
             ? { type: 'message' as const, messageId: actionTarget.item.message._id, isPrimary: true }
             : { type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true };
           if (!pid || !gid) return;
-          void createTask({
-            projectId: pid,
-            groupId: gid,
-            title: source.trim().slice(0, 180) || 'Follow up',
-            priority: 'none',
-            references: [reference],
-            idempotencyKey: `${actionTarget.key}:${Date.now()}`,
-            actingCompanyId: cid,
-            projectMemberId: pmid,
-          });
+          const taskKey = `message-task:${actionTarget.key}`;
+          if (creatingTaskKey === taskKey) return;
+          setCreatingTaskKey(taskKey);
+          try {
+            const task = await createTask({
+              projectId: pid,
+              groupId: gid,
+              title: source.trim().slice(0, 180) || 'Follow up',
+              priority: 'none',
+              references: [reference],
+              idempotencyKey: taskKey,
+              actingCompanyId: cid,
+              projectMemberId: pmid,
+            });
+            showToast({ title: 'Task created', message: `Task ${task.publicKey} is ready to review.`, tone: 'success' });
+          } catch (failure) {
+            showToast({ title: 'Task not created', message: taskErrorMessage(failure, 'The task could not be created. Check your connection and try again.'), tone: 'error' });
+          } finally {
+            setCreatingTaskKey(null);
+          }
         },
       }] : []),
       ...(!readOnly &&
@@ -382,7 +394,7 @@ export default function ConversationScreen() {
         onPress: () => setReportTarget(actionTarget),
       },
     ];
-  }, [actionTarget, cid, createTask, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, replyMessageId, router, setReplyTo, trackUserId]);
+  }, [actionTarget, cid, createTask, creatingTaskKey, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, replyMessageId, router, setReplyTo, trackUserId]);
 
   // Clear pending messages when the real message arrives from the server
   useEffect(() => {
@@ -516,11 +528,19 @@ export default function ConversationScreen() {
 
       const { parseMentions } = await import('@track/shared');
       if (result.messageId && parseMentions(body).includes('track')) {
-        await askTrack({
-          projectId: pid, groupId: gid, requesterId: trackUserId,
-          actingCompanyId: cid, projectMemberId: pmid,
-          promptMessageId: result.messageId, question: body,
-        });
+        try {
+          await askTrack({
+            projectId: pid, groupId: gid, requesterId: trackUserId,
+            actingCompanyId: cid, projectMemberId: pmid,
+            promptMessageId: result.messageId, question: body,
+          });
+        } catch {
+          showToast({
+            title: 'Message sent',
+            message: 'Track Assistant could not respond. Retry the Assistant request.',
+            tone: 'error',
+          });
+        }
       }
       if (result.failedIds.length === 0) {
         sendKey.current = null;

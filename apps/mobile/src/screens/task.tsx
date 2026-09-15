@@ -41,6 +41,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { taskErrorMessage } from '@/lib/user-facing-error';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { channelHref, projectOverviewHref } from '@/lib/company-navigation';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
@@ -84,10 +85,7 @@ const fieldTitles: Record<TaskEditField, string> = {
 };
 
 function errorMessage(failure: unknown) {
-  if (!(failure instanceof Error)) return 'The task action failed.';
-  if (failure.message.includes('task_conflict')) return 'This task changed elsewhere.';
-  if (failure.message.includes('task_access_changed')) return 'This task is no longer available to this represented membership.';
-  return failure.message.replaceAll('_', ' ');
+  return taskErrorMessage(failure, 'The task action failed. Check your connection and try again.');
 }
 
 export default function TaskScreen() {
@@ -504,7 +502,7 @@ export default function TaskScreen() {
 
           <View style={[styles.hero, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
           <View style={styles.eyebrow}>
-            <ThemedText themeColor="accentStrong" type="mono">PROJECT CONTEXT</ThemedText>
+            <ThemedText themeColor="accentStrong" type="captionBold">Project context</ThemedText>
             <ThemedText numberOfLines={1} style={styles.eyebrowBoard} themeColor="textTertiary" type="caption">
               {detail.board?.name ?? 'Archived board'}
             </ThemedText>

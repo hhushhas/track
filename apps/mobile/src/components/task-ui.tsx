@@ -87,7 +87,7 @@ export function TaskStatusPill({
       {category === 'started' ? (
         <View style={[styles.pillDot, { backgroundColor: palette.foreground }]} />
       ) : (
-        <PlatformIcon color={palette.foreground} name={stateGlyph(category)} size={13} />
+        <PlatformIcon color={palette.foreground} name={stateGlyph(category)} size={13} variant={category === 'completed' ? 'filled' : 'outline'} />
       )}
       <ThemedText numberOfLines={1} style={[styles.pillLabel, { color: palette.foreground }]} type="captionBold">
         {label}
@@ -209,6 +209,7 @@ export function TaskCard({
   priority,
   publicKey,
   referenceCount = 0,
+  showKey = true,
   stateName,
   title,
   variant = 'list',
@@ -226,6 +227,7 @@ export function TaskCard({
   priority: TaskPriority;
   publicKey: string;
   referenceCount?: number;
+  showKey?: boolean;
   stateName: string;
   title: string;
   variant?: 'list' | 'board';
@@ -234,7 +236,7 @@ export function TaskCard({
   const board = variant === 'board';
 
   if (!board) {
-    const context = [shortTaskKey(publicKey), contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
+    const context = [showKey ? shortTaskKey(publicKey) : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
       .filter(Boolean)
       .join(' · ');
     const due = taskDueDisplay(dueDate, undefined, category);
@@ -268,7 +270,7 @@ export function TaskCard({
               <TaskDueChip category={category} dueDate={dueDate} />
             </View>
             <View style={styles.listTrailingLine}>
-              <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />
+              <TaskStatusPill appearance="plain" category={category} label={stateName} onPress={onStatusPress} />
             </View>
           </View>
         </View>
@@ -457,7 +459,7 @@ const styles = StyleSheet.create({
   listContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
   listContextText: { flexShrink: 1 },
   listCopy: { flex: 1, gap: 3, minWidth: 0 },
-  listLeading: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  listLeading: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 },
   listRow: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   listRowContent: { alignItems: 'stretch', flexDirection: 'row', minHeight: 72 },
   listRowPressable: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.three, minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },

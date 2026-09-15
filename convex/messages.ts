@@ -64,6 +64,7 @@ type MessageAttachmentInput = {
 }
 
 const UPLOAD_INTENT_TTL_MS = 15 * 60 * 1000
+const MAX_MESSAGE_ATTACHMENT_BYTES = 100 * 1024 * 1024
 
 async function validateMessageMentions(
   ctx: MutationCtx,
@@ -146,6 +147,9 @@ function validateUploadMetadata(input: {
   if (!Number.isInteger(input.size) || input.size < 0) {
     throw new Error('attachment_metadata_invalid')
   }
+  if (input.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+    throw new Error('attachment_too_large')
+  }
   if (input.durationMs !== undefined && (!Number.isInteger(input.durationMs) || input.durationMs < 0)) {
     throw new Error('attachment_metadata_invalid')
   }
@@ -222,10 +226,7 @@ async function resolveMessageAttachments(
   const seenStorageIds = new Set<string>()
   const resolved: Array<ResolvedMessageAttachment> = []
   for (const attachment of attachments) {
-    if (!Number.isInteger(attachment.size) || attachment.size < 0) {
-      throw new Error('attachment_metadata_invalid')
-    }
-    if (attachment.filename.trim().length === 0) throw new Error('attachment_metadata_invalid')
+    validateUploadMetadata(attachment)
     if (seenIntentIds.has(String(attachment.uploadIntentId))) {
       throw new Error('attachment_intent_duplicate')
     }
@@ -847,6 +848,9 @@ export const send = mutation({
     attachments: v.optional(v.array(messageAttachment)),
   },
   handler: async (ctx, args) => {
+    const body = args.body.trim()
+    if (!body && !(args.attachments?.length)) throw new Error('message_body_required')
+    if (body.length > 10_000) throw new Error('message_body_too_long')
     const access = await authorizeScopedRequest(ctx, {
       projectId: args.projectId,
       groupId: args.groupId,
@@ -933,7 +937,7 @@ export const send = mutation({
       channelThreadId: args.channelThreadId,
       channelSequence,
       idempotencyKey: args.idempotencyKey,
-      body: args.body,
+      body,
       mentions: mentionState.mentions,
       mentionedProjectMemberIds: mentionState.mentionedProjectMemberIds,
       attachmentIds: [],
@@ -1034,7 +1038,7 @@ export const send = mutation({
       entityId: messageId,
       action: 'message.sent',
       after: {
-        bodyPreview: args.body.slice(0, 180),
+        bodyPreview: body.slice(0, 180),
         mentionCount: mentionState.mentions.length,
         replyToMessageId: args.replyToMessageId,
         channelSequence,

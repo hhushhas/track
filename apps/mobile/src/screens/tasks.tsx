@@ -12,6 +12,7 @@ import { DateField } from '@/components/date-field';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
 import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { OptionsSheet, SheetFieldButton, SheetInput, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import type { TaskMoveInput } from '@/components/task-board';
@@ -27,7 +28,6 @@ import {
   SprintFlowHeader,
   TaskCreateContext,
   TaskSuggestionBanner,
-  TasksHeaderTitle,
   TasksToolbar,
   type TaskViewMode,
 } from '@/components/tasks-dashboard';
@@ -38,6 +38,8 @@ import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
+import { useAppToast } from '@/components/app-toast';
+import { enqueueOfflineTask } from '@/lib/offline-task-queue';
 import { groupMobileTasksByState, taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { taskPriorityLabel } from '@/lib/task-presentation';
 import { resolveWorkflowStateId, taskMatchesWorkflowStateFilter, visibleBoardStateIds } from '@/lib/task-workflow';
@@ -63,6 +65,7 @@ function readableError(failure: unknown) {
 export default function TasksScreen() {
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
+  const { showToast } = useAppToast();
   const release = useReleaseConfig();
   const network = useNetworkState();
   const { trackUserId, openProfileSheet } = useTrackUser();
@@ -283,7 +286,7 @@ export default function TasksScreen() {
     setBusy(true);
     setError('');
     try {
-      const result = await createTask({
+      const taskInput = {
         projectId: project,
         boardId: selectedCreateBoard?.board._id,
         workflowStateId: createWorkflowStateId
@@ -298,7 +301,22 @@ export default function TasksScreen() {
           : undefined,
         idempotencyKey: `${Date.now()}-${Math.random()}`,
         ...queryIdentity,
-      });
+      };
+      if (offline && trackUserId) {
+        await enqueueOfflineTask(trackUserId, taskInput);
+        hapticMedium();
+        setCreateOpen(false);
+        setTitle('');
+        setDescription('');
+        setCreateBoardId('');
+        setCreateWorkflowStateId('');
+        setPriority('none');
+        setDueDate(null);
+        setAssigneeId('');
+        showToast({ title: 'Task saved offline', message: 'It will sync when your connection returns.', tone: 'info' });
+        return;
+      }
+      const result = await createTask(taskInput);
       hapticMedium();
       setCreateOpen(false);
       setTitle('');
@@ -364,7 +382,7 @@ export default function TasksScreen() {
     return (
       <ThemedView style={styles.screen}>
         <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label="Track member" onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'My tasks' }} />
-        <FlatList
+        <ScreenEntrance style={styles.screenContent}><FlatList
           contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]}
           contentInsetAdjustmentBehavior="automatic"
           data={myTasks}
@@ -399,7 +417,7 @@ export default function TasksScreen() {
             stateName={item.state?.name ?? 'Unknown'}
             title={item.task.title}
           />}
-        />
+        /></ScreenEntrance>
       </ThemedView>
     );
   }
@@ -479,7 +497,6 @@ export default function TasksScreen() {
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
         title: 'Tasks',
-        headerTitle: () => <TasksHeaderTitle />,
         headerBackVisible: false,
         headerLargeTitle: false,
         headerTransparent: false,
@@ -494,12 +511,12 @@ export default function TasksScreen() {
       }} />
 
       {tab === 'board' && viewMode === 'board' ? (
-        <View style={[styles.boardScreen, { paddingBottom: bottomContentInset + TouchTarget + Spacing.four }]}>
+        <ScreenEntrance style={styles.screenContent}><View style={[styles.boardScreen, { paddingBottom: bottomContentInset + TouchTarget + Spacing.four }]}>
           {heading}
           {collection}
-        </View>
+        </View></ScreenEntrance>
       ) : (
-        <ScrollView
+        <ScreenEntrance style={styles.screenContent}><ScrollView
           contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset + TouchTarget + Spacing.four }]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="on-drag"
@@ -529,7 +546,7 @@ export default function TasksScreen() {
                 suggestions={suggestions}
               />
             : collection}
-        </ScrollView>
+        </ScrollView></ScreenEntrance>
       )}
 
       {!readOnly && tab === 'board' ? (
@@ -680,4 +697,5 @@ const styles = StyleSheet.create({
   globalHeading: { gap: Spacing.one },
   projectBoardPrompt: { gap: Spacing.two, marginTop: Spacing.two },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
 });

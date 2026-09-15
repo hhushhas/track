@@ -200,7 +200,7 @@ export default function NotificationSettingsScreen() {
 const styles = StyleSheet.create({
   content: { gap: Spacing.four, padding: Spacing.four, paddingBottom: Spacing.six },
   footnote: { lineHeight: 19, paddingHorizontal: Spacing.one },
-  icon: { alignItems: 'center', borderRadius: Radius.pill, height: 48, justifyContent: 'center', width: 48 },
+  icon: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, height: 48, justifyContent: 'center', width: 48 },
   permissionCard: { borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.four },
   screen: { flex: 1 },
 });

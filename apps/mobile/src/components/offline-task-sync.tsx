@@ -33,7 +33,7 @@ export function OfflineTaskSync() {
   }, [trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || network.isConnected !== true || flushing.current) return;
+    if (!trackUserId || network.isConnected !== true || network.isInternetReachable !== true || flushing.current) return;
     flushing.current = true;
     void readOfflineTasks(trackUserId).then(async (items) => {
       for (const item of items) {
@@ -43,12 +43,11 @@ export function OfflineTaskSync() {
           await removeOfflineTask(trackUserId, item.idempotencyKey);
         } catch {
           await markOfflineTaskFailed(trackUserId, item.idempotencyKey, 'sync_failed');
-          break;
         }
       }
       setPending(await readOfflineTasks(trackUserId));
     }).finally(() => { flushing.current = false; });
-  }, [createTask, network.isConnected, retryToken, trackUserId]);
+  }, [createTask, network.isConnected, network.isInternetReachable, retryToken, trackUserId]);
 
   if (!pending.length) return null;
   const hasFailure = pending.some((item) => item.lastError);

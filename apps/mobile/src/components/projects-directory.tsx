@@ -1,5 +1,6 @@
 import type { FunctionReturnType } from 'convex/server';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition, useReducedMotion } from 'react-native-reanimated';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc } from '../../../../convex/_generated/dataModel';
@@ -44,7 +45,7 @@ export function WorkspaceOverview({
         style={({ pressed }) => [styles.identity, pressed && { backgroundColor: theme.backgroundElement }]}
       >
         <View style={[styles.identityMark, { backgroundColor: theme.text }]}>
-          <ThemedText style={{ color: theme.background }} type="mono">{initials(companyLabel)}</ThemedText>
+          <ThemedText style={{ color: theme.background }} type="captionBold">{initials(companyLabel)}</ThemedText>
         </View>
         <View style={styles.identityCopy}>
           <ThemedText numberOfLines={1} type="subtitle">{companyLabel}</ThemedText>
@@ -52,26 +53,10 @@ export function WorkspaceOverview({
         </View>
         <PlatformIcon color={theme.textTertiary} name="chevron-down" size={16} />
       </Pressable>
-      <View style={[styles.overviewDivider, { backgroundColor: theme.hairline }]} />
-      <View style={styles.metrics}> 
-        <Metric icon="project" label="Active Projects" value={activeProjects} />
-        <View style={[styles.metricDivider, { backgroundColor: theme.hairline }]} />
-        <Metric icon="channel" label="Visible Channels" value={visibleChannels} />
-      </View>
-    </View>
-  );
-}
-
-function Metric({ icon, label, value }: { icon: 'channel' | 'project'; label: string; value: number }) {
-  const theme = useTheme();
-  return (
-    <View style={styles.metric}>
-      <View style={[styles.metricIcon, { backgroundColor: theme.backgroundElement }]}>
-        <PlatformIcon color={theme.textSecondary} name={icon} size={16} />
-      </View>
-      <View style={styles.flex}>
-        <ThemedText style={styles.metricValue}>{value}</ThemedText>
-        <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{label}</ThemedText>
+      <View style={[styles.summary, { borderTopColor: theme.hairline }]}>
+        <ThemedText themeColor="textSecondary" type="caption">{activeProjects} active {activeProjects === 1 ? 'Project' : 'Projects'}</ThemedText>
+        <View style={[styles.summaryDot, { backgroundColor: theme.hairline }]} />
+        <ThemedText themeColor="textSecondary" type="caption">{visibleChannels} visible {visibleChannels === 1 ? 'Channel' : 'Channels'}</ThemedText>
       </View>
     </View>
   );
@@ -95,6 +80,7 @@ export function ProjectDirectoryCard({
   onToggle: () => void;
 }) {
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
   const archived = item.membership.status === 'archived';
   const role = archived ? 'Read-only archive' : projectRoleLabel(item.membership.role);
   return (
@@ -120,9 +106,7 @@ export function ProjectDirectoryCard({
             <ThemedText themeColor={archived ? 'textTertiary' : 'textSecondary'} type="captionBold">{role}</ThemedText>
           </View>
           {archived ? <PlatformIcon color={theme.textTertiary} name="archive" size={16} /> : item.unreadCount > 0 ? (
-            <View style={[styles.unread, { backgroundColor: theme.accentSoft }]}>
-              <ThemedText style={{ color: theme.accentStrong }} type="captionBold">{compact(item.unreadCount)} unread</ThemedText>
-            </View>
+            <ThemedText themeColor="accentStrong" type="captionBold">{compact(item.unreadCount)} unread</ThemedText>
           ) : <ThemedText themeColor="textTertiary" type="caption">All read</ThemedText>}
         </View>
         <View style={styles.titleRow}>
@@ -137,7 +121,11 @@ export function ProjectDirectoryCard({
       </Pressable>
 
       {expanded && !archived ? (
-        <View style={[styles.channelList, { borderTopColor: theme.hairline }]}> 
+        <Animated.View
+          entering={reduceMotion ? FadeIn.duration(120) : FadeInDown.duration(200)}
+          exiting={reduceMotion ? FadeOut.duration(100) : FadeOut.duration(150)}
+          layout={reduceMotion ? undefined : LinearTransition.duration(180)}
+          style={[styles.channelList, { borderTopColor: theme.hairline }]}>
           {loadingChannels ? <View accessibilityLabel="Loading Channels" style={[styles.channelSkeleton, { backgroundColor: theme.skeleton }]} /> : channels.length ? channels.map((channel) => (
             <ChannelRow channel={channel} key={channel.group._id} onPress={() => onOpenChannel(channel)} />
           )) : <ThemedText style={styles.emptyChannels} themeColor="textSecondary" type="caption">No Channels are visible for this membership.</ThemedText>}
@@ -145,7 +133,7 @@ export function ProjectDirectoryCard({
             <ThemedText style={{ color: theme.accentStrong }} type="captionBold">Open Project</ThemedText>
             <PlatformIcon color={theme.accentStrong} name="chevron-right" size={15} />
           </Pressable>
-        </View>
+        </Animated.View>
       ) : null}
     </View>
   );
@@ -157,7 +145,7 @@ function ChannelRow({ channel, onPress }: { channel: DirectoryChannel; onPress: 
     <Pressable accessibilityLabel={`${channel.group.name}.${channel.unreadCount ? ` ${channel.unreadCount} unread.` : ''}`} accessibilityRole="button" android_ripple={{ color: theme.backgroundSelected }} onPress={() => { hapticLight(); onPress(); }} style={({ pressed }) => [styles.channel, pressed && { backgroundColor: theme.backgroundElement }]}>
       <View style={[styles.channelIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="channel" size={16} /></View>
       <View style={styles.flex}>
-        <View style={styles.channelTitle}><ThemedText numberOfLines={1} style={styles.flex} type="title">{channel.group.name}</ThemedText>{channel.unreadCount > 0 ? <View style={[styles.channelUnread, { backgroundColor: theme.accentSoft }]}><ThemedText style={{ color: theme.accentStrong }} type="captionBold">{compact(channel.unreadCount)}</ThemedText></View> : null}</View>
+        <View style={styles.channelTitle}><ThemedText numberOfLines={1} style={styles.flex} type="title">{channel.group.name}</ThemedText>{channel.unreadCount > 0 ? <ThemedText themeColor="accentStrong" type="captionBold">{compact(channel.unreadCount)}</ThemedText> : null}</View>
         <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{channel.lastMessage?.body || 'No messages yet'}</ThemedText>
       </View>
     </Pressable>
@@ -174,16 +162,16 @@ function compact(value: number) { return value > 99 ? '99+' : String(value); }
 const styles = StyleSheet.create({
   card: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, boxShadow: '0 2px 8px rgba(0,0,0,0.045)', overflow: 'hidden' }, cardHeader: { gap: Spacing.two, minHeight: 112, padding: Spacing.four },
   channel: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.small, flexDirection: 'row', gap: Spacing.three, minHeight: 60, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two },
-  channelIcon: { alignItems: 'center', borderRadius: Radius.small, height: 32, justifyContent: 'center', width: 32 },
+  channelIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 32, justifyContent: 'center', width: 32 },
   channelList: { borderTopWidth: StyleSheet.hairlineWidth, gap: Spacing.one, padding: Spacing.two }, channelSkeleton: { borderRadius: Radius.small, height: 60 },
-  channelTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two }, channelUnread: { borderRadius: Radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
+  channelTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   companyMeta: { flex: 1, marginLeft: Spacing.one, textAlign: 'right' }, emptyChannels: { minHeight: 52, padding: Spacing.two }, flex: { flex: 1, minWidth: 0 },
   identity: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, flexDirection: 'row', gap: Spacing.three, minHeight: 64, padding: Spacing.four }, identityCopy: { flex: 1, gap: 2, minWidth: 0 },
   identityMark: { alignItems: 'center', borderRadius: Radius.medium, height: 36, justifyContent: 'center', width: 36 },
-  metaRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one }, metric: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
-  metricDivider: { width: StyleSheet.hairlineWidth }, metricIcon: { alignItems: 'center', borderRadius: Radius.small, height: 28, justifyContent: 'center', width: 28 }, metricValue: { fontSize: 22, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 27 },
-  metrics: { flexDirection: 'row', gap: Spacing.four, padding: Spacing.four, paddingTop: Spacing.three }, openProject: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget },
-  overview: { borderCurve: 'continuous', borderRadius: Radius.large, boxShadow: '0 2px 10px rgba(0,0,0,0.045)', overflow: 'hidden' }, overviewDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: Spacing.four },
-  projectGlyph: { alignItems: 'center', borderRadius: Radius.small, height: 28, justifyContent: 'center', width: 28 }, roleLine: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.two }, titleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  topline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' }, unread: { borderRadius: Radius.pill, paddingHorizontal: 7, paddingVertical: 2 },
+  metaRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  openProject: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget },
+  overview: { borderCurve: 'continuous', borderRadius: Radius.large, boxShadow: '0 2px 10px rgba(0,0,0,0.045)', overflow: 'hidden' },
+  projectGlyph: { alignItems: 'center', borderRadius: Radius.medium, height: 28, justifyContent: 'center', width: 28 }, roleLine: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.two }, titleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
+  summary: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, marginHorizontal: Spacing.four, paddingVertical: Spacing.three }, summaryDot: { borderRadius: Radius.pill, height: 4, width: 4 },
+  topline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
 });

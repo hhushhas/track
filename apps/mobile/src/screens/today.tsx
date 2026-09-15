@@ -1,7 +1,7 @@
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { Stack, useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,6 +20,7 @@ import {
 } from '@/components/home-dashboard';
 import { OptionsSheet, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedView } from '@/components/themed-view';
 import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -132,20 +133,20 @@ export default function TodayScreen() {
 
   return <ThemedView style={styles.screen}>
     <Stack.Screen options={{ headerShown: false }} />
-    {loading ? <View style={[styles.loading, { paddingTop: safeArea.top + Spacing.two }]}><SkeletonList count={6} label="Loading your Home dashboard" /></View> : <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset, paddingTop: safeArea.top + Spacing.two }]} contentInsetAdjustmentBehavior="never">
+    {loading ? <ScreenEntrance style={[styles.loading, { paddingTop: safeArea.top + Spacing.two }]}><SkeletonList count={6} label="Loading your Home dashboard" /></ScreenEntrance> : <ScreenEntrance style={styles.screenContent}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset, paddingTop: safeArea.top + Spacing.two }]} contentInsetAdjustmentBehavior="never">
       <HomeGreeting companyLabel={companyLabel} displayName={displayName} onProfile={openProfileSheet} />
       <ConnectivityBanner />
       <HomePulse attentionCount={uniqueAttention.length} companyCount={companyCount} dueTodayCount={myTasks.filter((item) => taskIsDueToday(item.task.dueDate)).length} mentionCount={counts.mentions} openTaskCount={myTasks.length} projectCount={projects.length} />
       <HomeFilterChips filters={filterOptions} onChange={(nextFilter) => { hapticLight(); setFilter(nextFilter); }} selected={filter} />
-      <View style={styles.feed}>
+      <ScreenEntrance key={filter} style={styles.feed}>
         {filteredAttention.length ? <HomeSectionHeading icon="alert-circle" meta="Sorted by urgency" title="Requires Attention" /> : null}
         {filteredAttention.map((item) => <HomeAttentionCard item={item} key={`${item.kind}:${item.id}`} onPress={() => openAttention(item)} />)}
         {filteredTasks.length ? <HomeSectionHeading icon="check-circle" meta={`${filteredTasks.length} active`} title="My Open Tasks" /> : null}
         {filteredTasks.map((item) => <HomeTaskCard assigneeName={displayName} item={item} key={item.task._id} onPress={() => openTask(item)} />)}
         {!filteredAttention.length && !filteredTasks.length ? <EmptyState body={emptyFilterCopy[filter].body} icon="check-circle" title={emptyFilterCopy[filter].title} tone="success" /> : null}
         <HomeQuickAction onPress={() => setSheet('project')} />
-      </View>
-    </ScrollView>}
+      </ScreenEntrance>
+    </ScrollView></ScreenEntrance>}
     <OptionsSheet onClose={() => setSheet(null)} title="Filter Home" visible={sheet === 'filter'}><SheetSection title="Show">{filterOptions.map((option) => <SheetRow icon={option.key === 'all' ? 'list' : option.key === 'mentions' ? 'message' : option.key === 'due' ? 'calendar-today' : option.key === 'assigned' ? 'person' : 'lightbulb-outline'} key={option.key} label={`${option.label}${option.key === 'all' ? '' : ` (${option.count})`}`} onPress={() => { setFilter(option.key); setSheet(null); }} selected={filter === option.key} />)}</SheetSection></OptionsSheet>
     <OptionsSheet onClose={() => setSheet(null)} title="Create task" visible={sheet === 'project'}>
       <SheetNote>Choose the Project that will own this task. The task form opens with that Project&apos;s board and permissions.</SheetNote>
@@ -159,4 +160,5 @@ const styles = StyleSheet.create({
   feed: { gap: Spacing.two },
   loading: { flex: 1 },
   screen: { flex: 1 },
+  screenContent: { flex: 1 },
 });

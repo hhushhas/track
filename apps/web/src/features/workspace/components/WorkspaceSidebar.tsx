@@ -237,16 +237,6 @@ export function WorkspaceSidebar({
           <span className="track-nav-resize-grip"><GripVertical aria-hidden="true" size={14} /></span>
         </div>
         <div className="track-brand">
-          <button
-            aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-            aria-pressed={navCollapsed}
-            className="track-nav-collapse-button"
-            onClick={() => onNavCollapsedChange((isCollapsed) => !isCollapsed)}
-            title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-            type="button"
-          >
-            {navCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-          </button>
           <img
             alt=""
             className="track-brand-mark"
@@ -255,6 +245,16 @@ export function WorkspaceSidebar({
             width={35}
           />
           <span className="track-brand-word">Track</span>
+          <button
+            aria-label={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            aria-pressed={navCollapsed}
+            className="track-nav-collapse-button"
+            onClick={() => onNavCollapsedChange((isCollapsed) => !isCollapsed)}
+            title={navCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            type="button"
+          >
+            {navCollapsed ? <PanelLeftOpen aria-hidden="true" size={14} /> : <PanelLeftClose aria-hidden="true" size={14} />}
+          </button>
           <button
             aria-label="Close navigation"
             className="track-mobile-nav-close"
@@ -274,12 +274,12 @@ export function WorkspaceSidebar({
               disabled={!projectItems.length}
               title={navCollapsed ? activeProject?.project.name ?? 'Select a project' : undefined}
             >
-              <FolderKanban className="track-nav-icon track-project-icon" size={14} />
+              <FolderKanban aria-hidden="true" className="track-nav-icon track-project-icon" size={14} />
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
                 <span className="track-nav-meta">{activeProject ? `${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Independent project'} · ${activeProject.membership.role}` : 'No project selected'}</span>
               </span>
-              <ChevronDown className="track-nav-icon track-project-chevron" size={14} />
+              <ChevronDown aria-hidden="true" className="track-nav-icon track-project-chevron" size={14} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="track-project-switcher-menu" side="right" sideOffset={8}>
               <DropdownMenuGroup>
@@ -307,7 +307,7 @@ export function WorkspaceSidebar({
           </DropdownMenu>
         </div>
 
-        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Back to company</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
+        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 aria-hidden="true" className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Back to company</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
 
         {activeProject ? (
           <div className="track-nav-secondary track-project-navigation">
@@ -344,9 +344,9 @@ export function WorkspaceSidebar({
                         <Icon aria-hidden="true" size={14} strokeWidth={2.1} />
                       </span>
                       <span className="track-nav-copy">
-                        {threadUnreadByGroup.get(group._id) ? <span aria-label={`${threadUnreadByGroup.get(group._id)} unread thread${threadUnreadByGroup.get(group._id) === 1 ? '' : 's'}`} className="track-nav-notification"><Bell aria-hidden="true" size={12} /><span>{threadUnreadByGroup.get(group._id)}</span></span> : null}
                         <span className="track-nav-title"># {group.name}</span>
                       </span>
+                      {threadUnreadByGroup.get(group._id) ? <span aria-label={`${threadUnreadByGroup.get(group._id)} unread thread${threadUnreadByGroup.get(group._id) === 1 ? '' : 's'}`} className="track-nav-notification"><Bell aria-hidden="true" size={12} /><span>{threadUnreadByGroup.get(group._id)}</span></span> : null}
                     </Button>
                   )
                 })}
@@ -383,7 +383,7 @@ export function WorkspaceSidebar({
                   title={navCollapsed ? 'Tasks' : undefined}
                   to="/workspace/projects/$projectId/tasks"
                 >
-                  <ListTodo className="track-nav-icon" size={14} />
+                  <ListTodo aria-hidden="true" className="track-nav-icon" size={14} />
                   <span className="track-nav-copy">
                     <span className="track-nav-title">Tasks</span>
                     <span className="track-nav-meta">Boards, my tasks, inbox</span>

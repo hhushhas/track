@@ -9,7 +9,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build": "echo \"mobile build is handled by EAS\"",
+    "build": "expo export --platform all",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint .",
     "test": "vitest run --config vitest.config.ts --passWithNoTests"

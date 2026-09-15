@@ -14,6 +14,7 @@ import { consumePushResponseId, getPushInstallationId } from '@/lib/push-install
 import { resolvePushAvailability, type PushAvailability } from '@/lib/push-availability';
 import { shouldPresentPush } from '@/lib/push-presentation';
 import { resolvePushHref } from '@/lib/push-routing';
+import { notificationErrorMessage } from '@/lib/user-facing-error';
 
 type NotificationsApi = typeof NotificationsModule;
 
@@ -163,7 +164,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       await registerInstallation({ ...common, token: token.data });
     } catch (failure) {
       if (activeUserRef.current !== userId) return;
-      setError(failure instanceof Error ? failure.message : 'notification_sync_failed');
+      setError(notificationErrorMessage(failure));
     } finally {
       if (activeUserRef.current === userId) setSyncing(false);
     }
@@ -191,7 +192,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
           token: devicePushToken.data,
         });
       })().catch(() => {
-        if (activeUserRef.current === trackUserId) setError('push_token_refresh_failed');
+        if (activeUserRef.current === trackUserId) setError(notificationErrorMessage(new Error('notification_token_refresh_failed')));
       });
     });
     return () => {

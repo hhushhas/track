@@ -7992,6 +7992,8 @@ body {
 
 .track-nav-item,
 .track-nav-item.compact {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   min-height: 30px;
   gap: 9px;
   border: 0;
@@ -8034,9 +8036,23 @@ body {
 }
 
 .track-nav-group-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  justify-self: center;
+}
+
+.track-nav-item > .track-nav-icon {
+  width: 28px;
+  height: 28px;
+  padding: 7px;
+  border-radius: 7px;
+  background: var(--paper-3);
+  justify-self: center;
+}
+
+.track-nav-item.active > .track-nav-icon {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .track-nav-footer {
@@ -8265,6 +8281,15 @@ body {
 .track-rail {
   background: var(--paper-2);
   padding: 10px 14px 18px;
+}
+
+.track-nav-notification {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.track-nav.collapsed .track-nav-notification {
+  display: none;
 }
 
 .track-settings-evidence-grid {

@@ -645,13 +645,16 @@ export function CompanyHubPage({
                     {visibleAttentionItems.length > 0 ? (
                       <ul>
                         {visibleAttentionItems.map((item) => {
+                          const scope = item.companyId
+                            ? `&companyId=${encodeURIComponent(String(item.companyId))}${"membershipId" in item && item.membershipId ? `&membershipId=${encodeURIComponent(String(item.membershipId))}` : ""}`
+                            : "";
                           const href = item.kind === "task"
-                            ? `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=board&task=${encodeURIComponent(item.taskKey)}`
+                            ? `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=board&task=${encodeURIComponent(item.taskKey)}${scope}`
                             : item.kind === "message"
-                              ? `/workspace/company-projects/${encodeURIComponent(String(item.projectId))}?view=channels&groupId=${encodeURIComponent(String(item.groupId))}${item.threadId ? `&threadId=${encodeURIComponent(String(item.threadId))}` : ""}`
+                              ? `/workspace/company-projects/${encodeURIComponent(String(item.projectId))}?view=channels&groupId=${encodeURIComponent(String(item.groupId))}${item.threadId ? `&threadId=${encodeURIComponent(String(item.threadId))}` : ""}${scope}`
                               : item.kind === "invitation"
-                                ? "/workspace/company/settings"
-                                : `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=inbox`
+                                ? `/workspace/company/settings?companyId=${encodeURIComponent(String(item.companyId))}`
+                                : `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=inbox${scope}`
                           return <li key={`${item.kind}-${item.id}`}>
                             <span className={`activity-dot ${item.kind}`} />
                             <a href={href}>

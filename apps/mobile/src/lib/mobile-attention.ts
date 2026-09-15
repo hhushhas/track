@@ -62,6 +62,16 @@ export function attentionSection(item: MobileAttentionItem): AttentionSectionKey
   return 'other';
 }
 
+export function uniqueAttentionIdentities<T extends { id: string; kind: string }>(items: T[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.kind}:${item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function uniqueAttentionItems(items: MobileAttentionItem[]) {
   const seen = new Set<string>();
   return items.filter((item) => {

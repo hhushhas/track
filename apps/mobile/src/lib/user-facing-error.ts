@@ -7,8 +7,12 @@ const AUTH_MESSAGES: Array<[RegExp, string]> = [
 ];
 
 const TASK_MESSAGES: Array<[RegExp, string]> = [
+  [/task_conflict|changed_elsewhere/i, 'This task changed elsewhere. Refresh it and try again.'],
   [/task_access_changed/i, 'Your access changed. Refresh and try again.'],
   [/task_duplicate_decision_required/i, 'Choose whether to add evidence or create a separate task.'],
+  [/task_edit_forbidden|task_update_forbidden/i, 'You are not allowed to make this task change.'],
+  [/task_destination_invalid/i, 'That status is no longer available. Refresh and try again.'],
+  [/task_open_subtasks_confirmation_required/i, 'This task still has open checklist items.'],
   [/not[_ ]allowed|forbidden|unauthori[sz]ed/i, 'You no longer have permission to make this change.'],
   [/revision|conflict/i, 'This task changed elsewhere. Refresh it and try again.'],
   [/network|fetch|offline|timed?\s*out|connection/i, 'Track could not connect. Your changes were not lost; try again when you are online.'],

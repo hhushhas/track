@@ -58,7 +58,8 @@ export function OptionsSheet({ children, onClose, showScrollProgress = false, ti
       // A screen input may still hold the keyboard; the modal is a separate
       // window, so stale keyboard padding would float the sheet mid-screen.
       Keyboard.dismiss();
-      translateY.value = 0;
+      translateY.value = reducedMotion ? 0 : 520;
+      translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 24, stiffness: 260 });
       scrim.value = withTiming(1, { duration: reducedMotion ? 0 : 180 });
     } else {
       scrim.value = 0;
@@ -123,6 +124,8 @@ export function OptionsSheet({ children, onClose, showScrollProgress = false, ti
           <View pointerEvents="box-none" style={[styles.sheetLayer, { paddingTop: insets.top + Spacing.six }]}>
             <Animated.View style={[styles.sheetWrap, sheetStyle]}>
               <ThemedView
+                accessibilityViewIsModal
+                onAccessibilityEscape={onClose}
                 style={[styles.sheet, { borderTopColor: theme.hairline }]}
                 type="backgroundElevated">
                 <GestureDetector gesture={pan}>
