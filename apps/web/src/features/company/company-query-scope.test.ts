@@ -3,6 +3,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 
 import {
   canQueryPendingChannelArchives,
+  canQueryProjectManagement,
   resolveActiveActingCompanyId,
   resolveCompanyAdministrationId,
 } from "./company-query-scope";
@@ -93,6 +94,29 @@ describe("Company query scope", () => {
         ...eligible,
         projectStatus: "archived",
       }),
+    ).toBe(false);
+  });
+
+  it("queries Project management only while the Project is writable", () => {
+    const eligible = {
+      exitStatus: "active",
+      projectMemberRole: "manager",
+      projectMemberStatus: "active",
+      projectStatus: "active",
+    };
+
+    expect(canQueryProjectManagement(eligible)).toBe(true);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectStatus: "proposed" }),
+    ).toBe(true);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectStatus: "archive_pending" }),
+    ).toBe(false);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectStatus: "archived" }),
+    ).toBe(false);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectMemberRole: "member" }),
     ).toBe(false);
   });
 

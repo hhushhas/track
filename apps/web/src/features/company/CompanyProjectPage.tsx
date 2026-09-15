@@ -22,6 +22,7 @@ import {
 } from "./company-project-context";
 import {
   canQueryPendingChannelArchives,
+  canQueryProjectManagement,
   resolveActiveActingCompanyId,
   resolveCompanyAdministrationId,
 } from "./company-query-scope";
@@ -114,10 +115,12 @@ export function CompanyProjectPage({
       : "skip",
   );
   const canReadChannels = exitStatus !== null && exitStatus !== undefined;
-  const canManageActiveProject =
-    exitStatus?.status === "active" &&
-    item?.membership.role === "manager" &&
-    item.membership.status === "active";
+  const canManageActiveProject = canQueryProjectManagement({
+    exitStatus: exitStatus?.status,
+    projectMemberRole: item?.membership.role,
+    projectMemberStatus: item?.membership.status,
+    projectStatus: item?.project.status,
+  });
   const channels = useQuery(
     api.channels.list,
     activeActingCompanyId && canReadChannels

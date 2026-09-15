@@ -51,3 +51,17 @@ export function canQueryPendingChannelArchives(input: {
     input.projectStatus !== "archived"
   );
 }
+
+export function canQueryProjectManagement(input: {
+  exitStatus: string | undefined;
+  projectMemberRole: string | undefined;
+  projectMemberStatus: string | undefined;
+  projectStatus: string | undefined;
+}) {
+  return (
+    input.exitStatus === "active" &&
+    input.projectMemberRole === "manager" &&
+    input.projectMemberStatus === "active" &&
+    (input.projectStatus === "active" || input.projectStatus === "proposed")
+  );
+}
