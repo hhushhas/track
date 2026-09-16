@@ -92,7 +92,7 @@ test('task board route exposes the seeded source-linked task', async ({ page }, 
 test('archived channel renders as a read-only evidence surface', async ({ page }, testInfo) => {
   await signIn(page)
 
-  await page.getByRole('button', { name: 'archived-review', exact: true }).click()
+  await page.getByRole('button', { name: /^archived-review(?:\s|$)/ }).click()
   await expect(page.getByText('Archived evidence remains available for review.', { exact: true })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByPlaceholder(/Message archived-review/)).toHaveCount(0)
   await capture(page, testInfo, 'archived-channel')

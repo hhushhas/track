@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { HomeFilter } from '@/lib/home-feed';
+import { getHomeGreeting } from '@/lib/home-greeting';
 import { attentionAction, attentionContext, attentionTitle, relativeAttentionTime, type MobileAttentionItem } from '@/lib/mobile-attention';
 import { taskDueDisplay, taskPriorityLabel } from '@/lib/task-presentation';
 
@@ -21,8 +22,7 @@ export type HomeTask = {
 export function HomeGreeting({ companyLabel, displayName, onProfile }: { companyLabel: string; displayName: string; onProfile?: () => void }) {
   const theme = useTheme();
   const now = new Date();
-  const hour = now.getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const greeting = getHomeGreeting(now);
   const date = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', weekday: 'long' }).format(now).toUpperCase();
   const firstName = displayName.trim().split(/\s+/)[0] || 'there';
   return <View style={styles.greetingRow}>
