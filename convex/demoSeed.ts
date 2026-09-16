@@ -1,4 +1,5 @@
-import { mutation } from './_generated/server'
+import { internalMutation, mutation } from './_generated/server'
+import { v } from 'convex/values'
 import { createUniqueTaskPublicKey } from './lib/taskData'
 import { getOrCreateDefaultBoard } from './taskBoards'
 
@@ -311,5 +312,53 @@ export const seedLaunchWeek = mutation({
       threadReplyCount: threadReplies.length,
       taskCount: seededTasks.length,
     }
+  },
+})
+
+// Kept for deterministic test fixtures from the earlier demo harness.
+export const seed = internalMutation({
+  args: { email: v.string() },
+  handler: async (ctx, args) => {
+    const normalizedEmail = args.email.trim().toLowerCase()
+    const user = await ctx.db.query('users').withIndex('by_normalized_email', (q) => q.eq('normalizedEmail', normalizedEmail)).unique()
+    if (!user) throw new Error('demo_seed_fixture_missing')
+    const existing = (await ctx.db.query('projects').withIndex('by_created_by', (q) => q.eq('createdBy', user._id)).collect())
+      .find((item) => item.name === 'Track Product Launch')
+    if (existing) {
+      const member = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) => q.eq('projectId', existing._id).eq('userId', user._id)).unique()
+      const company = member?.companyId ? await ctx.db.get(member.companyId) : await ctx.db.query('companies').withIndex('by_handle', (q) => q.eq('normalizedHandle', 'track-demo')).unique()
+      const tasks = await ctx.db.query('tasks').withIndex('by_project_archived', (q) => q.eq('projectId', existing._id).eq('archivedAt', undefined)).collect()
+      if (member && company && tasks.length > 0) return { seeded: false, companyId: company._id, projectId: existing._id, taskCount: tasks.length }
+    }
+    const now = Date.now()
+    const companyId = await ctx.db.insert('companies', {
+      displayName: 'Track Demo Company', normalizedHandle: `track-demo-${user._id}`, status: 'active', revision: 1,
+      createdBy: user._id, createdAt: now, updatedAt: now,
+    })
+    await ctx.db.insert('companyMembers', {
+      companyId, userId: user._id, role: 'owner', status: 'active', userDisplayNameSnapshot: user.displayName,
+      companyDisplayNameSnapshot: 'Track Demo Company', createdAt: now, updatedAt: now,
+    })
+    const projectId = await ctx.db.insert('projects', {
+      name: 'Track Product Launch', description: 'Deterministic demo workspace', accessProfile: 'legacy', origin: 'single_company', status: 'active',
+      participantRevision: 1, revision: 1, createdBy: user._id, createdAt: now, updatedAt: now,
+    })
+    await ctx.db.insert('projectCompanies', { projectId, companyId, term: 1, status: 'active', acceptedBy: user._id, acceptedAt: now, createdAt: now, updatedAt: now })
+    const projectMemberId = await ctx.db.insert('projectMembers', {
+      projectId, userId: user._id, role: 'owner', status: 'active', term: 1, invitedBy: user._id,
+      userDisplayNameSnapshot: user.displayName, createdAt: now, updatedAt: now,
+    })
+    const groupId = await ctx.db.insert('groups', { projectId, kind: 'general', name: 'General', status: 'active', revision: 1, createdBy: user._id, createdAt: now, updatedAt: now })
+    await ctx.db.insert('groupMembers', { projectId, groupId, userId: user._id, projectMemberId, status: 'active', isSteward: true, createdAt: now, updatedAt: now })
+    const board = await getOrCreateDefaultBoard(ctx, { projectId, groupId, projectMemberId, channelName: 'General' })
+    const state = (await ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).first())
+    if (!state) throw new Error('demo_seed_workflow_missing')
+    const taskId = await ctx.db.insert('tasks', {
+      projectId, publicKey: await createUniqueTaskPublicKey(ctx, projectId), boardId: board._id, groupId, workflowStateId: state._id,
+      rank: '0001', title: 'Seeded launch task', description: 'Deterministic task fixture', searchText: 'seeded launch task deterministic task fixture',
+      assigneeProjectMemberId: projectMemberId, priority: 'medium', createdByProjectMemberId: projectMemberId, actingCompanyId: companyId,
+      revision: 1, createIdempotencyKey: 'demo-seed-task-1', createdAt: now, updatedAt: now,
+    })
+    return { seeded: true, companyId, projectId, taskCount: taskId ? 1 : 0 }
   },
 })

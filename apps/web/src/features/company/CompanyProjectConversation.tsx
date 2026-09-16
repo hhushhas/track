@@ -1,12 +1,12 @@
 import type { FunctionReturnType } from "convex/server";
-import { Hash, Plus } from "lucide-react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Hash, MessageSquareText, PanelRightClose, PanelRightOpen, Plus, Settings2 } from "lucide-react";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
-import { ChannelTaskPanel } from "#/features/tasks/ConversationTaskActions";
-import { ChannelThreadBrowser } from "#/features/threads/ChannelThreadBrowser";
+import { CompanyThreadBrowser } from "#/features/threads/CompanyThreadBrowser";
 import type { ConversationComposerReply } from "#/features/workspace/components/ConversationComposer";
 import { ScopedConversationComposer } from "#/features/workspace/components/ScopedConversationComposer";
 import { CompanyConversationTimeline } from "#/features/workspace/components/CompanyConversationTimeline";
@@ -16,6 +16,7 @@ import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
 import { formatCompanyError } from "./company-errors";
 import type { CompanyProjectContext } from "./company-project-context";
 import type { CompanyProjectChannel } from "./company-project-types";
+import type { CompanyProjectContextTab } from "./company-view-state";
 import {
   ProjectSnapshotNotice,
   type ProjectSnapshotState,
@@ -31,6 +32,9 @@ type CompanyProjectConversationProps = {
   actingCompanyId: Id<"companies">;
   activeChannel: CompanyProjectChannel | undefined;
   activeChannelId: Id<"groups"> | null;
+  contextManagement: ReactNode;
+  contextManagementLabel: string;
+  contextTab: CompanyProjectContextTab;
   channelItems: Array<CompanyProjectChannel>;
   channelName: string;
   currentUser: Doc<"users">;
@@ -69,12 +73,16 @@ type CompanyProjectConversationProps = {
   onBusyActionChange: (action: string | null) => void;
   onNotice: (notice: string | null) => void;
   onLoadMoreMessages: (count: number) => void;
+  onContextTabChange: (tab: CompanyProjectContextTab) => void;
 };
 
 export function CompanyProjectConversation({
   actingCompanyId,
   activeChannel,
   activeChannelId,
+  contextManagement,
+  contextManagementLabel,
+  contextTab,
   channelItems,
   channelName,
   currentUser,
@@ -102,7 +110,39 @@ export function CompanyProjectConversation({
   onBusyActionChange,
   onNotice,
   onLoadMoreMessages,
+  onContextTabChange,
 }: CompanyProjectConversationProps) {
+  const [contextRailCollapsed, setContextRailCollapsed] = useState(false);
+  const [channelCreationPending, setChannelCreationPending] = useState(false);
+  const contextToggleRef = useRef<HTMLButtonElement | null>(null);
+  const creatingChannel = channelCreationPending || busyAction === "create-channel";
+  async function submitChannelCreation() {
+    if (channelCreationPending) return;
+    setChannelCreationPending(true);
+    try {
+      await onCreateChannel();
+    } catch (error: unknown) {
+      onNotice(formatCompanyError(error));
+    } finally {
+      setChannelCreationPending(false);
+    }
+  }
+  function setContextRailState(collapsed: boolean) {
+    setContextRailCollapsed(collapsed);
+    requestAnimationFrame(() => contextToggleRef.current?.focus());
+  }
+  const contextTabs: Array<{
+    key: CompanyProjectContextTab;
+    label: string;
+    hint: string;
+  }> = [
+    ...(releaseConfig.threads ? [{ key: "threads" as const, label: "Threads", hint: "Focused discussion" }] : []),
+    { key: "management", label: contextManagementLabel, hint: "Project access and settings" },
+  ];
+  const defaultContextTab: CompanyProjectContextTab = releaseConfig.threads ? "threads" : "management";
+  const activeContextTab = contextTabs.some((tab) => tab.key === contextTab)
+    ? contextTab
+    : defaultContextTab;
   const context: CompanyProjectContext = {
     actingCompanyId,
     projectId,
@@ -147,6 +187,15 @@ export function CompanyProjectConversation({
                       >
                         <Icon aria-hidden="true" size={14} />
                       </span>
+                      {unreadCount > 0 ? (
+                        <span
+                          aria-label={`${unreadCount} unread threads`}
+                          className="company-project-nav-count"
+                          title={`${unreadCount} unread threads`}
+                        >
+                          {unreadCount}
+                        </span>
+                      ) : null}
                       <span className="company-project-nav-copy">
                         <strong>{channel.name}</strong>
                         <small>
@@ -155,14 +204,6 @@ export function CompanyProjectConversation({
                             : "Channel"}
                         </small>
                       </span>
-                      {unreadCount > 0 ? (
-                        <span
-                          aria-label={`${unreadCount} unread threads`}
-                          className="company-project-nav-count"
-                        >
-                          {unreadCount}
-                        </span>
-                      ) : null}
                     </button>
                   );
                 })}
@@ -174,21 +215,22 @@ export function CompanyProjectConversation({
                 className="company-project-nav-channel-create"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void onCreateChannel().catch((error: unknown) => {
-                    onNotice(formatCompanyError(error));
-                  });
+                  void submitChannelCreation();
                 }}
               >
                 <Input
                   aria-label="New Channel name"
+                  autoComplete="off"
+                  disabled={creatingChannel}
+                  name="channelName"
                   onChange={(event) => onChannelNameChange(event.target.value)}
-                  placeholder="New Channel"
+                  placeholder="For example, Product launch…"
                   required
                   value={channelName}
                 />
-                <Button type="submit">
+                <Button disabled={creatingChannel} type="submit">
                   <Plus aria-hidden="true" size={13} />
-                  Create Channel
+                  {creatingChannel ? "Creating…" : "Create Channel"}
                 </Button>
               </form>
             ) : null}
@@ -204,8 +246,9 @@ export function CompanyProjectConversation({
               <Hash aria-hidden="true" size={14} />
             </span>
             <div>
-              <span className="company-eyebrow">Channel</span>
-              <h2>{activeChannel?.name ?? "Select a Channel"}</h2>
+              <span className="company-eyebrow">{item.project.name} / Channel</span>
+              <h1>{activeChannel ? `#${activeChannel.name}` : "Select a Channel"}</h1>
+              <p>{item.project.description || "Project conversation and shared context."}</p>
             </div>
           </div>
           {readOnly ? (
@@ -252,33 +295,107 @@ export function CompanyProjectConversation({
             }}
             onError={(error) => onNotice(formatCompanyError(error))}
             onReplyChange={onReplyChange}
-            onSent={() => onNotice("Saved.")}
+            placeholder={`Message #${activeChannel.name}. Type @ to tag someone`}
             projectId={projectId}
             replyTo={replyToMessage}
             visibleGroups={channelItems}
           />
         ) : null}
-        <aside className="company-project-conversation-rail">
-        {activeChannel && "projectId" in activeChannel && releaseConfig.tasks ? (
-          <ChannelTaskPanel
-            group={activeChannel}
-            identity={{ actingCompanyId, projectMemberId }}
-            variant="rail"
-          />
-        ) : null}
-        {releaseConfig.threads && activeChannelId ? (
-          <ChannelThreadBrowser
-            context={{ actingCompanyId, projectMemberId }}
-            groupId={activeChannelId}
-            projectId={projectId}
-            readOnly={readOnly}
-            timelineMessages={messages ?? []}
-            userId={currentUser._id}
-            variant="rail"
-          />
-        ) : null}
-        </aside>
       </section>
+      <aside
+        aria-label="Project context"
+        className={contextRailCollapsed ? "company-project-context-rail is-collapsed" : "company-project-context-rail"}
+      >
+        {contextRailCollapsed ? (
+          <button
+            aria-controls="company-context-panel"
+            aria-expanded={false}
+            aria-label="Open Project context"
+            className="company-project-context-expand"
+            onClick={() => setContextRailState(false)}
+            ref={contextToggleRef}
+            title="Open Project context"
+            type="button"
+          >
+            <PanelRightOpen aria-hidden="true" size={16} />
+          </button>
+        ) : (
+          <>
+            <header className="company-project-context-heading">
+              <div>
+                <span className="company-eyebrow">Project context</span>
+                <h2>{activeChannel ? `#${activeChannel.name}` : item.project.name}</h2>
+              </div>
+              <button
+                aria-controls="company-context-panel"
+                aria-expanded={true}
+                aria-label="Collapse Project context"
+                className="company-project-context-collapse"
+                onClick={() => setContextRailState(true)}
+                ref={contextToggleRef}
+                title="Collapse Project context"
+                type="button"
+              >
+                <PanelRightClose aria-hidden="true" size={15} />
+              </button>
+              <p>Keep related work beside the conversation.</p>
+            </header>
+        <nav aria-label="Project context sections" aria-orientation="horizontal" className="company-project-context-tabs" role="tablist">
+          {contextTabs.map((tab) => (
+            <button
+              aria-controls="company-context-panel"
+              aria-selected={activeContextTab === tab.key}
+              className={activeContextTab === tab.key ? "active" : ""}
+              id={`company-context-tab-${tab.key}`}
+              key={tab.key}
+              onClick={() => onContextTabChange(tab.key)}
+              onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const currentIndex = contextTabs.findIndex((candidate) => candidate.key === tab.key);
+                const nextIndex = event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? contextTabs.length - 1
+                    : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + contextTabs.length) % contextTabs.length;
+                const nextTab = contextTabs[nextIndex];
+                if (nextTab) {
+                  onContextTabChange(nextTab.key);
+                  document.getElementById(`company-context-tab-${nextTab.key}`)?.focus();
+                }
+              }}
+              role="tab"
+              tabIndex={activeContextTab === tab.key ? 0 : -1}
+              title={tab.hint}
+              type="button"
+            >
+              {tab.key === "threads" ? <MessageSquareText aria-hidden="true" size={14} /> : null}
+              {tab.key === "management" ? <Settings2 aria-hidden="true" size={14} /> : null}
+              <strong>{tab.label}</strong>
+            </button>
+          ))}
+        </nav>
+        <section
+          aria-labelledby={`company-context-tab-${activeContextTab}`}
+          className="company-project-context-panel"
+          id="company-context-panel"
+          role="tabpanel"
+        >
+          {activeContextTab === "threads" && releaseConfig.threads ? (
+            <CompanyThreadBrowser
+              activeChannel={activeChannel}
+              companyName={item.membership.companyDisplayNameSnapshot ?? item.project.clientLabel ?? undefined}
+              context={{ actingCompanyId, projectMemberId }}
+              projectId={projectId}
+              readOnly={readOnly}
+              userId={currentUser._id}
+            />
+          ) : null}
+          {activeContextTab === "management" ? contextManagement : null}
+        </section>
+          </>
+        )}
+      </aside>
     </>
   );
 }

@@ -50,7 +50,7 @@ describe('ConversationComposer assistant retry state', () => {
       />,
     )
 
-    expect(screen.getByRole('textbox', { name: 'Message General' })).toHaveProperty(
+    expect(screen.getByRole('combobox', { name: 'Message General' })).toHaveProperty(
       'disabled',
       true,
     )
@@ -108,7 +108,7 @@ describe('ConversationComposer keyboard behavior', () => {
       />,
     )
 
-    const textbox = screen.getByRole('textbox', { name: 'Message General' })
+    const textbox = screen.getByRole('combobox', { name: 'Message General' })
     fireEvent.compositionStart(textbox)
     fireEvent.keyDown(textbox, { key: 'Enter' })
     expect(onSendMessage).not.toHaveBeenCalled()

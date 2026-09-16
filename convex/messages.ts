@@ -4,6 +4,7 @@ import {
 } from '@track/shared/feature-flags'
 import { paginationOptsValidator } from 'convex/server'
 import { v } from 'convex/values'
+import { parseMentions } from '@track/shared'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import type { Doc, Id } from './_generated/dataModel'
@@ -32,6 +33,7 @@ import {
   assertReplyScope,
   followMentionedThreadMembers,
   requireThreadsEnabled,
+  resolveActorProjectMember,
   threadsEnabled,
   upsertThreadFollower,
 } from './lib/channelThreadPolicy'
@@ -62,6 +64,76 @@ type MessageAttachmentInput = {
 }
 
 const UPLOAD_INTENT_TTL_MS = 15 * 60 * 1000
+const MAX_MESSAGE_ATTACHMENT_BYTES = 100 * 1024 * 1024
+
+async function validateMessageMentions(
+  ctx: MutationCtx,
+  groupId: Id<'groups'>,
+  projectAccessProfile: Doc<'projects'>['accessProfile'],
+  mentions: ReadonlyArray<Id<'users'>>,
+  mentionedProjectMemberIds?: ReadonlyArray<Id<'projectMembers'>>,
+) {
+  const uniqueUserIds = Array.from(new Set(mentions))
+  const uniqueProjectMemberIds = mentionedProjectMemberIds
+    ? Array.from(new Set(mentionedProjectMemberIds))
+    : undefined
+  if (uniqueUserIds.length > 50 || (uniqueProjectMemberIds?.length ?? 0) > 50) {
+    throw new Error('message_mentions_limit_exceeded')
+  }
+  const memberships = await listActiveChannelMemberships(
+    ctx,
+    groupId,
+    resolveProjectAccessProfile(projectAccessProfile),
+  )
+  const allowedUserIds = new Set(memberships.map((membership) => String(membership.userId)))
+  const allowedProjectMemberIds = new Set(memberships.flatMap((membership) =>
+    membership.projectMemberId ? [String(membership.projectMemberId)] : [],
+  ))
+  if (
+    uniqueUserIds.some((userId) => !allowedUserIds.has(String(userId))) ||
+    uniqueProjectMemberIds?.some((memberId) => !allowedProjectMemberIds.has(String(memberId)))
+  ) {
+    throw new Error('message_mention_unavailable')
+  }
+  return { mentions: uniqueUserIds, mentionedProjectMemberIds: uniqueProjectMemberIds }
+}
+
+function mentionHandle(value: string) {
+  return value.trim().toLowerCase().replace(/@/g, '').replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+async function deriveMessageMentions(
+  ctx: MutationCtx,
+  groupId: Id<'groups'>,
+  projectAccessProfile: Doc<'projects'>['accessProfile'],
+  body: string,
+  preferredUserIds: ReadonlyArray<Id<'users'>> = [],
+) {
+  const handles = new Set(parseMentions(body))
+  if (handles.size > 50) throw new Error('message_mentions_limit_exceeded')
+  const memberships = await listActiveChannelMemberships(ctx, groupId, resolveProjectAccessProfile(projectAccessProfile))
+  const matches = await Promise.all(memberships.map(async (membership) => {
+    const user = await ctx.db.get(membership.userId)
+    if (!user) return null
+    const handle = mentionHandle(user.displayName) || mentionHandle(user.email)
+    return handles.has(handle) ? { handle, membership, userId: user._id } : null
+  }))
+  const byHandle = new Map<string, Array<NonNullable<(typeof matches)[number]>>>()
+  for (const match of matches) {
+    if (!match) continue
+    byHandle.set(match.handle, [...(byHandle.get(match.handle) ?? []), match])
+  }
+  const preferred = new Set(preferredUserIds.map(String))
+  const selected = Array.from(byHandle.values()).map((candidates) =>
+    candidates.find((candidate) => preferred.has(String(candidate.userId))) ?? candidates[0],
+  )
+  return {
+    mentions: Array.from(new Set(selected.map((match) => match.userId))),
+    mentionedProjectMemberIds: Array.from(new Set(selected.flatMap((match) =>
+      match.membership.projectMemberId ? [match.membership.projectMemberId] : [],
+    ))),
+  }
+}
 
 function validateUploadMetadata(input: {
   filename: string
@@ -74,6 +146,9 @@ function validateUploadMetadata(input: {
   }
   if (!Number.isInteger(input.size) || input.size < 0) {
     throw new Error('attachment_metadata_invalid')
+  }
+  if (input.size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+    throw new Error('attachment_too_large')
   }
   if (input.durationMs !== undefined && (!Number.isInteger(input.durationMs) || input.durationMs < 0)) {
     throw new Error('attachment_metadata_invalid')
@@ -151,10 +226,7 @@ async function resolveMessageAttachments(
   const seenStorageIds = new Set<string>()
   const resolved: Array<ResolvedMessageAttachment> = []
   for (const attachment of attachments) {
-    if (!Number.isInteger(attachment.size) || attachment.size < 0) {
-      throw new Error('attachment_metadata_invalid')
-    }
-    if (attachment.filename.trim().length === 0) throw new Error('attachment_metadata_invalid')
+    validateUploadMetadata(attachment)
     if (seenIntentIds.has(String(attachment.uploadIntentId))) {
       throw new Error('attachment_intent_duplicate')
     }
@@ -426,6 +498,9 @@ export async function buildMessageDetail(
   const sourceGroup = forwardedFrom && sourceGroupAccess && !normalizedChannelSnapshots
     ? await ctx.db.get(forwardedFrom.sourceGroupId)
     : null
+  const forwardedSourceMessage = forwardedFrom && sourceGroupAccess
+    ? await ctx.db.get(forwardedFrom.sourceMessageId)
+    : null
   const sourceThread = threadsEnabled() && !message.channelThreadId
     ? await ctx.db
         .query('channelThreads')
@@ -476,6 +551,10 @@ export async function buildMessageDetail(
           canOpenSource: sourceGroupAccess,
           sourceGroupId: sourceGroupAccess ? message.forwardedFrom.sourceGroupId : null,
           sourceMessageId: sourceGroupAccess ? message.forwardedFrom.sourceMessageId : null,
+          sourceChannelThreadId:
+            sourceGroupAccess && forwardedSourceMessage?.groupId === message.forwardedFrom.sourceGroupId
+              ? forwardedSourceMessage.channelThreadId ?? null
+              : null,
           sourceGroupName: sourceGroupSnapshot?.name ?? sourceGroup?.name ?? null,
         }
       : null,
@@ -703,6 +782,55 @@ export const listPage = query({
   },
 })
 
+export const edit = mutation({
+  args: { messageId: v.id('messages'), actorId: v.id('users'), actingCompanyId: v.optional(v.id('companies')), projectMemberId: v.optional(v.id('projectMembers')), body: v.string() },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId)
+    if (!message) throw new Error('message_not_found')
+    const access = await authorizeScopedRequest(ctx, { projectId: message.projectId, groupId: message.groupId, claimedUserId: args.actorId, actingCompanyId: args.actingCompanyId, projectMemberId: args.projectMemberId }, 'writeChannel')
+    const member = await resolveActorProjectMember(ctx, message.projectId, args.actorId, access.companyAccess?.projectMember)
+    if (message.authorProjectMemberId ? message.authorProjectMemberId !== member._id : message.authorId !== args.actorId) throw new Error('message_edit_forbidden')
+    if (message.channelThreadId) {
+      requireThreadsEnabled()
+      const thread = await ctx.db.get(message.channelThreadId)
+      if (!thread || thread.projectId !== message.projectId || thread.groupId !== message.groupId) throw new Error('thread_access_changed')
+      if (thread.status !== 'active') throw new Error('thread_archived')
+    }
+    const body = args.body.trim()
+    if (!body && message.attachmentIds.length === 0) throw new Error('message_body_required')
+    if (body.length > 10_000) throw new Error('message_body_too_long')
+    const mentionState = await deriveMessageMentions(ctx, message.groupId, access.project.accessProfile, body, message.mentions)
+    const mentionsUnchanged = mentionState.mentions.length === message.mentions.length && mentionState.mentions.every((userId) => message.mentions.includes(userId))
+    const currentProjectMemberIds = message.mentionedProjectMemberIds ?? []
+    const nextProjectMemberIds = mentionState.mentionedProjectMemberIds ?? []
+    const projectMemberMentionsUnchanged = nextProjectMemberIds.length === currentProjectMemberIds.length && nextProjectMemberIds.every((memberId) => currentProjectMemberIds.includes(memberId))
+    if (body === message.body && mentionsUnchanged && projectMemberMentionsUnchanged) return message._id
+    const now = Date.now()
+    await ctx.db.patch(message._id, {
+      body,
+      mentions: mentionState.mentions,
+      mentionedProjectMemberIds: mentionState.mentionedProjectMemberIds,
+      notificationPreview: body.slice(0, 180),
+      revision: (message.revision ?? 1) + 1,
+      editedAt: now,
+    })
+    await appendAuditEvent(ctx, {
+      projectId: message.projectId,
+      groupId: message.groupId,
+      channelThreadId: message.channelThreadId,
+      actorId: args.actorId,
+      actorProjectMemberId: member._id,
+      actingCompanyId: access.companyAccess?.company._id,
+      entityType: 'message',
+      entityId: message._id,
+      action: 'message.edited',
+      before: { bodyPreview: message.body.slice(0, 180), revision: message.revision ?? 1 },
+      after: { bodyPreview: body.slice(0, 180), revision: (message.revision ?? 1) + 1 },
+    })
+    return message._id
+  },
+})
+
 export const send = mutation({
   args: {
     projectId: v.id('projects'),
@@ -720,6 +848,9 @@ export const send = mutation({
     attachments: v.optional(v.array(messageAttachment)),
   },
   handler: async (ctx, args) => {
+    const body = args.body.trim()
+    if (!body && !(args.attachments?.length)) throw new Error('message_body_required')
+    if (body.length > 10_000) throw new Error('message_body_too_long')
     const access = await authorizeScopedRequest(ctx, {
       projectId: args.projectId,
       groupId: args.groupId,
@@ -787,6 +918,13 @@ export const send = mutation({
       throws: true,
     })
     await assertReplyScope(ctx, args.replyToMessageId, args)
+    const mentionState = await validateMessageMentions(
+      ctx,
+      args.groupId,
+      access.project.accessProfile,
+      args.mentions ?? [],
+      args.mentionedProjectMemberIds,
+    )
     const attachments = args.attachments ?? []
     const resolvedAttachments = await resolveMessageAttachments(ctx, attachments, uploadScope)
     const channelSequence = await allocateChannelSequence(ctx, group)
@@ -799,9 +937,9 @@ export const send = mutation({
       channelThreadId: args.channelThreadId,
       channelSequence,
       idempotencyKey: args.idempotencyKey,
-      body: args.body,
-      mentions: args.mentions ?? [],
-      mentionedProjectMemberIds: args.mentionedProjectMemberIds,
+      body,
+      mentions: mentionState.mentions,
+      mentionedProjectMemberIds: mentionState.mentionedProjectMemberIds,
       attachmentIds: [],
       replyToMessageId: args.replyToMessageId,
       notificationPreview: args.notificationPreview,
@@ -883,8 +1021,8 @@ export const send = mutation({
       await followMentionedThreadMembers(
         ctx,
         channelThread,
-        args.mentions ?? [],
-        args.mentionedProjectMemberIds,
+        mentionState.mentions,
+        mentionState.mentionedProjectMemberIds,
       )
       await markThreadAuthorRead(ctx, channelThread, projectMember, args.authorId, channelSequence, access.companyAccess?.company._id)
     }
@@ -900,8 +1038,8 @@ export const send = mutation({
       entityId: messageId,
       action: 'message.sent',
       after: {
-        bodyPreview: args.body.slice(0, 180),
-        mentionCount: args.mentions?.length ?? 0,
+        bodyPreview: body.slice(0, 180),
+        mentionCount: mentionState.mentions.length,
         replyToMessageId: args.replyToMessageId,
         channelSequence,
         channelThreadId: args.channelThreadId,

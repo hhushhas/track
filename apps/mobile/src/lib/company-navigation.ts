@@ -16,6 +16,10 @@ export function projectChannelsHref(projectId: Id<'projects'>, context: Represen
   return `/groups?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}` as Href;
 }
 
+export function projectOverviewHref(projectId: Id<'projects'>, context: RepresentedProjectContext | null) {
+  return `/project?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}` as Href;
+}
+
 export function channelHref(
   projectId: Id<'projects'>,
   groupId: Id<'groups'>,

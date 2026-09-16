@@ -1,7 +1,13 @@
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { SymbolView } from 'expo-symbols';
-import type { SFSymbol } from 'expo-symbols';
-import { Platform } from 'react-native';
+import medium from 'expo-symbols/androidWeights/medium';
+import regular from 'expo-symbols/androidWeights/regular';
+import semibold from 'expo-symbols/androidWeights/semiBold';
+import {
+  SymbolView,
+  type AndroidSymbol,
+  type AnimationSpec,
+  type SFSymbol,
+  type SymbolWeight,
+} from 'expo-symbols';
 
 export type IconName =
   | 'account-circle'
@@ -16,12 +22,13 @@ export type IconName =
   | 'arrow-up'
   | 'bell-outline'
   | 'bell-off-outline'
-  | 'briefcase-outline'
+  | 'bookmark'
   | 'calendar'
   | 'calendar-clock'
   | 'calendar-remove'
   | 'calendar-today'
   | 'camera'
+  | 'channel'
   | 'check'
   | 'check-all'
   | 'check-box'
@@ -43,6 +50,7 @@ export type IconName =
   | 'earth'
   | 'edit'
   | 'email-outline'
+  | 'evidence'
   | 'eye'
   | 'eye-off'
   | 'file-archive'
@@ -52,17 +60,18 @@ export type IconName =
   | 'file-pdf'
   | 'filter'
   | 'flag'
-  | 'folder-outline'
-  | 'forum-outline'
   | 'forward'
+  | 'home'
   | 'image'
   | 'image-multiple'
   | 'inbox'
   | 'information-outline'
+  | 'lightbulb-outline'
   | 'link'
   | 'list'
   | 'logout'
   | 'magnify-plus'
+  | 'message'
   | 'microphone-outline'
   | 'moon-waning-crescent'
   | 'office-building'
@@ -72,6 +81,7 @@ export type IconName =
   | 'person'
   | 'play'
   | 'plus'
+  | 'project'
   | 'refresh'
   | 'reply'
   | 'search'
@@ -84,224 +94,160 @@ export type IconName =
   | 'stop'
   | 'subtask'
   | 'tag'
+  | 'task'
   | 'theme-light-dark'
+  | 'thread'
   | 'trash-can-outline'
+  | 'tune'
   | 'view-board'
   | 'view-column'
   | 'waveform'
   | 'white-balance-sunny';
 
-const SF_MAP: Partial<Record<IconName, SFSymbol>> = {
-  'account-circle': 'person.crop.circle',
-  'account-edit-outline': 'person.crop.circle',
-  'account-group': 'person.2',
-  'alert-circle': 'exclamationmark.circle',
-  'apple': 'apple.logo',
-  'archive': 'archivebox',
-  'archive-restore': 'arrow.up.bin',
-  'arrow-down': 'arrow.down',
-  'arrow-left': 'arrow.left',
-  'arrow-up': 'arrow.up',
-  'bell-outline': 'bell',
-  'bell-off-outline': 'bell.slash',
-  'briefcase-outline': 'briefcase',
-  'calendar': 'calendar',
-  'calendar-clock': 'calendar.badge.clock',
-  'calendar-remove': 'calendar.badge.minus',
-  'calendar-today': 'calendar',
-  'camera': 'camera',
-  'check': 'checkmark',
-  'check-box': 'checkmark.square.fill',
-  'check-box-outline': 'square',
-  'check-circle': 'checkmark.circle.fill',
-  'chevron-down': 'chevron.down',
-  'chevron-left': 'chevron.left',
-  'chevron-right': 'chevron.right',
-  'chevron-up': 'chevron.up',
-  'circle-outline': 'circle',
-  'clock-outline': 'clock',
-  'close': 'xmark',
-  'cloud-off': 'icloud.slash',
-  'content-copy': 'doc.on.doc',
-  'dots-horizontal': 'ellipsis',
-  'dots-vertical': 'ellipsis',
-  'download': 'arrow.down.circle',
-  'drag-handle': 'line.3.horizontal',
-  'earth': 'globe',
-  'edit': 'pencil',
-  'email-outline': 'envelope',
-  'eye': 'eye',
-  'eye-off': 'eye.slash',
-  'file-archive': 'doc.zipper',
-  'file-document-outline': 'doc.text',
-  'file-excel': 'tablecells',
-  'file-music': 'music.note',
-  'file-pdf': 'doc.richtext',
-  'filter': 'line.3.horizontal.decrease',
-  'flag': 'flag',
-  'folder-outline': 'folder',
-  'forum-outline': 'bubble.left.and.bubble.right',
-  'forward': 'arrowshape.turn.up.right',
-  'image': 'photo',
-  'image-multiple': 'photo.on.rectangle',
-  'inbox': 'tray',
-  'information-outline': 'info.circle',
-  'link': 'link',
-  'list': 'list.bullet',
-  'logout': 'rectangle.portrait.and.arrow.right',
-  'magnify-plus': 'plus.magnifyingglass',
-  'microphone-outline': 'mic',
-  'moon-waning-crescent': 'moon',
-  'office-building': 'building.2',
-  'open-in-new': 'arrow.up.forward.square',
-  'paperclip': 'paperclip',
-  'pause': 'pause.fill',
-  'person': 'person',
-  'play': 'play.fill',
-  'plus': 'plus',
-  'refresh': 'arrow.clockwise',
-  'reply': 'arrowshape.turn.up.left',
-  'search': 'magnifyingglass',
-  'selector': 'chevron.up.chevron.down',
-  'send': 'paperplane.fill',
-  'shield-check': 'checkmark.shield',
-  'shield-lock-outline': 'lock.shield',
-  'sort': 'arrow.up.arrow.down',
-  'star': 'star',
-  'stop': 'stop.fill',
-  'subtask': 'arrow.turn.down.right',
-  'tag': 'tag',
-  'theme-light-dark': 'circle.lefthalf.filled',
-  'trash-can-outline': 'trash',
-  'view-board': 'square.grid.2x2',
-  'view-column': 'rectangle.split.3x1',
-  'waveform': 'waveform',
-  'white-balance-sunny': 'sun.max',
+type SymbolDefinition = {
+  android: AndroidSymbol;
+  androidFilled?: AndroidSymbol;
+  ios: SFSymbol;
+  iosFilled?: SFSymbol;
 };
 
-// Android Material Icons mapping for a more native Android feel
-const ANDROID_MAP: Partial<Record<IconName, React.ComponentProps<typeof MaterialIcons>['name']>> = {
-  'account-circle': 'account-circle',
-  'account-edit-outline': 'person-outline',
-  'account-group': 'group',
-  'alert-circle': 'error-outline',
-  'apple': 'apple',
-  'archive': 'archive',
-  'archive-restore': 'unarchive',
-  'arrow-down': 'arrow-downward',
-  'arrow-left': 'arrow-back',
-  'arrow-up': 'arrow-upward',
-  'bell-outline': 'notifications-none',
-  'bell-off-outline': 'notifications-off',
-  'briefcase-outline': 'work-outline',
-  'calendar': 'event',
-  'calendar-clock': 'schedule',
-  'calendar-remove': 'event-busy',
-  'calendar-today': 'today',
-  'camera': 'camera-alt',
-  'check': 'check',
-  'check-all': 'done-all',
-  'check-box': 'check-box',
-  'check-box-outline': 'check-box-outline-blank',
-  'check-circle': 'check-circle',
-  'chevron-down': 'keyboard-arrow-down',
-  'chevron-left': 'chevron-left',
-  'chevron-right': 'chevron-right',
-  'chevron-up': 'keyboard-arrow-up',
-  'circle-outline': 'radio-button-unchecked',
-  'clock-outline': 'access-time',
-  'close': 'close',
-  'cloud-off': 'cloud-off',
-  'content-copy': 'content-copy',
-  'dots-horizontal': 'more-horiz',
-  'dots-vertical': 'more-vert',
-  'download': 'download',
-  'drag-handle': 'drag-indicator',
-  'earth': 'public',
-  'edit': 'edit',
-  'email-outline': 'mail-outline',
-  'eye': 'visibility',
-  'eye-off': 'visibility-off',
-  'file-archive': 'folder-zip',
-  'file-document-outline': 'description',
-  'file-excel': 'table-chart',
-  'file-music': 'audiotrack',
-  'file-pdf': 'picture-as-pdf',
-  'filter': 'filter-list',
-  'flag': 'flag',
-  'folder-outline': 'folder-open',
-  'forum-outline': 'forum',
-  'forward': 'forward',
-  'image': 'image',
-  'image-multiple': 'photo-library',
-  'inbox': 'inbox',
-  'information-outline': 'info-outline',
-  'link': 'link',
-  'list': 'view-list',
-  'logout': 'logout',
-  'magnify-plus': 'zoom-in',
-  'microphone-outline': 'mic-none',
-  'moon-waning-crescent': 'nightlight',
-  'office-building': 'business',
-  'open-in-new': 'open-in-new',
-  'paperclip': 'attach-file',
-  'pause': 'pause',
-  'person': 'person-outline',
-  'play': 'play-arrow',
-  'plus': 'add',
-  'refresh': 'refresh',
-  'reply': 'reply',
-  'search': 'search',
-  'selector': 'unfold-more',
-  'send': 'send',
-  'shield-check': 'verified-user',
-  'shield-lock-outline': 'security',
-  'sort': 'sort',
-  'star': 'star',
-  'stop': 'stop',
-  'subtask': 'subdirectory-arrow-right',
-  'tag': 'label',
-  'theme-light-dark': 'brightness-medium',
-  'trash-can-outline': 'delete-outline',
-  'view-board': 'dashboard',
-  'view-column': 'view-column',
-  'waveform': 'graphic-eq',
-  'white-balance-sunny': 'wb-sunny',
+const SYMBOLS: Record<IconName, SymbolDefinition> = {
+  'account-circle': { android: 'account_circle', ios: 'person.crop.circle', iosFilled: 'person.crop.circle.fill' },
+  'account-edit-outline': { android: 'manage_accounts', ios: 'person.crop.circle.badge.checkmark' },
+  'account-group': { android: 'group', ios: 'person.2', iosFilled: 'person.2.fill' },
+  'alert-circle': { android: 'error', ios: 'exclamationmark.circle', iosFilled: 'exclamationmark.circle.fill' },
+  apple: { android: 'phone_iphone', ios: 'apple.logo' },
+  archive: { android: 'archive', ios: 'archivebox', iosFilled: 'archivebox.fill' },
+  'archive-restore': { android: 'unarchive', ios: 'arrow.up.bin' },
+  'arrow-down': { android: 'arrow_downward', ios: 'arrow.down' },
+  'arrow-left': { android: 'arrow_back', ios: 'arrow.left' },
+  'arrow-up': { android: 'arrow_upward', ios: 'arrow.up' },
+  'bell-outline': { android: 'notifications', ios: 'bell', iosFilled: 'bell.fill' },
+  'bell-off-outline': { android: 'notifications_off', ios: 'bell.slash', iosFilled: 'bell.slash.fill' },
+  bookmark: { android: 'bookmark_border', androidFilled: 'bookmark', ios: 'bookmark', iosFilled: 'bookmark.fill' },
+  calendar: { android: 'calendar_month', ios: 'calendar' },
+  'calendar-clock': { android: 'event_upcoming', ios: 'calendar.badge.clock' },
+  'calendar-remove': { android: 'event_busy', ios: 'calendar.badge.minus' },
+  'calendar-today': { android: 'today', ios: 'calendar' },
+  camera: { android: 'photo_camera', ios: 'camera', iosFilled: 'camera.fill' },
+  channel: { android: 'tag', ios: 'number' },
+  check: { android: 'check', ios: 'checkmark' },
+  'check-all': { android: 'done_all', ios: 'checkmark.circle', iosFilled: 'checkmark.circle.fill' },
+  'check-box': { android: 'check_box', ios: 'checkmark.square.fill' },
+  'check-box-outline': { android: 'check_box_outline_blank', ios: 'square' },
+  'check-circle': { android: 'check_circle', ios: 'checkmark.circle', iosFilled: 'checkmark.circle.fill' },
+  'chevron-down': { android: 'expand_more', ios: 'chevron.down' },
+  'chevron-left': { android: 'chevron_left', ios: 'chevron.left' },
+  'chevron-right': { android: 'chevron_right', ios: 'chevron.right' },
+  'chevron-up': { android: 'expand_less', ios: 'chevron.up' },
+  'circle-outline': { android: 'circle', ios: 'circle' },
+  'clock-outline': { android: 'schedule', ios: 'clock', iosFilled: 'clock.fill' },
+  close: { android: 'close', ios: 'xmark' },
+  'cloud-off': { android: 'cloud_off', ios: 'icloud.slash' },
+  'content-copy': { android: 'content_copy', ios: 'doc.on.doc' },
+  'dots-horizontal': { android: 'more_horiz', ios: 'ellipsis' },
+  'dots-vertical': { android: 'more_vert', ios: 'ellipsis' },
+  download: { android: 'download', ios: 'arrow.down.circle', iosFilled: 'arrow.down.circle.fill' },
+  'drag-handle': { android: 'drag_handle', ios: 'line.3.horizontal' },
+  earth: { android: 'public', ios: 'globe' },
+  edit: { android: 'edit', ios: 'pencil' },
+  'email-outline': { android: 'mail', ios: 'envelope', iosFilled: 'envelope.fill' },
+  evidence: { android: 'find_in_page', ios: 'doc.text.magnifyingglass' },
+  eye: { android: 'visibility', ios: 'eye', iosFilled: 'eye.fill' },
+  'eye-off': { android: 'visibility_off', ios: 'eye.slash', iosFilled: 'eye.slash.fill' },
+  'file-archive': { android: 'folder_zip', ios: 'doc.zipper' },
+  'file-document-outline': { android: 'description', ios: 'doc.text', iosFilled: 'doc.text.fill' },
+  'file-excel': { android: 'table_view', ios: 'tablecells', iosFilled: 'tablecells.fill' },
+  'file-music': { android: 'audio_file', ios: 'music.note' },
+  'file-pdf': { android: 'picture_as_pdf', ios: 'doc.richtext', iosFilled: 'doc.richtext.fill' },
+  filter: { android: 'filter_list', ios: 'line.3.horizontal.decrease' },
+  flag: { android: 'flag', ios: 'flag', iosFilled: 'flag.fill' },
+  forward: { android: 'forward', ios: 'arrowshape.turn.up.right', iosFilled: 'arrowshape.turn.up.right.fill' },
+  home: { android: 'home', androidFilled: 'home_filled', ios: 'house', iosFilled: 'house.fill' },
+  image: { android: 'image', ios: 'photo', iosFilled: 'photo.fill' },
+  'image-multiple': { android: 'photo_library', ios: 'photo.on.rectangle', iosFilled: 'photo.fill.on.rectangle.fill' },
+  inbox: { android: 'inbox', ios: 'tray', iosFilled: 'tray.full.fill' },
+  'information-outline': { android: 'info', ios: 'info.circle', iosFilled: 'info.circle.fill' },
+  'lightbulb-outline': { android: 'lightbulb', ios: 'lightbulb', iosFilled: 'lightbulb.fill' },
+  link: { android: 'link', ios: 'link' },
+  list: { android: 'format_list_bulleted', ios: 'list.bullet' },
+  logout: { android: 'logout', ios: 'rectangle.portrait.and.arrow.right' },
+  'magnify-plus': { android: 'zoom_in', ios: 'plus.magnifyingglass' },
+  message: { android: 'chat_bubble_outline', androidFilled: 'chat_bubble', ios: 'bubble.left', iosFilled: 'bubble.left.fill' },
+  'microphone-outline': { android: 'mic', ios: 'mic', iosFilled: 'mic.fill' },
+  'moon-waning-crescent': { android: 'dark_mode', ios: 'moon', iosFilled: 'moon.fill' },
+  'office-building': { android: 'domain', ios: 'building.2', iosFilled: 'building.2.fill' },
+  'open-in-new': { android: 'open_in_new', ios: 'arrow.up.forward.square' },
+  paperclip: { android: 'attach_file', ios: 'paperclip' },
+  pause: { android: 'pause', ios: 'pause.fill' },
+  person: { android: 'person', ios: 'person', iosFilled: 'person.fill' },
+  play: { android: 'play_arrow', ios: 'play.fill' },
+  plus: { android: 'add', ios: 'plus' },
+  project: { android: 'folder_open', androidFilled: 'folder', ios: 'folder', iosFilled: 'folder.fill' },
+  refresh: { android: 'refresh', ios: 'arrow.clockwise' },
+  reply: { android: 'reply', ios: 'arrowshape.turn.up.left', iosFilled: 'arrowshape.turn.up.left.fill' },
+  search: { android: 'search', ios: 'magnifyingglass' },
+  selector: { android: 'unfold_more', ios: 'chevron.up.chevron.down' },
+  send: { android: 'send', ios: 'paperplane', iosFilled: 'paperplane.fill' },
+  'shield-check': { android: 'verified_user', ios: 'checkmark.shield', iosFilled: 'checkmark.shield.fill' },
+  'shield-lock-outline': { android: 'admin_panel_settings', ios: 'lock.shield', iosFilled: 'lock.shield.fill' },
+  sort: { android: 'sort', ios: 'arrow.up.arrow.down' },
+  star: { android: 'star', ios: 'star', iosFilled: 'star.fill' },
+  stop: { android: 'stop', ios: 'stop.fill' },
+  subtask: { android: 'subdirectory_arrow_right', ios: 'arrow.turn.down.right' },
+  tag: { android: 'sell', ios: 'tag', iosFilled: 'tag.fill' },
+  task: { android: 'task_alt', androidFilled: 'check_circle', ios: 'checkmark.circle', iosFilled: 'checkmark.circle.fill' },
+  'theme-light-dark': { android: 'contrast', ios: 'circle.lefthalf.filled' },
+  thread: { android: 'forum', ios: 'bubble.left.and.bubble.right', iosFilled: 'bubble.left.and.bubble.right.fill' },
+  'trash-can-outline': { android: 'delete', ios: 'trash', iosFilled: 'trash.fill' },
+  tune: { android: 'tune', ios: 'slider.horizontal.3' },
+  'view-board': { android: 'view_kanban', ios: 'square.grid.2x2', iosFilled: 'square.grid.2x2.fill' },
+  'view-column': { android: 'view_column', ios: 'rectangle.split.3x1' },
+  waveform: { android: 'graphic_eq', ios: 'waveform' },
+  'white-balance-sunny': { android: 'light_mode', ios: 'sun.max', iosFilled: 'sun.max.fill' },
 };
 
-// Ionicons fallback for names without a platform-native mapping
-const ION_MAP: Partial<Record<IconName, React.ComponentProps<typeof Ionicons>['name']>> = {
-  'check-all': 'checkmark-done',
-  'moon-waning-crescent': 'moon-outline',
-  'theme-light-dark': 'contrast-outline',
-  'waveform': 'pulse-outline',
-  'white-balance-sunny': 'sunny-outline',
+type IconWeight = Extract<SymbolWeight, 'regular' | 'medium' | 'semibold'>;
+
+type Props = {
+  animationSpec?: AnimationSpec;
+  color: string;
+  name: IconName;
+  size: number;
+  variant?: 'outline' | 'filled';
+  weight?: IconWeight;
 };
 
-type Props = { name: IconName; size: number; color: string };
+const ANDROID_WEIGHTS = { medium, regular, semibold } as const;
 
-export function PlatformIcon({ name, size, color }: Props) {
-  if (Platform.OS === 'ios') {
-    const sf = SF_MAP[name];
-    if (sf) {
-      return (
-        <SymbolView
-          name={sf}
-          size={size}
-          tintColor={color}
-          style={{ width: size, height: size }}
-        />
-      );
-    }
-    const ion = ION_MAP[name];
-    if (ion) return <Ionicons color={color} name={ion} size={size} />;
-    return <Ionicons color={color} name="help-circle-outline" size={size} />;
-  }
+/** Platform-native semantic symbol. Outline is default; fill marks active state. */
+export function PlatformIcon({
+  animationSpec,
+  color,
+  name,
+  size,
+  variant = 'outline',
+  weight = 'regular',
+}: Props) {
+  const symbol = SYMBOLS[name];
+  const filled = variant === 'filled';
 
-  // Android: prefer Material Icons, then Ionicons
-  const mat = ANDROID_MAP[name];
-  if (mat) return <MaterialIcons color={color} name={mat} size={size} />;
-  const ion = ION_MAP[name];
-  if (ion) return <Ionicons color={color} name={ion} size={size} />;
-  return <Ionicons color={color} name="help-circle-outline" size={size} />;
+  return (
+    <SymbolView
+      accessibilityElementsHidden
+      accessible={false}
+      animationSpec={animationSpec}
+      name={{
+        android: filled ? symbol.androidFilled ?? symbol.android : symbol.android,
+        ios: filled ? symbol.iosFilled ?? symbol.ios : symbol.ios,
+        web: filled ? symbol.androidFilled ?? symbol.android : symbol.android,
+      }}
+      resizeMode="scaleAspectFit"
+      size={size}
+      style={{ height: size, width: size }}
+      tintColor={color}
+      type="monochrome"
+      weight={{ android: ANDROID_WEIGHTS[weight], ios: weight }}
+    />
+  );
 }

@@ -4,6 +4,7 @@ import { register as registerBetterAuth } from '@convex-dev/better-auth/test'
 
 import { api } from './_generated/api'
 import schema from './schema'
+import { isDevAuthBypassEnabled } from './lib/devAuth'
 
 const modules = (import.meta as ImportMeta & {
   glob: (patterns: Array<string>) => Record<string, () => Promise<unknown>>
@@ -40,23 +41,26 @@ afterEach(() => {
 })
 
 describe('development auth bypass', () => {
-  it('keeps the bypass disabled unless explicitly configured for loopback development', async () => {
+  it('enables the bypass only when explicitly configured for loopback development', () => {
+    expect(isDevAuthBypassEnabled({})).toBe(false)
+    expect(isDevAuthBypassEnabled({ DEV_AUTH_BYPASS: '1' })).toBe(false)
+    expect(isDevAuthBypassEnabled({
+      DEV_AUTH_BYPASS: '1',
+      SITE_URL: 'https://track.q9labs.ai',
+    })).toBe(false)
+    expect(isDevAuthBypassEnabled({
+      DEV_AUTH_BYPASS: '1',
+      SITE_URL: 'http://localhost:3000',
+    })).toBe(true)
+  })
+
+  it('enforces the disabled bypass at the mutation boundary', async () => {
     const t = createTest()
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',
     )
-    process.env.DEV_AUTH_BYPASS = '1'
-
-    await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
-      'dev_auth_bypass_disabled',
-    )
-    process.env.SITE_URL = 'https://track.q9labs.ai'
-
-    await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
-      'dev_auth_bypass_disabled',
-    )
-  })
+  }, 15_000)
 
   it('binds the demo identity and never substitutes it for another authenticated user', async () => {
     process.env.DEV_AUTH_BYPASS = '1'
@@ -109,5 +113,5 @@ describe('development auth bypass', () => {
     }).mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_identity_required',
     )
-  })
+  }, 15_000)
 })

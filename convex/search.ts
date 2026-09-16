@@ -14,9 +14,13 @@ const searchScope = v.union(
   v.literal('messages'),
   v.literal('files'),
   v.literal('groups'),
+  v.literal('people'),
+  v.literal('projects'),
   v.literal('tasks'),
   v.literal('threads'),
 )
+
+const searchThreadStatus = v.union(v.literal('active'), v.literal('archived'))
 
 function compactPreview(value: string, fallback = 'No preview available') {
   const preview = value.replace(/\s+/g, ' ').trim()
@@ -57,6 +61,7 @@ export const project = query({
     userId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     projectMemberId: v.optional(v.id('projectMembers')),
+    threadStatus: v.optional(searchThreadStatus),
   },
   handler: async (ctx, args) => {
     const access = await authorizeScopedRequest(ctx, {
@@ -75,17 +80,49 @@ export const project = query({
         files: [],
         groups: [],
         messages: [],
+        people: [],
+        projects: [],
         tasks: [],
         threads: [],
       }
     }
 
     if (access.companyAccess?.entitlement?.snapshotOperationId) {
-      return await searchNormalizedProjectArchive(ctx, {
+      const archivedResults = await searchNormalizedProjectArchive(ctx, {
         entitlement: access.companyAccess.entitlement,
         projectMember: access.companyAccess.projectMember,
-        term, filter, limit: perSectionLimit,
+        term, filter, limit: perSectionLimit, threadStatus: args.threadStatus,
       })
+      const normalizedTerm = term.toLowerCase()
+      const people = enabled(filter, 'people')
+        ? (access.companyAccess.entitlement.memberSnapshots ?? [])
+            .filter((snapshot) => snapshot.user.displayName.toLowerCase().includes(normalizedTerm))
+            .slice(0, perSectionLimit)
+            .map((snapshot) => ({
+              createdAt: access.companyAccess!.entitlement!.exitAt,
+              groupName: 'Project member',
+              id: String(snapshot.membership._id),
+              kind: 'person' as const,
+              preview: snapshot.membership.role,
+              subtitle: 'Former Project member',
+              title: snapshot.user.displayName,
+            }))
+        : []
+      const archivedProject = await ctx.db.get(args.projectId)
+      const projects = enabled(filter, 'projects') && archivedProject
+        && [archivedProject.name, archivedProject.clientLabel, archivedProject.description]
+          .some((value) => value?.toLowerCase().includes(normalizedTerm))
+        ? [{
+            createdAt: archivedProject.createdAt,
+            groupName: 'Project',
+            id: String(archivedProject._id),
+            kind: 'project' as const,
+            preview: compactPreview(archivedProject.description ?? '', 'Project workspace'),
+            subtitle: archivedProject.status === 'archived' ? 'Archived Project' : 'Project',
+            title: archivedProject.name,
+          }]
+        : []
+      return { ...archivedResults, people, projects }
     }
 
     const groupMemberships = access.companyAccess
@@ -311,9 +348,10 @@ export const project = query({
       && visibleGroupIdValues.length > 0
       ? await ctx.db
           .query('channelThreads')
-          .withSearchIndex('search_name_by_project', (q) =>
-            q.search('name', term).eq('projectId', args.projectId),
-          )
+          .withSearchIndex('search_name_by_project', (q) => {
+            const projectQuery = q.search('name', term).eq('projectId', args.projectId)
+            return args.threadStatus ? projectQuery.eq('status', args.threadStatus) : projectQuery
+          })
           .filter((q) => q.or(
             ...visibleGroupIdValues.map((groupId) => q.eq(q.field('groupId'), groupId)),
           ))
@@ -321,7 +359,10 @@ export const project = query({
       : []
     const archivedThreadMatches = cutoff && threadsEnabled() && enabled(filter, 'threads')
       ? threadSnapshotValues
-          .filter((thread) => thread.name.toLowerCase().includes(term.toLowerCase()))
+          .filter((thread) =>
+            (!args.threadStatus || thread.status === args.threadStatus) &&
+            thread.name.toLowerCase().includes(term.toLowerCase()),
+          )
           .slice(0, perSectionLimit)
       : []
     const threadResults = (await Promise.all(
@@ -362,10 +403,52 @@ export const project = query({
           }))
     ).filter((result) => result !== null)
 
+    const normalizedTerm = term.toLowerCase()
+    const activeProject = await ctx.db.get(args.projectId)
+    const projects = enabled(filter, 'projects') && activeProject
+      && [activeProject.name, activeProject.clientLabel, activeProject.description]
+        .some((value) => value?.toLowerCase().includes(normalizedTerm))
+      ? [{
+          createdAt: activeProject.createdAt,
+          groupName: 'Project',
+          id: String(activeProject._id),
+          kind: 'project' as const,
+          preview: compactPreview(activeProject.description ?? '', 'Project workspace'),
+          subtitle: activeProject.status === 'archived' ? 'Archived Project' : 'Project',
+          title: activeProject.name,
+        }]
+      : []
+    const memberRows = enabled(filter, 'people')
+      ? await ctx.db.query('projectMembers')
+          .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
+          .take(1_001)
+      : []
+    if (memberRows.length > 1_000) throw new Error('project_member_search_limit_exceeded')
+    const people = (await Promise.all(memberRows
+      .filter((membership) => membership.status !== 'removed')
+      .map(async (membership) => {
+        const user = await ctx.db.get(membership.userId)
+        const displayName = user?.displayName ?? membership.userDisplayNameSnapshot ?? 'Project member'
+        if (!displayName.toLowerCase().includes(normalizedTerm)) return null
+        return {
+          createdAt: membership.createdAt,
+          groupName: 'Project member',
+          id: String(membership._id),
+          kind: 'person' as const,
+          preview: membership.role,
+          subtitle: membership.companyDisplayNameSnapshot ?? 'Project member',
+          title: displayName,
+        }
+      })))
+      .filter((result) => result !== null)
+      .slice(0, perSectionLimit)
+
     return {
       files: fileResults,
       groups: groupResults,
       messages: messageResults,
+      people,
+      projects,
       tasks: taskResults,
       threads: threadResults,
     }

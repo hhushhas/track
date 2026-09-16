@@ -5,6 +5,19 @@ export type RepresentedThreadContext = {
   projectMemberId: Id<'projectMembers'>
 }
 
+export function companyProjectChannelHref(
+  projectId: Id<'projects'>,
+  groupId: Id<'groups'>,
+  context: RepresentedThreadContext,
+) {
+  return `/workspace/company-projects/${encodeURIComponent(projectId)}?${new URLSearchParams({
+    companyId: context.actingCompanyId,
+    groupId,
+    membershipId: context.projectMemberId,
+    view: 'channels',
+  })}`
+}
+
 export function threadHref(
   projectId: Id<'projects'>,
   groupId: Id<'groups'>,

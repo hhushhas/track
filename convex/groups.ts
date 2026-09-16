@@ -1,6 +1,7 @@
 import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { v } from 'convex/values'
 import { isActiveChannelMembership } from '@track/shared/channel-membership'
+import type { Id } from './_generated/dataModel'
 
 import { mutation, query } from './_generated/server'
 import { appendAuditEvent } from './lib/audit'
@@ -60,11 +61,14 @@ export const create = mutation({
     assertActorMatches(actor, args.userId)
     await requireProjectManager(ctx, args.projectId, args.userId)
     await assertProjectSnapshotWritable(ctx, args.projectId)
+    const name = args.name.trim()
+    if (!name) throw new Error('group_name_required')
+    if (name.length > 80) throw new Error('group_name_too_long')
     const now = Date.now()
     const groupId = await ctx.db.insert('groups', {
       projectId: args.projectId,
       kind: 'custom',
-      name: args.name,
+      name,
       status: 'active',
       revision: 1,
       createdBy: args.userId,
@@ -86,7 +90,7 @@ export const create = mutation({
       entityType: 'group',
       entityId: groupId,
       action: 'group.created',
-      after: { name: args.name },
+      after: { name },
     })
     return groupId
   },
@@ -148,6 +152,8 @@ export const remove = mutation({
       typingIndicators,
       assistantStreams,
       groupNotificationSettings,
+      groupReadStates,
+      uploadIntents,
       invitations,
       channelThreads,
     ] = await Promise.all([
@@ -156,7 +162,9 @@ export const remove = mutation({
       ctx.db.query('attachments').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('typingIndicators').withIndex('by_group_updated_at', (q) => q.eq('groupId', args.groupId)).collect(),
       ctx.db.query('assistantStreams').withIndex('by_group_created_at', (q) => q.eq('groupId', args.groupId)).collect(),
-      ctx.db.query('groupNotificationSettings').collect(),
+      ctx.db.query('groupNotificationSettings').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('groupReadStates').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
+      ctx.db.query('messageUploadIntents').withIndex('by_group', (q) => q.eq('groupId', args.groupId)).collect(),
       Promise.all(
         (['pending', 'accepted', 'revoked', 'expired'] as const).map((status) =>
           ctx.db.query('invitations').withIndex('by_project_status', (q) => q.eq('projectId', args.projectId).eq('status', status)).collect(),
@@ -189,13 +197,18 @@ export const remove = mutation({
       before: { name: group.name, kind: group.kind },
     })
 
-    await Promise.all(attachments.map((attachment) => ctx.storage.delete(attachment.storageId).catch(() => undefined)))
+    await Promise.all(attachments.flatMap((attachment) => [attachment.storageId, attachment.previewStorageId]
+      .filter((storageId): storageId is Id<'_storage'> => Boolean(storageId))
+      .map((storageId) => ctx.storage.delete(storageId).catch(() => undefined))))
     for (const message of messages) await invalidateTaskEvidence(ctx, { messageId: message._id })
     for (const attachment of attachments) await invalidateTaskEvidence(ctx, { attachmentId: attachment._id })
     for (const stream of assistantStreams) await invalidateTaskEvidence(ctx, { assistantStreamId: stream._id })
 
-    for (const row of groupNotificationSettings) {
-      if (row.groupId === args.groupId) await ctx.db.delete(row._id)
+    for (const row of groupNotificationSettings) await ctx.db.delete(row._id)
+    for (const row of groupReadStates) await ctx.db.delete(row._id)
+    for (const row of uploadIntents) {
+      if (row.storageId) await ctx.storage.delete(row.storageId).catch(() => undefined)
+      await ctx.db.delete(row._id)
     }
     for (const row of invitations) {
       if (row.groupId === args.groupId) await ctx.db.delete(row._id)
@@ -239,6 +252,7 @@ export const addProjectMember = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         role: args.role,
+        status: 'active',
         updatedAt: now,
       })
     } else {
@@ -304,6 +318,8 @@ export const addGroupMember = mutation({
     assertActorMatches(actor, args.actorId)
     await requireProjectManager(ctx, args.projectId, args.actorId)
     await assertProjectSnapshotWritable(ctx, args.projectId)
+    const group = await ctx.db.get(args.groupId)
+    if (!group || group.projectId !== args.projectId) throw new Error('group_not_found')
     await requireProjectMember(ctx, args.projectId, args.userId)
     const now = Date.now()
     const existing = await ctx.db

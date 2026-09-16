@@ -1,5 +1,6 @@
 import type { FunctionReturnType } from "convex/server";
 import { useMemo } from "react";
+import { Building2, CircleDot, ShieldCheck, UserRoundCheck } from "lucide-react";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -135,17 +136,37 @@ export function CompanyProjectAdministration({
   );
   const channelId = activeChannelId;
   const snapshotError = formatSnapshotError(exitStatus?.snapshotError);
+  const recoverySteps = [
+    ["capture", "Capture members and Channels", exitStatus?.snapshotStatus === "capturing" || exitStatus?.snapshotStatus === "pending"],
+    ["verify", "Verify the snapshot", exitStatus?.snapshotStatus === "verified"],
+    ["finalize", "Finalize access removal", exitStatus?.snapshotStatus === "verified"],
+  ] as const;
 
   return (
-    <aside className="company-project-admin">
+    <section aria-label="Project participation" className="company-project-admin">
       <div className="company-admin-heading">
         <div>
-          <h2>Project management</h2>
+          <span className="company-admin-kicker">Company collaboration</span>
+          <h2>Project participation</h2>
+          <p className="company-admin-description">
+            See who owns the Project, who represents your Company, and where
+            Channel access begins.
+          </p>
           <span>
             {activeChannel ? `#${activeChannel.name} · ` : ""}
             {item.project.name}
           </span>
         </div>
+      </div>
+      <div className="company-participation-summary" aria-label="Participation summary">
+        <div><Building2 aria-hidden="true" size={15} /><span>Company role<strong>{item.participationRole === "unassigned_legacy" ? "Ownership pending" : item.participationRole}</strong></span></div>
+        <div><ShieldCheck aria-hidden="true" size={15} /><span>Your access<strong>{item.membership.role}</strong></span></div>
+        <div><CircleDot aria-hidden="true" size={15} /><span>Project state<strong>{item.project.status}</strong></span></div>
+        <div><UserRoundCheck aria-hidden="true" size={15} /><span>Company members<strong>{projectMembers?.filter(({ membership }) => membership.status === "active").length ?? 0} active</strong></span></div>
+      </div>
+      <div className="company-access-boundary-note">
+        <ShieldCheck aria-hidden="true" size={15} />
+        <p><strong>Access boundary</strong><span>Project membership does not expose every Channel. A Channel steward must grant participation separately.</span></p>
       </div>
       {canConfirmProjectOwnership ? (
         <ProjectOwnershipPanel
@@ -171,7 +192,7 @@ export function CompanyProjectAdministration({
         </div>
       ) : null}
       <details className="company-project-management" open>
-        <summary>Project and Channel administration</summary>
+        <summary>Participation and lifecycle controls</summary>
         <div className="company-project-management-content">
           {canInvitePartnerCompanies ? (
             collaborationOptions === undefined ? (
@@ -401,6 +422,14 @@ export function CompanyProjectAdministration({
                     : "Preparing Company exit snapshot"}
               </strong>
               <p>Snapshot: {exitStatus.snapshotStatus ?? "pending"}</p>
+              <ol aria-label="Company exit progress" className="company-recovery-steps">
+                {recoverySteps.map(([key, label, active]) => (
+                  <li className={active ? "active" : exitStatus.snapshotStatus === "failed" && key === "capture" ? "failed" : ""} key={key}>
+                    <span aria-hidden="true" />
+                    <strong>{label}</strong>
+                  </li>
+                ))}
+              </ol>
               {exitStatus.snapshotStatus !== "verified" ? (
                 <p>
                   Project conversation remains available read-only while the
@@ -430,6 +459,6 @@ export function CompanyProjectAdministration({
           ) : null}
         </div>
       </details>
-    </aside>
+    </section>
   );
 }

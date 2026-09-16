@@ -1,20 +1,45 @@
 import Constants from 'expo-constants';
-import * as Notifications from 'expo-notifications';
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useAction, useConvexAuth, useMutation, useQuery } from 'convex/react';
 import { useRouter, type Href } from 'expo-router';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
+import type * as NotificationsModule from 'expo-notifications';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { useAppToast } from '@/components/app-toast';
+import type { IconName } from '@/components/platform-icon';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { consumePushResponseId, getPushInstallationId } from '@/lib/push-installation';
+import { resolvePushAvailability, type PushAvailability } from '@/lib/push-availability';
 import { shouldPresentPush } from '@/lib/push-presentation';
 import { resolvePushHref } from '@/lib/push-routing';
+import { notificationErrorMessage } from '@/lib/user-facing-error';
+
+type NotificationsApi = typeof NotificationsModule;
+
+// Expo Go can still resolve this file, but SDK 53+ intentionally throws when
+// remote-notification APIs are loaded there. Keep the module out of the
+// evaluation path so Expo Router can load the layout and the rest of the app.
+const isExpoGo = Constants.appOwnership === 'expo';
+let notificationsApi: NotificationsApi | null = null;
+
+function getNotificationsApi(): NotificationsApi | null {
+  if (isExpoGo) return null;
+  if (!notificationsApi) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    notificationsApi = require('expo-notifications') as NotificationsApi;
+  }
+  return notificationsApi;
+}
 
 export type PushPermissionState = 'not_determined' | 'denied' | 'granted' | 'provisional';
+const availability: PushAvailability = resolvePushAvailability({
+  expoGo: isExpoGo,
+});
 
 type PushContextValue = {
+  availability: PushAvailability;
   error: string | null;
   installationId: string | null;
   permissionState: PushPermissionState;
@@ -28,11 +53,11 @@ type PushContextValue = {
 
 const PushContext = createContext<PushContextValue | null>(null);
 
-function permissionState(permission: Notifications.NotificationPermissionsStatus): PushPermissionState {
-  if (permission.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL ||
-    permission.ios?.status === Notifications.IosAuthorizationStatus.EPHEMERAL) return 'provisional';
+function permissionState(permission: NotificationsModule.NotificationPermissionsStatus): PushPermissionState {
+  if (notificationsApi && (permission.ios?.status === notificationsApi.IosAuthorizationStatus.PROVISIONAL ||
+    permission.ios?.status === notificationsApi.IosAuthorizationStatus.EPHEMERAL)) return 'provisional';
   if (permission.granted) return 'granted';
-  if (permission.status === Notifications.PermissionStatus.DENIED) return 'denied';
+  if (notificationsApi && permission.status === notificationsApi.PermissionStatus.DENIED) return 'denied';
   return 'not_determined';
 }
 
@@ -42,18 +67,28 @@ function pushEnvironment(): 'development' | 'preview' | 'production' {
   return __DEV__ ? 'development' : 'production';
 }
 
-Notifications.setNotificationHandler({
+const notifications = getNotificationsApi();
+notifications?.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data;
     const present = shouldPresentPush(data);
+    const foreground = AppState.currentState === 'active';
     return {
-      shouldPlaySound: present && data?.soundEnabled !== 'false',
+      shouldPlaySound: present && !foreground && data?.soundEnabled !== 'false',
       shouldSetBadge: present && notification.request.content.badge !== null,
-      shouldShowBanner: present,
+      shouldShowBanner: present && !foreground,
       shouldShowList: present,
     };
   },
 });
+
+function pushIcon(eventKind: unknown): IconName {
+  if (typeof eventKind !== 'string') return 'bell-outline';
+  if (eventKind.includes('task')) return 'task';
+  if (eventKind.includes('mention') || eventKind.includes('reply') || eventKind.includes('message')) return 'message';
+  if (eventKind.includes('invitation')) return 'account-group';
+  return 'bell-outline';
+}
 
 export function usePushNotifications() {
   const context = useContext(PushContext);
@@ -63,7 +98,9 @@ export function usePushNotifications() {
 
 export function PushNotificationBridge({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { trackUserId } = useTrackUser();
+  const { showToast } = useAppToast();
+  const { isSigningOut, trackUserId } = useTrackUser();
+  const { isAuthenticated: convexAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
   const registerInstallation = useMutation(api.notifications.registerNativeInstallation);
   const reportPermission = useMutation(api.notifications.reportNativePermission);
   const recordOpen = useMutation(api.notifications.recordPushOpen);
@@ -72,40 +109,47 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
   const [localPermission, setLocalPermission] = useState<PushPermissionState>('not_determined');
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeUserRef = useRef<Id<'users'> | null>(null);
+  activeUserRef.current = isSigningOut || convexAuthLoading || !convexAuthenticated ? null : trackUserId;
   const serverStatus = useQuery(
     api.notifications.getNativeStatus,
-    trackUserId ? { userId: trackUserId, installationId: installationId ?? undefined } : 'skip',
+    trackUserId && !isSigningOut && !convexAuthLoading && convexAuthenticated
+      ? { userId: trackUserId, installationId: installationId ?? undefined }
+      : 'skip',
   );
 
   const sync = useCallback(async (request: boolean) => {
-    if (!trackUserId || Platform.OS === 'web') return;
+    const push = getNotificationsApi();
+    if (availability !== 'available' || !trackUserId || isSigningOut || convexAuthLoading || !convexAuthenticated || Platform.OS === 'web' || !push) return;
+    const userId = trackUserId;
     setSyncing(true);
     setError(null);
     try {
       const id = installationId ?? await getPushInstallationId();
       setInstallationId(id);
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('track-default', {
-          importance: Notifications.AndroidImportance.HIGH,
+        await push.setNotificationChannelAsync('track-default', {
+          importance: push.AndroidImportance.HIGH,
           name: 'Track notifications',
           // Omitted sound = system default; a string names a bundled custom file.
           vibrationPattern: [0, 180, 80, 180],
         });
-        await Notifications.setNotificationChannelAsync('track-silent', {
-          importance: Notifications.AndroidImportance.HIGH,
+        await push.setNotificationChannelAsync('track-silent', {
+          importance: push.AndroidImportance.HIGH,
           name: 'Track notifications (silent)',
           sound: null,
           vibrationPattern: [0, 180, 80, 180],
         });
       }
-      const existing = await Notifications.getPermissionsAsync();
+      const existing = await push.getPermissionsAsync();
       const permission = request && !existing.granted && existing.canAskAgain
-        ? await Notifications.requestPermissionsAsync()
+        ? await push.requestPermissionsAsync()
         : existing;
       const state = permissionState(permission);
       setLocalPermission(state);
+      if (activeUserRef.current !== userId) return;
       const common = {
-        userId: trackUserId,
+        userId,
         installationId: id,
         platform: Platform.OS === 'ios' ? 'ios' as const : 'android' as const,
         environment: pushEnvironment(),
@@ -116,25 +160,28 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
         await reportPermission(common);
         return;
       }
-      const token = await Notifications.getDevicePushTokenAsync();
+      const token = await push.getDevicePushTokenAsync();
       await registerInstallation({ ...common, token: token.data });
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'notification_sync_failed');
+      if (activeUserRef.current !== userId) return;
+      setError(notificationErrorMessage(failure));
     } finally {
-      setSyncing(false);
+      if (activeUserRef.current === userId) setSyncing(false);
     }
-  }, [installationId, registerInstallation, reportPermission, trackUserId]);
+  }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, registerInstallation, reportPermission, trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || Platform.OS === 'web') return;
+    const push = getNotificationsApi();
+    if (!trackUserId || isSigningOut || convexAuthLoading || !convexAuthenticated || Platform.OS === 'web' || !push) return;
     void sync(false);
     const appState = AppState.addEventListener('change', (state) => {
       if (state === 'active') void sync(false);
     });
-    const tokenSubscription = Notifications.addPushTokenListener((devicePushToken) => {
+    const tokenSubscription = push.addPushTokenListener((devicePushToken) => {
       if (!installationId) return;
       void (async () => {
-        const permission = await Notifications.getPermissionsAsync();
+        const permission = await push.getPermissionsAsync();
+        if (activeUserRef.current !== trackUserId) return;
         await registerInstallation({
           userId: trackUserId,
           installationId,
@@ -144,17 +191,20 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
           appVersion: Constants.expoConfig?.version,
           token: devicePushToken.data,
         });
-      })().catch(() => setError('push_token_refresh_failed'));
+      })().catch(() => {
+        if (activeUserRef.current === trackUserId) setError(notificationErrorMessage(new Error('notification_token_refresh_failed')));
+      });
     });
     return () => {
       appState.remove();
       tokenSubscription.remove();
     };
-  }, [installationId, registerInstallation, sync, trackUserId]);
+  }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, registerInstallation, sync, trackUserId]);
 
   useEffect(() => {
-    if (!trackUserId || Platform.OS === 'web') return;
-    async function open(response: Notifications.NotificationResponse | null) {
+    const push = getNotificationsApi();
+    if (!trackUserId || isSigningOut || convexAuthLoading || !convexAuthenticated || Platform.OS === 'web' || !push) return;
+    async function open(response: NotificationsModule.NotificationResponse | null) {
       if (!response) return;
       const responseId = response.notification.request.identifier;
       if (!await consumePushResponseId(responseId)) return;
@@ -162,6 +212,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       const href = resolvePushHref(data);
       if (!href) return;
       const id = installationId ?? await getPushInstallationId();
+      if (activeUserRef.current !== trackUserId) return;
       const intentId = data?.intentId;
       if (typeof intentId === 'string') {
         await recordOpen({
@@ -171,12 +222,33 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       }
       router.push(href as Href);
     }
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { void open(response); });
-    void Notifications.getLastNotificationResponseAsync().then(open);
+    const subscription = push.addNotificationResponseReceivedListener((response) => { void open(response); });
+    void push.getLastNotificationResponseAsync().then(open);
     return () => subscription.remove();
-  }, [installationId, recordOpen, router, trackUserId]);
+  }, [convexAuthLoading, convexAuthenticated, installationId, isSigningOut, recordOpen, router, trackUserId]);
+
+  useEffect(() => {
+    const push = getNotificationsApi();
+    if (!push) return;
+    const subscription = push.addNotificationReceivedListener((notification) => {
+      if (AppState.currentState !== 'active') return;
+      const data = notification.request.content.data;
+      if (data?.eventKind === 'test') return;
+      const title = notification.request.content.title?.trim();
+      const message = notification.request.content.body?.trim();
+      if (!title && !message) return;
+      showToast({
+        icon: pushIcon(data?.eventKind),
+        message,
+        title: title || 'Track activity',
+        tone: 'info',
+      });
+    });
+    return () => subscription.remove();
+  }, [showToast]);
 
   const value = useMemo<PushContextValue>(() => ({
+    availability,
     error,
     installationId,
     permissionState: serverStatus?.permissionState ?? localPermission,
@@ -185,10 +257,12 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
     refresh: () => sync(false),
     openDeviceSettings: () => Linking.openSettings(),
     sendTestNotification: async () => {
-      if (!trackUserId) return null;
+      if (!trackUserId || convexAuthLoading || !convexAuthenticated) return null;
       if (serverStatus?.registered) return await sendTest({ userId: trackUserId });
       if (__DEV__ && (localPermission === 'granted' || localPermission === 'provisional')) {
-        await Notifications.scheduleNotificationAsync({
+        const push = getNotificationsApi();
+        if (!push) return null;
+        await push.scheduleNotificationAsync({
           content: {
             title: 'Track simulator test',
             body: 'Local notification presentation and routing are connected.',
@@ -201,7 +275,7 @@ export function PushNotificationBridge({ children }: { children: React.ReactNode
       return await sendTest({ userId: trackUserId });
     },
     syncing,
-  }), [error, installationId, localPermission, sendTest, serverStatus, sync, syncing, trackUserId]);
+  }), [convexAuthLoading, convexAuthenticated, error, installationId, localPermission, sendTest, serverStatus, sync, syncing, trackUserId]);
 
   return <PushContext.Provider value={value}>{children}</PushContext.Provider>;
 }

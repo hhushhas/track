@@ -9,6 +9,8 @@ export const Colors = {
     backgroundElement: '#f3f1ed',
     backgroundSelected: '#ebe8e2',
     backgroundElevated: '#ffffff',
+    navigationGlass: 'rgba(255,255,255,0.58)',
+    navigationSelectionGlass: 'rgba(254,243,199,0.74)',
     textSecondary: '#6b655c',
     textTertiary: '#8b857a',
     hairline: '#e3dfd7',
@@ -32,6 +34,8 @@ export const Colors = {
     backgroundElement: '#292522',
     backgroundSelected: '#3a3631',
     backgroundElevated: '#232019',
+    navigationGlass: 'rgba(35,32,25,0.68)',
+    navigationSelectionGlass: 'rgba(74,56,0,0.72)',
     textSecondary: '#c9c3b8',
     textTertiary: '#9a9488',
     hairline: '#3a3631',
@@ -127,12 +131,14 @@ export const Typography = {
   caption: {
     fontFamily: Fonts?.sans,
     fontSize: 12,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 16,
     fontWeight: '400' as const,
   },
   captionBold: {
     fontFamily: Fonts?.sans,
     fontSize: 12,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 16,
     fontWeight: '600' as const,
   },
@@ -140,6 +146,7 @@ export const Typography = {
   metadata: {
     fontFamily: Fonts?.mono,
     fontSize: 11,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 15,
     fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
     letterSpacing: 0.3,
@@ -147,6 +154,7 @@ export const Typography = {
   metadataLabel: {
     fontFamily: Fonts?.mono,
     fontSize: 10.5,
+    fontVariant: ['tabular-nums'] as const,
     lineHeight: 14,
     fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
     letterSpacing: 0.6,
@@ -171,10 +179,22 @@ export const Radius = {
   pill: 999,
 } as const;
 
-/** Caps Dynamic Type growth so dense chat and task layouts stay intact. */
-export const MaxFontScale = 1.3;
+/** Supports the plan's 200% large-text gate while keeping a finite layout contract. */
+export const MaxFontScale = 2;
 
 export const TouchTarget = Platform.select({ ios: 44, android: 48 }) ?? 44;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 72 }) ?? 0;
+/** Shared visual icon sizes. The control owns the touch target around them. */
+export const IconSize = {
+  small: 16,
+  medium: 20,
+  large: 24,
+} as const;
+
+/**
+ * Space reserved below scrollable content for the floating app navigation.
+ * The navigation owns the device safe-area inset; screens only need this
+ * stable content reserve so the last row never hides behind the bar.
+ */
+export const BottomTabInset = 64;
 export const MaxContentWidth = 800;

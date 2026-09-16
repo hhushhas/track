@@ -16,6 +16,32 @@ import {
 } from './lib/companyPolicy'
 import { removeTaskMemberFromScope } from './lib/taskLifecycle'
 
+const channelNameMaxLength = 80
+
+function canonicalizeChannelName(value: string) {
+  return value.trim().replace(/^#+\s*/, '').replace(/\s+/g, '-').toLowerCase()
+}
+
+function normalizeChannelName(value: string) {
+  const name = canonicalizeChannelName(value)
+  if (!name) throw new Error('channel_name_required')
+  if (name.length > channelNameMaxLength) throw new Error('channel_name_too_long')
+  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(name)) throw new Error('channel_name_invalid')
+  return name
+}
+
+async function assertUniqueChannelName(
+  ctx: MutationCtx,
+  projectId: Id<'projects'>,
+  name: string,
+  except?: Id<'groups'>,
+) {
+  const groups = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', projectId)).collect()
+  if (groups.some((group) => group._id !== except && canonicalizeChannelName(group.name) === name)) {
+    throw new Error('channel_name_unavailable')
+  }
+}
+
 async function activeChannelParticipantIds(ctx: MutationCtx, groupId: Id<'groups'>) {
   const memberships = await ctx.db.query('groupMembers')
     .withIndex('by_group', (q) => q.eq('groupId', groupId))
@@ -102,6 +128,20 @@ export const list = query({
   },
 })
 
+export const update = mutation({
+  args: { projectId: v.id('projects'), groupId: v.id('groups'), actingCompanyId: v.id('companies'), projectMemberId: v.id('projectMembers'), name: v.string() },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await resolveCompanyProjectAccess(ctx, actor, args)
+    if (!access.capabilities.canStewardChannel) throw new Error('channel_steward_required')
+    if (!access.group || access.group._id !== args.groupId || access.group.status !== 'active') throw new Error('channel_unavailable')
+    const name = normalizeChannelName(args.name)
+    await assertUniqueChannelName(ctx, args.projectId, name, args.groupId)
+    await ctx.db.patch(args.groupId, { name, revision: (access.group.revision ?? 0) + 1, updatedAt: Date.now() })
+    return args.groupId
+  },
+})
+
 export const create = mutation({
   args: {
     projectId: v.id('projects'),
@@ -114,9 +154,10 @@ export const create = mutation({
     requireCompanyModelEnabled()
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireCompanyProjectManager(ctx, actor, args)
+    if (access.project.status !== 'active' && access.project.status !== 'proposed') throw new Error('project_manager_required')
     await assertProjectSnapshotWritable(ctx, args.projectId)
-    const name = args.name.trim()
-    if (!name) throw new Error('channel_name_required')
+    const name = normalizeChannelName(args.name)
+    await assertUniqueChannelName(ctx, access.project._id, name)
     const memberIds = Array.from(new Set([access.projectMember._id, ...args.ownCompanyMemberIds]))
     const members = await Promise.all(memberIds.map(async (id) => await ctx.db.get(id)))
     if (members.some((member) =>
@@ -346,8 +387,9 @@ export const updateOwnCompanyMember = mutation({
     actingCompanyId: v.id('companies'),
     projectMemberId: v.id('projectMembers'),
     targetProjectMemberId: v.id('projectMembers'),
-    active: v.boolean(),
-    steward: v.boolean(),
+    active: v.optional(v.boolean()),
+    status: v.optional(v.union(v.literal('active'), v.literal('removed'), v.literal('suspended'))),
+    steward: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     requireCompanyModelEnabled()
@@ -365,7 +407,10 @@ export const updateOwnCompanyMember = mutation({
         q.eq('groupId', args.groupId).eq('projectMemberId', target._id),
       )
       .unique()
-    if (membership?.isSteward && (!args.active || !args.steward)) {
+    const active = args.active ?? (args.status === undefined
+      ? membership?.status === 'active'
+      : args.status === 'active')
+    if (membership?.isSteward && (!active || !args.steward)) {
       const channelMemberships = await ctx.db
         .query('groupMembers')
         .withIndex('by_group', (q) => q.eq('groupId', args.groupId))
@@ -382,25 +427,25 @@ export const updateOwnCompanyMember = mutation({
     const previousParticipantIds = await activeChannelParticipantIds(ctx, args.groupId)
     if (membership) {
       await ctx.db.patch(membership._id, {
-        status: args.active ? 'active' : 'removed',
-        isSteward: args.active && args.steward,
-        endedAt: args.active ? undefined : now,
+        status: active ? 'active' : 'removed',
+        isSteward: active && (args.steward ?? membership.isSteward ?? false),
+        endedAt: active ? undefined : now,
         updatedAt: now,
       })
-      if (!args.active) await removeTaskMemberFromScope(ctx, {
+      if (!active) await removeTaskMemberFromScope(ctx, {
         projectId: args.projectId, groupId: args.groupId, projectMemberId: target._id,
       })
       await recordChannelParticipantChange(ctx, args.groupId, previousParticipantIds, now)
       return membership._id
     }
-    if (!args.active) return null
+    if (!active) return null
     const membershipId = await ctx.db.insert('groupMembers', {
       projectId: access.project._id,
       groupId: args.groupId,
       userId: target.userId,
       projectMemberId: target._id,
       status: 'active',
-      isSteward: args.steward,
+      isSteward: args.steward ?? false,
       createdAt: now,
       updatedAt: now,
     })

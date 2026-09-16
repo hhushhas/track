@@ -4,9 +4,19 @@ import { useMemo, useState } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
+import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Button } from '#/components/ui/button'
 import { groupTaskViewsByState, type TaskBoardView, type TaskIdentity, type TaskListItem } from './task-types'
 import { DueChip, OriginCaption, PriorityGlyph, StateRing, TaskAvatar } from './ui/TaskVisuals'
+
+export function taskMoveErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('task_edit_forbidden')) return 'You can move tasks assigned to you or created by you. Project managers can move any task.'
+  if (message.includes('task_conflict')) return 'This task changed elsewhere. Wait for the board to refresh, then try again.'
+  if (message.includes('task_open_subtasks_confirmation_required')) return 'Complete the open subtasks before moving this task to a finished status.'
+  if (message.includes('task_destination_invalid')) return 'That status is no longer available. Refresh the board and try again.'
+  return "The move couldn't be saved. The card returned to its current position."
+}
 
 export function TaskBoard({
   board,
@@ -26,6 +36,11 @@ export function TaskBoard({
   const moveTask = useMutation(api.tasks.moveTask)
   const [optimisticStates, setOptimisticStates] = useState<Record<string, string>>({})
   const [draggedTask, setDraggedTask] = useState<Id<'tasks'> | null>(null)
+  const [pendingMove, setPendingMove] = useState<{
+    item: TaskListItem
+    stateId: Id<'taskWorkflowStates'>
+    targetIndex: number
+  } | null>(null)
   const grouped = useMemo(
     () => groupTaskViewsByState(board.states, tasks, optimisticStates),
     [board.states, optimisticStates, tasks],
@@ -36,12 +51,12 @@ export function TaskBoard({
     stateId: Id<'taskWorkflowStates'>,
     targetIndex: number,
     confirmOpenSubtasks = false,
-  ) {
+  ): Promise<boolean> {
     const destinationTasks = (grouped.get(stateId) ?? []).filter((candidate) => candidate.task._id !== item.task._id)
     const index = Math.min(Math.max(targetIndex, 0), destinationTasks.length)
     const currentIndex = (grouped.get(item.task.workflowStateId) ?? [])
       .findIndex((candidate) => candidate.task._id === item.task._id)
-    if (stateId === item.task.workflowStateId && currentIndex === index) return
+    if (stateId === item.task.workflowStateId && currentIndex === index) return true
     setOptimisticStates((current) => ({ ...current, [item.task._id]: stateId }))
     try {
       await moveTask({
@@ -54,21 +69,14 @@ export function TaskBoard({
         ...identity,
       })
       onAnnounce(`${item.task.title} moved.`)
+      return true
     } catch (failure) {
       if (failure instanceof Error && failure.message.includes('task_open_subtasks_confirmation_required') && !confirmOpenSubtasks) {
-        const proceed = typeof window !== 'undefined' && window.confirm('This task has open subtasks. Move it to a completed state anyway?')
-        if (proceed) {
-          await move(item, stateId, targetIndex, true)
-          return
-        }
-        onAnnounce('Move cancelled. Open subtasks remain unchanged.')
-      } else if (failure instanceof Error && failure.message.includes('task_edit_forbidden')) {
-        onAnnounce("You don't have permission to move this task.")
-      } else if (failure instanceof Error && failure.message.includes('task_conflict')) {
-        onAnnounce('This task changed elsewhere. Refresh the board and try again.')
+        setPendingMove({ item, stateId, targetIndex })
       } else {
-        onAnnounce("Move couldn't be saved. The card returned to its current position.")
+        onAnnounce(taskMoveErrorMessage(failure))
       }
+      return false
     } finally {
       setOptimisticStates((current) => {
         const next = { ...current }
@@ -79,6 +87,7 @@ export function TaskBoard({
   }
 
   return (
+    <>
     <div aria-label={board.board.name} className="task-board" role="region">
       {board.states.map((state, stateIndex) => {
         const columnTasks = grouped.get(state._id) ?? []
@@ -143,5 +152,24 @@ export function TaskBoard({
         )
       })}
     </div>
+    <ConfirmDialog
+      confirmLabel="Move task"
+      description="This task still has open subtasks. Moving it to a completed status will leave those subtasks open."
+      onConfirm={async () => {
+        if (!pendingMove) return false
+        const next = pendingMove
+        setPendingMove(null)
+        const moved = await move(next.item, next.stateId, next.targetIndex, true)
+        if (!moved) return false
+        setPendingMove(null)
+        return true
+      }}
+      onOpenChange={(open) => {
+        if (!open) setPendingMove(null)
+      }}
+      open={Boolean(pendingMove)}
+      title="Move task with open subtasks?"
+    />
+    </>
   )
 }

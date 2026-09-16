@@ -1,9 +1,10 @@
 import { useMutation, useQuery } from 'convex/react'
 import { Archive, ArrowDown, ArrowUp, CheckCircle2, Plus, RotateCcw, Settings2, Trash2 } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
+import { appToast } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
@@ -45,26 +46,69 @@ export function TaskAdminDialog({
   const [labelName, setLabelName] = useState('')
   const [editing, setEditing] = useState<string>()
   const [error, setError] = useState('')
+  const [boardNameError, setBoardNameError] = useState('')
+  const [labelNameError, setLabelNameError] = useState('')
+  const [creatingBoard, setCreatingBoard] = useState(false)
+  const [creatingLabel, setCreatingLabel] = useState(false)
+  const boardNameRef = useRef<HTMLInputElement | null>(null)
+  const labelNameRef = useRef<HTMLInputElement | null>(null)
 
-  async function run(action: () => Promise<unknown>) {
+  async function run(action: () => Promise<unknown>, successMessage?: string) {
     setError('')
     try {
       await action()
+      if (successMessage) appToast.success(successMessage)
     } catch (failure) {
-      setError(taskError(failure))
+      const message = taskError(failure)
+      setError(message)
+      appToast.error('Change not saved', message)
     }
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    await run(() => createBoard({ projectId, name, ...identity }))
-    setName('')
+    const boardName = name.trim()
+    if (!boardName) {
+      setBoardNameError('Enter a board name before creating it.')
+      boardNameRef.current?.focus()
+      return
+    }
+    setCreatingBoard(true)
+    setBoardNameError('')
+    try {
+      await run(async () => {
+        await createBoard({ projectId, name: boardName, ...identity })
+        setName('')
+      }, `Board “${boardName}” created`)
+    } finally {
+      setCreatingBoard(false)
+    }
+  }
+
+  async function submitLabel(event: FormEvent) {
+    event.preventDefault()
+    const nextLabelName = labelName.trim()
+    if (!nextLabelName) {
+      setLabelNameError('Enter a label name before adding it.')
+      labelNameRef.current?.focus()
+      return
+    }
+    setCreatingLabel(true)
+    setLabelNameError('')
+    try {
+      await run(async () => {
+        await createLabel({ projectId, name: nextLabelName, colorToken: 'blue', ...identity })
+        setLabelName('')
+      })
+    } finally {
+      setCreatingLabel(false)
+    }
   }
 
   return <Dialog onOpenChange={onOpenChange} open={open}><DialogContent className="task-admin-dialog">
     <DialogHeader><DialogTitle>Task administration</DialogTitle><DialogDescription>Manage Project boards and their independent workflows. Channel boards are created from their Channel task panel.</DialogDescription></DialogHeader>
-    <form className="task-inline-form" onSubmit={(event) => void submit(event)}><Input aria-label="Board name" onChange={(event) => setName(event.target.value)} placeholder="New Project board" value={name} /><Button disabled={!name.trim()} type="submit"><Plus size={13} /> Create board</Button></form>
-    <section className="task-label-admin"><strong>Project labels</strong><form className="task-inline-form" onSubmit={(event) => { event.preventDefault(); void run(async () => { await createLabel({ projectId, name: labelName, colorToken: 'blue', ...identity }); setLabelName('') }) }}><Input aria-label="Label name" onChange={(event) => setLabelName(event.target.value)} placeholder="New label" value={labelName} /><Button disabled={!labelName.trim()} size="sm" type="submit"><Plus size={12} /> Add label</Button></form><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => void run(() => setLabelArchived({ labelId: label._id, archived: !label.archivedAt, ...identity }))} size="sm" variant="outline">{label.name}{label.archivedAt ? ' · restore' : ' · archive'}</Button>)}</div></section>
+    <form className="task-inline-form" onSubmit={(event) => void submit(event)}><Input aria-describedby={boardNameError ? 'task-board-name-error' : undefined} aria-invalid={Boolean(boardNameError)} aria-label="Board name" autoComplete="off" name="boardName" onChange={(event) => { setName(event.target.value); if (boardNameError && event.target.value.trim()) setBoardNameError('') }} placeholder="New Project board…" ref={boardNameRef} value={name} /><Button disabled={creatingBoard} type="submit"><Plus aria-hidden="true" size={13} /> {creatingBoard ? 'Creating…' : 'Create board'}</Button>{boardNameError ? <span className="task-inline-error" id="task-board-name-error" role="alert">{boardNameError}</span> : null}</form>
+    <section className="task-label-admin"><strong>Project labels</strong><form className="task-inline-form" onSubmit={(event) => void submitLabel(event)}><Input aria-describedby={labelNameError ? 'task-label-name-error' : undefined} aria-invalid={Boolean(labelNameError)} aria-label="Label name" autoComplete="off" name="labelName" onChange={(event) => { setLabelName(event.target.value); if (labelNameError && event.target.value.trim()) setLabelNameError('') }} placeholder="New label…" ref={labelNameRef} value={labelName} /><Button disabled={creatingLabel} size="sm" type="submit"><Plus aria-hidden="true" size={12} /> {creatingLabel ? 'Adding…' : 'Add label'}</Button>{labelNameError ? <span className="task-inline-error" id="task-label-name-error" role="alert">{labelNameError}</span> : null}</form><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => void run(() => setLabelArchived({ labelId: label._id, archived: !label.archivedAt, ...identity }))} size="sm" variant="outline">{label.name}{label.archivedAt ? ' · restore' : ' · archive'}</Button>)}</div></section>
     <div className="task-admin-board-list">
       {boards.map((item, index) => <article className="task-admin-board" key={item.board._id}><div className="task-admin-board-summary"><div><strong>{item.board.name}</strong><span>{item.board.groupId ? 'Channel board' : 'Project board'} · {item.states.length} statuses</span></div><div>
         <Button aria-label={`Move ${item.board.name} up`} disabled={index === 0 || Boolean(item.board.archivedAt)} onClick={() => void run(() => reorderBoard({ boardId: item.board._id, targetIndex: index - 1, ...identity }))} size="icon" variant="ghost"><ArrowUp size={12} /></Button>
@@ -92,6 +136,9 @@ function BoardEditor({ board, identity, onError }: { board: TaskBoardView; ident
     visualToken: state.visualToken,
     isDefault: state.isDefault,
   })))
+  const [saving, setSaving] = useState(false)
+  const boardNameRef = useRef<HTMLInputElement | null>(null)
+  const editorRef = useRef<HTMLDivElement | null>(null)
 
   function updateState(index: number, patch: Partial<WorkflowDraft>) {
     setStates((current) => current.map((state, candidate) => candidate === index ? { ...state, ...patch } : state))
@@ -108,32 +155,50 @@ function BoardEditor({ board, identity, onError }: { board: TaskBoardView; ident
 
   async function save() {
     onError('')
+    if (!name.trim()) {
+      onError('Enter a board name before saving the workflow.')
+      boardNameRef.current?.focus()
+      return
+    }
+    if (states.some((state) => !state.name.trim())) {
+      onError('Enter a name for every workflow status before saving.')
+      requestAnimationFrame(() => {
+        editorRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')?.focus()
+      })
+      return
+    }
+    setSaving(true)
     try {
-      await updateBoard({ boardId: board.board._id, name, description: description || null, ...identity })
+      await updateBoard({ boardId: board.board._id, name: name.trim(), description: description.trim() || null, ...identity })
       const defaultIndex = Math.max(0, states.findIndex((state) => state.isDefault))
       const replacementStateId = states[defaultIndex]?.stateId ?? states.find((state) => state.stateId)?.stateId
       await configureWorkflow({
         boardId: board.board._id,
         defaultIndex,
         replacementStateId,
-        states: states.map(({ stateId, name: stateName, category, visualToken }) => ({ stateId, name: stateName, category, visualToken })),
+        states: states.map(({ stateId, name: stateName, category, visualToken }) => ({ stateId, name: stateName.trim(), category, visualToken })),
         ...identity,
       })
+      appToast.success('Board and workflow saved')
     } catch (failure) {
-      onError(taskError(failure))
+      const message = taskError(failure)
+      onError(message)
+      appToast.error('Board not saved', message)
+    } finally {
+      setSaving(false)
     }
   }
 
-  return <div className="task-workflow-editor">
-    <div className="task-form-grid"><label>Board name<Input onChange={(event) => setName(event.target.value)} value={name} /></label><label>Description<Input onChange={(event) => setDescription(event.target.value)} value={description} /></label></div>
+  return <div className="task-workflow-editor" ref={editorRef}>
+    <div className="task-form-grid"><label>Board name<Input aria-invalid={!name.trim()} autoComplete="off" name="workflowBoardName" onChange={(event) => setName(event.target.value)} ref={boardNameRef} required value={name} /></label><label>Description<Input autoComplete="off" name="workflowBoardDescription" onChange={(event) => setDescription(event.target.value)} value={description} /></label></div>
     <div className="task-workflow-state-list">{states.map((state, index) => <div className="task-workflow-state" key={state.stateId ?? `new-${index}`}>
-      <Input aria-label={`Status ${index + 1} name`} onChange={(event) => updateState(index, { name: event.target.value })} value={state.name} />
+      <Input aria-invalid={!state.name.trim()} aria-label={`Status ${index + 1} name`} autoComplete="off" name={`workflowStatus-${index + 1}`} onChange={(event) => updateState(index, { name: event.target.value })} required value={state.name} />
       <NativeSelect aria-label={`${state.name} category`} onChange={(event) => updateState(index, { category: event.target.value as WorkflowDraft['category'] })} value={state.category}>{categories.map((category) => <NativeSelectOption key={category} value={category}>{category}</NativeSelectOption>)}</NativeSelect>
       <Button aria-label={`Use ${state.name} as default`} onClick={() => setStates((current) => current.map((candidate, candidateIndex) => ({ ...candidate, isDefault: candidateIndex === index })))} size="sm" variant={state.isDefault ? 'default' : 'ghost'}>{state.isDefault ? 'Default' : 'Make default'}</Button>
       <Button aria-label={`Move ${state.name} up`} disabled={index === 0} onClick={() => moveState(index, -1)} size="icon" variant="ghost"><ArrowUp size={12} /></Button>
       <Button aria-label={`Move ${state.name} down`} disabled={index === states.length - 1} onClick={() => moveState(index, 1)} size="icon" variant="ghost"><ArrowDown size={12} /></Button>
       <Button aria-label={`Remove ${state.name}`} disabled={states.length <= 2} onClick={() => setStates((current) => current.filter((_, candidate) => candidate !== index))} size="icon" variant="ghost"><Trash2 size={12} /></Button>
     </div>)}</div>
-    <div className="task-detail-actions"><Button onClick={() => setStates((current) => [...current, { name: 'New status', category: 'unstarted', visualToken: 'blue', isDefault: false }])} size="sm" variant="outline"><Plus size={12} /> Add status</Button><Button disabled={!name.trim() || states.some((state) => !state.name.trim())} onClick={() => void save()} size="sm">Save board and workflow</Button></div>
+    <div className="task-detail-actions"><Button onClick={() => setStates((current) => [...current, { name: 'New status', category: 'unstarted', visualToken: 'blue', isDefault: false }])} size="sm" variant="outline"><Plus aria-hidden="true" size={12} /> Add status</Button><Button disabled={saving} onClick={() => void save()} size="sm">{saving ? 'Saving…' : 'Save board and workflow'}</Button></div>
   </div>
 }

@@ -76,11 +76,13 @@ function TwoFactor() {
           </div>
           <Input
             aria-label={method === 'backup_code' ? 'Backup code' : 'Authenticator code'}
+            aria-describedby={message ? 'two-factor-error' : undefined}
             autoComplete="one-time-code"
-            className="min-h-11 w-full rounded-md border border-[var(--hairline-strong)] bg-[var(--paper)] px-3 text-sm outline-none focus:border-[var(--accent)]"
+            className="min-h-11 w-full rounded-md border border-[var(--hairline-strong)] bg-[var(--paper)] px-3 text-sm outline-none focus:border-[var(--accent)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]/35"
             inputMode={method === 'backup_code' ? 'text' : 'numeric'}
             onChange={(event) => setCode(event.currentTarget.value)}
             placeholder={method === 'backup_code' ? 'XXXX-XXXXXX' : '123456'}
+            name="twoFactorCode"
             value={code}
           />
           <label className="track-two-factor-trust">
@@ -95,7 +97,7 @@ function TwoFactor() {
             Verify
           </button>
           {message ? (
-            <p className="m-0 text-sm text-[var(--danger)]">{message}</p>
+            <p aria-live="assertive" className="m-0 text-sm text-[var(--danger)]" id="two-factor-error" role="alert">{message}</p>
           ) : null}
         </form>
       </section>

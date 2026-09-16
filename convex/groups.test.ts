@@ -39,6 +39,91 @@ describe('groups.listMembers', () => {
       { groupId: fixture.groupId, userId: fixture.removedMemberId },
     )).rejects.toThrow('not_group_member')
   })
+
+  it('rejects cross-project channel membership and reactivates a removed project member', async () => {
+    const t = convexTest(schema, modules)
+    const fixture = await seedChannel(t)
+    const secondGroupId = await t.run(async (ctx) => {
+      const now = 2
+      const secondProjectId = await ctx.db.insert('projects', {
+        name: 'Different project',
+        accessProfile: 'legacy',
+        createdBy: fixture.ownerId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('projectMembers', {
+        projectId: secondProjectId,
+        userId: fixture.ownerId,
+        role: 'owner',
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
+      return await ctx.db.insert('groups', {
+        projectId: secondProjectId,
+        kind: 'custom',
+        name: 'Other project channel',
+        status: 'active',
+        createdBy: fixture.ownerId,
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+
+    await expect(t.withIdentity({ subject: 'channel-owner' }).mutation(
+      api.groups.addGroupMember,
+      {
+        actorId: fixture.ownerId,
+        groupId: secondGroupId,
+        projectId: fixture.projectId,
+        userId: fixture.projectOnlyMemberId,
+      },
+    )).rejects.toThrow('group_not_found')
+
+    await t.run(async (ctx) => await ctx.db.patch(
+      (await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
+        q.eq('projectId', fixture.projectId).eq('userId', fixture.removedMemberId),
+      ).unique())!._id,
+      { status: 'removed' },
+    ))
+    await t.withIdentity({ subject: 'channel-owner' }).mutation(api.groups.addProjectMember, {
+      actorId: fixture.ownerId,
+      projectId: fixture.projectId,
+      role: 'staff',
+      userId: fixture.removedMemberId,
+    })
+    const reactivated = await t.run(async (ctx) => await ctx.db.query('projectMembers')
+      .withIndex('by_project_user', (q) => q.eq('projectId', fixture.projectId).eq('userId', fixture.removedMemberId))
+      .unique())
+    expect(reactivated?.status).toBe('active')
+  })
+
+  it('rejects blank and oversized names at the mutation boundary', async () => {
+    const t = convexTest(schema, modules)
+    const fixture = await seedChannel(t)
+    const owner = t.withIdentity({ subject: 'channel-owner' })
+    await expect(owner.mutation(api.groups.create, {
+      projectId: fixture.projectId,
+      userId: fixture.ownerId,
+      name: '   ',
+    })).rejects.toThrow('group_name_required')
+    await expect(owner.mutation(api.groups.create, {
+      projectId: fixture.projectId,
+      userId: fixture.ownerId,
+      name: 'x'.repeat(81),
+    })).rejects.toThrow('group_name_too_long')
+
+    const newUserId = await seedUser(t, 'new-project-owner', 'New project owner')
+    await expect(t.withIdentity({ subject: 'new-project-owner' }).mutation(api.projects.create, {
+      userId: newUserId,
+      name: '   ',
+    })).rejects.toThrow('project_name_required')
+    await expect(t.withIdentity({ subject: 'new-project-owner' }).mutation(api.projects.create, {
+      userId: newUserId,
+      name: 'x'.repeat(121),
+    })).rejects.toThrow('project_name_too_long')
+  })
 })
 
 async function seedChannel(t: ReturnType<typeof convexTest>) {

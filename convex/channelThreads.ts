@@ -165,7 +165,7 @@ async function buildThreadSummary(
   cutoff?: number,
   snapshot?: ThreadSnapshot,
 ) {
-  const [follower, readState, sourceMessage] = await Promise.all([
+  const [follower, readState, sourceMessage, recentMessages] = await Promise.all([
     ctx.db
       .query('channelThreadFollowers')
       .withIndex('by_thread_project_member', (q) =>
@@ -179,6 +179,11 @@ async function buildThreadSummary(
       )
       .unique(),
     thread.sourceMessageId ? ctx.db.get(thread.sourceMessageId) : null,
+    ctx.db
+      .query('messages')
+      .withIndex('by_thread_created_at', (q) => q.eq('channelThreadId', thread._id))
+      .order('desc')
+      .take(3),
   ])
   const following = snapshot?.following ?? follower?.preference === 'following'
   const latestChannelSequence = snapshot?.latestChannelSequence ?? thread.latestChannelSequence ?? 0
@@ -188,7 +193,7 @@ async function buildThreadSummary(
     sourceMessage &&
     sourceMessage.projectId === thread.projectId &&
     sourceMessage.groupId === thread.groupId &&
-    !sourceMessage.channelThreadId &&
+    (sourceMessage.channelThreadId === undefined || sourceMessage.channelThreadId === thread._id) &&
     (!cutoff || sourceMessage.createdAt <= cutoff),
   )
 
@@ -201,6 +206,9 @@ async function buildThreadSummary(
     unread,
     replyCount: snapshot?.replyCount ?? thread.replyCount ?? 0,
     latestReplyAt: snapshot?.latestReplyAt ?? thread.latestReplyAt ?? null,
+    latestReplyPreview: snapshot
+      ? null
+      : recentMessages.find((message) => message._id !== thread.sourceMessageId)?.body ?? null,
     source: sourceAvailable && sourceMessage
       ? {
           messageId: sourceMessage._id,
@@ -211,6 +219,43 @@ async function buildThreadSummary(
         ? { unavailable: true as const }
         : null,
   }
+}
+
+async function getVisibleProjectGroupIds(
+  ctx: QueryCtx,
+  access: Awaited<ReturnType<typeof authorizeScopedRequest>>,
+  projectId: Id<'projects'>,
+  userId: Id<'users'>,
+) {
+  const entitlement = access.companyAccess?.entitlement
+  if (access.companyAccess) {
+    if (entitlement?.snapshotOperationId) {
+      const visibility = await ctx.db
+        .query('projectExitChannelVisibility')
+        .withIndex('by_operation_member', (q) =>
+          q.eq('operationId', entitlement.snapshotOperationId!).eq('projectMemberId', access.projectMember._id),
+        )
+        .collect()
+      return new Set(visibility.map((row) => String(row.groupId)))
+    }
+    if (entitlement) return new Set(entitlement.channelIds.map(String))
+    const memberships = await ctx.db
+      .query('groupMembers')
+      .withIndex('by_project_member_status', (q) =>
+        q.eq('projectMemberId', access.projectMember._id).eq('status', 'active'),
+      )
+      .collect()
+    return new Set(memberships.map((membership) => String(membership.groupId)))
+  }
+  const memberships = await ctx.db
+    .query('groupMembers')
+    .withIndex('by_project_user', (q) => q.eq('projectId', projectId).eq('userId', userId))
+    .collect()
+  return new Set(
+    memberships
+      .filter((membership) => !membership.status || membership.status === 'active')
+      .map((membership) => String(membership.groupId)),
+  )
 }
 
 export const list = query({
@@ -286,6 +331,148 @@ export const list = query({
           snapshots.get(String(thread._id)),
         )),
     )
+  },
+})
+
+export const listPage = query({
+  args: {
+    groupId: v.id('groups'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    status: v.optional(threadStatus),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (!threadsEnabled()) return { page: [], isDone: true, continueCursor: '' }
+    const group = await ctx.db.get(args.groupId)
+    if (!group) throw new Error('channel_unavailable')
+    const access = await authorizeScopedRequest(ctx, {
+      projectId: group.projectId,
+      groupId: group._id,
+      claimedUserId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+    }, 'readChannel')
+    const status = args.status ?? 'active'
+    const result = await ctx.db.query('channelThreads')
+      .withIndex('by_group_status_updated_at', (q) => q.eq('groupId', group._id).eq('status', status))
+      .order('desc')
+      .paginate(args.paginationOpts)
+    const cutoff = access.companyAccess?.entitlement?.exitAt
+    const snapshotOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+    const snapshots = snapshotOperationId
+      ? await getArchiveThreadSnapshots(ctx, snapshotOperationId, access.projectMember._id, result.page.map((thread) => thread._id))
+      : new Map<string, ThreadSnapshot>((access.companyAccess?.entitlement?.threadSnapshots ?? [])
+          .map((snapshot) => decodeLegacyThreadSnapshot(ctx, snapshot))
+          .map((snapshot) => [String(snapshot._id), snapshot]))
+    const page = await Promise.all(result.page
+      .filter((thread) => !cutoff || (thread.createdAt <= cutoff && (snapshots.get(String(thread._id))?.status ?? thread.status) === status))
+      .map((thread) => buildThreadSummary(ctx, thread, access.projectMember, cutoff, snapshots.get(String(thread._id)))))
+    return { ...result, page }
+  },
+})
+
+type ProjectThreadListArgs = {
+  projectId: Id<'projects'>
+  userId: Id<'users'>
+  actingCompanyId?: Id<'companies'>
+  projectMemberId?: Id<'projectMembers'>
+  status?: 'active' | 'archived'
+  limit?: number
+}
+
+async function buildProjectThreadItems(
+  ctx: QueryCtx,
+  args: ProjectThreadListArgs,
+  candidates: Array<Doc<'channelThreads'>>,
+) {
+  const access = await authorizeScopedRequest(ctx, {
+    projectId: args.projectId,
+    claimedUserId: args.userId,
+    actingCompanyId: args.actingCompanyId,
+    projectMemberId: args.projectMemberId,
+  }, 'readProject')
+  const visibleGroupIds = await getVisibleProjectGroupIds(ctx, access, args.projectId, args.userId)
+  const cutoff = access.companyAccess?.entitlement?.exitAt
+  const status = args.status ?? 'active'
+  const limit = Math.min(Math.max(args.limit ?? candidates.length, 1), 100)
+  const visibleThreads = candidates.filter((thread) =>
+    visibleGroupIds.has(String(thread.groupId)) && (!cutoff || thread.createdAt <= cutoff),
+  )
+  const snapshotOperationId = access.companyAccess?.entitlement?.snapshotOperationId
+  const snapshots = snapshotOperationId
+    ? await getArchiveThreadSnapshots(
+        ctx,
+        snapshotOperationId,
+        access.projectMember._id,
+        visibleThreads.map((thread) => thread._id),
+      )
+    : new Map<string, ThreadSnapshot>(
+        (access.companyAccess?.entitlement?.threadSnapshots ?? [])
+          .map((snapshot) => decodeLegacyThreadSnapshot(ctx, snapshot))
+          .map((snapshot) => [String(snapshot._id), snapshot]),
+      )
+  const filtered = visibleThreads.filter((thread) => {
+    const snapshot = snapshots.get(String(thread._id))
+    return (snapshot?.status ?? thread.status) === status
+  }).slice(0, limit)
+  return await Promise.all(filtered.map(async (thread) => {
+    const [summary, group] = await Promise.all([
+      buildThreadSummary(ctx, thread, access.projectMember, cutoff, snapshots.get(String(thread._id))),
+      ctx.db.get(thread.groupId),
+    ])
+    return {
+      ...summary,
+      channel: group ? { _id: group._id, name: group.name } : null,
+    }
+  }))
+}
+
+export const listProject = query({
+  args: {
+    projectId: v.id('projects'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    status: v.optional(threadStatus),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    if (!threadsEnabled()) return []
+    const candidates = await ctx.db
+      .query('channelThreads')
+      .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
+      .order('desc')
+      .collect()
+    return buildProjectThreadItems(ctx, args, candidates)
+  },
+})
+
+export const listProjectPage = query({
+  args: {
+    projectId: v.id('projects'),
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    projectMemberId: v.optional(v.id('projectMembers')),
+    status: v.optional(threadStatus),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (!threadsEnabled()) return { page: [], isDone: true, continueCursor: '' }
+    const result = await ctx.db
+      .query('channelThreads')
+      .withIndex('by_project', (q) => q.eq('projectId', args.projectId))
+      .order('desc')
+      .paginate(args.paginationOpts)
+    const page = await buildProjectThreadItems(ctx, {
+      projectId: args.projectId,
+      userId: args.userId,
+      actingCompanyId: args.actingCompanyId,
+      projectMemberId: args.projectMemberId,
+      status: args.status,
+    }, result.page)
+    return { ...result, page }
   },
 })
 
@@ -429,8 +616,7 @@ export const listMessages = query({
   },
   handler: async (ctx, args) => {
     if (!threadsEnabled()) return []
-    try {
-      const { access, cutoff, thread } = await authorizeThread(ctx, args)
+    const { access, cutoff, thread } = await authorizeThread(ctx, args)
       const archivedThread = cutoff && access.companyAccess?.entitlement?.snapshotOperationId
         ? await getArchivedThreadSnapshot(
             ctx,
@@ -452,7 +638,7 @@ export const listMessages = query({
           : q.eq('channelThreadId', thread._id))
         .order('desc')
         .take(boundedThreadMessageLimit(args.limit))
-      return await Promise.all(messages.map(async (message) =>
+    return await Promise.all(messages.filter((message) => message._id !== thread.sourceMessageId).map(async (message) =>
         await buildMessageDetail(
           ctx,
           message,
@@ -464,10 +650,7 @@ export const listMessages = query({
           access.companyAccess?.entitlement?.memberSnapshots,
           access.companyAccess?.entitlement?.snapshotOperationId,
         ),
-      ))
-    } catch {
-      return []
-    }
+    ))
   },
 })
 
@@ -484,8 +667,7 @@ export const listMessagePage = query({
     if (!threadsEnabled()) {
       return { page: [], isDone: true, continueCursor: '' }
     }
-    try {
-      const { access, cutoff, thread } = await authorizeThread(ctx, args)
+    const { access, cutoff, thread } = await authorizeThread(ctx, args)
       const archivedThread = cutoff && access.companyAccess?.entitlement?.snapshotOperationId
         ? await getArchivedThreadSnapshot(
             ctx,
@@ -508,7 +690,7 @@ export const listMessagePage = query({
           : q.eq('channelThreadId', thread._id))
         .order('desc')
         .paginate({ ...args.paginationOpts, numItems: pageSize })
-      const page = [...result.page]
+      const page = result.page.filter((message) => message._id !== thread.sourceMessageId)
       if (args.paginationOpts.cursor === null && args.targetMessageId) {
         const target = await ctx.db.get(args.targetMessageId)
         if (
@@ -544,7 +726,7 @@ export const listMessagePage = query({
           page.splice(0, page.length, ...reversedNewer, target, ...older)
         }
       }
-      return {
+    return {
         ...result,
         page: await Promise.all(page.map(async (message) =>
           await buildMessageDetail(
@@ -559,9 +741,6 @@ export const listMessagePage = query({
             access.companyAccess?.entitlement?.snapshotOperationId,
           ),
         )),
-      }
-    } catch {
-      return { page: [], isDone: true, continueCursor: '' }
     }
   },
 })

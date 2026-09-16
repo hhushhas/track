@@ -1,28 +1,56 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import TrackLoader from "#/components/TrackLoader";
+import { queueToastAfterNavigation } from "#/components/ui/app-toast";
+import { ConfirmDialog } from "#/components/ui/confirm-dialog";
 import { useReleaseConfigState } from "#/lib/release-config";
 import type { ConversationComposerReply } from "#/features/workspace/components/ConversationComposer";
 import type { GroupMessageItem } from "#/features/workspace/thread-items";
 import { CompanyProjectAdministration } from "./CompanyProjectAdministration";
 import { CompanyProjectConversation } from "./CompanyProjectConversation";
+import { CompanyProjectEvidence } from "./CompanyProjectEvidence";
+import { CompanyProjectOverview } from "./CompanyProjectOverview";
 import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
 import { formatCompanyError } from "./company-errors";
 import {
   getCompanyProjectScopeKey,
   getMessageIdFromHash,
 } from "./company-project-context";
-import { resolveActiveActingCompanyId } from "./company-query-scope";
+import {
+  canQueryPendingChannelArchives,
+  canQueryProjectManagement,
+  resolveActiveActingCompanyId,
+  resolveCompanyAdministrationId,
+} from "./company-query-scope";
+import {
+  companyProjectContextTabToSearch,
+  type CompanyProjectContextTab,
+  type CompanyProjectView,
+} from "./company-view-state";
 
 type Props = {
   actingCompanyId: Id<"companies">;
   initialGroupId?: Id<"groups">;
   projectId: Id<"projects">;
   projectMemberId: Id<"projectMembers">;
+  contextTab?: CompanyProjectContextTab;
+  view?: CompanyProjectView;
+};
+
+type ForwardRequest = {
+  actingCompanyId: Id<"companies">;
+  actorId: Id<"users">;
+  body?: string;
+  idempotencyKey: string;
+  projectId: Id<"projects">;
+  projectMemberId: Id<"projectMembers">;
+  sourceMessageId: Id<"messages">;
+  targetGroupId: Id<"groups">;
+  audienceExpansionConfirmed?: boolean;
 };
 
 export function CompanyProjectPage({
@@ -30,8 +58,11 @@ export function CompanyProjectPage({
   initialGroupId,
   projectId,
   projectMemberId,
+  contextTab = "tasks",
+  view = "channels",
 }: Props) {
   const releaseState = useReleaseConfigState();
+  const navigate = useNavigate();
   const releaseConfig = releaseState.config;
   const currentUser = useQuery(api.auth.getCurrentUser);
   const companies = useQuery(
@@ -41,7 +72,14 @@ export function CompanyProjectPage({
   const actingCompany = companies?.find(
     (candidate) => candidate.company?._id === actingCompanyId,
   );
+  const canAdministerActingCompany =
+    actingCompany?.membership.role === "owner" ||
+    actingCompany?.membership.role === "admin";
   const activeActingCompanyId = resolveActiveActingCompanyId(
+    companies,
+    actingCompanyId,
+  );
+  const companyAdministrationId = resolveCompanyAdministrationId(
     companies,
     actingCompanyId,
   );
@@ -58,7 +96,7 @@ export function CompanyProjectPage({
   );
   const snapshotState = useQuery(
     api.projects.getSnapshotState,
-    activeActingCompanyId && item
+    releaseConfig.projectSnapshots && activeActingCompanyId && item
       ? {
           actingCompanyId: activeActingCompanyId,
           projectId,
@@ -68,7 +106,7 @@ export function CompanyProjectPage({
   );
   const exitStatus = useQuery(
     api.projectExit.getStatus,
-    releaseConfig.companyModel && activeActingCompanyId
+    releaseConfig.companyModel && activeActingCompanyId && item
       ? {
           actingCompanyId: activeActingCompanyId,
           projectId,
@@ -77,10 +115,12 @@ export function CompanyProjectPage({
       : "skip",
   );
   const canReadChannels = exitStatus !== null && exitStatus !== undefined;
-  const canManageActiveProject =
-    exitStatus?.status === "active" &&
-    item?.membership.role === "manager" &&
-    item.membership.status === "active";
+  const canManageActiveProject = canQueryProjectManagement({
+    exitStatus: exitStatus?.status,
+    projectMemberRole: item?.membership.role,
+    projectMemberStatus: item?.membership.status,
+    projectStatus: item?.project.status,
+  });
   const channels = useQuery(
     api.channels.list,
     activeActingCompanyId && canReadChannels
@@ -95,10 +135,41 @@ export function CompanyProjectPage({
   );
   const companyMembers = useQuery(
     api.companies.getAdministration,
-    activeActingCompanyId && item?.membership.status === "active"
-      ? { companyId: activeActingCompanyId }
+    companyAdministrationId &&
+      canAdministerActingCompany &&
+      item?.membership.status === "active"
+      ? { companyId: companyAdministrationId }
       : "skip",
   );
+  const projectOverview = useQuery(
+    api.sharedProjects.getOverview,
+    activeActingCompanyId && item
+      ? { actingCompanyId: activeActingCompanyId, projectId, projectMemberId }
+      : "skip",
+  );
+  const canonicalItem = projects?.find(
+    (candidate) => candidate.project._id === projectId && candidate.membership.status === "active",
+  );
+  useEffect(() => {
+    if (!projects || item || !canonicalItem) return;
+    queueToastAfterNavigation({
+      type: "info",
+      title: "Project link refreshed",
+      description: "This Project link was outdated. We refreshed it for you.",
+    });
+    void navigate({
+      replace: true,
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId },
+      search: {
+        companyId: actingCompanyId,
+        groupId: initialGroupId ?? "",
+        membershipId: canonicalItem.membership._id,
+        view,
+        ...(contextTab ? { context: companyProjectContextTabToSearch(contextTab) } : {}),
+      },
+    });
+  }, [actingCompanyId, canonicalItem, contextTab, initialGroupId, item, navigate, projectId, projects, view]);
   const canManageExit =
     item?.membership.status === "active" &&
     (companyMembers?.membership.role === "owner" ||
@@ -136,6 +207,38 @@ export function CompanyProjectPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [pendingForward, setPendingForward] = useState<ForwardRequest | null>(null);
+  useEffect(() => {
+    setActiveChannelId(initialGroupId ?? null);
+  }, [initialGroupId, projectId, projectMemberId]);
+  useEffect(() => {
+    if (view !== "settings") return;
+    void navigate({
+      replace: true,
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId },
+      search: {
+        companyId: actingCompanyId,
+        groupId: activeChannelId ?? initialGroupId ?? "",
+        membershipId: projectMemberId,
+        view: "channels",
+        context: "management",
+      },
+    });
+  }, [actingCompanyId, activeChannelId, initialGroupId, navigate, projectId, projectMemberId, view]);
+  function updateContextTab(nextTab: CompanyProjectContextTab) {
+    void navigate({
+      to: "/workspace/company-projects/$projectId",
+      params: { projectId },
+      search: {
+        companyId: actingCompanyId,
+        groupId: activeChannelId ?? "",
+        membershipId: projectMemberId,
+        view: "channels",
+        context: companyProjectContextTabToSearch(nextTab),
+      },
+    });
+  }
   const [replyToMessageByScope, setReplyToMessageByScope] = useState<
     Map<string, ConversationComposerReply>
   >(() => new Map());
@@ -276,6 +379,13 @@ export function CompanyProjectPage({
     "membership" in activeChannelEntry &&
     activeChannelEntry.membership.isSteward,
   );
+  const canManageChannelArchive = canQueryPendingChannelArchives({
+    channelSteward: isChannelSteward,
+    exitStatus: exitStatus?.status,
+    projectMemberRole: item?.membership.role,
+    projectMemberStatus: item?.membership.status,
+    projectStatus: item?.project.status,
+  });
   const participationOptions = useQuery(
     api.channels.getParticipationOptions,
     activeActingCompanyId &&
@@ -293,7 +403,7 @@ export function CompanyProjectPage({
   );
   const pendingChannelArchives = useQuery(
     api.channels.listPendingArchive,
-    activeActingCompanyId && activeChannelId && isChannelSteward
+    activeActingCompanyId && activeChannelId && canManageChannelArchive
       ? {
           actingCompanyId: activeActingCompanyId,
           groupId: activeChannelId,
@@ -367,14 +477,8 @@ export function CompanyProjectPage({
           error instanceof Error &&
           error.message.includes("audience_expansion_confirmation_required");
         if (!audienceExpanded) throw error;
-        const confirmed = window.confirm(
-          "This target Channel includes Project members who cannot read the source Channel. Forward a copied snapshot to the larger audience?",
-        );
-        if (!confirmed) return false;
-        await forwardMessage({
-          ...request,
-          audienceExpansionConfirmed: true,
-        });
+        setPendingForward(request);
+        return false;
       }
       setNotice("Saved.");
       return true;
@@ -541,7 +645,7 @@ export function CompanyProjectPage({
   }
 
   if (releaseState.status === "loading")
-    return <TrackLoader label="Loading Company Project" />;
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
 
   if (!releaseConfig.companyModel)
     return (
@@ -556,7 +660,7 @@ export function CompanyProjectPage({
     );
 
   if (companies === undefined)
-    return <TrackLoader label="Loading Company Project" />;
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
 
   if (actingCompany?.company?.status === "suspended")
     return (
@@ -596,15 +700,17 @@ export function CompanyProjectPage({
     );
 
   if (projects === undefined)
-    return <TrackLoader label="Loading Company Project" />;
-  if (!item)
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
+  if (!item) {
+    if (canonicalItem) return <TrackLoader label="Refreshing this Project link" timeoutMs={8000} />;
     return (
       <main className="company-hub">
         <h1>Project unavailable</h1>
-        <p>This represented membership is no longer authorized.</p>
+        <p>This Project link is outdated or your access has changed.</p>
         <Link to="/workspace/company">Return to Company hub</Link>
       </main>
     );
+  }
 
   if (exitStatus === null)
     return (
@@ -620,7 +726,7 @@ export function CompanyProjectPage({
     exitStatus === undefined ||
     (canReadChannels && channels === undefined)
   )
-    return <TrackLoader label="Loading Company Project" />;
+    return <TrackLoader label="Loading Company Project" timeoutMs={8000} />;
 
   if (!currentUser)
     return (
@@ -634,8 +740,38 @@ export function CompanyProjectPage({
   return (
     <main
       aria-busy={busy}
-      className="company-project-shell company-unified-shell"
+      className={
+        canManageActiveProject || canManageExit || canConfirmProjectOwnership
+          ? "company-project-shell company-unified-shell"
+          : "company-project-shell company-unified-shell company-project-shell-member"
+      }
     >
+      {view === "overview" ? (
+        <CompanyProjectOverview
+          actingCompanyId={actingCompanyId}
+          actingCompanyName={actingCompany?.company?.displayName ?? "Represented Company"}
+          channelItems={channelItems}
+          currentUser={currentUser}
+          item={item}
+          projectId={projectId}
+          projectMemberId={projectMemberId}
+          projectMembers={projectMembers}
+          projectOverview={projectOverview}
+          tasksEnabled={releaseConfig.tasks}
+          threadUnreadByChannel={threadUnreadByChannel}
+        />
+      ) : view === "evidence" ? (
+        <CompanyProjectEvidence
+          actingCompanyId={actingCompanyId}
+          actingCompanyName={actingCompany?.company?.displayName ?? "Represented Company"}
+          channelItems={channelItems}
+          currentUser={currentUser}
+          projectId={projectId}
+          projectMemberId={projectMemberId}
+          projectName={item.project.name}
+          tasksEnabled={releaseConfig.tasks}
+        />
+      ) : (
       <CompanyProjectConversation
         actingCompanyId={actingCompanyId}
         activeChannel={activeChannel}
@@ -643,6 +779,48 @@ export function CompanyProjectPage({
         busyAction={busyAction}
         channelItems={channelItems}
         channelName={channelName}
+        contextManagement={canManageActiveProject || canManageExit || canConfirmProjectOwnership ? <CompanyProjectAdministration
+          actingCompanyId={actingCompanyId}
+          activeChannel={activeChannel}
+          activeChannelId={activeChannelId}
+          canConfirmProjectOwnership={canConfirmProjectOwnership}
+          canInvitePartnerCompanies={canInvitePartnerCompanies}
+          channelParticipationInvitations={channelParticipationInvitations}
+          collaborationOptions={collaborationOptions}
+          companyMembers={companyMembers}
+          exitStatus={exitStatus}
+          item={item}
+          isChannelSteward={isChannelSteward}
+          canManageExit={canManageExit}
+          participationOptions={participationOptions}
+          pendingChannelArchives={pendingChannelArchives}
+          pendingProjectArchives={pendingProjectArchives}
+          projectId={projectId}
+          projectMemberId={projectMemberId}
+          projectMembers={projectMembers}
+          run={run}
+          onAddProjectMember={addProjectMemberToProject}
+          onApproveChannelArchive={approveProjectChannelArchive}
+          onApproveProjectArchive={approveProjectLifecycleArchive}
+          onCancelChannelArchive={cancelProjectChannelArchive}
+          onCancelExit={cancelProjectExit}
+          onDecideChannelParticipation={decideProjectChannelParticipation}
+          onFinalizeExit={finalizeProjectExit}
+          onPrepareExit={prepareProjectExit}
+          onRequestChannelArchive={requestProjectChannelArchive}
+          onRequestChannelParticipation={requestProjectChannelParticipation}
+          onRequestProjectArchive={requestProjectLifecycleArchive}
+          onRetryExit={retryProjectExitSnapshot}
+          onRetryExitCleanup={retryProjectExitCleanup}
+          onUpdateProjectMember={updateProjectMemberStatus}
+        /> : <aside className="company-project-details" aria-label="Project details">
+          <h2>Project details</h2>
+          <strong>Member access</strong>
+          <p>You have read-only Project access. Project managers and Company admins manage ownership and settings.</p>
+          {item.participationRole === "unassigned_legacy" ? <p>Project ownership is not assigned. A Company admin who is also a Project manager must confirm the owner.</p> : null}
+        </aside>}
+        contextManagementLabel={canManageActiveProject || canManageExit || canConfirmProjectOwnership ? "Manage" : "Project info"}
+        contextTab={contextTab}
         currentUser={currentUser}
         item={item}
         messages={messages}
@@ -654,6 +832,7 @@ export function CompanyProjectPage({
         onDeleteMessage={deleteAuthoredMessage}
         onForwardMessage={forwardChannelMessage}
         onNotice={setNotice}
+        onContextTabChange={updateContextTab}
         onOpenGroup={setActiveChannelId}
         onOpenMessageSource={openMessageSource}
         onLoadMoreMessages={loadMoreMessages}
@@ -688,40 +867,30 @@ export function CompanyProjectPage({
         targetMessageId={targetMessageId}
         threadUnreadByChannel={threadUnreadByChannel}
       />
-      <CompanyProjectAdministration
-        actingCompanyId={actingCompanyId}
-        activeChannel={activeChannel}
-        activeChannelId={activeChannelId}
-        canConfirmProjectOwnership={canConfirmProjectOwnership}
-        canInvitePartnerCompanies={canInvitePartnerCompanies}
-        channelParticipationInvitations={channelParticipationInvitations}
-        collaborationOptions={collaborationOptions}
-        companyMembers={companyMembers}
-        exitStatus={exitStatus}
-        item={item}
-        isChannelSteward={isChannelSteward}
-        canManageExit={canManageExit}
-        participationOptions={participationOptions}
-        pendingChannelArchives={pendingChannelArchives}
-        pendingProjectArchives={pendingProjectArchives}
-        projectId={projectId}
-        projectMemberId={projectMemberId}
-        projectMembers={projectMembers}
-        run={run}
-        onAddProjectMember={addProjectMemberToProject}
-        onApproveChannelArchive={approveProjectChannelArchive}
-        onApproveProjectArchive={approveProjectLifecycleArchive}
-        onCancelChannelArchive={cancelProjectChannelArchive}
-        onCancelExit={cancelProjectExit}
-        onDecideChannelParticipation={decideProjectChannelParticipation}
-        onFinalizeExit={finalizeProjectExit}
-        onPrepareExit={prepareProjectExit}
-        onRequestChannelArchive={requestProjectChannelArchive}
-        onRequestChannelParticipation={requestProjectChannelParticipation}
-        onRequestProjectArchive={requestProjectLifecycleArchive}
-        onRetryExit={retryProjectExitSnapshot}
-        onRetryExitCleanup={retryProjectExitCleanup}
-        onUpdateProjectMember={updateProjectMemberStatus}
+      )}
+      <ConfirmDialog
+        confirmLabel="Forward snapshot"
+        description="The target Channel includes people who cannot read the source Channel. Track will copy the message as a snapshot to the larger audience."
+        onConfirm={async () => {
+          if (!pendingForward) return false;
+          setBusy(true);
+          setBusyAction(`forward-${pendingForward.sourceMessageId}`);
+          try {
+            await forwardMessage({ ...pendingForward, audienceExpansionConfirmed: true });
+            setNotice("Message forwarded as a scoped snapshot.");
+            setPendingForward(null);
+            return true;
+          } catch (error) {
+            setNotice(formatCompanyError(error));
+            return false;
+          } finally {
+            setBusy(false);
+            setBusyAction(null);
+          }
+        }}
+        onOpenChange={(open) => { if (!open) setPendingForward(null); }}
+        open={Boolean(pendingForward)}
+        title="Forward to a larger audience?"
       />
     </main>
   );

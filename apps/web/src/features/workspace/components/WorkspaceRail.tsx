@@ -1,4 +1,4 @@
-import { Bell, GripVertical, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { ArrowUpRight, Bell, GripVertical, PanelRightClose, PanelRightOpen, Paperclip } from 'lucide-react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import {
@@ -15,15 +15,17 @@ import {
 import { formatRailLabel } from '#/features/workspace/lib/formatting'
 import { notificationModes } from '#/features/workspace/constants'
 import { notificationPermissionLabels, type WebNotificationPermission } from '#/features/workspace/web-notifications'
-import { ChannelTaskPanel } from '#/features/tasks/ConversationTaskActions'
-import { ChannelThreadBrowser } from '#/features/threads/ChannelThreadBrowser'
+import { CompanyThreadBrowser } from '#/features/threads/CompanyThreadBrowser'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import { useReleaseConfig } from '#/lib/release-config'
 import { AttachmentTypeIcon } from '../attachment-ui'
 
 type WorkspaceRailProps = {
   activeGroup: Doc<'groups'> | undefined
+  activeCompanyId?: Id<'companies'>
+  activeCompanyName?: string
   activeProjectId: Id<'projects'> | null
+  projectMemberId?: Id<'projectMembers'>
   busyAction: string | null
   globalNotificationMode: (typeof notificationModes)[number]
   groupNotificationMode: (typeof notificationModes)[number]
@@ -110,6 +112,8 @@ function NotificationMenu({
 
 export function WorkspaceRail({
   activeGroup,
+  activeCompanyId,
+  activeCompanyName,
   activeProjectId,
   busyAction,
   globalNotificationMode,
@@ -122,6 +126,7 @@ export function WorkspaceRail({
   onSendTestNotification,
   onEnableBrowserNotifications,
   onStartResize,
+  projectMemberId,
   railCollapsed,
   userId,
   visibleMessages,
@@ -137,7 +142,7 @@ export function WorkspaceRail({
     .reverse()
   if (railCollapsed) {
     return (
-      <aside className="track-rail collapsed">
+      <aside aria-label="Workspace details" className="track-rail collapsed">
         <div className="track-rail-collapsed-actions">
           <button
             aria-label="Expand workspace details"
@@ -164,7 +169,7 @@ export function WorkspaceRail({
   }
 
   return (
-    <aside className="track-rail">
+    <aside aria-label="Channel context" className="track-rail">
       <button
         aria-label="Resize workspace details"
         className="track-rail-resize-handle"
@@ -199,40 +204,62 @@ export function WorkspaceRail({
           onSendTestNotification={onSendTestNotification}
         />
       </div>
+      <header className="track-rail-context-header">
+        <div>
+          <span className="track-rail-kicker">Project context</span>
+          <h2>{activeCompanyName ?? 'Keep the work close'}</h2>
+          <p>References and focused threads across the selected company workspace.</p>
+        </div>
+      </header>
       <section className="track-rail-section track-rail-reference-section">
         <div className="track-rail-heading-row">
-          <span className="track-rail-heading">Recent references</span>
+          <div className="track-rail-heading-copy">
+            <h2 className="track-rail-heading">Recent references</h2>
+            <p>Files shared in this channel</p>
+          </div>
+          {references.length ? <span className="track-rail-section-count">{references.length}</span> : null}
         </div>
         <div className="track-rail-reference-list">
           {references.map(({ attachment, author, createdAt, url }) => {
+            const sharedAt = new Date(createdAt)
             const content = (
               <>
-                <AttachmentTypeIcon contentType={attachment.contentType} filename={attachment.filename} />
-                <span className="track-rail-reference-copy">
-                  <strong>{attachment.filename}</strong>
-                  <small>from {author} · {new Date(createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small>
+                <span className="track-rail-reference-icon">
+                  <AttachmentTypeIcon contentType={attachment.contentType} filename={attachment.filename} />
                 </span>
+                <span className="track-rail-reference-copy">
+                  <strong title={attachment.filename}>{attachment.filename}</strong>
+                  <small><span>{author}</span><span aria-hidden="true">·</span><time dateTime={sharedAt.toISOString()}>{sharedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time></small>
+                </span>
+                {url ? <ArrowUpRight aria-hidden="true" className="track-rail-reference-open" size={14} /> : null}
               </>
             )
             return url ? (
-              <a href={url} key={attachment._id} rel="noreferrer" target="_blank">{content}</a>
+              <a aria-label={`Open ${attachment.filename} in a new tab`} href={url} key={attachment._id} rel="noreferrer" target="_blank">{content}</a>
             ) : (
               <span className="track-rail-reference" key={attachment._id}>{content}</span>
             )
           })}
-          {!references.length ? <p className="track-rail-empty">Files shared in this Channel appear here.</p> : null}
+          {!references.length ? (
+            <div className="track-rail-reference-empty" role="status">
+              <span><Paperclip aria-hidden="true" size={15} /></span>
+              <div><strong>No references yet</strong><p>Files shared in this channel will stay easy to find here.</p></div>
+            </div>
+          ) : null}
         </div>
       </section>
-      {releaseConfig.tasks && activeGroup ? <ChannelTaskPanel group={activeGroup} variant="rail" /> : null}
-      {releaseConfig.threads && activeGroup && activeProjectId ? (
-        <ChannelThreadBrowser
-          groupId={activeGroup._id}
+      {activeProjectId ? (
+        <CompanyThreadBrowser
+          companyName={activeCompanyName}
+          context={activeCompanyId && projectMemberId ? { actingCompanyId: activeCompanyId, projectMemberId } : undefined}
           projectId={activeProjectId}
-          readOnly={activeGroup.status === 'archived'}
-          timelineMessages={visibleMessages}
           userId={userId}
-          variant="rail"
         />
+      ) : activeGroup && !releaseConfig.threads ? (
+        <section className="track-feature-unavailable" role="status">
+          <strong>Threads are unavailable</strong>
+          <span>This project feature is disabled for the current environment.</span>
+        </section>
       ) : null}
     </aside>
   )

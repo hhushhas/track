@@ -3,6 +3,7 @@ import { getTaskDueState } from '@track/shared/tasks'
 
 import type { Doc } from '../../../../../../convex/_generated/dataModel'
 import type { TaskListItem } from '../task-types'
+import { formatDateInputValue } from '../task-date'
 
 type StateCategory = Doc<'taskWorkflowStates'>['category']
 type Priority = Doc<'tasks'>['priority']
@@ -30,7 +31,7 @@ export function TaskAvatar({ member, size = 'default' }: { member: Doc<'projectM
 
 export function DueChip({ dueDate, terminal = false }: { dueDate?: string; terminal?: boolean }) {
   if (!dueDate) return null
-  const today = new Date().toLocaleDateString('en-CA')
+  const today = formatDateInputValue(new Date())
   const overdue = getTaskDueState(dueDate, today, terminal) === 'overdue'
   return (
     <span className={`task-due-chip${overdue ? ' overdue' : ''}`}>

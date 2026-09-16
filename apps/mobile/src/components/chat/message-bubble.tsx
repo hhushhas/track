@@ -10,6 +10,7 @@ import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { isAutoAttachmentBody, isImageAttachment } from '@/lib/attachment-presentation';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
+import { displayText } from '@/lib/display-text';
 
 const AVATAR_SIZE = 32;
 /** Media sits nearly edge-to-edge; text sections add the rest of the inset. */
@@ -19,6 +20,7 @@ type Props = {
   isFirstInGroup: boolean;
   isOwnMessage: boolean;
   message: DetailedMessage;
+  onOpenForwardSource?: () => void;
   onLongPress: () => void;
   onOpenThread?: () => void;
   onPressReply?: () => void;
@@ -29,6 +31,7 @@ export function MessageBubble({
   isFirstInGroup,
   isOwnMessage,
   message,
+  onOpenForwardSource,
   onLongPress,
   onOpenThread,
   onPressReply,
@@ -37,7 +40,7 @@ export function MessageBubble({
   const theme = useTheme();
   const name = message.author?.displayName ?? 'Member';
   const authorId = message.author?._id ?? name;
-  const rawBody = message.message.body.trim();
+  const rawBody = displayText(message.message.body.trim());
   const body = message.attachments.length && isAutoAttachmentBody(rawBody) ? '' : rawBody;
   const showHeader = isFirstInGroup && !isOwnMessage;
   const hasMedia = message.attachments.some(
@@ -73,25 +76,6 @@ export function MessageBubble({
             <ThemedText numberOfLines={1} style={styles.authorName} type="smallBold">
               {name}
             </ThemedText>
-            {message.authorRole ? (
-              <View style={[styles.roleChip, { backgroundColor: theme.backgroundSelected }]}>
-                <ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">
-                  {message.authorRole}
-                </ThemedText>
-              </View>
-            ) : null}
-            {message.authorCompany ? (
-              <View
-                style={[
-                  styles.companyBadge,
-                  { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline },
-                ]}>
-                <PlatformIcon color={theme.textSecondary} name="office-building" size={12} />
-                <ThemedText numberOfLines={1} style={styles.companyName} type="captionBold">
-                  {message.authorCompany.displayName}
-                </ThemedText>
-              </View>
-            ) : null}
           </View>
         ) : null}
 
@@ -100,6 +84,7 @@ export function MessageBubble({
             accessibilityHint={onPressReply ? 'Shows the quoted message' : undefined}
             accessibilityLabel={`Replying to ${message.replyTo.authorName}: ${message.replyTo.body}`}
             accessibilityRole={onPressReply ? 'button' : 'text'}
+            accessibilityState={{ disabled: !onPressReply }}
             disabled={!onPressReply}
             onLongPress={onLongPress}
             onPress={() => {
@@ -112,13 +97,22 @@ export function MessageBubble({
               hasMedia && styles.quoteInMedia,
               { backgroundColor: theme.backgroundElevated, borderLeftColor: theme.textTertiary },
             ]}>
-            <ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">
-              {message.replyTo.authorName}
-            </ThemedText>
+            <View style={[styles.replyAuthorPill, { backgroundColor: theme.backgroundSelected }]}>
+              <ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">
+                {message.replyTo.authorName}
+              </ThemedText>
+            </View>
             <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">
-              {message.replyTo.body}
+              {displayText(message.replyTo.body)}
             </ThemedText>
           </Pressable>
+        ) : null}
+
+        {message.forwardedFrom ? (
+          <ForwardedMessageBlock
+            forwarded={message.forwardedFrom}
+            onOpenSource={onOpenForwardSource}
+          />
         ) : null}
 
         {message.attachments.length ? (
@@ -127,18 +121,11 @@ export function MessageBubble({
 
         {body ? (
           <View style={hasMedia ? styles.inset : null}>
-            <View style={styles.bodyWrap}>
-              <MessageText
-                body={body}
-                suffix={
-                  <ThemedText style={styles.timeSpacer} type="caption">
-                    {`   ${timeLabel}`}
-                  </ThemedText>
-                }
-              />
+            <View>
+              <MessageText body={body} />
               <ThemedText
                 accessibilityLabel={`Sent at ${timeLabel}`}
-                style={styles.timeInline}
+                style={styles.timeFooter}
                 themeColor="textSecondary"
                 type="caption">
                 {timeLabel}
@@ -154,6 +141,7 @@ export function MessageBubble({
               message.channelThread.replyCount === 1 ? 'reply' : 'replies'
             }${message.channelThread.status === 'archived' ? ', archived' : ''}`}
             accessibilityRole={onOpenThread ? 'button' : 'text'}
+            accessibilityState={{ disabled: !onOpenThread }}
             android_ripple={{ color: theme.backgroundSelected }}
             disabled={!onOpenThread}
             onLongPress={onLongPress}
@@ -167,7 +155,7 @@ export function MessageBubble({
               hasMedia && styles.inset,
               { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline },
             ]}>
-            <PlatformIcon color={theme.textSecondary} name="forum-outline" size={15} />
+            <PlatformIcon color={theme.textSecondary} name="thread" size={15} />
             <View style={styles.threadBody}>
               <ThemedText numberOfLines={1} type="captionBold">
                 {message.channelThread.name}
@@ -207,6 +195,45 @@ export function MessageBubble({
   );
 }
 
+function ForwardedMessageBlock({
+  forwarded,
+  onOpenSource,
+}: {
+  forwarded: NonNullable<DetailedMessage['forwardedFrom']>;
+  onOpenSource?: () => void;
+}) {
+  const theme = useTheme();
+  const attachmentCount = forwarded.attachmentSnapshots.length;
+  const sourceLabel = forwarded.sourceGroupName
+    ? `Forwarded from ${forwarded.sourceGroupName}`
+    : 'Forwarded message';
+
+  return (
+    <Pressable
+      accessibilityHint={onOpenSource ? 'Opens the original message' : 'The original message is outside your access'}
+      accessibilityLabel={`${sourceLabel}. ${forwarded.originalAuthorName}: ${forwarded.originalBody || 'Attachment message'}`}
+      accessibilityRole={onOpenSource ? 'link' : 'text'}
+      accessibilityState={{ disabled: !onOpenSource }}
+      disabled={!onOpenSource}
+      onPress={onOpenSource}
+      style={[styles.forwarded, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+      <View style={styles.forwardedLabel}>
+        <PlatformIcon color={theme.textSecondary} name="forward" size={14} />
+        <ThemedText themeColor="textSecondary" type="captionBold">{sourceLabel}</ThemedText>
+      </View>
+      <ThemedText type="captionBold">{forwarded.originalAuthorName}</ThemedText>
+      <ThemedText numberOfLines={3} themeColor="textSecondary" type="small">
+        {displayText(forwarded.originalBody) || 'Attachment message'}
+      </ThemedText>
+      {attachmentCount ? (
+        <ThemedText themeColor="textSecondary" type="caption">
+          {attachmentCount} copied {attachmentCount === 1 ? 'attachment' : 'attachments'}
+        </ThemedText>
+      ) : null}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   authorName: {
     flexShrink: 1,
@@ -215,9 +242,15 @@ const styles = StyleSheet.create({
   avatarSpacer: {
     width: AVATAR_SIZE,
   },
-  bodyWrap: {
-    position: 'relative',
+  forwarded: {
+    borderLeftWidth: 2,
+    borderRadius: Radius.small,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 3,
+    margin: MEDIA_PAD,
+    padding: Spacing.two,
   },
+  forwardedLabel: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   bubble: {
     borderRadius: Radius.large,
     flexShrink: 1,
@@ -229,10 +262,10 @@ const styles = StyleSheet.create({
   },
   bubbleText: {
     paddingHorizontal: Spacing.two,
-    paddingVertical: 6,
+    paddingVertical: Spacing.two,
   },
   companyBadge: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     borderRadius: Radius.small,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
@@ -269,6 +302,7 @@ const styles = StyleSheet.create({
     marginHorizontal: MEDIA_PAD,
     marginTop: MEDIA_PAD,
   },
+  replyAuthorPill: { alignSelf: 'flex-start', borderRadius: Radius.pill, maxWidth: '80%', paddingHorizontal: Spacing.two, paddingVertical: 2 },
   roleChip: {
     borderRadius: Radius.small,
     paddingHorizontal: 5,
@@ -311,11 +345,6 @@ const styles = StyleSheet.create({
   timeFooter: {
     alignSelf: 'flex-end',
   },
-  timeInline: {
-    bottom: 1,
-    position: 'absolute',
-    right: 0,
-  },
   timeOverlay: {
     borderRadius: Radius.pill,
     bottom: MEDIA_PAD + 6,
@@ -326,8 +355,5 @@ const styles = StyleSheet.create({
   },
   timeOverlayText: {
     color: Colors.dark.text,
-  },
-  timeSpacer: {
-    color: 'transparent',
   },
 });

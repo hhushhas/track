@@ -1,6 +1,7 @@
 import { useQuery } from 'convex/react'
 import {
   type ReleaseFeatureFlags,
+  type ReleaseFeatureProjection,
   unavailableReleaseFeatureFlags,
 } from '@track/shared/feature-flags'
 import { api } from '../../../../convex/_generated/api'
@@ -10,13 +11,15 @@ export type ReleaseConfigState =
   | { status: 'ready'; config: ReleaseFeatureFlags }
 
 export function resolveReleaseConfig(
-  serverProjection: ReleaseFeatureFlags | null | undefined,
+  serverProjection: ReleaseFeatureProjection | null | undefined,
 ): ReleaseFeatureFlags {
-  return serverProjection ?? unavailableReleaseFeatureFlags
+  return serverProjection
+    ? { ...serverProjection, projectSnapshots: serverProjection.projectSnapshots === true }
+    : unavailableReleaseFeatureFlags
 }
 
 export function resolveReleaseConfigState(
-  serverProjection: ReleaseFeatureFlags | null | undefined,
+  serverProjection: ReleaseFeatureProjection | null | undefined,
 ): ReleaseConfigState {
   if (serverProjection === undefined) {
     return { status: 'loading', config: unavailableReleaseFeatureFlags }
@@ -30,4 +33,8 @@ export function useReleaseConfigState() {
 
 export function useReleaseConfig() {
   return useReleaseConfigState().config
+}
+
+export function useReleaseConfigProjection() {
+  return useQuery(api.releaseConfig.getReleaseConfig)
 }

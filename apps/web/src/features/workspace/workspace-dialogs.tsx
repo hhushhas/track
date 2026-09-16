@@ -99,14 +99,18 @@ export function WorkspaceDialogs({
               <label className="track-dialog-field">
                 <span>Project name</span>
                 <Input
-                  autoFocus
+                  autoComplete="off"
+                  name="projectName"
                   onChange={(event) => setProjectName(event.currentTarget.value)}
+                  required
                   value={projectName}
                 />
               </label>
               <label className="track-dialog-field">
                 <span>Client label</span>
                 <Input
+                  autoComplete="off"
+                  name="clientLabel"
                   onChange={(event) => setProjectClientLabel(event.currentTarget.value)}
                   value={projectClientLabel}
                 />
@@ -118,7 +122,7 @@ export function WorkspaceDialogs({
               </Button>
               <Button
                 className="track-button track-button-primary"
-                disabled={!projectName.trim() || busyAction === 'create-project' || busyAction === 'edit-project'}
+                disabled={busyAction === 'create-project' || busyAction === 'edit-project'}
                 type="submit"
               >
                 {projectDialogMode === 'edit' ? 'Save' : 'Create'}
@@ -143,8 +147,10 @@ export function WorkspaceDialogs({
               <label className="track-dialog-field">
                 <span>Group name</span>
                 <Input
-                  autoFocus
+                  autoComplete="off"
+                  name="groupName"
                   onChange={(event) => setGroupName(event.currentTarget.value)}
+                  required
                   value={groupName}
                 />
               </label>
@@ -155,7 +161,7 @@ export function WorkspaceDialogs({
               </Button>
               <Button
                 className="track-button track-button-primary"
-                disabled={!groupName.trim() || busyAction === 'create-group' || busyAction === 'edit-group'}
+                disabled={busyAction === 'create-group' || busyAction === 'edit-group'}
                 type="submit"
               >
                 {groupDialogMode === 'edit' ? 'Save' : 'Create'}
@@ -176,8 +182,10 @@ export function WorkspaceDialogs({
               <label className="track-dialog-field">
                 <span>Email</span>
                 <Input
-                  autoFocus
+                  autoComplete="email"
+                  name="inviteEmail"
                   onChange={(event) => setInviteEmail(event.currentTarget.value)}
+                  required
                   type="email"
                   value={inviteEmail}
                 />
@@ -210,7 +218,7 @@ export function WorkspaceDialogs({
                     {selectedInviteGroup && selectedInviteGroupAvatar && SelectedInviteGroupIcon ? (
                       <span className="track-invite-access-trigger">
                         <span className={`track-nav-group-icon ${selectedInviteGroupAvatar.tone}`}>
-                          <SelectedInviteGroupIcon size={14} />
+                          <SelectedInviteGroupIcon aria-hidden="true" size={14} />
                         </span>
                         <span className="track-dialog-select-value">{selectedInviteGroup.name}</span>
                       </span>
@@ -261,7 +269,7 @@ export function WorkspaceDialogs({
               </Button>
               <Button
                 className="track-button track-button-primary"
-                disabled={!inviteEmail.trim() || busyAction === 'invite'}
+                disabled={busyAction === 'invite'}
                 type="submit"
               >
                 Invite

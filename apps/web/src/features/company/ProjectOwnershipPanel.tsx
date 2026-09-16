@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
 
 type Props = {
   actingCompanyId: Id<"companies">;
@@ -193,7 +194,8 @@ export function ProjectOwnershipPanel({
         >
           <label>
             <span>Owning Company</span>
-            <select
+            <NativeSelect
+              aria-label="Owning Company"
               onChange={(event) => {
                 const selectedCompany = state.participants.find(
                   (participant) =>
@@ -207,16 +209,16 @@ export function ProjectOwnershipPanel({
               {candidates.flatMap((participant) =>
                 participant.company
                   ? [
-                      <option
+                      <NativeSelectOption
                         key={participant.company._id}
                         value={participant.company._id}
                       >
                         {participant.company.displayName}
-                      </option>,
+                      </NativeSelectOption>,
                     ]
                   : [],
               )}
-            </select>
+            </NativeSelect>
           </label>
           <p className="company-project-ownership-note">
             {transferActive

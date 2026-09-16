@@ -32,8 +32,9 @@ type WorkspaceHeaderProps = {
   onFileSelected: (event: ChangeEvent<HTMLInputElement>) => void
   onInvite: () => void
   onMobileNavOpen: () => void
+  onMobileRailOpen?: () => void
   onSearchToggle: () => void
-  view: 'home' | 'project' | 'group' | 'settings'
+  view: 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 }
 
 export function WorkspaceHeader({
@@ -50,6 +51,7 @@ export function WorkspaceHeader({
   onFileSelected,
   onInvite,
   onMobileNavOpen,
+  onMobileRailOpen: _onMobileRailOpen,
   onSearchToggle,
   view,
 }: WorkspaceHeaderProps) {
@@ -80,8 +82,14 @@ export function WorkspaceHeader({
     taskCountLabel = String(openChannelTaskCount)
     if (!channelTasks.isDone) taskCountLabel += '+'
   }
+  const scopeLabel = view === 'group' && activeGroup && activeProject
+    ? `${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Company'}, ${activeProject.project.name}, #${activeGroup.name}`
+    : activeProject
+      ? `${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Company'}, ${activeProject.project.name}`
+      : 'Workspace scope'
+
   return (
-    <header className="track-thread-header">
+    <header aria-label={scopeLabel} className="track-thread-header">
       <Button
         aria-label="Open navigation"
         className="icon-button track-mobile-menu-button"
@@ -178,7 +186,7 @@ export function WorkspaceHeader({
             />
           </>
         ) : null}
-        {view !== 'settings' ? (
+        {view !== 'settings' && activeProject ? (
           <Button
             className="track-button"
             disabled={!activeProjectId || busyAction === 'invite'}
@@ -188,7 +196,7 @@ export function WorkspaceHeader({
             Invite
           </Button>
         ) : null}
-        {view === 'group' ? null : view === 'project' ? (
+        {view === 'group' ? null : view === 'project' && activeProject ? (
           <Button
             className="track-button track-button-accent"
             disabled={!activeProjectId || busyAction === 'create-group'}

@@ -75,12 +75,15 @@ export const taskCoreTables = {
     .index('by_board', ['boardId'])
     .index('by_board_archived', ['boardId', 'archivedAt'])
     .index('by_board_archived_rank', ['boardId', 'archivedAt', 'rank'])
+    .index('by_board_priority_archived_rank', ['boardId', 'priority', 'archivedAt', 'rank'])
     .index('by_board_state_rank', ['boardId', 'workflowStateId', 'rank'])
     .index('by_board_state_archived_rank', ['boardId', 'workflowStateId', 'archivedAt', 'rank'])
+    .index('by_board_state_priority_archived_rank', ['boardId', 'workflowStateId', 'priority', 'archivedAt', 'rank'])
     .index('by_assignee_archived', ['assigneeProjectMemberId', 'archivedAt'])
     .index('by_parent', ['parentTaskId'])
     .index('by_parent_rank', ['parentTaskId', 'rank'])
     .index('by_project_idempotency', ['projectId', 'createIdempotencyKey'])
+    .index('by_project_priority_archived_rank', ['projectId', 'priority', 'archivedAt', 'rank'])
     .searchIndex('search_tasks', {
       searchField: 'searchText',
       filterFields: ['projectId', 'groupId', 'archivedAt'],
@@ -129,8 +132,8 @@ export const taskCoreTables = {
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('by_task_rank', ['taskId', 'rank'])
     .index('by_project_created_at', ['projectId', 'createdAt'])
+    .index('by_task_rank', ['taskId', 'rank'])
     .index('by_message', ['messageId'])
     .index('by_attachment', ['attachmentId'])
     .index('by_assistant_stream', ['assistantStreamId']),
@@ -205,6 +208,7 @@ export const taskCoreTables = {
     createdAt: v.number(),
   })
     .index('by_member_read', ['recipientProjectMemberId', 'readAt'])
+    .index('by_member_task_read', ['recipientProjectMemberId', 'taskId', 'readAt'])
     .index('by_member_created_at', ['recipientProjectMemberId', 'createdAt'])
     .index('by_member_idempotency', ['recipientProjectMemberId', 'idempotencyKey'])
     .index('by_project', ['projectId']),

@@ -19,6 +19,7 @@ export type { MobileBoardView, MobileSuggestionView, MobileTaskView };
 export function TaskCollection({
   assigneeName,
   columns,
+  focusedTaskId,
   loadMore,
   loadingMore,
   onCreate,
@@ -33,6 +34,7 @@ export function TaskCollection({
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
+  focusedTaskId?: string;
   loadMore?: () => void;
   loadingMore?: boolean;
   onCreate: () => void;
@@ -80,9 +82,11 @@ export function TaskCollection({
         <TaskBoard
           assigneeName={assigneeName}
           columns={columns}
+          focusedTaskId={focusedTaskId}
           onMove={onMove}
           onOpen={onOpen}
           readOnly={readOnly}
+          states={selectedBoard?.states ?? []}
         />
         <TaskLoadMore loadMore={loadMore} loading={loadingMore} />
       </>
@@ -119,6 +123,7 @@ function TaskLoadMore({ loadMore, loading }: { loadMore?: () => void; loading?: 
 }
 
 export function SuggestionInbox({
+  focusedSuggestionId,
   onAccept,
   onDismiss,
   onHide,
@@ -126,6 +131,7 @@ export function SuggestionInbox({
   readOnly,
   suggestions,
 }: {
+  focusedSuggestionId?: string;
   onAccept: (row: MobileSuggestionView) => void;
   onDismiss: (row: MobileSuggestionView) => void;
   onHide: (row: MobileSuggestionView) => void;
@@ -159,12 +165,12 @@ export function SuggestionInbox({
       {suggestions.map((row) => (
         <View
           key={row.suggestion._id}
-          style={[styles.suggestion, {
+          style={[styles.suggestion, row.suggestion._id === focusedSuggestionId && { borderColor: theme.accent }, {
             backgroundColor: theme.backgroundElement,
             borderColor: theme.hairline,
           }]}>
           <View style={styles.eyebrow}>
-            <PlatformIcon color={theme.textSecondary} name="forum-outline" size={16} />
+            <PlatformIcon color={theme.textSecondary} name="message" size={16} />
             <ThemedText themeColor="textSecondary" type="caption">From conversation</ThemedText>
             <View style={styles.spacer} />
             <ConfidenceMeter value={row.suggestion.confidence} />

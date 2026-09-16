@@ -38,17 +38,21 @@ import { useOAuthCallbackPending } from '#/lib/oauth-callback'
 import {
   clearResolvedTrackUserIds,
   getResolvedTrackUserId,
+  getSessionDataForRender,
   getSessionUser,
 } from '#/features/workspace/workspace-session'
 import { WorkspacePageSurface } from './WorkspacePageSurface'
+import { getStoredActingCompanyId } from '#/features/company/use-acting-company'
+import { getStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH } from '#/features/workspace/sidebar-sizing'
 
 type WorkspacePageProps = {
+  directoryOnly?: boolean
   groupId?: string
   projectId?: string
-  view?: 'home' | 'project' | 'group' | 'settings'
+  view?: 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 }
 
-export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePageProps) {
+export function WorkspacePage({ directoryOnly = false, groupId, projectId, view = 'home' }: WorkspacePageProps) {
   const navigate = useNavigate()
   const session = authClient.useSession()
   const syncCurrentUser = useMutation(api.auth.syncGoogleUser)
@@ -62,6 +66,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     return sessionUser ? getResolvedTrackUserId(sessionUser.id) : null
   })
   const [activeProjectId, setActiveProjectId] = useState<Id<'projects'> | null>(null)
+  const [actingCompanyId] = useState(getStoredActingCompanyId)
   const [activeGroupId, setActiveGroupId] = useState<Id<'groups'> | null>(null)
   const [composerState, setComposerState] = useState<{ scopeKey: string | null; value: string }>({ scopeKey: null, value: '' })
   const [replyState, setReplyState] = useState<{ scopeKey: string | null; value: GroupMessageItem | null }>({ scopeKey: null, value: null })
@@ -79,11 +84,17 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('track-nav-collapsed') === 'true'
   })
+  const [navWidth, setNavWidth] = useState(() => {
+    if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH
+    return getStoredSidebarWidth(window.localStorage.getItem('track-nav-width'))
+  })
+  const [navResizing, setNavResizing] = useState(false)
   const [railCollapsed, setRailCollapsed] = useState(false)
   const [railWidth, setRailWidth] = useState(312)
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [mobileRailOpen, setMobileRailOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [flashingMessageId, setFlashingMessageId] = useState<string | null>(null)
@@ -137,11 +148,23 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const routeProjectId = projectId as Id<'projects'> | undefined
   const routeGroupId = groupId as Id<'groups'> | undefined
   const devAuthBypass = useDevAuthBypass()
+  const sessionDataForRender = useMemo(
+    () => getSessionDataForRender(
+      session.data,
+      session.isPending,
+      authClient.getSessionData?.(),
+    ),
+    [session.data, session.isPending],
+  )
   const sessionUser = useMemo(
+    () => getSessionUser(sessionDataForRender ?? devAuthBypass.sessionData),
+    [devAuthBypass.sessionData, sessionDataForRender],
+  )
+  const verifiedSessionUser = useMemo(
     () => getSessionUser(session.data ?? devAuthBypass.sessionData),
     [devAuthBypass.sessionData, session.data],
   )
-  const hasSessionAccess = Boolean(session.data || devAuthBypass.enabled)
+  const hasSessionAccess = Boolean(sessionDataForRender || devAuthBypass.enabled)
   const oauthCallbackPending = useOAuthCallbackPending(hasSessionAccess)
   const workspaceData = useWorkspaceData({
     activeGroupId,
@@ -345,11 +368,36 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
         search: { companyId: '', membershipId: '' },
         hash: result.messageId ? `message-${result.messageId}` : undefined,
       })
+      return
+    }
+    if (result.groupId) {
+      void navigate({
+        to: '/workspace/projects/$projectId/groups/$groupId',
+        params: { groupId: result.groupId, projectId: activeProjectId },
+        hash: result.messageId ? `message-${result.messageId}` : undefined,
+      })
+      return
+    }
+    if (result.kind === 'person') {
+      void navigate({
+        to: '/workspace/projects/$projectId/settings',
+        params: { projectId: activeProjectId },
+        hash: 'people',
+      })
+      return
+    }
+    if (result.kind === 'project') {
+      void navigate({
+        to: '/workspace/projects/$projectId',
+        params: { projectId: activeProjectId },
+      })
     }
   }, [activeProjectId, navigate])
 
   useWorkspaceSynchronization({
     acceptPendingInvitations,
+    actingCompanyId,
+    autoSelectCompanyProject: !directoryOnly,
     activeGroupId,
     activeMentionQuery: activeMention?.query,
     activeProjectId,
@@ -361,17 +409,22 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
     mentionIndex,
     mentionOptionRefs,
     navCollapsed,
+    navResizing,
+    navWidth,
     projectItems,
     projects,
     railResizing,
     routeGroupId,
     routeProjectId,
-    sessionUser,
+    sessionUser: verifiedSessionUser,
     setActiveGroupId,
     setActiveProjectId,
     setActionError,
     setLogoutConfirmOpen,
     setMentionIndex,
+    setNavCollapsed,
+    setNavResizing,
+    setNavWidth,
     setRailResizing,
     setRailWidth,
     setShowJumpToLatest,
@@ -430,7 +483,8 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
   const isProjectRouteLoading =
     trackUserId !== null &&
     (projects === undefined ||
-      (activeProjectId !== null && (groups === undefined || projectMembers === undefined)))
+      (activeProject?.projectType === 'legacy' &&
+        (groups === undefined || projectMembers === undefined)))
   const isGroupRouteLoading =
     view === 'group' &&
     activeGroupId !== null &&
@@ -573,7 +627,11 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
       setActiveGroupId(null)
       const nextProject = projectItems.find((item) => item.project._id !== deletedProjectId)
       if (nextProject) {
-        navigateToProject(nextProject.project._id)
+        navigateToProject(
+          nextProject.project._id,
+          nextProject.company?._id,
+          nextProject.membership._id,
+        )
         return
       }
       void navigate({ to: '/workspace' })
@@ -631,7 +689,7 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           devAuthEnabled: devAuthBypass.enabled,
           hasSessionAccess,
           oauthCallbackPending,
-          sessionPending: session.isPending,
+          sessionPending: session.isPending && !sessionDataForRender,
           sessionUser,
           trackUserId,
         },
@@ -679,7 +737,9 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           mentionIndex,
           mentionOptionRefs,
           mobileNavOpen,
+          mobileRailOpen,
           navCollapsed,
+          navWidth,
           projectSearchFilter,
           projectSearchOpen,
           projectSearchQuery,
@@ -722,7 +782,10 @@ export function WorkspacePage({ groupId, projectId, view = 'home' }: WorkspacePa
           setMemoryImportOpen,
           setMentionIndex,
           setMobileNavOpen,
+          setMobileRailOpen,
           setNavCollapsed,
+          setNavResizing,
+          setNavWidth,
           setLogoutConfirmOpen,
           setProjectSearchFilter,
           setProjectSearchOpen,
