@@ -1,10 +1,10 @@
 import type { TaskPriority, TaskStateCategory } from '@track/shared/tasks';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 import {
@@ -12,8 +12,8 @@ import {
   taskDueDisplay,
   taskPriorityGlyph,
   taskPriorityLabel,
-  taskStateTone,
 } from '@/lib/task-presentation';
+import { taskStatePalette } from '@/lib/task-state-palette';
 
 type Segment<T extends string> = { label: string; value: T };
 
@@ -28,7 +28,7 @@ export function TaskSegmentedControl<T extends string>({
 }) {
   const theme = useTheme();
   return (
-    <View accessibilityRole="tablist" style={[styles.segmented, { backgroundColor: theme.backgroundElement }]}>
+    <ScrollView accessibilityRole="tablist" contentContainerStyle={styles.segmentedContent} horizontal showsHorizontalScrollIndicator={false} style={[styles.segmented, { backgroundColor: theme.backgroundElement }]}>
       {segments.map((segment) => {
         const selected = value === segment.value;
         return (
@@ -44,22 +44,14 @@ export function TaskSegmentedControl<T extends string>({
               backgroundColor: theme.backgroundElevated,
               borderColor: theme.hairline,
             }]}>
-            <ThemedText themeColor={selected ? 'text' : 'textSecondary'} type="smallBold">
+            <ThemedText numberOfLines={1} themeColor={selected ? 'text' : 'textSecondary'} type="smallBold">
               {segment.label}
             </ThemedText>
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
-}
-
-function statePalette(theme: ReturnType<typeof useTheme>, category?: TaskStateCategory) {
-  const tone = taskStateTone(category);
-  if (tone === 'success') return { background: theme.successSoft, foreground: theme.success };
-  if (tone === 'active') return { background: theme.accentSoft, foreground: theme.accentStrong };
-  if (tone === 'muted') return { background: theme.backgroundSelected, foreground: theme.textSecondary };
-  return { background: theme.backgroundElement, foreground: theme.textSecondary };
 }
 
 /** State reads by shape as well as color, so the set stays legible without hue. */
@@ -81,7 +73,7 @@ export function TaskStatusPill({
   onPress?: () => void;
 }) {
   const theme = useTheme();
-  const palette = statePalette(theme, category);
+  const palette = taskStatePalette(theme, category);
   const body = (
     <>
       {category === 'started' ? (
@@ -117,13 +109,15 @@ export function TaskPriorityBadge({
   compact = false,
   onPress,
   priority,
+  showNone = false,
 }: {
   compact?: boolean;
   onPress?: () => void;
   priority: TaskPriority;
+  showNone?: boolean;
 }) {
   const theme = useTheme();
-  if (priority === 'none' && !onPress) return null;
+  if (priority === 'none' && !onPress && !showNone) return null;
   const color = priority === 'urgent' ? theme.danger : priority === 'high' ? theme.warning : theme.textSecondary;
   const backgroundColor = priority === 'urgent' ? theme.dangerSoft : priority === 'high' ? theme.accentSoft : theme.backgroundElement;
   const body = (
@@ -198,6 +192,7 @@ export function TaskDueChip({
 export function TaskCard({
   assignee,
   category,
+  companyName,
   contextLabel,
   description,
   dueDate,
@@ -208,6 +203,8 @@ export function TaskCard({
   onStatusPress,
   priority,
   publicKey,
+  groupName,
+  projectName,
   referenceCount = 0,
   showKey = true,
   stateName,
@@ -216,6 +213,7 @@ export function TaskCard({
 }: {
   assignee?: string;
   category?: TaskStateCategory;
+  companyName?: string;
   contextLabel?: string;
   description?: string;
   dueDate?: string;
@@ -226,6 +224,8 @@ export function TaskCard({
   onStatusPress?: () => void;
   priority: TaskPriority;
   publicKey: string;
+  groupName?: string;
+  projectName?: string;
   referenceCount?: number;
   showKey?: boolean;
   stateName: string;
@@ -234,6 +234,7 @@ export function TaskCard({
 }) {
   const theme = useTheme();
   const board = variant === 'board';
+  const statePalette = taskStatePalette(theme, category);
 
   if (!board) {
     const context = [showKey ? shortTaskKey(publicKey) : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
@@ -250,17 +251,26 @@ export function TaskCard({
             android_ripple={{ color: theme.backgroundSelected }}
             onPress={onPress}
             style={({ pressed }) => [styles.listRowPressable, { opacity: pressed ? 0.7 : 1 }]}>
-            <View style={[styles.listLeading, { backgroundColor: theme.backgroundSelected }]}>
+            <View style={[styles.listLeading, { backgroundColor: statePalette.background }]}>
               {assignee && assignee !== 'You'
                 ? <ColoredAvatar label={assignee} seed={assignee} size={32} />
-                : <PlatformIcon color={theme.textSecondary} name="check-circle" size={19} />}
+                : <PlatformIcon color={statePalette.foreground} name={stateGlyph(category)} size={19} variant={category === 'completed' ? 'filled' : 'outline'} />}
             </View>
             <View style={styles.listCopy}>
               <ThemedText numberOfLines={2} style={styles.cardTitle} type="title">{title}</ThemedText>
+              {projectName ? (
+                <View style={styles.listProjectContext}>
+                  <PlatformIcon color={theme.accentStrong} name="project" size={13} />
+                  <ThemedText numberOfLines={1} style={styles.listProjectName} type="captionBold">{projectName}</ThemedText>
+                  {companyName ? <View style={[styles.companyPill, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}><ThemedText numberOfLines={1} style={styles.companyPillText} themeColor="textSecondary" type="captionBold">{companyName}</ThemedText></View> : null}
+                </View>
+              ) : null}
               <View style={styles.listContext}>
                 {evidence ? <View accessibilityLabel="Has evidence" style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
                 <ThemedText numberOfLines={1} style={styles.listContextText} themeColor="textSecondary" type="caption">
-                  {context}
+                  {[showKey ? shortTaskKey(publicKey) : null, groupName ? `#${groupName.replace(/^#/, '')}` : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </ThemedText>
               </View>
             </View>
@@ -270,7 +280,7 @@ export function TaskCard({
               <TaskDueChip category={category} dueDate={dueDate} />
             </View>
             <View style={styles.listTrailingLine}>
-              <TaskStatusPill appearance="plain" category={category} label={stateName} onPress={onStatusPress} />
+              <TaskStatusPill category={category} label={stateName} onPress={onStatusPress} />
             </View>
           </View>
         </View>
@@ -430,14 +440,13 @@ export function TaskAction({
         backgroundColor: primary ? theme.accent : theme.backgroundSelected,
         opacity: disabled ? 0.5 : 1,
       }]}>
-      <ThemedText style={primary ? styles.actionPrimaryText : undefined} type="smallBold">{label}</ThemedText>
+      <ThemedText style={primary ? { color: theme.background } : undefined} type="smallBold">{label}</ThemedText>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   action: { alignItems: 'center', alignSelf: 'stretch', borderCurve: 'continuous', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
-  actionPrimaryText: { color: Colors.light.text },
   banner: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   bannerText: { flex: 1 },
   boardCard: { minHeight: 0 },
@@ -457,13 +466,17 @@ const styles = StyleSheet.create({
   focusedTask: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: Radius.pill, flexDirection: 'row', gap: 3, marginHorizontal: Spacing.three, marginTop: Spacing.two, paddingHorizontal: Spacing.two, paddingVertical: 3 },
   inlineMeta: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one },
   listContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
+  companyPill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, maxWidth: '100%', minHeight: 24, paddingHorizontal: Spacing.two, paddingVertical: 2 },
+  companyPillText: { flexShrink: 1 },
+  listProjectContext: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, minWidth: 0 },
+  listProjectName: { flexShrink: 1, maxWidth: '100%' },
   listContextText: { flexShrink: 1 },
-  listCopy: { flex: 1, gap: 3, minWidth: 0 },
+  listCopy: { flex: 1, gap: Spacing.two, minWidth: 0 },
   listLeading: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 },
   listRow: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  listRowContent: { alignItems: 'stretch', flexDirection: 'row', minHeight: 72 },
-  listRowPressable: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.three, minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  listTrailing: { alignItems: 'flex-end', gap: 3, justifyContent: 'center', maxWidth: 116, minHeight: TouchTarget, minWidth: 88, paddingRight: Spacing.three, paddingVertical: Spacing.two },
+  listRowContent: { alignItems: 'stretch', flexDirection: 'row', minHeight: 96 },
+  listRowPressable: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.three, minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.three },
+  listTrailing: { alignItems: 'flex-end', gap: Spacing.one, justifyContent: 'center', maxWidth: 116, minHeight: 96, minWidth: 88, paddingRight: Spacing.three, paddingVertical: Spacing.three },
   listTrailingLine: { alignItems: 'flex-end', justifyContent: 'center', minHeight: 18, maxWidth: '100%' },
   originDot: { borderRadius: Radius.pill, borderWidth: 2, height: 8, width: 8 },
   pill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: 5, maxWidth: 168, minHeight: 28, paddingHorizontal: Spacing.two, paddingVertical: 5 },
@@ -472,8 +485,9 @@ const styles = StyleSheet.create({
   priority: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   priorityBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.two, paddingVertical: 2 },
   priorityGlyph: { fontWeight: '800' },
-  segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.small, borderWidth: StyleSheet.hairlineWidth, flex: 1, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.two },
-  segmented: { borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', padding: 3 },
+  segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexGrow: 0, justifyContent: 'center', minHeight: TouchTarget, minWidth: 104, paddingHorizontal: Spacing.three },
+  segmented: { borderCurve: 'continuous', borderRadius: Radius.pill, flexGrow: 0 },
+  segmentedContent: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, padding: Spacing.one },
   skeletonAvatar: { borderRadius: Radius.pill, height: 24, width: 24 },
   skeletonBottom: { flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.one },
   skeletonCard: { borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.three },

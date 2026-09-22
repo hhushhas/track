@@ -43,6 +43,7 @@ type Props = {
   /** Jumps to the message this one quotes. */
   onPressReply?: () => void;
   onSwipeReply?: () => void;
+  variant?: 'conversation' | 'thread';
 };
 
 export function ThreadRow({
@@ -54,6 +55,7 @@ export function ThreadRow({
   onOpenThread,
   onPressReply,
   onSwipeReply,
+  variant = 'conversation',
 }: Props) {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
@@ -90,7 +92,10 @@ export function ThreadRow({
             <PlatformIcon color={theme.textSecondary} name="reply" size={16} />
           </View>
         </Animated.View>
-        <Animated.View style={[isFirstInGroup ? styles.groupStart : styles.grouped, animatedStyle]}>
+        <Animated.View style={[
+          isFirstInGroup ? (variant === 'thread' ? styles.threadGroupStart : styles.groupStart) : styles.grouped,
+          animatedStyle,
+        ]}>
           {item.kind === 'assistant' ? (
             <AssistantMessage
               isFirstInGroup={isFirstInGroup}
@@ -108,6 +113,7 @@ export function ThreadRow({
               onOpenThread={onOpenThread}
               onPressReply={onPressReply}
               timeLabel={fmtTime(item.item.message.createdAt)}
+              variant={variant}
             />
           )}
         </Animated.View>
@@ -203,5 +209,8 @@ const styles = StyleSheet.create({
   },
   swipeContainer: {
     position: 'relative',
+  },
+  threadGroupStart: {
+    paddingTop: Spacing.two,
   },
 });

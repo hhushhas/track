@@ -5,10 +5,8 @@ export function threadListHref(
   projectId: Id<'projects'>,
   groupId: Id<'groups'>,
   context?: RepresentedProjectContext | null,
-  sourceMessageId?: Id<'messages'>,
 ) {
-  const source = sourceMessageId ? `&sourceMessageId=${encodeURIComponent(sourceMessageId)}` : '';
-  return `/threads?projectId=${encodeURIComponent(projectId)}&groupId=${encodeURIComponent(groupId)}${representedContextQuery(context ?? null)}${source}`;
+  return `/threads?projectId=${encodeURIComponent(projectId)}&groupId=${encodeURIComponent(groupId)}${representedContextQuery(context ?? null)}`;
 }
 
 export function threadConversationHref(

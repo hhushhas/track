@@ -29,9 +29,9 @@ export function taskListHref(
   identity: MobileTaskIdentity | null,
   tab?: 'inbox',
   suggestionId?: Id<'taskSuggestions'>,
-  focus?: { boardId?: Id<'taskBoards'>; taskId?: Id<'tasks'> },
+  focus?: { boardId?: Id<'taskBoards'>; create?: boolean; dueDate?: string; groupId?: Id<'groups'>; taskId?: Id<'tasks'> },
 ) {
-  return `/tasks?projectId=${encodeURIComponent(projectId)}${taskContext(identity)}${tab ? '&tab=inbox' : ''}${suggestionId ? `&suggestionId=${encodeURIComponent(suggestionId)}` : ''}${focus?.boardId ? `&boardId=${encodeURIComponent(focus.boardId)}` : ''}${focus?.taskId ? `&taskId=${encodeURIComponent(focus.taskId)}` : ''}` as const;
+  return `/tasks?projectId=${encodeURIComponent(projectId)}${taskContext(identity)}${tab ? '&tab=inbox' : ''}${suggestionId ? `&suggestionId=${encodeURIComponent(suggestionId)}` : ''}${focus?.boardId ? `&boardId=${encodeURIComponent(focus.boardId)}` : ''}${focus?.create ? '&create=1' : ''}${focus?.dueDate ? `&dueDate=${encodeURIComponent(focus.dueDate)}` : ''}${focus?.groupId ? `&groupId=${encodeURIComponent(focus.groupId)}` : ''}${focus?.taskId ? `&taskId=${encodeURIComponent(focus.taskId)}` : ''}` as const;
 }
 
 export function taskDetailHref(

@@ -17,11 +17,13 @@ import { shortTaskKey } from '@/lib/task-presentation';
 export type { MobileBoardView, MobileSuggestionView, MobileTaskView };
 
 export function TaskCollection({
+  activeBoardStateId,
   assigneeName,
   columns,
   focusedTaskId,
   loadMore,
   loadingMore,
+  onActiveBoardStateChange,
   onCreate,
   onMove,
   onOpen,
@@ -32,11 +34,13 @@ export function TaskCollection({
   tab,
   tasks,
 }: {
+  activeBoardStateId?: string;
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
   focusedTaskId?: string;
   loadMore?: () => void;
   loadingMore?: boolean;
+  onActiveBoardStateChange?: (stateId: string) => void;
   onCreate: () => void;
   onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
@@ -80,9 +84,11 @@ export function TaskCollection({
     return (
       <>
         <TaskBoard
+          activeStateId={activeBoardStateId}
           assigneeName={assigneeName}
           columns={columns}
           focusedTaskId={focusedTaskId}
+          onActiveStateChange={onActiveBoardStateChange}
           onMove={onMove}
           onOpen={onOpen}
           readOnly={readOnly}

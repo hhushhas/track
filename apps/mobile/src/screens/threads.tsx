@@ -1,17 +1,15 @@
-import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useNetworkState } from 'expo-network';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { AdaptiveListRow } from '@/components/adaptive-list-row';
-import { ActionButton } from '@/components/action-button';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
-import { IconButton } from '@/components/icon-button';
-import { OptionsSheet, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
+import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -21,11 +19,9 @@ import { ScreenEntrance } from '@/components/screen-entrance';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
-import { idempotencyKey } from '@/lib/idempotency';
 import { useReleaseConfig } from '@/lib/release-config';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { threadConversationHref } from '@/lib/thread-navigation';
-import { communicationErrorMessage } from '@/lib/user-facing-error';
 
 type ThreadListRow = {
   key: string;
@@ -68,30 +64,22 @@ export default function ThreadsScreen() {
   const router = useRouter();
   const releaseConfig = useReleaseConfig();
   const { trackUserId } = useTrackUser();
-  const { groupId, projectId, companyId, membershipId, archive, sourceMessageId } = useLocalSearchParams<{
+  const { groupId, projectId, companyId, membershipId, archive } = useLocalSearchParams<{
     groupId: string;
     projectId: string;
     companyId?: string;
     membershipId?: string;
     archive?: string;
-    sourceMessageId?: string;
   }>();
   const gid = groupId as Id<'groups'> | undefined;
   const pid = projectId as Id<'projects'> | undefined;
   const cid = companyId as Id<'companies'> | undefined;
   const pmid = membershipId as Id<'projectMembers'> | undefined;
-  const sourceId = sourceMessageId as Id<'messages'> | undefined;
   const context = cid && pmid ? { companyId: cid, membershipId: pmid, archived: archive === '1' } : null;
   const [status, setStatus] = useState<'active' | 'archived'>('active');
-  const [name, setName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [threadFilter, setThreadFilter] = useState<ThreadFilter>('all');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [createOpen, setCreateOpen] = useState(Boolean(sourceId));
-  const [error, setError] = useState<string | null>(null);
-  const createKey = useRef<string | null>(null);
-  const createThread = useMutation(api.channelThreads.create);
   const navigation = useQuery(
     api.mobile.resolveNavigation,
     releaseConfig.threads && trackUserId && pid && gid
@@ -197,46 +185,13 @@ export default function ThreadsScreen() {
   const filterLabel = threadFilters.find((item) => item.key === threadFilter)?.label ?? 'All threads';
   const readOnly = archive === '1' || navigation?.archived === true;
 
-  async function submit() {
-    const trimmedName = name.trim();
-    if (!trackUserId || !pid || !gid || trimmedName.length < 2 || trimmedName.length > 100) {
-      setError('Thread name must be 2–100 characters');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      createKey.current ??= idempotencyKey();
-      const threadId = await createThread({
-        projectId: pid,
-        groupId: gid,
-        creatorId: trackUserId,
-        actingCompanyId: cid,
-        projectMemberId: pmid,
-        sourceMessageId: sourceId,
-        idempotencyKey: createKey.current,
-        name: trimmedName,
-      });
-      createKey.current = null;
-      setCreateOpen(false);
-      router.replace(threadConversationHref(pid, gid, threadId, context) as never);
-    } catch (caught) {
-      setError(communicationErrorMessage(caught, 'start this thread'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   if (!releaseConfig.threads || (navigation && !navigation.available)) {
     return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Thread unavailable' }} /><EmptyState body="Thread unavailable or access changed." icon="thread" title="Unavailable" /></ThemedView>;
   }
 
   return (
     <ThemedView style={styles.screen}>
-      <Stack.Screen options={{
-        title: 'Threads',
-        headerRight: () => !readOnly && status === 'active' ? <IconButton accessibilityLabel="Start a new thread" icon="plus" onPress={() => { setError(null); setName(''); setCreateOpen(true); }} /> : null,
-      }} />
+      <Stack.Screen options={{ title: 'Threads' }} />
       <View style={[styles.context, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
         <View style={[styles.contextIcon, { backgroundColor: theme.accentSoft }]}>
           <PlatformIcon color={theme.accentStrong} name="channel" size={18} />
@@ -258,7 +213,6 @@ export default function ThreadsScreen() {
           </Pressable>
         ))}
       </View>
-      {sourceId ? <View style={[styles.sourceNotice, { backgroundColor: theme.backgroundElement }]}><ThemedText type="small">Starting from the selected Channel message.</ThemedText></View> : null}
       {readOnly ? <View style={[styles.archiveNotice, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="archive" size={17} /><View style={styles.contextCopy}><ThemedText type="smallBold">Archived Channel</ThemedText><ThemedText themeColor="textSecondary" type="caption">Threads are read-only while this Channel is archived.</ThemedText></View></View> : null}
       <ConnectivityBanner style={styles.connection} />
       <View style={styles.searchRow}>
@@ -289,7 +243,6 @@ export default function ThreadsScreen() {
           <ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">{filterLabel}</ThemedText>
         </Pressable>
       </View>
-      {error ? <ThemedText accessibilityLiveRegion="polite" style={[styles.error, { color: theme.danger }]} type="small">{error}. Retry keeps the same request.</ThemedText> : null}
       <ScreenEntrance style={styles.screenContent}><FlatList
         contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
         data={visibleRows}
@@ -336,13 +289,6 @@ export default function ThreadsScreen() {
           />)}
         </SheetSection>
       </OptionsSheet>
-      <OptionsSheet onClose={() => { if (!saving) setCreateOpen(false); }} title="Start thread" visible={createOpen}>
-        {sourceId ? <View style={[styles.sourceNotice, { backgroundColor: theme.backgroundElement }]}><ThemedText type="small">The selected Channel message will be the thread source.</ThemedText></View> : null}
-        <SheetInput autoFocus label="Thread name" maxLength={100} onChangeText={(value) => { setName(value); if (error) setError(null); }} placeholder="What should this discussion focus on?" value={name} />
-        <ThemedText style={styles.counter} themeColor="textTertiary" type="caption">{name.trim().length}/100 · Use a short, specific focus</ThemedText>
-        {error ? <ThemedText accessibilityRole="alert" style={{ color: theme.danger }} type="small">{error}. Retry keeps the same request.</ThemedText> : null}
-        <ActionButton disabled={saving || name.trim().length < 2} label="Start thread" loading={saving} onPress={() => void submit()} />
-      </OptionsSheet>
     </ThemedView>
   );
 }
@@ -353,8 +299,6 @@ const styles = StyleSheet.create({
   context: { alignItems: 'center', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, margin: Spacing.three, marginBottom: 0, padding: Spacing.three },
   contextCopy: { flex: 1, gap: 2, minWidth: 0 },
   contextIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 36, justifyContent: 'center', width: 36 },
-  counter: { alignSelf: 'flex-end', marginHorizontal: Spacing.four, marginTop: -Spacing.two },
-  error: { paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   filterButton: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, maxWidth: 132, minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   list: { flexGrow: 1, gap: Spacing.two, padding: Spacing.four },
   rowCopy: { gap: 3 },
@@ -364,7 +308,6 @@ const styles = StyleSheet.create({
   searchWrap: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   screen: { flex: 1 },
   screenContent: { flex: 1 },
-  sourceNotice: { margin: Spacing.three, marginBottom: 0, padding: Spacing.three, borderRadius: Radius.large },
   tab: { alignItems: 'center', borderBottomWidth: 2, flex: 1, minHeight: TouchTarget, justifyContent: 'center' },
   tabs: { borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
   threadIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 },

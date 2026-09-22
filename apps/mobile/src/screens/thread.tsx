@@ -10,6 +10,7 @@ import { Composer } from '@/components/composer';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
 import { ForwardMessageSheet } from '@/components/forward-message-sheet';
+import { IconButton } from '@/components/icon-button';
 import { MessageActions } from '@/components/message-actions';
 import { OptionsSheet, SheetInput, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
@@ -17,7 +18,7 @@ import { TaskInlineCards } from '@/components/task-inline-cards';
 import { ThreadRow, DateSeparator, type DetailedMessage, type GroupedThreadItem, resolveMentionIds, resolveMentionProjectMemberIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useAppToast } from '@/components/app-toast';
 import { useTheme } from '@/hooks/use-theme';
@@ -507,6 +508,7 @@ export default function ThreadScreen() {
         item={item}
         onLongPress={() => { hapticLight(); setActionTarget(item); setActionsOpen(true); }}
         onSwipeReply={readOnly || item.kind !== 'message' ? undefined : () => setReplyTo(item.item)}
+        variant="thread"
       />
       {releaseConfig.tasks && pid ? <TaskInlineCards
         assistantStreamId={item.kind === 'assistant' ? item.stream._id : undefined}
@@ -566,7 +568,7 @@ export default function ThreadScreen() {
         accessibilityRole="button"
         onPress={() => pid && gid && tid && router.replace(threadConversationHref(pid, gid, tid, context, targetMessageId) as never)}
         style={[styles.retry, { backgroundColor: theme.accent }]}>
-        <ThemedText style={{ color: Colors.light.text }} type="smallBold">Retry</ThemedText>
+        <ThemedText style={{ color: theme.background }} type="smallBold">Retry</ThemedText>
       </Pressable>
     </ThemedView>;
   }
@@ -577,41 +579,68 @@ export default function ThreadScreen() {
   const sourceDate = source && !('unavailable' in source) ? source.createdAt : null;
   const taskLinkAssistantStreamIds = threadItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.stream._id] : []);
   const channelName = groups?.find((item) => item.group._id === gid)?.group.name ?? 'Channel';
+  const sourceContextCard = source ? <Pressable
+    accessibilityHint="Opens the source message in its Channel"
+    accessibilityLabel={`Source message in ${channelName}`}
+    accessibilityRole="button"
+    onPress={() => pid && gid && router.push(channelHref(
+      pid,
+      gid,
+      context,
+      'unavailable' in source ? undefined : source.messageId,
+    ) as never)}
+    style={({ pressed }) => [
+      styles.source,
+      { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder },
+      pressed && styles.sourcePressed,
+    ]}>
+    <View style={styles.sourceHeader}>
+      <View style={styles.sourceBadges}>
+        <View style={[styles.sourceBadge, { backgroundColor: theme.accentSoft }]}>
+          <PlatformIcon color={theme.accentStrong} name="reply" size={13} />
+          <ThemedText themeColor="accentStrong" type="captionBold">Source</ThemedText>
+        </View>
+        <View style={[styles.channelBadge, { backgroundColor: theme.backgroundElement }]}>
+          <PlatformIcon color={theme.textSecondary} name="channel" size={13} />
+          <ThemedText numberOfLines={1} style={styles.sourceChannel} themeColor="textSecondary" type="captionBold">#{channelName}</ThemedText>
+        </View>
+      </View>
+      <View style={styles.sourceMeta}>
+        {sourceDate ? <ThemedText themeColor="textTertiary" type="caption">{new Date(sourceDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}</ThemedText> : null}
+        <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />
+      </View>
+    </View>
+    <ThemedText numberOfLines={2} themeColor="textSecondary" type="small">
+      {'unavailable' in source ? 'Reference message unavailable.' : source.body || 'Attachment message'}
+    </ThemedText>
+    {firstLinkedTask ? <View style={[styles.sourceTaskLink, { backgroundColor: theme.accentSoft }]}>
+      <PlatformIcon color={theme.accentStrong} name="link" size={13} />
+      <ThemedText numberOfLines={1} style={styles.sourceTaskLabel} themeColor="accentStrong" type="captionBold">
+        {firstLinkedTask.publicKey} · {firstLinkedTask.title}
+      </ThemedText>
+    </View> : null}
+  </Pressable> : null;
 
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
-        title: thread.thread.name,
-        headerRight: () => <Pressable accessibilityLabel="Thread options" hitSlop={8} onPress={() => setToolsOpen(true)} style={styles.headerButton}><PlatformIcon color={theme.text} name="dots-horizontal" size={22} /></Pressable>,
+        headerTitle: () => <View style={styles.headerTitle}>
+          <ThemedText numberOfLines={1} type="subtitle">{thread.thread.name}</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">#{channelName}</ThemedText>
+        </View>,
+        headerLeft: () => <IconButton
+          accessibilityLabel="Back to Channel"
+          icon="arrow-left"
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else if (pid && gid) {
+              router.replace(channelHref(pid, gid, context) as never);
+            }
+          }}
+        />,
+        headerRight: () => <IconButton accessibilityLabel="Thread options" icon="dots-horizontal" onPress={() => setToolsOpen(true)} />,
       }} />
-      {source ? <Pressable
-        onPress={() => pid && gid && router.push(channelHref(
-          pid,
-          gid,
-          context,
-          'unavailable' in source ? undefined : source.messageId,
-        ) as never)}
-        style={[styles.source, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline, borderLeftColor: theme.accent }]}>
-        <View style={styles.sourceHeader}>
-          <ThemedText themeColor="accentStrong" type="captionBold">Source message</ThemedText>
-          {sourceDate ? <ThemedText themeColor="textTertiary" type="caption">{new Date(sourceDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}</ThemedText> : null}
-        </View>
-        <View style={styles.sourceContext}>
-          <PlatformIcon color={theme.textSecondary} name="channel" size={14} />
-          <ThemedText numberOfLines={1} style={styles.sourceChannel} themeColor="textSecondary" type="captionBold">#{channelName}</ThemedText>
-          <ThemedText themeColor="textTertiary" type="caption">Focused discussion</ThemedText>
-        </View>
-        <View style={[styles.sourceQuote, { backgroundColor: theme.backgroundElement }]}>
-          <ThemedText numberOfLines={4} type="small">{'unavailable' in source ? 'Reference message unavailable.' : source.body || 'Attachment message'}</ThemedText>
-        </View>
-        {firstLinkedTask ? <View style={[styles.sourceTaskLink, { backgroundColor: theme.accentSoft }]}>
-          <PlatformIcon color={theme.accentStrong} name="link" size={14} />
-          <ThemedText numberOfLines={1} style={styles.sourceTaskLabel} themeColor="accentStrong" type="captionBold">
-            Linked to {firstLinkedTask.publicKey} · {firstLinkedTask.title}
-          </ThemedText>
-          <PlatformIcon color={theme.accentStrong} name="chevron-right" size={16} />
-        </View> : null}
-      </Pressable> : null}
       <ConnectivityBanner message="You’re offline. Cached replies stay available; sending will retry when you reconnect." style={styles.connection} />
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={[styles.notice, { color: theme.success }]} type="small">{notice}</ThemedText> : null}
       {error ? <ThemedText accessibilityLiveRegion="assertive" style={[styles.error, { color: theme.danger }]} type="small">{error}. Your unsent reply is still here.</ThemedText> : null}
@@ -632,16 +661,19 @@ export default function ThreadScreen() {
           ListEmptyComponent={messagePageStatus === 'LoadingFirstPage' || assistantPage.status === 'LoadingFirstPage'
             ? <ThemedText style={{ color: theme.textSecondary, padding: Spacing.three }}>Loading replies…</ThemedText>
             : <EmptyState body="Start the focused conversation." icon="thread" title="No replies yet" />}
-          ListHeaderComponent={hasMoreThreadItems ? <Pressable
-            accessibilityRole="button"
-            disabled={messagePageStatus === 'LoadingMore' || assistantPage.status === 'LoadingMore'}
-            onPress={() => {
-              if (messagePageStatus === 'CanLoadMore') loadMoreMessages(50);
-              if (assistantPage.status === 'CanLoadMore') assistantPage.loadMore(50);
-            }}
-            style={styles.loadMore}>
-            <ThemedText type="smallBold">Load older replies</ThemedText>
-          </Pressable> : null}
+          ListHeaderComponent={<>
+            {sourceContextCard}
+            {hasMoreThreadItems ? <Pressable
+              accessibilityRole="button"
+              disabled={messagePageStatus === 'LoadingMore' || assistantPage.status === 'LoadingMore'}
+              onPress={() => {
+                if (messagePageStatus === 'CanLoadMore') loadMoreMessages(50);
+                if (assistantPage.status === 'CanLoadMore') assistantPage.loadMore(50);
+              }}
+              style={styles.loadMore}>
+              <ThemedText type="smallBold">Load older replies</ThemedText>
+            </Pressable> : null}
+          </>}
           onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           onViewableItemsChanged={onViewableItemsChanged}
           ref={listRef}
@@ -713,17 +745,20 @@ const styles = StyleSheet.create({
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
   error: { padding: Spacing.three },
   flex: { flex: 1 },
-  headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  headerTitle: { flexShrink: 1, minWidth: 0 },
   list: { flexGrow: 1, paddingVertical: Spacing.two },
   loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
   notice: { paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   retry: { alignItems: 'center', alignSelf: 'center', borderRadius: 9, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   screen: { flex: 1 },
-  sourceHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  source: { borderLeftWidth: 3, borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, margin: Spacing.three, marginBottom: 0, padding: Spacing.three },
-  sourceChannel: { flexShrink: 1 },
-  sourceContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
-  sourceQuote: { borderRadius: Radius.small, padding: Spacing.two },
+  channelBadge: { alignItems: 'center', borderRadius: Radius.pill, flex: 1, flexDirection: 'row', gap: 5, maxWidth: 150, minWidth: 0, paddingHorizontal: Spacing.two, paddingVertical: 4 },
+  source: { borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, marginHorizontal: Spacing.three, marginTop: Spacing.two, padding: Spacing.three },
+  sourceBadge: { alignItems: 'center', borderRadius: Radius.pill, flexDirection: 'row', gap: 5, paddingHorizontal: Spacing.two, paddingVertical: 4 },
+  sourceBadges: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
+  sourceChannel: { flexShrink: 1, minWidth: 0 },
+  sourceHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
+  sourceMeta: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: 2 },
+  sourcePressed: { opacity: 0.72 },
   sourceTaskLabel: { flex: 1 },
-  sourceTaskLink: { alignItems: 'center', borderRadius: Radius.small, flexDirection: 'row', gap: Spacing.one, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two },
+  sourceTaskLink: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, maxWidth: '100%', paddingHorizontal: Spacing.two, paddingVertical: 5 },
 });

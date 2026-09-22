@@ -21,4 +21,15 @@ describe('getHomeGreeting', () => {
   ])('returns the correct greeting at %s:00', (hour, greeting) => {
     expect(getHomeGreeting(localHour(hour))).toBe(greeting)
   })
+
+  it('uses the saved timezone instead of the device timezone', () => {
+    const instant = new Date('2026-01-01T05:30:00.000Z')
+
+    expect(getHomeGreeting(instant, 'Asia/Karachi')).toBe('Good morning')
+    expect(getHomeGreeting(instant, 'America/Los_Angeles')).toBe('Good night')
+  })
+
+  it('falls back safely when the saved timezone is invalid', () => {
+    expect(getHomeGreeting(localHour(14), 'Not/A_Timezone')).toBe('Good afternoon')
+  })
 })

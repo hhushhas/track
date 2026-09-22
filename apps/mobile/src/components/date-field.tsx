@@ -106,7 +106,7 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
           backgroundColor: active ? theme.accent : 'transparent',
           borderColor: today && !active ? theme.accent : 'transparent',
         }]}>
-        <ThemedText style={{ color: active ? '#1b1917' : theme.text }} type={active ? 'smallBold' : 'small'}>
+        <ThemedText style={{ color: active ? theme.background : theme.text }} type={active ? 'smallBold' : 'small'}>
           {date.day}
         </ThemedText>
       </Pressable>
@@ -289,7 +289,7 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
                       dayTextColor: theme.text,
                       monthTextColor: theme.text,
                       selectedDayBackgroundColor: theme.accent,
-                      selectedDayTextColor: '#1b1917',
+                      selectedDayTextColor: theme.background,
                       textDayFontFamily: Fonts?.sans,
                       textDayFontSize: Typography.body.fontSize,
                       textDayFontWeight: '500',
@@ -318,7 +318,7 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
                   accessibilityRole="button"
                   onPress={applyAndroidDate}
                   style={[styles.actionButton, styles.applyButton, { backgroundColor: theme.accent }]}>
-                  <ThemedText style={styles.applyLabel} type="label">Apply</ThemedText>
+                  <ThemedText style={{ color: theme.background }} type="label">Apply</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -343,7 +343,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   applyButton: { flex: 1 },
-  applyLabel: { color: '#1b1917' },
   calendar: { borderRadius: Radius.large, overflow: 'hidden', paddingHorizontal: Spacing.two },
   calendarArrow: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   calendarDay: {

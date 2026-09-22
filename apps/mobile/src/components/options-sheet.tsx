@@ -11,11 +11,11 @@ import {
 } from 'react-native';
 import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -37,52 +37,73 @@ const SEARCH_PAGE = 30;
 type Props = {
   children: React.ReactNode;
   onClose: () => void;
+  presentation?: 'sheet' | 'drawer';
   showScrollProgress?: boolean;
   title: string;
   visible: boolean;
 };
 
-export function OptionsSheet({ children, onClose, showScrollProgress = false, title, visible }: Props) {
+export function OptionsSheet({ children, onClose, presentation = 'sheet', showScrollProgress = false, title, visible }: Props) {
   const theme = useTheme();
   const { theme: themeName } = useThemeOverride();
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(0);
+  const translateX = useSharedValue(0);
   const scrim = useSharedValue(0);
   const scrollY = useSharedValue(0);
   const contentHeight = useSharedValue(0);
   const viewportHeight = useSharedValue(0);
   const reducedMotion = useReducedMotion();
+  const [mounted, setMounted] = useState(visible);
 
   useEffect(() => {
+    const distance = presentation === 'drawer' ? 440 : 520;
     if (visible) {
+      setMounted(true);
       // A screen input may still hold the keyboard; the modal is a separate
       // window, so stale keyboard padding would float the sheet mid-screen.
       Keyboard.dismiss();
-      translateY.value = reducedMotion ? 0 : 520;
-      translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 24, stiffness: 260 });
+      translateY.value = 0;
+      translateX.value = 0;
+      const entrance = presentation === 'drawer' ? translateX : translateY;
+      entrance.value = reducedMotion ? 0 : distance;
+      entrance.value = withTiming(0, {
+        duration: reducedMotion ? 0 : 210,
+        easing: Easing.out(Easing.cubic),
+      });
       scrim.value = withTiming(1, { duration: reducedMotion ? 0 : 180 });
     } else {
-      scrim.value = 0;
+      scrim.value = withTiming(0, { duration: reducedMotion ? 0 : 120 });
+      const exit = presentation === 'drawer' ? translateX : translateY;
+      exit.value = withTiming(distance, {
+        duration: reducedMotion ? 0 : 150,
+        easing: Easing.in(Easing.cubic),
+      }, () => scheduleOnRN(setMounted, false));
     }
-  }, [reducedMotion, scrim, translateY, visible]);
+  }, [presentation, reducedMotion, scrim, translateX, translateY, visible]);
 
-  const pan = Gesture.Pan()
-    .activeOffsetY([-12, 12])
+  const pan = (presentation === 'drawer' ? Gesture.Pan().activeOffsetX([-12, 12]) : Gesture.Pan().activeOffsetY([-12, 12]))
     .onUpdate((event) => {
-      translateY.value = Math.max(0, event.translationY);
+      if (presentation === 'drawer') translateX.value = Math.max(0, event.translationX);
+      else translateY.value = Math.max(0, event.translationY);
     })
     .onEnd((event) => {
-      const shouldClose =
-        event.translationY > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY;
+      const shouldClose = presentation === 'drawer'
+        ? event.translationX > DISMISS_DISTANCE || event.velocityX > DISMISS_VELOCITY
+        : event.translationY > DISMISS_DISTANCE || event.velocityY > DISMISS_VELOCITY;
       if (shouldClose) {
-        translateY.value = withTiming(600, { duration: reducedMotion ? 0 : 160 }, () => scheduleOnRN(onClose));
+        scheduleOnRN(onClose);
         return;
       }
-      translateY.value = reducedMotion ? 0 : withSpring(0, { damping: 22, stiffness: 240 });
+      const settle = presentation === 'drawer' ? translateX : translateY;
+      settle.value = withTiming(0, {
+        duration: reducedMotion ? 0 : 150,
+        easing: Easing.out(Easing.cubic),
+      });
     });
 
   const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
+    transform: presentation === 'drawer' ? [{ translateX: translateX.value }] : [{ translateY: translateY.value }],
   }));
   const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
   const scrollHandler = useAnimatedScrollHandler((event) => {
@@ -102,8 +123,10 @@ export function OptionsSheet({ children, onClose, showScrollProgress = false, ti
     };
   });
 
+  if (!mounted) return null;
+
   return (
-    <Modal animationType="none" transparent visible={visible} onRequestClose={onClose}>
+    <Modal animationType="none" transparent visible={mounted} onRequestClose={onClose}>
       <GestureHandlerRootView style={styles.modal}>
         <KeyboardAvoidingView behavior="padding" style={styles.modal}>
           <Animated.View style={[styles.scrimLayer, scrimStyle]}>
@@ -121,25 +144,40 @@ export function OptionsSheet({ children, onClose, showScrollProgress = false, ti
             never took over. Bounding it here also means the keyboard shrinks
             the sheet instead of pushing its head off the top of the screen.
           */}
-          <View pointerEvents="box-none" style={[styles.sheetLayer, { paddingTop: insets.top + Spacing.six }]}>
-            <Animated.View style={[styles.sheetWrap, sheetStyle]}>
+          <View
+            pointerEvents="box-none"
+            style={[
+              styles.sheetLayer,
+              presentation === 'drawer' && styles.drawerLayer,
+              {
+                paddingBottom: Math.max(insets.bottom, Spacing.two),
+                paddingTop: insets.top + Spacing.six,
+              },
+            ]}>
+            <Animated.View style={[styles.sheetWrap, presentation === 'drawer' && styles.drawerWrap, sheetStyle]}>
               <ThemedView
                 accessibilityViewIsModal
                 onAccessibilityEscape={onClose}
-                style={[styles.sheet, { borderTopColor: theme.hairline }]}
-                type="backgroundElevated">
+                style={[
+                  styles.sheet,
+                  presentation === 'drawer' && styles.drawer,
+                  {
+                    backgroundColor: theme.homeBackground,
+                    borderColor: theme.homeBorder,
+                  },
+                ]}>
                 <GestureDetector gesture={pan}>
                   <View style={styles.grabArea}>
-                    <View style={[styles.handle, { backgroundColor: theme.hairline }]} />
+                    {presentation === 'sheet' ? <View style={[styles.handle, { backgroundColor: theme.textTertiary }]} /> : null}
                     <View style={styles.header}>
-                      <ThemedText style={styles.headerTitle} type="subtitle">{title}</ThemedText>
+                      <ThemedText style={styles.headerTitle} type="titleLarge">{title}</ThemedText>
                       <Pressable
                         accessibilityLabel="Close"
                         accessibilityRole="button"
                         android_ripple={{ color: theme.backgroundSelected, borderless: true }}
                         hitSlop={12}
                         onPress={() => { hapticLight(); onClose(); }}
-                        style={[styles.closeButton, { backgroundColor: theme.backgroundElement }]}>
+                        style={[styles.closeButton, { borderColor: theme.homeBorder }]}>
                         <PlatformIcon color={theme.textSecondary} name="close" size={18} />
                       </Pressable>
                     </View>
@@ -147,7 +185,7 @@ export function OptionsSheet({ children, onClose, showScrollProgress = false, ti
                 </GestureDetector>
                 <View style={styles.scrollFrame}>
                   <Animated.ScrollView
-                    contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.four }]}
+                    contentContainerStyle={styles.content}
                     indicatorStyle={themeName === 'dark' ? 'white' : 'black'}
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
@@ -184,7 +222,7 @@ export function SheetSection({ children, title }: { children: React.ReactNode; t
           {title}
         </ThemedText>
       ) : null}
-      <View style={[styles.sectionBody, { backgroundColor: theme.backgroundElement }]}>
+      <View style={[styles.sectionBody, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
         {items.map((child, i) => (
           <Fragment key={i}>
             {i > 0 ? <View style={[styles.separator, { backgroundColor: theme.hairline }]} /> : null}
@@ -214,7 +252,9 @@ export function SheetNote({
         : theme.textSecondary;
 
   return (
-    <View accessibilityRole={state === 'error' ? 'alert' : undefined} style={styles.note}>
+    <View
+      accessibilityRole={state === 'error' ? 'alert' : undefined}
+      style={[styles.note, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
       <ThemedText style={{ color }} type="caption">{children}</ThemedText>
     </View>
   );
@@ -257,9 +297,19 @@ export function SheetRow({
       android_ripple={{ color: theme.backgroundSelected }}
       disabled={unavailable}
       onPress={() => { if (onPress) { hapticLight(); onPress(); } }}
-      style={({ pressed }) => [styles.sheetRow, { opacity: unavailable ? 0.45 : pressed ? 0.7 : 1 }]}>
+      style={({ pressed }) => [
+        styles.sheetRow,
+        {
+          backgroundColor: selected ? theme.accentSoft : pressed ? theme.backgroundElement : 'transparent',
+          opacity: unavailable ? 0.45 : 1,
+        },
+      ]}>
       <View style={styles.sheetRowLeading}>
-        {leading ?? (icon ? <PlatformIcon color={iconColor} name={icon} size={20} /> : state === 'offline' ? <PlatformIcon color={iconColor} name="cloud-off" size={20} /> : null)}
+        {leading ?? (icon || state === 'offline' ? (
+          <View style={[styles.sheetRowIcon, { backgroundColor: theme.backgroundElement }]}>
+            <PlatformIcon color={iconColor} name={icon ?? 'cloud-off'} size={19} />
+          </View>
+        ) : null)}
       </View>
       <View style={styles.sheetRowBody}>
         <ThemedText numberOfLines={1} style={{ color: textColor }} type="small">
@@ -315,7 +365,7 @@ export function SheetInput({
           styles.input,
           multiline && styles.inputMulti,
           styles.inputText,
-          { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text },
+          { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder, color: theme.text },
           multiline && styles.inputTextMulti,
         ]}
         value={value}
@@ -353,7 +403,7 @@ export function SheetFieldButton({
         accessibilityRole="button"
         android_ripple={{ color: theme.backgroundSelected }}
         onPress={() => { hapticLight(); onPress(); }}
-        style={[styles.field, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+        style={[styles.field, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
         {icon ? <PlatformIcon color={theme.textSecondary} name={icon} size={19} /> : null}
         <ThemedText
           numberOfLines={1}
@@ -421,7 +471,7 @@ export function SheetSearchList({
 
   return (
     <View style={styles.searchWrap}>
-      <View style={[styles.searchBar, { backgroundColor: theme.backgroundElement }]}>
+      <View style={[styles.searchBar, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
         <PlatformIcon color={theme.textSecondary} name="search" size={18} />
         <TextInput
           accessibilityLabel={placeholder}
@@ -474,12 +524,14 @@ const styles = StyleSheet.create({
   closeButton: {
     alignItems: 'center',
     borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
     height: TouchTarget,
     justifyContent: 'center',
     width: TouchTarget,
   },
   content: {
-    gap: Spacing.three,
+    gap: Spacing.four,
+    paddingBottom: Spacing.four,
   },
   field: {
     alignItems: 'center',
@@ -494,13 +546,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   grabArea: {
-    paddingTop: Spacing.two,
+    paddingTop: Spacing.three,
   },
   handle: {
     alignSelf: 'center',
     borderRadius: 3,
     height: 5,
-    marginBottom: Spacing.three,
+    marginBottom: Spacing.two,
+    opacity: 0.5,
     width: 40,
   },
   header: {
@@ -508,7 +561,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.two,
     justifyContent: 'space-between',
-    paddingBottom: Spacing.three,
+    minHeight: 52,
+    paddingBottom: Spacing.four,
   },
   headerTitle: {
     flex: 1,
@@ -569,6 +623,7 @@ const styles = StyleSheet.create({
   searchBar: {
     alignItems: 'center',
     borderRadius: Radius.medium,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: Spacing.two,
     minHeight: TouchTarget,
@@ -591,6 +646,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   note: {
+    borderRadius: Radius.large,
+    borderWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
     minHeight: TouchTarget,
     paddingHorizontal: Spacing.four,
@@ -600,7 +657,8 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   sectionBody: {
-    borderRadius: Radius.large,
+    borderRadius: Radius.homeSurface,
+    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
   },
   sectionTitle: {
@@ -609,14 +667,23 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: Spacing.three,
+    marginLeft: 64,
   },
   sheet: {
-    borderTopLeftRadius: Radius.xlarge,
-    borderTopRightRadius: Radius.xlarge,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.xlarge,
+    borderWidth: StyleSheet.hairlineWidth,
+    boxShadow: '0 12px 36px rgba(0,0,0,0.22)',
     flexShrink: 1,
     paddingHorizontal: Spacing.four,
+  },
+  drawer: {
+    flex: 1,
+    maxWidth: 420,
+    width: '88%',
+  },
+  drawerLayer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   sheetLayer: {
     flex: 1,
@@ -626,7 +693,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: Spacing.three,
-    minHeight: TouchTarget,
+    minHeight: 56,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
@@ -635,8 +702,21 @@ const styles = StyleSheet.create({
     gap: 1,
     minWidth: 0,
   },
-  sheetRowLeading: { alignItems: 'center', justifyContent: 'center', minWidth: 24 },
+  sheetRowIcon: {
+    alignItems: 'center',
+    borderRadius: Radius.large,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  sheetRowLeading: { alignItems: 'center', justifyContent: 'center', minWidth: 36 },
   sheetWrap: {
     flexShrink: 1,
+    marginHorizontal: Spacing.two,
+  },
+  drawerWrap: {
+    alignSelf: 'stretch',
+    height: '100%',
+    marginHorizontal: 0,
   },
 });

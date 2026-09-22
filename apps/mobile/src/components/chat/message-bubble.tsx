@@ -25,6 +25,7 @@ type Props = {
   onOpenThread?: () => void;
   onPressReply?: () => void;
   timeLabel: string;
+  variant?: 'conversation' | 'thread';
 };
 
 export function MessageBubble({
@@ -36,6 +37,7 @@ export function MessageBubble({
   onOpenThread,
   onPressReply,
   timeLabel,
+  variant = 'conversation',
 }: Props) {
   const theme = useTheme();
   const name = message.author?.displayName ?? 'Member';
@@ -43,6 +45,7 @@ export function MessageBubble({
   const rawBody = displayText(message.message.body.trim());
   const body = message.attachments.length && isAutoAttachmentBody(rawBody) ? '' : rawBody;
   const showHeader = isFirstInGroup && !isOwnMessage;
+  const isThreadReply = variant === 'thread';
   const hasMedia = message.attachments.some(
     ({ attachment, url }) => url && isImageAttachment(attachment.contentType),
   );
@@ -67,15 +70,29 @@ export function MessageBubble({
         onLongPress={onLongPress}
         style={[
           styles.bubble,
+          isThreadReply && styles.threadBubble,
           hasMedia ? styles.bubbleMedia : styles.bubbleText,
           { backgroundColor: isOwnMessage ? theme.bubbleOwn : theme.bubbleOther },
+          isThreadReply && { borderColor: theme.hairline },
           isFirstInGroup && (isOwnMessage ? styles.tailOwn : styles.tailOther),
         ]}>
-        {showHeader ? (
-          <View style={[styles.header, hasMedia && styles.inset, hasMedia && styles.insetTop]}>
-            <ThemedText numberOfLines={1} style={styles.authorName} type="smallBold">
-              {name}
-            </ThemedText>
+        {showHeader || isThreadReply ? (
+          <View style={[
+            styles.header,
+            isOwnMessage && styles.headerOwn,
+            hasMedia && styles.inset,
+            hasMedia && styles.insetTop,
+          ]}>
+            {showHeader ? (
+              <ThemedText numberOfLines={1} style={styles.authorName} type="smallBold">
+                {name}
+              </ThemedText>
+            ) : null}
+            {isThreadReply ? (
+              <ThemedText accessibilityLabel={`Sent at ${timeLabel}`} style={styles.threadTime} themeColor="textTertiary" type="caption">
+                {timeLabel}
+              </ThemedText>
+            ) : null}
           </View>
         ) : null}
 
@@ -123,13 +140,15 @@ export function MessageBubble({
           <View style={hasMedia ? styles.inset : null}>
             <View>
               <MessageText body={body} />
-              <ThemedText
-                accessibilityLabel={`Sent at ${timeLabel}`}
-                style={styles.timeFooter}
-                themeColor="textSecondary"
-                type="caption">
-                {timeLabel}
-              </ThemedText>
+              {isThreadReply ? null : (
+                <ThemedText
+                  accessibilityLabel={`Sent at ${timeLabel}`}
+                  style={styles.timeFooter}
+                  themeColor="textSecondary"
+                  type="caption">
+                  {timeLabel}
+                </ThemedText>
+              )}
             </View>
           </View>
         ) : null}
@@ -172,7 +191,7 @@ export function MessageBubble({
           </Pressable>
         ) : null}
 
-        {body ? null : mediaClosesBubble ? (
+        {body || isThreadReply ? null : mediaClosesBubble ? (
           <View style={[styles.timeOverlay, { backgroundColor: theme.overlay }]}>
             <ThemedText
               accessibilityLabel={`Sent at ${timeLabel}`}
@@ -285,6 +304,9 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     minWidth: 0,
   },
+  headerOwn: {
+    justifyContent: 'flex-end',
+  },
   inset: {
     paddingHorizontal: 5,
   },
@@ -325,6 +347,13 @@ const styles = StyleSheet.create({
   },
   tailOwn: {
     borderTopRightRadius: Radius.small,
+  },
+  threadBubble: {
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '88%',
+  },
+  threadTime: {
+    marginLeft: 'auto',
   },
   threadBody: {
     flexShrink: 1,

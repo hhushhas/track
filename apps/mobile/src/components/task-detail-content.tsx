@@ -14,7 +14,7 @@ import type {
   TaskEditField,
 } from '@/components/task-detail-types';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticMedium } from '@/lib/haptics';
 import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
@@ -319,7 +319,13 @@ export function TaskDiscussionTab({
   const theme = useTheme();
   const visibleComments = comments.filter((item) => !item.archivedAt);
   return (
-    <TaskSection title="Discussion" trailing={`${visibleComments.length} ${visibleComments.length === 1 ? 'comment' : 'comments'}`}>
+    <TaskSection title="Comments" trailing={`${visibleComments.length} ${visibleComments.length === 1 ? 'comment' : 'comments'}`}>
+      <View style={[styles.discussionNote, { backgroundColor: theme.backgroundElement }]}>
+        <PlatformIcon color={theme.accentStrong} name="message" size={17} />
+        <ThemedText style={styles.discussionNoteCopy} themeColor="textSecondary" type="caption">
+          Comments stay attached to this task. Use the Project Channel for a broader Thread.
+        </ThemedText>
+      </View>
       {visibleComments.length ? visibleComments.map((item) => {
         const author = assignees?.find((candidate) => candidate.member._id === item.authorProjectMemberId)?.user.displayName
           ?? 'Project member';
@@ -352,13 +358,8 @@ export function TaskActivityTab({ activities, assignees, loading, loadingMore, o
   const theme = useTheme();
   return (
     <TaskSection
-      title="Audit Ledger"
-      trailing={(
-        <>
-          <ThemedText themeColor="textSecondary" type="captionBold">Showing full chain</ThemedText>
-          <PlatformIcon color={theme.textTertiary} name="tune" size={16} />
-        </>
-      )}>
+      title="Activity"
+      trailing={`${activities.length} ${activities.length === 1 ? 'event' : 'events'}`}>
       {activities.length ? activities.map((item, index) => (
         <View key={item._id} style={styles.timelineRow}>
           <View style={styles.timelineRail}>
@@ -541,7 +542,7 @@ export function TaskCommentComposer({
             onSend();
           }}
           style={[styles.sendButton, { backgroundColor: theme.accent, opacity: canSend ? 1 : 0.45 }]}>
-          <PlatformIcon color={Colors.light.text} name="send" size={19} />
+          <PlatformIcon color={theme.background} name="send" size={19} />
         </Pressable>
       </View>
     </View>
@@ -664,6 +665,8 @@ const styles = StyleSheet.create({
   comment: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.two },
   commentBubble: { borderCurve: 'continuous', borderRadius: Radius.large, borderTopLeftRadius: 4, flex: 1, gap: Spacing.one, padding: Spacing.three },
   commentMeta: { alignItems: 'baseline', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
+  discussionNote: { alignItems: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, padding: Spacing.three },
+  discussionNoteCopy: { flex: 1 },
   composer: { borderTopWidth: StyleSheet.hairlineWidth, gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   composerInput: { borderRadius: Radius.xlarge, flex: 1, fontSize: 14, lineHeight: 20, maxHeight: 112, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Platform.OS === 'ios' ? 11 : 8 },
   composerRow: { alignItems: 'flex-end', flexDirection: 'row', gap: Spacing.two },

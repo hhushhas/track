@@ -1,17 +1,15 @@
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { ActionButton } from '@/components/action-button';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
-import { OptionsSheet, SheetInput, SheetSection } from '@/components/options-sheet';
+import { OptionsSheet, SheetInput, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
-import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import {
   ProjectDirectoryCard,
   WorkspaceOverview,
@@ -24,27 +22,40 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
+import { Spacing } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, projectOverviewHref, type RepresentedProjectContext } from '@/lib/company-navigation';
-import { hapticLight } from '@/lib/haptics';
 
 export default function ProjectsScreen() {
   const theme = useTheme();
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
-  const { trackUserId, openProfileSheet } = useTrackUser();
-  const { actingCompanyId, actingCompany, companyModelEnabled } = useCompany();
+  const { trackUserId } = useTrackUser();
+  const { setCreateContext } = usePrimaryNavigationVisibility();
+  const params = useLocalSearchParams<{ create?: string }>();
+  const { actingCompanyId, actingCompany, companies, companyModelEnabled, setActingCompanyId } = useCompany();
+  const [companySheetOpen, setCompanySheetOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [expandedMembershipId, setExpandedMembershipId] = useState<Id<'projectMembers'> | null>(null);
   const [projectName, setProjectName] = useState('');
-  const [projectClientLabel, setProjectClientLabel] = useState('');
+  const [clientLabel, setClientLabel] = useState('');
+  const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
-  const profileStatus = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [expandedMembershipId, setExpandedMembershipId] = useState<Id<'projectMembers'> | null>(null);
 
+  useFocusEffect(useCallback(() => {
+    setCreateContext(null);
+    return () => setCreateContext(null);
+  }, [setCreateContext]));
   const createProject = useMutation(api.projects.create);
+
+  useEffect(() => {
+    if (params.create) {
+      setCreateOpen(true);
+    }
+  }, [params.create]);
+
   const projects = usePaginatedQuery(
     api.mobile.listProjects,
     trackUserId ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined } : 'skip',
@@ -91,46 +102,33 @@ export default function ProjectsScreen() {
     if (expandedChannels.status === 'CanLoadMore') expandedChannels.loadMore(20);
   }, [expandedChannels.loadMore, expandedChannels.status]);
 
-  function openCreateProject() {
-    hapticLight();
-    setCreateOpen(true);
-  }
-
-  function closeCreateProject() {
-    if (!creating) setCreateOpen(false);
-  }
-
-  async function submitCreateProject() {
-    if (!trackUserId) return;
-    const name = projectName.trim();
-    if (!name) return;
-    setCreating(true);
-    setCreateError(null);
-    try {
-      const projectId = await createProject({
-        userId: trackUserId,
-        name,
-        clientLabel: projectClientLabel.trim() || undefined,
-      });
-      setProjectName('');
-      setProjectClientLabel('');
-      setCreateOpen(false);
-      router.push(projectOverviewHref(projectId, null));
-    } catch (error) {
-      setCreateError(error instanceof Error && error.message.includes('not_allowed_to_create_project')
-        ? 'You do not have permission to create a Project for this identity.'
-        : 'Please check the Project details and try again.');
-    } finally {
-      setCreating(false);
-    }
-  }
-
   function openProject(item: DirectoryProject) {
     router.push(projectOverviewHref(item.project._id, projectIdentity(item)) as never);
   }
 
   function openChannel(project: DirectoryProject, channel: DirectoryChannel) {
     router.push(channelHref(project.project._id, channel.group._id, projectIdentity(project)) as never);
+  }
+
+  async function submitProject() {
+    if (!trackUserId || !projectName.trim()) return;
+    setCreating(true);
+    setCreateError('');
+    try {
+      await createProject({ userId: trackUserId, name: projectName.trim(), clientLabel: clientLabel.trim() || undefined });
+      setProjectName('');
+      setClientLabel('');
+      setCreateOpen(false);
+    } catch (failure) {
+      setCreateError(failure instanceof Error ? failure.message : 'Project creation failed. Try again.');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function closeCreateSheet() {
+    setCreateOpen(false);
+    if (params.create) router.setParams({ create: undefined });
   }
 
   const companyLabel = actingCompany?.company?.displayName ?? 'All Companies';
@@ -144,9 +142,7 @@ export default function ProjectsScreen() {
         headerLargeTitle: false,
         headerTransparent: false,
         headerRight: () => <View style={styles.headerActions}>
-          {companyModelEnabled ? <IconButton accessibilityLabel="Switch Company" icon="office-building" onPress={() => router.push('/company')} /> : null}
-          {!actingCompanyId ? <IconButton accessibilityLabel="Create Project" icon="plus" onPress={openCreateProject} /> : null}
-          <ProjectAccountButton label={profileStatus?.user.displayName || profileStatus?.user.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
+          {companyModelEnabled ? <IconButton accessibilityLabel="Switch Company" icon="office-building" onPress={() => setCompanySheetOpen(true)} /> : null}
         </View>,
       }} />
       <ConnectivityBanner style={styles.connection} />
@@ -161,9 +157,10 @@ export default function ProjectsScreen() {
           ListHeaderComponent={<View style={styles.listHeader}>
             <WorkspaceOverview
               activeProjects={activeProjects.length}
+              canSwitchCompany={Boolean(companyModelEnabled && (companies?.filter(({ company }) => company?.status === 'active').length ?? 0) > 1)}
               companyLabel={companyLabel}
               companyScoped={Boolean(actingCompanyId)}
-              onPressCompany={() => router.push('/company')}
+              onPressCompany={() => setCompanySheetOpen(true)}
               visibleChannels={visibleChannels}
             />
             <View style={styles.directoryHeading}>
@@ -174,16 +171,11 @@ export default function ProjectsScreen() {
             </View>
           </View>}
           ListEmptyComponent={<EmptyState
-            actionLabel={!actingCompanyId ? 'Create Project' : undefined}
-            body={actingCompanyId ? 'Accepted shared Projects and retained archives will appear here.' : 'Create a Project to organize conversations and tasks.'}
+            body={actingCompanyId ? 'Accepted shared Projects and retained archives will appear here.' : 'Projects created on the web will appear here. Choose a Company to browse its shared work.'}
             icon="project"
-            onAction={!actingCompanyId ? openCreateProject : undefined}
             title="No Projects yet"
           />}
-          ListFooterComponent={!actingCompanyId && sortedProjects.length ? <Pressable accessibilityRole="button" onPress={openCreateProject} style={[styles.addProject, { backgroundColor: theme.text }]}>
-            <PlatformIcon color={theme.background} name="plus" size={17} />
-            <ThemedText style={{ color: theme.background }} type="title">Add Project</ThemedText>
-          </Pressable> : null}
+          ListFooterComponent={null}
           onEndReached={() => { if (projects.status === 'CanLoadMore') projects.loadMore(50); }}
           onEndReachedThreshold={0.35}
           renderItem={({ item }) => <ProjectDirectoryCard
@@ -198,16 +190,30 @@ export default function ProjectsScreen() {
         /></ScreenEntrance>
       )}
 
-      <OptionsSheet onClose={closeCreateProject} title="Create Project" visible={createOpen}>
-        <SheetSection>
-          <View style={styles.createInputs}>
-            <SheetInput label="Project name" maxLength={100} onChangeText={setProjectName} value={projectName} />
-            <SheetInput label="Client label" maxLength={100} onChangeText={setProjectClientLabel} value={projectClientLabel} />
-          </View>
+      <OptionsSheet onClose={() => setCompanySheetOpen(false)} title="Switch Company" visible={companySheetOpen}>
+        <SheetSection title="Workspace scope">
+          <SheetRow icon="office-building" label="All Companies" onPress={() => { setActingCompanyId(null); setCompanySheetOpen(false); }} selected={!actingCompanyId} />
+          {(companies ?? []).filter(({ company }) => company?.status === 'active').map(({ company }) => company ? (
+            <SheetRow icon="office-building" key={company._id} label={company.displayName} onPress={() => { setActingCompanyId(company._id); setCompanySheetOpen(false); }} selected={company._id === actingCompanyId} />
+          ) : null)}
         </SheetSection>
-        {createError ? <ThemedText accessibilityRole="alert" style={{ color: theme.danger }} type="small">{createError}</ThemedText> : null}
-        <ActionButton disabled={!projectName.trim()} label="Create Project" loading={creating} onPress={() => void submitCreateProject()} />
       </OptionsSheet>
+
+      <OptionsSheet onClose={closeCreateSheet} title="New Project" visible={createOpen}>
+        <SheetNote>Create a Project to keep its Channels, tasks, and evidence together.</SheetNote>
+        <SheetInput label="Project name" maxLength={120} onChangeText={setProjectName} placeholder="e.g. Website launch" value={projectName} />
+        <SheetInput label="Client label" maxLength={120} onChangeText={setClientLabel} placeholder="Optional" value={clientLabel} />
+        {createError ? <SheetNote>{createError}</SheetNote> : null}
+        <Pressable
+          accessibilityRole="button"
+          disabled={creating || !projectName.trim()}
+          onPress={() => void submitProject()}
+          style={[styles.createProjectButton, { backgroundColor: theme.accent, opacity: creating || !projectName.trim() ? 0.45 : 1 }]}
+        >
+          <ThemedText style={{ color: theme.background }} type="title">{creating ? 'Creating…' : 'Create Project'}</ThemedText>
+        </Pressable>
+      </OptionsSheet>
+
     </ThemedView>
   );
 }
@@ -227,9 +233,8 @@ function isLastContext(item: DirectoryProject, context: { projectId?: Id<'projec
 }
 
 const styles = StyleSheet.create({
-  addProject: { alignItems: 'center', alignSelf: 'center', borderRadius: Radius.large, flexDirection: 'row', gap: Spacing.two, justifyContent: 'center', marginTop: Spacing.five, minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   connection: { marginHorizontal: Spacing.four, marginTop: Spacing.two },
-  createInputs: { gap: Spacing.three, padding: Spacing.three },
+  createProjectButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: 12, justifyContent: 'center', minHeight: 48, paddingHorizontal: Spacing.four },
   directoryHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.five },
   directoryTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   directoryTitleText: { fontSize: 16, lineHeight: 22 },

@@ -9,6 +9,8 @@ import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useAppToast } from '@/components/app-toast';
 import { Composer } from '@/components/composer';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { IconButton } from '@/components/icon-button';
 import { MessageActions } from '@/components/message-actions';
 import { PlatformIcon } from '@/components/platform-icon';
 import { TaskInlineCards } from '@/components/task-inline-cards';
@@ -17,7 +19,7 @@ import { DateSeparator, ThreadRow, type DetailedMessage, type GroupedThreadItem,
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { OptionsSheet, SheetSection, SheetRow } from '@/components/options-sheet';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
@@ -302,16 +304,13 @@ export default function ConversationScreen() {
 
   const messageActions = useMemo(() => {
     if (!actionTarget || actionTarget.kind === 'date-sep') return [];
+    const existingThread = actionTarget.kind === 'message' ? actionTarget.item.channelThread : null;
     return [
-      ...(releaseConfig.threads && actionTarget.kind === 'message' && pid && gid ? [{
-        label: actionTarget.item.channelThread ? 'Open thread' : 'Start thread',
+      ...(releaseConfig.threads && actionTarget.kind === 'message' && existingThread && pid && gid ? [{
+        label: 'Open thread',
         icon: 'thread' as const,
         onPress: () => {
-          if (actionTarget.item.channelThread) {
-            router.push(threadConversationHref(pid, gid, actionTarget.item.channelThread.threadId, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
-            return;
-          }
-          router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null, actionTarget.item.message._id) as never);
+          router.push(threadConversationHref(pid, gid, existingThread.threadId, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
         },
       }] : []),
       ...(!readOnly ? [{
@@ -612,7 +611,7 @@ export default function ConversationScreen() {
   }, [cid, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, setReplyTo, taskIdentity, trackCardRow, trackUserId]);
 
   if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
-  if ((network.isConnected === false || network.isInternetReachable === false) && messages === undefined) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Offline</ThemedText><ThemedText style={{ color: theme.textSecondary }}>This Channel is not available on the device yet.</ThemedText><Pressable accessibilityRole="button" onPress={() => pid && gid && router.replace(channelHref(pid, gid, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null))} style={[styles.retry, { backgroundColor: theme.accent }]}><ThemedText style={{ color: Colors.light.text }} type="smallBold">Retry</ThemedText></Pressable></View></ThemedView>;
+  if ((network.isConnected === false || network.isInternetReachable === false) && messages === undefined) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Offline</ThemedText><ThemedText style={{ color: theme.textSecondary }}>This Channel is not available on the device yet.</ThemedText><Pressable accessibilityRole="button" onPress={() => pid && gid && router.replace(channelHref(pid, gid, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null))} style={[styles.retry, { backgroundColor: theme.accent }]}><ThemedText style={{ color: theme.background }} type="smallBold">Retry</ThemedText></Pressable></View></ThemedView>;
   if (navigation === undefined || (navigation.available && messages === undefined)) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Conversation' }} /><View style={styles.empty}><ThemedText style={{ color: theme.textSecondary }} type="small">Opening authorized conversation…</ThemedText></View></ThemedView>;
 
   const taskLinkMessageIds = threadItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : []);
@@ -622,30 +621,27 @@ export default function ConversationScreen() {
     <ThemedView style={styles.screen}>
       <Stack.Screen
         options={{
-          headerTransparent: Platform.OS === 'ios',
-          headerBlurEffect: 'systemMaterial',
+          headerTransparent: false,
           headerTitle: () => (
             <Pressable
               hitSlop={8}
               onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
               style={styles.headerTitle}>
-              <ThemedText numberOfLines={1} type="smallBold">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+              <ThemedText numberOfLines={1} type="titleLarge">{activeGroup?.name ?? 'Conversation'}</ThemedText>
               <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
             </Pressable>
           ),
           headerRight: () => !readOnly ? (
-            <Pressable
+            <IconButton
               accessibilityLabel="Notifications"
-              android_ripple={{ color: theme.backgroundSelected, borderless: true }}
-              hitSlop={8}
-              onPress={() => { hapticLight(); setToolsOpen(true); }}
-              style={styles.headerButton}>
-              <PlatformIcon color={theme.text} name="dots-horizontal" size={22} />
-            </Pressable>
+              icon="dots-horizontal"
+              onPress={() => setToolsOpen(true)}
+            />
           ) : null,
         }}
       />
 
+      <ConnectivityBanner message="You’re offline. Cached messages stay available; sending will retry when you reconnect." style={styles.connection} />
       <View style={styles.flex}>
       <TaskLinkBatchProvider
         assistantStreamIds={taskLinkAssistantStreamIds}
@@ -730,7 +726,7 @@ export default function ConversationScreen() {
       ) : null}
       </View>
 
-      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only Company exit archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
+      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
         activeGroupName={activeGroup?.name ?? null}
         busy={busy === 'send'}
         mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
@@ -850,12 +846,13 @@ const styles = StyleSheet.create({
   archiveBanner: { gap: Spacing.one, padding: Spacing.three },
   empty: { alignItems: 'center', padding: Spacing.six },
   flex: { flex: 1 },
+  connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
   jumpToLatest: {
     alignItems: 'center',
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
     bottom: Spacing.three,
-    elevation: 3,
+    boxShadow: '0 3px 10px rgba(0,0,0,0.14)',
     height: 40,
     justifyContent: 'center',
     position: 'absolute',
@@ -869,10 +866,10 @@ const styles = StyleSheet.create({
   pendingBody: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0, opacity: 0.6 },
   pendingRow: { flexDirection: 'row', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingVertical: 2 },
   pendingText: { flex: 1 },
-  reasonChip: { borderRadius: 8, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  reasonChip: { borderRadius: Radius.medium, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   reasonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, padding: Spacing.three },
-  retry: { alignItems: 'center', borderRadius: 9, justifyContent: 'center', minHeight: TouchTarget, marginTop: Spacing.three, paddingHorizontal: Spacing.four },
-  reportButton: { alignItems: 'center', borderRadius: 10, justifyContent: 'center', minHeight: 46, paddingHorizontal: Spacing.four },
+  retry: { alignItems: 'center', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, marginTop: Spacing.three, paddingHorizontal: Spacing.four },
+  reportButton: { alignItems: 'center', borderRadius: Radius.large, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   screen: { flex: 1 },
   thread: { paddingBottom: Spacing.two, paddingTop: Spacing.two },
 });

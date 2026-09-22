@@ -2,7 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type Vi
 
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 
@@ -43,11 +43,9 @@ export function ActionButton({
       : filled
         ? theme.accent
         : theme.backgroundElement;
-  const foregroundColor = state === 'success' || destructive
-    ? Colors.light.backgroundElevated
-    : filled
-      ? Colors.light.text
-      : theme.text;
+  // Resolve the ink from the active appearance so filled actions stay
+  // legible when the user switches between light and dark mode.
+  const foregroundColor = filled ? theme.background : theme.text;
 
   return (
     <Pressable

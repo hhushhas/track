@@ -1,16 +1,20 @@
-import { Platform } from 'react-native';
+import { usePathname } from 'expo-router';
+import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomTabInset, Spacing } from '@/constants/theme';
+import { primaryNavigationHeight, primaryNavigationVisibleForPath } from '@/lib/primary-navigation';
 
-/** Exact iOS overlay height; Android navigation continues to participate in layout. */
+/** Exact floating navigation height on both platforms. */
 export function useBottomTabBarInset() {
   const insets = useSafeAreaInsets();
-  if (Platform.OS !== 'ios') return 0;
-  return BottomTabInset + Spacing.two + Math.max(insets.bottom, Spacing.two);
+  const pathname = usePathname();
+  const { fontScale } = useWindowDimensions();
+  if (!primaryNavigationVisibleForPath(pathname)) return 0;
+  return primaryNavigationHeight(fontScale, BottomTabInset) + Spacing.two + Math.max(insets.bottom, Spacing.two);
 }
 
-/** Keeps the final row reachable above the floating iOS glass navigation. */
-export function useBottomTabContentInset(extra = Spacing.four) {
+/** Keeps the final row reachable above the floating glass navigation. */
+export function useBottomTabContentInset(extra: number = Spacing.four) {
   return useBottomTabBarInset() + extra;
 }

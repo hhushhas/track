@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -11,8 +11,8 @@ import { IconButton } from '@/components/icon-button';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import {
   ProjectAttention,
-  ProjectAccountButton,
   ProjectHero,
+  ProjectProgress,
   ProjectWorkHub,
 } from '@/components/project-overview-dashboard';
 import { ScreenEntrance } from '@/components/screen-entrance';
@@ -20,9 +20,10 @@ import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
+import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { channelHref, projectChannelsHref, representedContextQuery } from '@/lib/company-navigation';
-import type { MobileAttentionItem } from '@/lib/mobile-attention';
+import { attentionTitle, type MobileAttentionItem } from '@/lib/mobile-attention';
 import { projectRoleLabel } from '@/lib/role-label';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
@@ -32,7 +33,8 @@ export default function ProjectOverviewScreen() {
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const release = useReleaseConfig();
-  const { trackUserId, openProfileSheet } = useTrackUser();
+  const { setCreateContext } = usePrimaryNavigationVisibility();
+  const { trackUserId } = useTrackUser();
   const [optionsOpen, setOptionsOpen] = useState(false);
   const params = useLocalSearchParams<{ projectId?: string; companyId?: string; membershipId?: string; archive?: string }>();
   const projectId = typeof params.projectId === 'string' ? params.projectId as Id<'projects'> : undefined;
@@ -41,6 +43,15 @@ export default function ProjectOverviewScreen() {
   const archived = params.archive === '1';
   const context = companyId && membershipId ? { archived, companyId, membershipId } : null;
 
+  useFocusEffect(useCallback(() => {
+    if (!projectId) {
+      setCreateContext(null);
+      return undefined;
+    }
+    setCreateContext({ archive: archived, companyId, membershipId, projectId, scope: 'project' });
+    return () => setCreateContext(null);
+  }, [archived, companyId, membershipId, projectId, setCreateContext]));
+
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && projectId ? {
     userId: trackUserId, projectId, actingCompanyId: companyId, projectMemberId: membershipId,
   } : 'skip');
@@ -48,7 +59,7 @@ export default function ProjectOverviewScreen() {
     userId: trackUserId, projectId, actingCompanyId: companyId, projectMemberId: membershipId,
   } : 'skip');
   const tasks = useQuery(api.tasks.list, release.tasks && trackUserId && projectId && navigation?.available ? {
-    projectId, actingCompanyId: companyId, projectMemberId: membershipId, openOnly: true,
+    projectId, actingCompanyId: companyId, projectMemberId: membershipId,
   } : 'skip');
   const members = usePaginatedQuery(api.mobile.listProjectMembersPage, trackUserId && projectId && navigation?.available ? {
     userId: trackUserId, projectId, actingCompanyId: companyId, projectMemberId: membershipId,
@@ -59,7 +70,6 @@ export default function ProjectOverviewScreen() {
   const evidencePages = usePaginatedQuery(api.evidence.listProjectPage, trackUserId && projectId && navigation?.available ? {
     projectId, actingCompanyId: companyId, projectMemberId: membershipId,
   } : 'skip', { initialNumItems: 50 });
-  const profileStatus = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
 
   useEffect(() => {
     if (attentionPages.status === 'CanLoadMore') attentionPages.loadMore(10);
@@ -70,7 +80,9 @@ export default function ProjectOverviewScreen() {
     .filter((item) => item.projectId === projectId)
     .sort((left, right) => right.createdAt - left.createdAt)
     .slice(0, 3);
-  const openTaskCount = tasks?.length ?? 0;
+  const completedTaskCount = tasks?.filter((item) => item.state?.category === 'completed').length ?? 0;
+  const openTaskCount = tasks?.filter((item) => item.state?.category !== 'completed' && item.state?.category !== 'canceled').length ?? 0;
+  const totalTaskCount = tasks?.filter((item) => item.state?.category !== 'canceled').length ?? 0;
   const channelCount = groups?.length ?? 0;
   const unreadCount = groups?.reduce((count, group) => count + group.unreadCount, 0) ?? 0;
   const evidenceCount = `${evidencePages.results.length}${evidencePages.status === 'CanLoadMore' ? '+' : ''}`;
@@ -85,8 +97,11 @@ export default function ProjectOverviewScreen() {
   const memberCount = `${members.results.length}${members.status === 'CanLoadMore' ? '+' : ''}`;
   const loading = !projectId || navigation === undefined;
 
+  function openBoard() {
+    if (projectId && release.tasks) router.push(`${taskListHref(projectId, context)}&view=board` as never);
+  }
   function openTasks() {
-    if (projectId && release.tasks) router.push(taskListHref(projectId, context));
+    if (projectId && release.tasks) router.push(`${taskListHref(projectId, context)}&view=list` as never);
   }
   function openChannels() {
     if (projectId) router.push(projectChannelsHref(projectId, context));
@@ -110,7 +125,6 @@ export default function ProjectOverviewScreen() {
       headerBackVisible: false,
       headerRight: () => <View style={styles.headerActions}>
         <IconButton accessibilityLabel="Project options" icon="tune" onPress={() => setOptionsOpen(true)} />
-        <ProjectAccountButton label={profileStatus?.user.displayName || profileStatus?.user.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
       </View>,
       title: projectName,
     }} />
@@ -120,14 +134,16 @@ export default function ProjectOverviewScreen() {
     ) : projectId && project ? (
       <ScreenEntrance style={styles.screenContent}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
         <ProjectHero archived={navigation.archived} company={project.project.clientLabel ?? projectCompany} description={project.project.description} memberCount={memberCount} name={projectName} onBack={() => router.back()} role={projectRole} />
-        <ProjectWorkHub channelCount={channelCount} dueSoonCount={dueSoonCount} evidenceCount={evidenceCount} onChannels={openChannels} onEvidence={openEvidence} onTasks={openTasks} openTaskCount={openTaskCount} tasksEnabled={release.tasks} unreadCount={unreadCount} />
+        {release.tasks ? <ProjectProgress completed={completedTaskCount} latestUpdate={projectAttention[0] ? attentionTitle(projectAttention[0]) : undefined} total={totalTaskCount} /> : null}
+        <ProjectWorkHub channelCount={channelCount} dueSoonCount={dueSoonCount} evidenceCount={evidenceCount} onBoard={openBoard} onChannels={openChannels} onEvidence={openEvidence} onTasks={openTasks} openTaskCount={openTaskCount} tasksEnabled={release.tasks} unreadCount={unreadCount} />
         <ProjectAttention items={projectAttention} onOpen={openAttention} />
       </ScrollView></ScreenEntrance>
     ) : <View style={styles.centered}><EmptyState body="Select a Project from Projects to see its work hub." icon="project" title="Choose a Project" /></View>}
     <OptionsSheet onClose={() => setOptionsOpen(false)} title="Project options" visible={optionsOpen}>
       <SheetSection title={projectName}>
         <SheetRow icon="channel" label="Open Channels" onPress={() => { setOptionsOpen(false); openChannels(); }} />
-        {release.tasks ? <SheetRow icon="view-board" label="Open Board" onPress={() => { setOptionsOpen(false); openTasks(); }} /> : null}
+        {release.tasks ? <SheetRow icon="task" label="Open Tasks" onPress={() => { setOptionsOpen(false); openTasks(); }} /> : null}
+        {release.tasks ? <SheetRow icon="view-board" label="Open Board" onPress={() => { setOptionsOpen(false); openBoard(); }} /> : null}
         <SheetRow icon="shield-check" label="Open Evidence" onPress={() => { setOptionsOpen(false); openEvidence(); }} />
       </SheetSection>
     </OptionsSheet>

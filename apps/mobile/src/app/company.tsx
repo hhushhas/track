@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
@@ -10,38 +10,37 @@ import {
   CompanyChoice,
   CompanySectionHeading,
   CompanyTrustNotice,
-  CompanyWebNote,
   InvitationCard,
-  RelationshipCard,
   type CompanyAudience,
 } from '@/components/company-dashboard';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
-import { ProjectAccountButton } from '@/components/project-overview-dashboard';
+import { PlatformIcon } from '@/components/platform-icon';
 import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { companyRoleLabel } from '@/lib/role-label';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { projectOverviewHref } from '@/lib/company-navigation';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function CompanyScreen() {
   const { showToast } = useAppToast();
-  const insets = useSafeAreaInsets();
-  const { openProfileSheet, trackUserId } = useTrackUser();
+  const router = useRouter();
+  const theme = useTheme();
+  const bottomContentInset = useBottomTabContentInset(Spacing.six);
+  const { trackUserId } = useTrackUser();
   const { actingCompanyId, companies, companyModelEnabled, setActingCompanyId } = useCompany();
   const [pendingDecision, setPendingDecision] = useState<string | null>(null);
   const pendingDecisionRef = useRef<string | null>(null);
   const actingCompany = companies?.find(({ company }) => company?._id === actingCompanyId);
-  const canAdminister = actingCompany?.membership.role === 'owner' || actingCompany?.membership.role === 'admin';
-  const administerArgs = actingCompanyId && canAdminister ? { actingCompanyId } : 'skip';
   const companyInvitations = useQuery(api.companies.listPendingForMe, companyModelEnabled ? {} : 'skip');
-  const relationshipInvitations = useQuery(api.relationships.listInvitations, administerArgs);
-  const projectInvitations = useQuery(api.sharedProjects.listInvitations, administerArgs);
-  const relationships = useQuery(api.relationships.listMine, administerArgs);
+  const relationshipInvitations = useQuery(api.relationships.listInvitations, actingCompanyId ? { actingCompanyId } : 'skip');
+  const projectInvitations = useQuery(api.sharedProjects.listInvitations, actingCompanyId ? { actingCompanyId } : 'skip');
   const profile = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
   const projectPage = usePaginatedQuery(api.mobile.listProjects, trackUserId ? {
     userId: trackUserId,
@@ -53,6 +52,9 @@ export default function CompanyScreen() {
   const projectCount = projectPage.status === 'LoadingFirstPage'
     ? undefined
     : projectPage.results.filter(Boolean).length;
+  const activeProjects = useMemo(() => projectPage.results
+    .filter((item): item is NonNullable<typeof item> => Boolean(item && item.membership.status !== 'archived'))
+    .slice(0, 4), [projectPage.results]);
   const decideCompanyInvitation = useMutation(api.companies.decideInvitation);
   const decideRelationshipInvitation = useMutation(api.relationships.decideInvitation);
   const decideProjectInvitation = useMutation(api.sharedProjects.decideInvitation);
@@ -78,19 +80,36 @@ export default function CompanyScreen() {
     }
   }
 
-  const accountLabel = profile?.user?.displayName || profile?.user?.email || 'Track member';
-
   if (!companyModelEnabled) return <ThemedView style={styles.screen}>
-    <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label={accountLabel} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'Companies' }} />
+    <Stack.Screen options={{ title: 'Companies' }} />
     <EmptyState body="This server has not enabled the Company release." icon="office-building" title="Company collaboration is disabled" />
   </ThemedView>;
 
   return <ThemedView style={styles.screen}>
-    <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label={accountLabel} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'Companies' }} />
-    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Spacing.six + BottomTabInset + Math.max(insets.bottom, Spacing.two) }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
+    <Stack.Screen options={{ title: 'Companies' }} />
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
       <ConnectivityBanner />
       <CompanyTrustNotice />
       <ActingCompanyCard companyId={actingCompany?.company?._id} companyName={actingCompany?.company?.displayName} projectCount={projectCount} role={actingCompany ? companyRoleLabel(actingCompany.membership.role) : 'Individual workspace'} status={actingCompany?.company?.status} />
+
+      <View style={styles.section}>
+        <CompanySectionHeading count={activeProjects.length} meta="Available now" title="ACTIVE PROJECTS" />
+        {projectPage.status === 'LoadingFirstPage' ? <SkeletonList count={3} label="Loading Company Projects" /> : activeProjects.length ? activeProjects.map((item) => (
+          <Pressable
+            accessibilityLabel={`${item.project.name}. Open Project.`}
+            accessibilityRole="button"
+            android_ripple={{ color: theme.backgroundSelected }}
+            key={item.membership._id}
+            onPress={() => router.push(projectOverviewHref(item.project._id, item.membership.companyId ? { archived: false, companyId: item.membership.companyId, membershipId: item.membership._id } : null) as never)}
+            style={[styles.projectRow, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}
+          >
+            <View style={[styles.projectIcon, { backgroundColor: theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="project" size={18} /></View>
+            <View style={styles.projectCopy}><ThemedText numberOfLines={1} type="title">{item.project.name}</ThemedText><ThemedText themeColor="textSecondary" type="caption">{item.groupCount} {item.groupCount === 1 ? 'Channel' : 'Channels'}{item.unreadCount ? ` · ${item.unreadCount} unread` : ''}</ThemedText></View>
+            <PlatformIcon color={theme.textTertiary} name="chevron-right" size={17} />
+          </Pressable>
+        )) : <ThemedText themeColor="textSecondary" type="caption">No active Projects are available in this Company.</ThemedText>}
+        {activeProjects.length ? <Pressable accessibilityRole="button" onPress={() => router.replace('/projects')} style={styles.allProjects}><ThemedText themeColor="accentStrong" type="captionBold">View all Projects</ThemedText><PlatformIcon color={theme.accentStrong} name="chevron-right" size={15} /></Pressable> : null}
+      </View>
 
       <View style={styles.section}>
         <CompanySectionHeading meta={`${companies?.length ?? 0} available`} title="ACT AS" />
@@ -125,18 +144,17 @@ export default function CompanyScreen() {
         })}
       </View> : null}
 
-      {actingCompanyId ? <View style={styles.section}>
-        <CompanySectionHeading meta="Active links" title="RELATIONSHIPS" />
-        {!canAdminister ? <ThemedText themeColor="textSecondary" type="caption">Relationship administration is limited to this Company&apos;s owners and admins.</ThemedText> : relationships === undefined ? <SkeletonList count={2} label="Loading relationships" /> : relationships.length ? relationships.map((entry) => entry ? <RelationshipCard companies={entry.participants as CompanyAudience[]} key={entry.relationship._id} name={entry.relationship.name} /> : null) : <ThemedText themeColor="textSecondary" type="caption">No active Company relationships.</ThemedText>}
-        <CompanyWebNote />
-      </View> : null}
     </ScrollView>
-    <StandalonePrimaryNavigation active="projects" />
+    <StandalonePrimaryNavigation active="team" />
   </ThemedView>;
 }
 
 const styles = StyleSheet.create({
   content: { gap: Spacing.four, padding: Spacing.four, paddingBottom: Spacing.six },
+  allProjects: { alignItems: 'center', alignSelf: 'flex-end', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget },
+  projectCopy: { flex: 1, gap: 2, minWidth: 0 },
+  projectIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 36, justifyContent: 'center', width: 36 },
+  projectRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: 68, padding: Spacing.three },
   screen: { flex: 1 },
   section: { gap: Spacing.two },
 });

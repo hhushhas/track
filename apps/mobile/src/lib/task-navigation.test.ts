@@ -68,4 +68,24 @@ describe('taskListHref', () => {
       },
     )).toBe('/tasks?projectId=project-1&companyId=company-1&membershipId=member-1&boardId=board-1&taskId=task-1');
   });
+
+  it('opens task creation with a calendar-selected due date', () => {
+    expect(taskListHref(
+      'project-1' as Id<'projects'>,
+      null,
+      undefined,
+      undefined,
+      { create: true, dueDate: '2026-09-21' },
+    )).toBe('/tasks?projectId=project-1&create=1&dueDate=2026-09-21');
+  });
+
+  it('keeps Channel context when the global create action starts a task', () => {
+    expect(taskListHref(
+      'project-1' as Id<'projects'>,
+      { companyId: 'company-1' as Id<'companies'>, membershipId: 'member-1' as Id<'projectMembers'> },
+      undefined,
+      undefined,
+      { create: true, groupId: 'group-1' as Id<'groups'> },
+    )).toBe('/tasks?projectId=project-1&companyId=company-1&membershipId=member-1&create=1&groupId=group-1');
+  });
 });

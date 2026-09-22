@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useConvexAuth, useMutation, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -52,6 +52,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const devAuthBypass = useDevAuthBypass();
   const session = authClient.useSession();
+  const { isAuthenticated: convexAuthenticated, isLoading: convexAuthLoading } = useConvexAuth();
 
   const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
   const syncDevUser = useMutation(api.auth.syncDevUser);
@@ -88,6 +89,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
   // Sync user on session arrival
   useEffect(() => {
     if (!hasAccess || trackUserId) return;
+    if (convexAuthLoading || !convexAuthenticated) return;
     if (session.isPending && !devAuthBypass.enabled) return;
     const syncUser = devAuthBypass.enabled && !session.data ? syncDevUser : ensureCurrentUser;
     setBootstrapError(null);
@@ -103,7 +105,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => setBootstrapError('account'));
-  }, [acceptInvites, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncDevUser, trackUserId]);
+  }, [acceptInvites, convexAuthLoading, convexAuthenticated, devAuthBypass.enabled, ensureCurrentUser, hasAccess, session.data, session.isPending, syncDevUser, trackUserId]);
 
   // Keep trackUserId in sync with the convex getCurrentUser query
   useEffect(() => {
@@ -179,7 +181,7 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-    if (!trackUserId) return;
+    if (!trackUserId || convexAuthLoading || !convexAuthenticated) return;
     setBusyAction('invites');
     try {
       await acceptInvites({ userId: trackUserId });

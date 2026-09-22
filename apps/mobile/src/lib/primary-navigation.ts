@@ -1,7 +1,7 @@
 import type { IconName } from '@/components/platform-icon';
 
 export type PrimaryDestination = {
-  key: 'evidence' | 'home' | 'projects' | 'tasks';
+  key: 'home' | 'inbox' | 'tasks' | 'team';
   label: string;
   icon: IconName;
   disabled?: boolean;
@@ -13,12 +13,29 @@ export type PrimaryTabGeometry = {
   indicatorWidth: number;
 };
 
+const immersiveRouteNames = new Set(['conversation', 'task', 'thread']);
+
+/**
+ * Conversation, thread, and task detail are focused work destinations. Their
+ * composers and detail controls own the bottom edge, so the global app bar
+ * must not compete with them or cover their final interactive row.
+ */
+export function primaryNavigationVisibleForPath(pathname: string) {
+  const routeName = pathname.split('?')[0]?.split('/').filter(Boolean).at(-1);
+  return routeName ? !immersiveRouteNames.has(routeName) : true;
+}
+
+/** Accessibility text may use two lines, so the floating shell grows with it. */
+export function primaryNavigationHeight(fontScale: number, baseHeight: number) {
+  return baseHeight + (Number.isFinite(fontScale) && fontScale > 1.2 ? 32 : 0);
+}
+
 /** Keeps the selection pill and tab content on the same cell centers. */
 export function primaryTabGeometry(rowWidth: number, tabCount: number, tabIndex: number): PrimaryTabGeometry {
   const safeCount = Math.max(1, tabCount);
   const safeIndex = Math.min(Math.max(tabIndex, 0), safeCount - 1);
   const cellWidth = rowWidth / safeCount;
-  const indicatorWidth = Math.max(48, cellWidth - 8);
+  const indicatorWidth = Math.min(44, Math.max(40, cellWidth - 12));
   return {
     cellWidth,
     indicatorLeft: safeIndex * cellWidth + (cellWidth - indicatorWidth) / 2,
@@ -31,6 +48,16 @@ export function primaryTabIndexAtX(x: number, rowWidth: number, tabCount: number
   const safeCount = Math.max(1, tabCount);
   if (rowWidth <= 0) return 0;
   return Math.min(Math.max(Math.floor(x / (rowWidth / safeCount)), 0), safeCount - 1);
+}
+
+/** Maps the five physical slots around the center Create button to four tabs. */
+export function primaryDestinationIndexAtX(x: number, rowWidth: number) {
+  'worklet';
+  if (rowWidth <= 0) return 0;
+  const slot = Math.min(4, Math.max(0, Math.floor(x / (rowWidth / 5))));
+  if (slot < 2) return slot;
+  if (slot > 2) return slot - 1;
+  return x < rowWidth / 2 ? 1 : 2;
 }
 
 /**
@@ -61,8 +88,8 @@ export function primaryTabResetTarget(key: PrimaryDestination['key']) {
 
 export function primaryDestinationForRoute(routeName: string, tasksDisabled = false): PrimaryDestination {
   if (routeName === '(home)') return { key: 'home', label: 'Home', icon: 'home' };
-  if (routeName === '(projects)') return { key: 'projects', label: 'Projects', icon: 'project' };
-  if (routeName === '(tasks)') return { key: 'tasks', label: 'Tasks', icon: 'task', disabled: tasksDisabled };
-  if (routeName === '(search)') return { key: 'evidence', label: 'Evidence', icon: 'evidence' };
+  if (routeName === '(inbox)') return { key: 'inbox', label: 'Inbox', icon: 'email-outline' };
+  if (routeName === '(tasks)') return { key: 'tasks', label: 'My Tasks', icon: 'task', disabled: tasksDisabled };
+  if (routeName === '(team)') return { key: 'team', label: 'Team', icon: 'account-group' };
   throw new Error(`Unsupported primary tab route: ${routeName}`);
 }

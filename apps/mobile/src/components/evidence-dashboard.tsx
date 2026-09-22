@@ -23,14 +23,12 @@ export type EvidenceAuditItem = {
 };
 
 export function EvidenceProtocolIntro() {
-  const theme = useTheme();
   const largeText = useWindowDimensions().fontScale > 1.25;
   return <View style={styles.protocol}>
     <View style={[styles.protocolMeta, largeText && styles.protocolMetaLarge]}>
-      <ThemedText themeColor="accentStrong" type="captionBold">Evidence scope</ThemedText>
-      <View style={styles.live}><View style={[styles.liveDot, { backgroundColor: theme.accent }]} /><ThemedText themeColor="textSecondary" type="captionBold">Live session</ThemedText></View>
+      <ThemedText themeColor="accentStrong" type="captionBold">Source context</ThemedText>
     </View>
-    <ThemedText themeColor="textSecondary" type="small">Find the source behind tasks and decisions. Evidence is permission-scoped to verified contributors.</ThemedText>
+    <ThemedText themeColor="textSecondary" type="small">Find the message or file behind a task or decision.</ThemedText>
   </View>;
 }
 
@@ -45,14 +43,14 @@ export function EvidenceScopeCard({ channelCount, channelName, companyName, onCh
   const theme = useTheme();
   const largeText = useWindowDimensions().fontScale > 1.25;
   const filters = Number(Boolean(projectName)) + Number(Boolean(channelName));
-  return <View style={[styles.scopeCard, { backgroundColor: theme.backgroundElevated }]}>
-    <View style={[styles.scopeHead, largeText && styles.scopeHeadLarge]}>
-      <View style={styles.scopeTitle}><PlatformIcon color={theme.accentStrong} name="shield-check" size={17} /><ThemedText type="captionBold">ACTIVE SCOPE</ThemedText></View>
-      <ThemedText themeColor="accentStrong" type="captionBold">{filters ? `${filters} ${filters === 1 ? 'filter' : 'filters'}` : 'Project required'}</ThemedText>
+  return <View style={[styles.scopeCard, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+      <View style={[styles.scopeHead, largeText && styles.scopeHeadLarge]}>
+      <View style={styles.scopeTitle}><PlatformIcon color={theme.accentStrong} name="project" size={17} /><ThemedText type="captionBold">Source context</ThemedText></View>
+      <ThemedText themeColor="accentStrong" type="captionBold">{filters ? `${filters} selected` : 'Choose a Project'}</ThemedText>
     </View>
-    <ScopeField detail={companyName ?? 'Choose the Company context'} icon="project" label="PROJECT (REQUIRED)" onPress={onProjectPress} placeholder="Choose a Project" value={projectName} />
-    {projectName ? <ScopeField detail={channelName ? 'Only this Channel' : `${channelCount} accessible ${channelCount === 1 ? 'Channel' : 'Channels'}`} icon="channel" label="CHANNEL (OPTIONAL)" onPress={onChannelPress} placeholder="All accessible Channels" value={channelName ? `#${channelName}` : undefined} /> : null}
-    {projectName ? <View style={[styles.lockNote, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="shield-lock-outline" size={16} /><ThemedText style={styles.flex} themeColor="textSecondary" type="caption">Locked to {companyName ?? 'Project'} member permissions. {channelCount} {channelCount === 1 ? 'Channel' : 'Channels'} accessible.</ThemedText></View> : null}
+    <ScopeField detail={companyName ?? 'Choose the Company context'} icon="project" label="Project" onPress={onProjectPress} placeholder="Choose a Project" value={projectName} />
+    {projectName ? <ScopeField detail={channelName ? 'Only this Channel' : `${channelCount} accessible ${channelCount === 1 ? 'Channel' : 'Channels'}`} icon="channel" label="Channel" onPress={onChannelPress} placeholder="All accessible Channels" value={channelName ? `#${channelName}` : undefined} /> : null}
+    {projectName ? <View style={[styles.lockNote, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="shield-lock-outline" size={16} /><ThemedText style={styles.flex} themeColor="textSecondary" type="caption">Showing sources available to your {companyName ?? 'Project'} membership.</ThemedText></View> : null}
   </View>;
 }
 
@@ -67,11 +65,9 @@ function ScopeField({ detail, icon, label, onPress, placeholder, value }: { deta
 }
 
 export function EvidenceResultsHeader({ count, searching }: { count: number; searching: boolean }) {
-  const theme = useTheme();
   const largeText = useWindowDimensions().fontScale > 1.25;
   return <View style={[styles.resultsHead, largeText && styles.resultsHeadLarge]}>
-    <View style={styles.resultsTitle}><ThemedText type="captionBold">{searching ? 'SEARCH RESULTS' : 'FILTERED RECORDS'}</ThemedText><ThemedText themeColor="textTertiary" type="captionBold">{count} {count === 1 ? 'record' : 'records'}</ThemedText></View>
-    <View style={styles.sortLabel}><PlatformIcon color={theme.accentStrong} name="sort" size={15} /><ThemedText themeColor="accentStrong" type="captionBold">Most recent</ThemedText></View>
+    <View style={styles.resultsTitle}><ThemedText type="captionBold">{searching ? 'Search results' : 'Sources'}</ThemedText><ThemedText themeColor="textTertiary" type="captionBold">{count} {count === 1 ? 'source' : 'sources'}</ThemedText></View>
   </View>;
 }
 
@@ -81,11 +77,11 @@ export function EvidenceAuditCard({ item, onOpenSource, onOpenTask }: { item: Ev
   const config = kindConfig(item.kind);
   const restricted = item.availability === 'redacted' || item.availability === 'unavailable';
   const primaryAction = restricted ? 'Restricted source' : item.opensTask ? 'Open linked task' : 'Open exact source';
-  return <View style={[styles.auditCard, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+  return <View style={[styles.auditCard, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
     <View style={[styles.auditRail, { backgroundColor: config.accent ? theme.accent : theme.hairline }]} />
     <Pressable accessibilityHint={restricted ? 'The source is outside your current access' : item.opensTask ? 'Opens the linked task because this reference has no conversation source' : 'Opens the exact evidence source'} accessibilityLabel={`${config.label}. ${item.title}. ${item.body}`} accessibilityRole={restricted ? 'text' : 'button'} accessibilityState={{ disabled: restricted }} android_ripple={{ color: theme.backgroundSelected }} disabled={restricted} onPress={() => { hapticLight(); onOpenSource(); }} style={({ pressed }) => [styles.auditMain, { opacity: pressed ? 0.72 : 1 }]}>
       <View style={[styles.auditTop, fontScale > 1.25 && styles.auditTopLarge]}>
-        <View style={styles.kindBadge}><PlatformIcon color={config.accent ? theme.accentStrong : theme.textSecondary} name={config.icon} size={14} /><ThemedText themeColor={config.accent ? 'accentStrong' : 'textSecondary'} type="captionBold">{config.label}</ThemedText></View>
+      <View style={styles.kindBadge}><PlatformIcon color={config.accent ? theme.accentStrong : theme.textSecondary} name={config.icon} size={14} /><ThemedText themeColor={config.accent ? 'accentStrong' : 'textSecondary'} type="captionBold">{config.label}</ThemedText></View>
         <ThemedText themeColor="textTertiary" type="caption">{formatEvidenceDate(item.createdAt)}</ThemedText>
       </View>
       <View style={styles.auditIdentity}><ThemedText numberOfLines={1} style={styles.flex} type="smallBold">{item.actor ?? item.title}</ThemedText>{item.primary ? <ThemedText themeColor="accentStrong" type="captionBold">Primary</ThemedText> : null}</View>
@@ -99,15 +95,15 @@ export function EvidenceAuditCard({ item, onOpenSource, onOpenTask }: { item: Ev
 
 export function EvidenceEndMarker({ companyName }: { companyName?: string }) {
   const theme = useTheme();
-  return <View style={styles.endMarker}><View style={[styles.endIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="shield-check" size={20} /></View><ThemedText type="captionBold">END OF SCOPED RECORDS</ThemedText><ThemedText style={styles.endCopy} themeColor="textSecondary" type="caption">Only sources available to your {companyName ?? 'Project'} membership are shown.</ThemedText></View>;
+  return <View style={styles.endMarker}><View style={[styles.endIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="shield-check" size={20} /></View><ThemedText type="captionBold">End of available sources</ThemedText><ThemedText style={styles.endCopy} themeColor="textSecondary" type="caption">Sources are limited to your {companyName ?? 'Project'} access.</ThemedText></View>;
 }
 
 function kindConfig(kind: EvidenceKind): { accent: boolean; icon: IconName; label: string } {
   switch (kind) {
-    case 'attachment': case 'search_file': return { accent: false, icon: 'file-document-outline', label: 'FILE ATTACHMENT' };
-    case 'assistant_answer': return { accent: true, icon: 'lightbulb-outline', label: 'GROUNDED ANSWER' };
-    case 'memory_excerpt': return { accent: true, icon: 'archive', label: 'MEMORY EXCERPT' };
-    default: return { accent: true, icon: 'message', label: 'MESSAGE REFERENCE' };
+    case 'attachment': case 'search_file': return { accent: false, icon: 'file-document-outline', label: 'File' };
+    case 'assistant_answer': return { accent: true, icon: 'lightbulb-outline', label: 'Answer' };
+    case 'memory_excerpt': return { accent: true, icon: 'archive', label: 'Memory' };
+    default: return { accent: true, icon: 'message', label: 'Message' };
   }
 }
 
@@ -139,7 +135,7 @@ const styles = StyleSheet.create({
   resultsHead: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', paddingTop: Spacing.two },
   resultsHeadLarge: { alignItems: 'flex-start', flexDirection: 'column' },
   resultsTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  scopeCard: { borderCurve: 'continuous', borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.four },
+  scopeCard: { borderCurve: 'continuous', borderRadius: Radius.homeSurface, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, padding: Spacing.four },
   scopeCopy: { flex: 1, gap: 1, minWidth: 0 },
   scopeField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.three, minHeight: 68, overflow: 'hidden', padding: Spacing.three },
   scopeHead: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },

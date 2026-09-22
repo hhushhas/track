@@ -1,18 +1,22 @@
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
+import { useCallback, useMemo, useState } from 'react';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { useTrackUser } from '@/contexts/track-user-context';
+import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { ColoredAvatar } from '@/components/colored-avatar';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
+import { IconButton } from '@/components/icon-button';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
@@ -30,7 +34,18 @@ export default function GroupsScreen() {
   const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
   const push = usePushNotifications();
+  const { setCreateContext } = usePrimaryNavigationVisibility();
   const { projectId, companyId, membershipId, archive } = useLocalSearchParams<{ projectId: string; companyId?: string; membershipId?: string; archive?: string }>();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useFocusEffect(useCallback(() => {
+    if (!projectId) {
+      setCreateContext(null);
+      return undefined;
+    }
+    setCreateContext({ archive: archive === '1', companyId, membershipId, projectId, scope: 'project' });
+    return () => setCreateContext(null);
+  }, [archive, companyId, membershipId, projectId, setCreateContext]));
 
   const projectsPage = usePaginatedQuery(
     api.mobile.listProjects,
@@ -56,6 +71,11 @@ export default function GroupsScreen() {
 
   const projectName = projectsPage.results.find((p) => p.project._id === projectId)?.project.name ?? 'Channels';
   const readOnlyArchive = archive === '1' || navigation?.archived === true;
+  const visibleGroups = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (!query) return groups;
+    return groups.filter((item) => `${item.group.name} ${item.lastMessage?.body ?? ''}`.toLocaleLowerCase().includes(query));
+  }, [groups, searchQuery]);
 
   function navigate(item: MobileGroup) {
     hapticLight();
@@ -74,21 +94,21 @@ export default function GroupsScreen() {
           headerLargeTitle: false,
           headerTransparent: false,
           headerRight: () => release.tasks ? (
-            <Pressable
+            <IconButton
               accessibilityLabel="Open tasks"
-              hitSlop={8}
+              appearance="plain"
+              icon="task"
               onPress={() => router.push(taskListHref(projectId as Id<'projects'>, companyId && membershipId ? {
                 archived: readOnlyArchive,
                 companyId: companyId as Id<'companies'>,
                 membershipId: membershipId as Id<'projectMembers'>,
               } : null))}
-              style={styles.headerButton}>
-              <PlatformIcon color={theme.accent} name="project" size={22} />
-            </Pressable>
+            />
           ) : null,
         }}
       />
 
+      <ConnectivityBanner style={styles.connection} message="You’re offline. Cached Channels stay available when possible." />
       {navigation && !navigation.available ? <View style={styles.list}><EmptyState icon="shield-lock-outline" title="Project unavailable" body={navigationUnavailableCopy(Boolean(companyId))} /></View> : null}
 
       {!navigation || navigation.available && groupsStatus === 'LoadingFirstPage' ? (
@@ -97,23 +117,31 @@ export default function GroupsScreen() {
         <FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
-          data={groups}
+          data={visibleGroups}
           keyExtractor={(item) => item.group._id}
           renderItem={({ item }) => <GroupRow archived={readOnlyArchive || item.group.status === 'archived'} item={item} onPress={() => navigate(item)} />}
-          ListHeaderComponent={push.permissionState === 'not_determined' ? (
-            <View style={[styles.notificationCard, { backgroundColor: theme.backgroundElement }]}>
-              <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
-              <View style={styles.notificationCopy}>
-                <ThemedText type="title">Keep up with {projectName}</ThemedText>
-                <ThemedText themeColor="textSecondary" type="caption">
-                  Get timely Project activity with full, context-only, or hidden previews you control.
-                </ThemedText>
-              </View>
-              <Pressable accessibilityRole="button" disabled={push.syncing} onPress={() => void push.requestPermission()} style={[styles.enableButton, { backgroundColor: theme.text }]}>
-                <ThemedText style={{ color: theme.background }} type="title">Enable</ThemedText>
-              </Pressable>
+          ListHeaderComponent={<>
+            <View style={[styles.contextCard, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+              <View style={[styles.contextIcon, { backgroundColor: theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="channel" size={20} /></View>
+              <View style={styles.notificationCopy}><ThemedText themeColor="textSecondary" type="captionBold">PROJECT CHANNELS</ThemedText><ThemedText type="titleLarge">{projectName}</ThemedText><ThemedText themeColor="textSecondary" type="caption">{groups.length} visible {groups.length === 1 ? 'Channel' : 'Channels'}{readOnlyArchive ? ' · read-only archive' : ''}</ThemedText></View>
             </View>
-          ) : null}
+            <View style={[styles.searchWrap, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
+              <PlatformIcon color={theme.textTertiary} name="search" size={18} />
+              <TextInput accessibilityLabel="Search project Channels" autoCapitalize="none" autoCorrect={false} maxLength={120} onChangeText={setSearchQuery} placeholder="Search Channels" placeholderTextColor={theme.textTertiary} style={[styles.searchInput, { color: theme.text }]} value={searchQuery} />
+            </View>
+            {push.permissionState === 'not_determined' ? (
+              <View style={[styles.notificationCard, { backgroundColor: theme.backgroundElement }]}>
+                <PlatformIcon color={theme.accent} name="bell-outline" size={24} />
+                <View style={styles.notificationCopy}>
+                  <ThemedText type="title">Keep up with {projectName}</ThemedText>
+                  <ThemedText themeColor="textSecondary" type="caption">Get timely Project activity with full, context-only, or hidden previews you control.</ThemedText>
+                </View>
+                <Pressable accessibilityRole="button" disabled={push.syncing} onPress={() => void push.requestPermission()} style={[styles.enableButton, { backgroundColor: theme.accent, borderColor: theme.accent }]}>
+                  <ThemedText style={{ color: theme.background }} type="title">Enable</ThemedText>
+                </Pressable>
+              </View>
+            ) : null}
+          </>}
           ListFooterComponent={groupsStatus === 'CanLoadMore' || groupsStatus === 'LoadingMore' ? (
             <Pressable
               accessibilityRole="button"
@@ -126,7 +154,7 @@ export default function GroupsScreen() {
             </Pressable>
           ) : null}
           ListEmptyComponent={
-            <EmptyState icon="channel" title="No Channels visible" body="Only Channels explicitly granted to this represented membership appear here." />
+            <EmptyState icon="channel" title={searchQuery.trim() ? 'No matching Channels' : 'No Channels visible'} body={searchQuery.trim() ? 'Try a different Channel name or message.' : 'Only Channels explicitly granted to this represented membership appear here.'} />
           }
         />
       ) : null}
@@ -160,7 +188,7 @@ function GroupRow({ archived, item, onPress }: { archived: boolean; item: Mobile
           <View
             accessibilityLabel={`${item.unreadCount} unread`}
             style={[styles.badge, { backgroundColor: theme.accent }]}>
-            <ThemedText style={styles.badgeText} type="captionBold">
+            <ThemedText style={{ color: theme.background }} type="captionBold">
               {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
             </ThemedText>
           </View>
@@ -180,10 +208,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  // The accent is the same yellow in both themes, so the badge ink is fixed
-  // to the light-theme stone that clears AA against it (9.18:1).
-  badgeText: {
-    color: Colors.light.text,
+  connection: {
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.two,
   },
   enableButton: {
     alignItems: 'center',
@@ -192,6 +219,8 @@ const styles = StyleSheet.create({
     minHeight: TouchTarget,
     paddingHorizontal: Spacing.three,
   },
+  contextCard: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, marginBottom: Spacing.two, padding: Spacing.three },
+  contextIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 44, justifyContent: 'center', width: 44 },
   list: {
     gap: Spacing.two,
     padding: Spacing.three,
@@ -215,6 +244,8 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.one,
   },
+  searchInput: { flex: 1, fontSize: 15, lineHeight: 21, minHeight: TouchTarget, paddingVertical: Spacing.two },
+  searchWrap: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   headerButton: {
     alignItems: 'center',
     height: TouchTarget,

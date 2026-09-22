@@ -30,7 +30,7 @@ import { MentionSuggestions } from '@/components/chat/mention-suggestions';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import type { DetailedMessage } from '@/components/thread-row';
-import { Colors, MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDuration } from '@/lib/attachment-presentation';
@@ -76,8 +76,6 @@ export type ComposerProps = {
 const HoldDelay = 220;
 const CancelDistance = -90;
 const LockDistance = -64;
-/** Ink on the accent fill: the light-theme ink clears AA on yellow in both themes. */
-const AccentInk = Colors.light.text;
 const BarFactors = [0.5, 0.85, 1, 0.7, 0.45];
 
 function RecordingDot({ color }: { color: string }) {
@@ -399,7 +397,7 @@ export function Composer({
               styles.circle,
               { backgroundColor: theme.accent, opacity: mode !== 'locked' && !canSend ? 0.5 : 1 },
             ]}>
-            <PlatformIcon color={AccentInk} name="send" size={19} />
+            <PlatformIcon color={theme.background} name="send" size={19} />
           </Pressable>
         ) : (
           <View>

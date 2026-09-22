@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { forwardedSourceHref } from './thread-navigation';
+import { forwardedSourceHref, threadListHref } from './thread-navigation';
 
 const projectId = 'project' as Id<'projects'>;
 const groupId = 'group' as Id<'groups'>;
@@ -17,5 +17,11 @@ describe('forwardedSourceHref', () => {
   it('routes a forwarded channel message to its original channel and message', () => {
     expect(forwardedSourceHref(projectId, groupId, messageId, undefined))
       .toBe('/conversation?projectId=project&groupId=group&messageId=message');
+  });
+});
+
+describe('threadListHref', () => {
+  it('opens the existing thread list without a mobile thread-creation source', () => {
+    expect(threadListHref(projectId, groupId)).toBe('/threads?projectId=project&groupId=group');
   });
 });

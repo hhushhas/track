@@ -1,5 +1,12 @@
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
@@ -9,7 +16,8 @@ import { TaskCard, TaskStateBanner } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { isCompactTaskBoard } from '@/lib/task-board-layout';
+import { isCompactTaskBoard, taskBoardColumnIndex } from '@/lib/task-board-layout';
+import { taskStatePalette } from '@/lib/task-state-palette';
 import { taskErrorMessage } from '@/lib/user-facing-error';
 
 const ColumnWidth = 280;
@@ -62,17 +70,21 @@ function moveFailureMessage(reason: string) {
 }
 
 export function TaskBoard({
+  activeStateId,
   assigneeName,
   columns,
   focusedTaskId,
+  onActiveStateChange,
   onMove,
   onOpen,
   readOnly,
   states,
 }: {
+  activeStateId?: string;
   assigneeName: (item: MobileTaskView) => string | undefined;
   columns: BoardColumnView[];
   focusedTaskId?: string;
+  onActiveStateChange?: (stateId: string) => void;
   onMove: (input: TaskMoveInput) => Promise<void>;
   onOpen: (item: MobileTaskView) => void;
   readOnly: boolean;
@@ -80,6 +92,14 @@ export function TaskBoard({
 }) {
   const { width: windowWidth } = useWindowDimensions();
   const compactBoard = isCompactTaskBoard(windowWidth);
+  const [boardHeight, setBoardHeight] = useState(0);
+  // The board is a focus canvas. Its height is measured from the space left by
+  // the real header, flow rail, bottom inset, and device orientation instead
+  // of being guessed from the window height.
+  const measuredBoardHeight = boardHeight > 0 ? boardHeight : 320;
+  const columnWidth = compactBoard ? Math.min(282, Math.max(272, windowWidth - 108)) : ColumnWidth;
+  const columnStride = columnWidth + ColumnGap;
+  const horizontalScrollRef = useRef<ScrollView>(null);
   const [pending, setPending] = useState<{ index: number; stateId: string; taskId: string } | null>(null);
   const [moveTarget, setMoveTarget] = useState<MobileTaskView | null>(null);
   const [failure, setFailure] = useState<{ message: string; retry?: TaskMoveInput } | null>(null);
@@ -97,6 +117,19 @@ export function TaskBoard({
       return { ...column, tasks };
     });
   }, [columns, pending]);
+
+  useEffect(() => {
+    if (!activeStateId) return;
+    const index = display.findIndex((column) => column.state._id === activeStateId);
+    if (index < 0) return;
+    horizontalScrollRef.current?.scrollTo({ animated: true, x: index * columnStride });
+  }, [activeStateId, columnStride, display]);
+
+  function reportVisibleColumn(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const index = taskBoardColumnIndex(event.nativeEvent.contentOffset.x, columnStride, display.length);
+    const stateId = display[index]?.state._id;
+    if (stateId && stateId !== activeStateId) onActiveStateChange?.(stateId);
+  }
 
   async function commit(
     input: TaskMoveInput,
@@ -210,12 +243,26 @@ export function TaskBoard({
       ) : null}
       {compactBoard ? (
         <>
-          <ScrollView contentContainerStyle={styles.compactColumns} horizontal showsHorizontalScrollIndicator={false}>
+          <View
+            onLayout={(event) => setBoardHeight(event.nativeEvent.layout.height)}
+            style={styles.boardViewport}>
+          <ScrollView
+            contentContainerStyle={styles.compactColumns}
+            decelerationRate="fast"
+            disableIntervalMomentum
+            horizontal
+            onMomentumScrollEnd={reportVisibleColumn}
+            onScrollEndDrag={reportVisibleColumn}
+            ref={horizontalScrollRef}
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={columnStride}
+            style={styles.boardScroller}>
             {display.map((column) => (
               <BoardColumn
                 assigneeName={assigneeName}
+                boardHeight={measuredBoardHeight}
                 column={column}
-                columnWidth={Math.min(282, Math.max(272, windowWidth - 108))}
+                columnWidth={columnWidth}
                 focusedTaskId={focusedTaskId}
                 key={column.state._id}
                 onOpen={onOpen}
@@ -224,17 +271,29 @@ export function TaskBoard({
               />
             ))}
           </ScrollView>
+          </View>
         </>
       ) : (
+        <View
+          onLayout={(event) => setBoardHeight(event.nativeEvent.layout.height)}
+          style={styles.boardViewport}>
         <ScrollView
           contentContainerStyle={styles.columns}
+          decelerationRate="fast"
+          disableIntervalMomentum
           horizontal
-          showsHorizontalScrollIndicator={false}>
+          onMomentumScrollEnd={reportVisibleColumn}
+          onScrollEndDrag={reportVisibleColumn}
+          ref={horizontalScrollRef}
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={columnStride}
+          style={styles.boardScroller}>
           {display.map((column) => (
             <BoardColumn
               assigneeName={assigneeName}
+              boardHeight={measuredBoardHeight}
               column={column}
-              columnWidth={ColumnWidth}
+              columnWidth={columnWidth}
               focusedTaskId={focusedTaskId}
               key={column.state._id}
               onOpen={onOpen}
@@ -243,14 +302,15 @@ export function TaskBoard({
             />
           ))}
         </ScrollView>
+        </View>
       )}
       <OptionsSheet onClose={() => setMoveTarget(null)} title="Move to" visible={Boolean(moveTarget)}>
         <SheetSection title={moveTarget?.task.title}>
           {states.map((state) => (
             <SheetRow
-              icon={state.category === 'completed' ? 'check-circle' : 'circle-outline'}
               key={state._id}
               label={state.name}
+              leading={<TaskStateSheetIcon category={state.category} />}
               onPress={() => moveTo(state)}
               selected={state._id === moveTarget?.task.workflowStateId}
             />
@@ -271,6 +331,7 @@ export function TaskBoard({
 
 function BoardColumn({
   assigneeName,
+  boardHeight,
   column,
   columnWidth,
   focusedTaskId,
@@ -279,6 +340,7 @@ function BoardColumn({
   readOnly,
 }: {
   assigneeName: (item: MobileTaskView) => string | undefined;
+  boardHeight: number;
   column: BoardColumnView;
   columnWidth: number;
   focusedTaskId?: string;
@@ -287,24 +349,26 @@ function BoardColumn({
   readOnly: boolean;
 }) {
   const theme = useTheme();
+  const palette = taskStatePalette(theme, column.state.category);
 
   return (
-    <View style={[styles.column, { backgroundColor: theme.background, borderColor: theme.background, width: columnWidth }]}>
+    <View style={[styles.column, { backgroundColor: theme.background, borderColor: theme.background, height: boardHeight, width: columnWidth }]}>
       <View style={[styles.columnHeading, { borderBottomColor: theme.hairline }]}>
         <View style={styles.columnTitle}>
-          <View style={[styles.columnDot, { backgroundColor: stateDotColor(column.state.category, theme) }]} />
-          <ThemedText numberOfLines={1} type="smallBold">{column.state.name}</ThemedText>
+          <View style={[styles.columnDot, { backgroundColor: palette.foreground }]} />
+          <ThemedText numberOfLines={1} style={{ color: palette.foreground }} type="smallBold">{column.state.name}</ThemedText>
         </View>
         <ThemedText
           accessibilityLabel={`${column.tasks.length} ${column.tasks.length === 1 ? 'task' : 'tasks'} in ${column.state.name}`}
-          themeColor="textSecondary"
+          style={[styles.columnCount, { backgroundColor: palette.background, color: palette.strong }]}
           type="captionBold">
           {column.tasks.length}
         </ThemedText>
       </View>
       <ScrollView
         contentContainerStyle={styles.columnBody}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        style={styles.columnScroller}>
         {column.tasks.map((item) => (
           <BoardCard
             assigneeName={assigneeName}
@@ -318,9 +382,9 @@ function BoardColumn({
           />
         ))}
         {!column.tasks.length ? (
-          <View style={[styles.columnEmpty, { borderColor: theme.hairline }]}>
-            <PlatformIcon color={theme.textTertiary} name="view-column" size={20} />
-            <ThemedText themeColor="textTertiary" type="caption">No tasks in this status</ThemedText>
+          <View style={[styles.columnEmpty, { backgroundColor: palette.background, borderColor: palette.foreground }]}>
+            <PlatformIcon color={palette.foreground} name="view-column" size={20} />
+            <ThemedText style={{ color: palette.foreground }} type="caption">No tasks in this status</ThemedText>
           </View>
         ) : null}
       </ScrollView>
@@ -328,11 +392,11 @@ function BoardColumn({
   );
 }
 
-function stateDotColor(category: Doc<'taskWorkflowStates'>['category'], theme: ReturnType<typeof useTheme>) {
-  if (category === 'completed') return theme.success;
-  if (category === 'started') return theme.accentStrong;
-  if (category === 'canceled') return theme.danger;
-  return theme.textTertiary;
+function TaskStateSheetIcon({ category }: { category: Doc<'taskWorkflowStates'>['category'] }) {
+  const theme = useTheme();
+  const palette = taskStatePalette(theme, category);
+  const icon = category === 'completed' ? 'check-circle' : category === 'canceled' ? 'close' : 'circle-outline';
+  return <View style={[styles.sheetStateIcon, { backgroundColor: palette.background }]}><PlatformIcon color={palette.foreground} name={icon} size={18} /></View>;
 }
 
 function BoardCard({
@@ -376,8 +440,11 @@ function BoardCard({
 }
 
 const styles = StyleSheet.create({
-  column: { minHeight: 220, overflow: 'visible', width: ColumnWidth },
-  columnBody: { gap: CardGap, paddingBottom: Spacing.four },
+  boardScroller: { flex: 1 },
+  boardViewport: { flex: 1, minHeight: 0 },
+  column: { minHeight: 0, overflow: 'visible', width: ColumnWidth },
+  columnBody: { flexGrow: 1, gap: CardGap, paddingBottom: Spacing.four },
+  columnScroller: { flex: 1 },
   columnEmpty: {
     alignItems: 'center',
     borderCurve: 'continuous',
@@ -396,9 +463,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.one,
   },
+  columnCount: { borderCurve: 'continuous', borderRadius: Radius.small, minWidth: 24, paddingHorizontal: Spacing.one, paddingVertical: 2, textAlign: 'center' },
   columns: { gap: ColumnGap, paddingBottom: Spacing.four, paddingRight: Spacing.three },
   compactColumns: { gap: ColumnGap, paddingBottom: Spacing.four, paddingRight: Spacing.three },
   columnDot: { borderRadius: Radius.pill, height: 8, width: 8 },
   columnTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
   root: { flex: 1, gap: Spacing.two },
+  sheetStateIcon: { alignItems: 'center', borderRadius: Radius.small, height: 32, justifyContent: 'center', width: 32 },
 });

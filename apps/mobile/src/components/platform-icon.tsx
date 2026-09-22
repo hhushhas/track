@@ -13,6 +13,7 @@ export type IconName =
   | 'account-circle'
   | 'account-edit-outline'
   | 'account-group'
+  | 'analytics'
   | 'alert-circle'
   | 'apple'
   | 'archive'
@@ -115,6 +116,7 @@ const SYMBOLS: Record<IconName, SymbolDefinition> = {
   'account-circle': { android: 'account_circle', ios: 'person.crop.circle', iosFilled: 'person.crop.circle.fill' },
   'account-edit-outline': { android: 'manage_accounts', ios: 'person.crop.circle.badge.checkmark' },
   'account-group': { android: 'group', ios: 'person.2', iosFilled: 'person.2.fill' },
+  analytics: { android: 'analytics', ios: 'chart.bar.xaxis', iosFilled: 'chart.bar.xaxis' },
   'alert-circle': { android: 'error', ios: 'exclamationmark.circle', iosFilled: 'exclamationmark.circle.fill' },
   apple: { android: 'phone_iphone', ios: 'apple.logo' },
   archive: { android: 'archive', ios: 'archivebox', iosFilled: 'archivebox.fill' },

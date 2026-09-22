@@ -1,5 +1,5 @@
 import type { FunctionReturnType } from 'convex/server';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition, useReducedMotion } from 'react-native-reanimated';
 
 import { api } from '../../../../convex/_generated/api';
@@ -22,18 +22,21 @@ export type DirectoryChannel = FunctionReturnType<typeof api.mobile.listGroupsPa
 
 export function WorkspaceOverview({
   activeProjects,
+  canSwitchCompany,
   companyLabel,
   companyScoped,
   onPressCompany,
   visibleChannels,
 }: {
   activeProjects: number;
+  canSwitchCompany: boolean;
   companyLabel: string;
   companyScoped: boolean;
   onPressCompany: () => void;
   visibleChannels: number;
 }) {
   const theme = useTheme();
+  const ios = Platform.OS === 'ios';
   return (
     <View style={[styles.overview, { backgroundColor: theme.backgroundElevated }]}> 
       <Pressable
@@ -44,8 +47,8 @@ export function WorkspaceOverview({
         onPress={() => { hapticLight(); onPressCompany(); }}
         style={({ pressed }) => [styles.identity, pressed && { backgroundColor: theme.backgroundElement }]}
       >
-        <View style={[styles.identityMark, { backgroundColor: theme.text }]}>
-          <ThemedText style={{ color: theme.background }} type="captionBold">{initials(companyLabel)}</ThemedText>
+        <View style={[styles.identityMark, { backgroundColor: ios ? 'transparent' : theme.text }]}>
+          <ThemedText style={{ color: ios ? theme.text : theme.background }} type="captionBold">{initials(companyLabel)}</ThemedText>
         </View>
         <View style={styles.identityCopy}>
           <ThemedText numberOfLines={1} type="subtitle">{companyLabel}</ThemedText>
@@ -57,6 +60,10 @@ export function WorkspaceOverview({
         <ThemedText themeColor="textSecondary" type="caption">{activeProjects} active {activeProjects === 1 ? 'Project' : 'Projects'}</ThemedText>
         <View style={[styles.summaryDot, { backgroundColor: theme.hairline }]} />
         <ThemedText themeColor="textSecondary" type="caption">{visibleChannels} visible {visibleChannels === 1 ? 'Channel' : 'Channels'}</ThemedText>
+        {canSwitchCompany ? <Pressable accessibilityHint="Opens Company selection" accessibilityLabel="Change Company" accessibilityRole="button" hitSlop={8} onPress={() => { hapticLight(); onPressCompany(); }} style={styles.changeCompany}>
+          <ThemedText themeColor="accentStrong" type="captionBold">Change</ThemedText>
+          <PlatformIcon color={theme.accentStrong} name="chevron-right" size={14} />
+        </Pressable> : null}
       </View>
     </View>
   );
@@ -172,6 +179,6 @@ const styles = StyleSheet.create({
   openProject: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget },
   overview: { borderCurve: 'continuous', borderRadius: Radius.large, boxShadow: '0 2px 10px rgba(0,0,0,0.045)', overflow: 'hidden' },
   projectGlyph: { alignItems: 'center', borderRadius: Radius.medium, height: 28, justifyContent: 'center', width: 28 }, roleLine: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.two }, titleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  summary: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, marginHorizontal: Spacing.four, paddingVertical: Spacing.three }, summaryDot: { borderRadius: Radius.pill, height: 4, width: 4 },
+  changeCompany: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, marginLeft: 'auto' }, summary: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, marginHorizontal: Spacing.four, paddingVertical: Spacing.three }, summaryDot: { borderRadius: Radius.pill, height: 4, width: 4 },
   topline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
 });

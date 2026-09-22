@@ -1,11 +1,12 @@
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import {
   EvidenceAuditCard,
   type EvidenceAuditItem,
@@ -16,9 +17,8 @@ import {
 } from '@/components/evidence-dashboard';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
-import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
+import { OptionsSheet, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
-import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedView } from '@/components/themed-view';
@@ -29,7 +29,7 @@ import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref } from '@/lib/company-navigation';
 import { findProjectScope } from '@/lib/project-scope';
-import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
+import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
 
 type ProjectRow = {
@@ -76,14 +76,14 @@ export default function EvidenceScreen() {
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const params = useLocalSearchParams<{ projectId?: string; companyId?: string; membershipId?: string; archive?: string }>();
-  const { trackUserId, openProfileSheet } = useTrackUser();
+  const { trackUserId } = useTrackUser();
   const { actingCompanyId } = useCompany();
-  const profileStatus = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
   const [query, setQuery] = useState('');
   const [projectId, setProjectId] = useState<Id<'projects'> | null>(typeof params.projectId === 'string' ? params.projectId as Id<'projects'> : null);
   const [projectMembershipId, setProjectMembershipId] = useState<Id<'projectMembers'> | null>(typeof params.membershipId === 'string' ? params.membershipId as Id<'projectMembers'> : null);
   const [groupId, setGroupId] = useState<Id<'groups'> | null>(null);
   const [scopePicker, setScopePicker] = useState<ScopePicker>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const routeCompanyId = typeof params.companyId === 'string' ? params.companyId as Id<'companies'> : undefined;
 
   const projectPages = usePaginatedQuery(
@@ -183,17 +183,38 @@ export default function EvidenceScreen() {
     router.push(taskDetailHref(selectedProject.project._id, item.task.publicKey, identity) as Href);
   }
 
+  function openEvidenceCreate() {
+    if (!selectedProject) {
+      setScopePicker('project');
+      return;
+    }
+    setCreateOpen(true);
+  }
+
+  function createTaskFromEvidence() {
+    if (!selectedProject) return;
+    setCreateOpen(false);
+    router.push(taskListHref(selectedProject.project._id, identity, undefined, undefined, { create: true }) as Href);
+  }
+
+  function openChannelForEvidence() {
+    const group = groups?.[0]?.group;
+    if (!selectedProject || !group) {
+      setCreateOpen(false);
+      setScopePicker('channel');
+      return;
+    }
+    setCreateOpen(false);
+    router.push(channelHref(selectedProject.project._id, group._id, context) as Href);
+  }
+
   return (
-    <ThemedView style={styles.screen}>
+    <ThemedView style={[styles.screen, { backgroundColor: theme.homeBackground }]}>
       <Stack.Screen options={{
         title: 'Evidence',
         headerBackVisible: false,
         headerLargeTitle: false,
         headerTransparent: false,
-        headerRight: () => <View style={styles.headerActions}>
-          <IconButton accessibilityLabel="Open inbox" icon="inbox" onPress={() => router.push('/inbox')} />
-          <ProjectAccountButton label={profileStatus?.user.displayName || profileStatus?.user.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />
-        </View>,
       }} />
       <ConnectivityBanner style={styles.connection} />
       <ScreenEntrance style={styles.screenContent}><FlatList
@@ -205,10 +226,11 @@ export default function EvidenceScreen() {
         keyExtractor={(row) => row.type === 'evidence' ? `evidence:${row.item.reference._id}` : `search:${row.item.id}`}
         ListHeaderComponent={<View style={styles.header}>
           <EvidenceProtocolIntro />
-          <View style={[styles.searchField, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+          <View style={[styles.searchField, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
             <PlatformIcon color={theme.textSecondary} name="search" size={20} />
-            <TextInput accessibilityLabel="Search evidence" autoCapitalize="none" autoCorrect={false} cursorColor={theme.accent} maxLength={200} maxFontSizeMultiplier={MaxFontScale} multiline={false} numberOfLines={1} onChangeText={setQuery} placeholder={largeText ? 'Search evidence' : 'Try “launch decision” or “homepage.png”'} placeholderTextColor={theme.textTertiary} returnKeyType="search" selectionColor={theme.accent} selectionHandleColor={theme.accent} style={[styles.input, { color: theme.text }]} value={query} />
+            <TextInput accessibilityLabel="Search evidence" autoCapitalize="none" autoCorrect={false} cursorColor={theme.accent} editable={Boolean(selectedProject)} maxLength={200} maxFontSizeMultiplier={MaxFontScale} multiline={false} numberOfLines={1} onChangeText={setQuery} placeholder={!selectedProject ? 'Choose a Project to search' : largeText ? 'Search evidence' : 'Try “launch decision” or “homepage.png”'} placeholderTextColor={theme.textTertiary} returnKeyType="search" selectionColor={theme.accent} selectionHandleColor={theme.accent} style={[styles.input, { color: theme.text }]} value={query} />
             {query ? <IconButton accessibilityLabel="Clear search" icon="close" onPress={() => setQuery('')} size={18} /> : null}
+            {!selectedProject ? <Pressable accessibilityHint="Choose a Project before searching its evidence" accessibilityLabel="Choose a Project to search evidence" accessibilityRole="button" onPress={() => setScopePicker('project')} style={styles.searchGate} /> : null}
           </View>
           <EvidenceScopeCard channelCount={groups?.length ?? 0} channelName={selectedGroup?.group.name} companyName={companyName} onChannelPress={() => setScopePicker('channel')} onProjectPress={() => setScopePicker('project')} projectName={selectedProject?.project.name} />
           {selectedProject && normalizedRows !== undefined ? <EvidenceResultsHeader count={normalizedRows.length} searching={searchTerm.length >= 2} /> : null}
@@ -230,6 +252,14 @@ export default function EvidenceScreen() {
           {groups?.map((row) => <SheetRow icon="channel" key={row.group._id} label={row.group.name} onPress={() => { setGroupId(row.group._id); setScopePicker(null); }} selected={row.group._id === groupId} />)}
         </SheetSection> : null}
       </OptionsSheet>
+      <OptionsSheet onClose={() => setCreateOpen(false)} title="Add evidence" visible={createOpen}>
+        <SheetSection title={selectedProject?.project.name}>
+          <SheetRow detail="Create a task inside this Project" icon="task" label="Create task from evidence" onPress={createTaskFromEvidence} />
+          <SheetRow detail="Open a Channel composer for source files and context" icon="channel" label="Add data in a Channel" onPress={openChannelForEvidence} />
+        </SheetSection>
+        <SheetNote>Evidence stays scoped to its Project and Channel. Link it to a task from the task creation flow.</SheetNote>
+      </OptionsSheet>
+      <StandalonePrimaryNavigation onCreate={openEvidenceCreate} />
     </ThemedView>
   );
 }
@@ -264,7 +294,8 @@ const styles = StyleSheet.create({
   headerActions: { alignItems: 'center', flexDirection: 'row' },
   input: { flex: 1, minHeight: TouchTarget, minWidth: 0, paddingVertical: Spacing.two },
   list: { gap: Spacing.three, padding: Spacing.four },
-  searchField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three, shadowColor: '#000', shadowOffset: { height: 2, width: 0 }, shadowOpacity: 0.04, shadowRadius: 8 },
+  searchField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
   screen: { flex: 1 },
   screenContent: { flex: 1 },
+  searchGate: { ...StyleSheet.absoluteFillObject, borderRadius: Radius.medium },
 });

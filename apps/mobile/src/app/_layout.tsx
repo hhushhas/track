@@ -19,6 +19,8 @@ import { PushNotificationBridge } from '@/lib/push-notifications';
 import { OfflineTaskSync } from '@/components/offline-task-sync';
 import { LaunchScreen } from '@/components/launch-screen';
 import { AppToastProvider } from '@/components/app-toast';
+import { TrackHeaderBackground } from '@/components/primary-stack';
+import { Typography } from '@/constants/theme';
 
 if (Platform.OS !== 'web') {
   void SplashScreen.preventAutoHideAsync();
@@ -62,14 +64,17 @@ export default function RootLayout() {
 }
 
 function AppLayout() {
-  const { isThemeReady, theme } = useThemeOverride();
+  const { theme } = useThemeOverride();
   const [continuationDidLayout, setContinuationDidLayout] = useState(false);
   const [showContinuation, setShowContinuation] = useState(true);
   const [launchExiting, setLaunchExiting] = useState(false);
   const finishLaunch = useCallback(() => setShowContinuation(false), []);
 
   useEffect(() => {
-    if (!isThemeReady || !continuationDidLayout) return;
+    // The continuation already contains the final splash artwork. Hide the
+    // native icon splash as soon as that overlay is laid out so Android's
+    // centered launch icon cannot remain visible while theme storage resolves.
+    if (!continuationDidLayout) return;
 
     let active = true;
     const hideNativeSplash = Platform.OS === 'web'
@@ -86,7 +91,7 @@ function AppLayout() {
     return () => {
       active = false;
     };
-  }, [continuationDidLayout, isThemeReady]);
+  }, [continuationDidLayout]);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -108,21 +113,25 @@ function AppLayout() {
                 <View style={styles.app}>
                   <Stack
                   screenOptions={{
+                    animation: 'slide_from_right',
+                    gestureEnabled: true,
                     headerShown: true,
-                    headerBackTitle: 'Back',
-                    headerShadowVisible: Platform.OS === 'android',
-                    headerStyle: {
-                      backgroundColor: Colors[theme].background,
-                    },
+                    headerBackButtonDisplayMode: 'minimal',
+                    headerBackground: TrackHeaderBackground,
+                    headerShadowVisible: false,
+                    headerStyle: { backgroundColor: 'transparent' },
+                    headerTitleAlign: 'left',
+                    headerTitleStyle: Typography.display,
                     headerTintColor: Colors[theme].text,
                     contentStyle: {
-                      backgroundColor: Colors[theme].background,
+                      backgroundColor: Colors[theme].homeBackground,
                     },
                   }}>
                   <Stack.Screen name="index" options={{ headerShown: false }} />
                   <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                   <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                   <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+                  <Stack.Screen name="profile" options={{ title: 'Profile' }} />
                   <Stack.Screen name="company" options={{ title: 'Companies' }} />
                   </Stack>
                   {showContinuation ? (

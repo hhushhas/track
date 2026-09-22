@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  actionableHomeAttention,
   attentionContext,
   attentionSection,
+  recentHomeUpdates,
   uniqueAttentionIdentities,
   uniqueAttentionItems,
   type MobileAttentionItem,
@@ -67,5 +69,39 @@ describe('mobile attention presentation', () => {
     const duplicate = { kind: 'message', id: 'message-1' };
     const differentKind = { kind: 'task', id: 'message-1' };
     expect(uniqueAttentionIdentities([first, duplicate, differentKind])).toEqual([first, differentKind]);
+  });
+
+  it('keeps Home actionable, priority ordered, and capped at four items', () => {
+    const passive = item({ id: 'passive' as never, eventType: 'discussion', createdAt: 99 });
+    const reply = item({ id: 'reply' as never, eventType: 'direct_reply', createdAt: 5 });
+    const mention = item({ id: 'mention' as never, eventType: 'mention', createdAt: 4 });
+    const overdue = {
+      kind: 'task', id: 'overdue', taskId: 'task-overdue', taskKey: 'MOB-2', taskTitle: 'Overdue',
+      projectId: 'project-1', projectName: 'Launch', membershipId: 'member-1', eventType: 'overdue', createdAt: 3,
+    } as unknown as MobileAttentionItem;
+    const assignment = {
+      ...overdue, id: 'assignment', taskId: 'task-assignment', eventType: 'assignment', createdAt: 6,
+    } as MobileAttentionItem;
+    const dueSoon = { ...overdue, id: 'due', taskId: 'task-due', eventType: 'due_soon', createdAt: 7 } as MobileAttentionItem;
+
+    expect(actionableHomeAttention([passive, reply, assignment, mention, dueSoon, overdue]).map((entry) => entry.eventType))
+      .toEqual(['overdue', 'mention', 'direct_reply', 'due_soon']);
+  });
+
+  it('derives recent updates from meaningful scoped feed rows only', () => {
+    const passive = item({ id: 'passive' as never, eventType: 'discussion', createdAt: 30 });
+    const mention = item({ id: 'mention' as never, eventType: 'mention', createdAt: 20 });
+    const overdue = {
+      kind: 'task', id: 'overdue', taskId: 'task-overdue', taskKey: 'MOB-2', taskTitle: 'Overdue',
+      projectId: 'project-1', projectName: 'Launch', membershipId: 'member-1', eventType: 'overdue', createdAt: 25,
+    } as unknown as MobileAttentionItem;
+    const assignment = {
+      ...overdue, id: 'assignment', taskId: 'task-assignment', eventType: 'assignment', createdAt: 10,
+    } as MobileAttentionItem;
+
+    expect(recentHomeUpdates([assignment, passive, overdue, mention])).toEqual([
+      expect.objectContaining({ action: 'mention', kind: 'message', title: 'New mention in #mobile' }),
+      expect.objectContaining({ action: 'assignment', kind: 'task', title: 'Task assigned to you' }),
+    ]);
   });
 });

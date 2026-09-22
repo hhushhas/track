@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Image, StyleSheet, View } from 'react-native';
 
-import splashIcon from '@/assets/images/splash-icon.png';
+import splashArtwork from '../../assets/splas.png';
 
-const MARK_SIZE = 360;
 const SPLASH_BACKGROUND = '#000000';
 
 /** Native-matched startup artwork with a short, interruptible handoff to the app. */
@@ -45,7 +44,7 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
       }}
       style={[styles.screen, { backgroundColor: SPLASH_BACKGROUND }]}
     >
-      <Animated.View style={{ opacity, transform: [{ scale }] }}>
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity, transform: [{ scale }] }]}>
         <Image
           accessible={false}
           accessibilityIgnoresInvertColors
@@ -54,9 +53,9 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
             didLoadImage.current = true;
             reportReady();
           }}
-          resizeMode="contain"
-          source={splashIcon}
-          style={styles.mark}
+          resizeMode="cover"
+          source={splashArtwork}
+          style={StyleSheet.absoluteFill}
         />
       </Animated.View>
     </View>
@@ -64,6 +63,5 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
 }
 
 const styles = StyleSheet.create({
-  mark: { height: MARK_SIZE, width: MARK_SIZE },
   screen: { alignItems: 'center', flex: 1, justifyContent: 'center' },
 });

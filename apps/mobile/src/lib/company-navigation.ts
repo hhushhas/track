@@ -20,6 +20,10 @@ export function projectOverviewHref(projectId: Id<'projects'>, context: Represen
   return `/project?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}` as Href;
 }
 
+export function projectSettingsHref(projectId: Id<'projects'>, context: RepresentedProjectContext | null) {
+  return `/project-settings?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}` as Href;
+}
+
 export function channelHref(
   projectId: Id<'projects'>,
   groupId: Id<'groups'>,

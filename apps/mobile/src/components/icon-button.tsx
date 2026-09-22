@@ -11,6 +11,7 @@ type Props = {
   icon: IconName;
   loading?: boolean;
   onPress: () => void;
+  appearance?: 'surface' | 'plain';
   selected?: boolean;
   size?: number;
 };
@@ -22,6 +23,7 @@ export function IconButton({
   icon,
   loading = false,
   onPress,
+  appearance = 'surface',
   selected = false,
   size = 22,
 }: Props) {
@@ -43,8 +45,9 @@ export function IconButton({
       }}
       style={({ pressed }) => [
         styles.button,
-        selected && { backgroundColor: theme.accentSoft },
         {
+          backgroundColor: appearance === 'plain' ? 'transparent' : selected ? theme.accentSoft : theme.homeSurface,
+          borderColor: appearance === 'plain' ? 'transparent' : theme.homeBorder,
           opacity: unavailable ? 0.42 : pressed ? 0.68 : 1,
           transform: [{ scale: pressed ? 0.96 : 1 }],
         },
@@ -59,6 +62,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderCurve: 'continuous',
     borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
     height: TouchTarget,
     justifyContent: 'center',
     overflow: 'hidden',

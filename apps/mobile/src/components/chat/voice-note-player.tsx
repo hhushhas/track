@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { formatDuration } from '@/lib/attachment-presentation';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
@@ -130,12 +130,12 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
         style={[styles.playButton, { backgroundColor: theme.accent }]}>
         {status.isLoaded ? (
           <PlatformIcon
-            color={Colors.light.text}
+            color={theme.background}
             name={status.playing ? 'pause' : 'play'}
             size={20}
           />
         ) : (
-          <ActivityIndicator color={Colors.light.text} size="small" />
+          <ActivityIndicator color={theme.background} size="small" />
         )}
       </Pressable>
 

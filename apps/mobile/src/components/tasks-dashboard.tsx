@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AssistantMark } from '@/components/chat/assistant-mark';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
@@ -20,12 +20,12 @@ export function TasksToolbar({ boardName, filterActive, mode, onBoardPress, onFi
       </Pressable>
       <View style={styles.toolbarActions}><ToolbarIcon active={searchActive} icon="search" label="Search tasks" onPress={onSearchPress} /><ToolbarIcon active={filterActive} icon="filter" label="Filter and sort tasks" onPress={onFilterPress} /></View>
     </View>
-    <View style={styles.toolbarLine}>
+    <ScrollView contentContainerStyle={styles.toolbarScrollRow} horizontal showsHorizontalScrollIndicator={false}>
       <View accessibilityRole="tablist" style={[styles.viewSwitch, { backgroundColor: theme.backgroundSelected }]}><ViewToggle icon="view-board" label="Board" mode="board" onPress={onModeChange} selected={mode === 'board'} /><ViewToggle icon="list" label="List" mode="list" onPress={onModeChange} selected={mode === 'list'} /></View>
       <Pressable accessibilityLabel={suggestionCount ? `${suggestionCount} task ${suggestionCount === 1 ? 'suggestion' : 'suggestions'}` : 'Task suggestion inbox'} accessibilityRole="button" android_ripple={{ color: theme.accentSoft }} onPress={onSuggestionsPress} style={[styles.suggestionPill, { backgroundColor: theme.accentSoft }]}>
         <PlatformIcon color={theme.accentStrong} name="lightbulb-outline" size={16} /><ThemedText themeColor="accentStrong" type="captionBold">{suggestionCount ? `${suggestionCount} ${suggestionCount === 1 ? 'suggestion' : 'suggestions'}` : 'Inbox'}</ThemedText>
       </Pressable>
-    </View>
+    </ScrollView>
   </View>;
 }
 
@@ -51,10 +51,22 @@ export function TaskSuggestionBanner({ channelName, onDismiss, onReview, title }
   </View>;
 }
 
-export function SprintFlowHeader({ columnCount, taskCount }: { columnCount: number; taskCount: number }) {
+export function SprintFlowHeader({ activeStateId, columnCount, onStatePress, states, taskCount }: {
+  activeStateId?: string;
+  columnCount: number;
+  onStatePress?: (stateId: string) => void;
+  states?: Array<{ _id: string; name: string }>;
+  taskCount: number;
+}) {
   const theme = useTheme();
-  const visibleDots = Math.max(1, Math.min(columnCount, 5));
-  return <View style={styles.flowHeader}><View style={styles.flowCopy}><ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">Sprint flow</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">{taskCount} {taskCount === 1 ? 'task' : 'tasks'}</ThemedText></View><View style={styles.flowDots}>{Array.from({ length: visibleDots }, (_, index) => <View key={index} style={[styles.flowDot, index === 0 && styles.flowDotActive, { backgroundColor: index === 0 ? theme.text : theme.hairline }]} />)}</View></View>;
+  const flowStates = states?.length ? states : Array.from({ length: Math.max(1, columnCount) }, (_, index) => ({ _id: String(index), name: `Status ${index + 1}` }));
+  return <View style={styles.flowHeader}>
+    <View style={styles.flowCopy}><ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">Sprint flow</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">{taskCount} {taskCount === 1 ? 'task' : 'tasks'}</ThemedText></View>
+    <ScrollView accessibilityRole="tablist" contentContainerStyle={styles.flowDots} horizontal showsHorizontalScrollIndicator={false}>{flowStates.map((state, index) => {
+      const selected = activeStateId ? activeStateId === state._id : index === 0;
+      return <Pressable accessibilityLabel={`Show ${state.name}`} accessibilityRole="tab" accessibilityState={{ selected }} hitSlop={8} key={state._id} onPress={() => onStatePress?.(state._id)} style={[styles.flowDotButton, { backgroundColor: selected ? theme.accentStrong : theme.hairline }]} />;
+    })}</ScrollView>
+  </View>;
 }
 
 export function TaskCreateContext({ boardName, projectName }: { boardName?: string; projectName: string }) {
@@ -70,8 +82,7 @@ const styles = StyleSheet.create({
   dismissButton: { alignItems: 'center', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   evidenceNote: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: 58, padding: Spacing.three },
   flowCopy: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  flowDot: { borderRadius: Radius.pill, height: 6, width: 8 },
-  flowDotActive: { width: 24 },
+  flowDotButton: { borderRadius: Radius.pill, height: 8, width: 8 },
   flowDots: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   flowHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 30 },
   reviewButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
@@ -85,6 +96,7 @@ const styles = StyleSheet.create({
   toolbarActions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   toolbarIcon: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, height: TouchTarget, justifyContent: 'center', overflow: 'hidden', width: TouchTarget },
   toolbarLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
+  toolbarScrollRow: { alignItems: 'center', gap: Spacing.two, minWidth: '100%' },
   viewSwitch: { borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', padding: 2 },
   viewToggle: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
 });

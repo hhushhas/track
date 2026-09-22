@@ -2,22 +2,21 @@ import { useMutation, useQuery } from 'convex/react';
 import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '../../../../convex/_generated/api';
 import { ActionButton } from '@/components/action-button';
 import { useAppToast } from '@/components/app-toast';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
-import { ProjectAccountButton } from '@/components/project-overview-dashboard';
 import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import { SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { usePushNotifications } from '@/lib/push-notifications';
 import { notificationErrorMessage } from '@/lib/user-facing-error';
 
@@ -27,12 +26,11 @@ type PreviewMode = 'full' | 'context' | 'hidden';
 
 export default function NotificationSettingsScreen() {
   const { showToast } = useAppToast();
-  const insets = useSafeAreaInsets();
+  const bottomContentInset = useBottomTabContentInset(Spacing.six);
   const theme = useTheme();
-  const { openProfileSheet, trackUserId } = useTrackUser();
+  const { trackUserId } = useTrackUser();
   const router = useRouter();
   const push = usePushNotifications();
-  const profile = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
   const settings = useQuery(api.notifications.getSettings, trackUserId ? { userId: trackUserId } : 'skip');
   const setPreferences = useMutation(api.notifications.setMobilePreferences);
   const [savingPreferences, setSavingPreferences] = useState(false);
@@ -99,8 +97,8 @@ export default function NotificationSettingsScreen() {
 
   return (
     <ThemedView style={styles.screen}>
-      <Stack.Screen options={{ headerRight: () => <ProjectAccountButton label={profile?.user?.displayName || profile?.user?.email || 'Track member'} onPress={openProfileSheet} seed={trackUserId ?? 'track-member'} />, title: 'Notifications' }} />
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Spacing.six + BottomTabInset + Math.max(insets.bottom, Spacing.two) }]} contentInsetAdjustmentBehavior="automatic">
+      <Stack.Screen options={{ title: 'Notifications' }} />
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic">
         <ConnectivityBanner message="You’re offline. Notification changes will be available after you reconnect." />
         <View style={[styles.permissionCard, { backgroundColor: theme.backgroundElement }]}>
           <View style={[styles.icon, { backgroundColor: theme.backgroundSelected }]}>

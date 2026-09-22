@@ -1,563 +1,262 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { usePaginatedQuery } from 'convex/react';
 import { BlurView } from 'expo-blur';
-import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  ReduceMotion,
-  cancelAnimation,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { useKeyboardState } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { PlatformIcon } from '@/components/platform-icon';
+import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { api } from '../../../../convex/_generated/api';
-import { BottomTabInset, Colors, IconSize, Radius, Spacing } from '@/constants/theme';
-import { useTrackUser } from '@/contexts/track-user-context';
+import { BottomTabInset, IconSize, Radius, Spacing } from '@/constants/theme';
 import { useThemeOverride } from '@/contexts/theme-override-context';
-import { hapticLight } from '@/lib/haptics';
+import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useTheme } from '@/hooks/use-theme';
+import { hapticLight } from '@/lib/haptics';
+import { primaryDestinationForRoute, primaryDestinationIndexAtX, primaryNavigationHeight, primaryNavigationVisibleForPath, primaryTabResetTarget, type PrimaryDestination } from '@/lib/primary-navigation';
 import { useReleaseConfig } from '@/lib/release-config';
-import {
-  primaryDestinationForRoute,
-  primaryTabGeometry,
-  primaryTabIndexAtX,
-  primaryTabRubberBand,
-  primaryTabResetTarget,
-} from '@/lib/primary-navigation';
-import { uniqueAttentionItems, type MobileAttentionItem } from '@/lib/mobile-attention';
+import { taskListHref } from '@/lib/task-navigation';
+import type { Id } from '../../../../convex/_generated/dataModel';
 
-const spring = { duration: 280, dampingRatio: 0.86, reduceMotion: ReduceMotion.System } as const;
+type StandaloneTabKey = PrimaryDestination['key'];
+type NavigationItem = { key: StandaloneTabKey; label: string; icon: IconName; href: string; disabled?: boolean };
+type NavigationParams = { archive?: string; companyId?: string; groupId?: string; membershipId?: string; projectId?: string };
 
-type StandaloneTabKey = 'evidence' | 'home' | 'projects' | 'tasks';
-
-const standaloneTabs: Array<{ key: StandaloneTabKey; label: string; icon: React.ComponentProps<typeof PlatformIcon>['name']; href: string }> = [
+const standaloneTabs: NavigationItem[] = [
   { key: 'home', label: 'Home', icon: 'home', href: '/' },
-  { key: 'projects', label: 'Projects', icon: 'project', href: '/projects' },
-  { key: 'tasks', label: 'Tasks', icon: 'task', href: '/tasks' },
-  { key: 'evidence', label: 'Evidence', icon: 'evidence', href: '/search' },
+  { key: 'inbox', label: 'Inbox', icon: 'email-outline', href: '/inbox' },
+  { key: 'tasks', label: 'My Tasks', icon: 'task', href: '/tasks' },
+  { key: 'team', label: 'Team', icon: 'account-group', href: '/team' },
 ];
 
-/** Keeps top-level utility screens visually attached to the primary app shell. */
-export function StandalonePrimaryNavigation({ active }: { active: StandaloneTabKey }) {
-  const theme = useTheme();
+/** Keeps utility routes attached to the same five-position app shell. */
+export function StandalonePrimaryNavigation({ active, onCreate }: { active?: StandaloneTabKey; onCreate?: () => void }) {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const selectedIndex = standaloneTabs.findIndex((tab) => tab.key === active);
-  const tabItems = standaloneTabs.map((tab) => {
-    const selected = tab.key === active;
-    return (
-      <Pressable
-        accessibilityLabel={tab.label}
-        accessibilityRole="tab"
-        accessibilityState={{ selected }}
-        android_ripple={Platform.OS === 'android' ? { color: theme.backgroundSelected, borderless: false } : undefined}
-        key={tab.key}
-        onPress={() => { hapticLight(); router.replace(tab.href as never); }}
-        style={({ pressed }) => [styles.item, { opacity: pressed ? 0.62 : 1 }]}
-      >
-        <View style={[styles.icon, Platform.OS === 'android' && styles.androidIcon]}>
-          <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={tab.icon} size={IconSize.large} variant={selected ? 'filled' : 'outline'} weight={selected ? 'medium' : 'regular'} />
-        </View>
-        <ThemedText themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">{tab.label}</ThemedText>
-      </Pressable>
-    );
-  });
-
-  if (Platform.OS === 'android') {
-    return <View style={[styles.androidPositioner, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-      <View style={[styles.androidChrome, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
-        <View accessibilityRole="tablist" style={styles.androidRow}>
-          <View pointerEvents="none" style={[styles.androidIndicator, { backgroundColor: theme.accentSoft, borderColor: theme.hairline, left: `${selectedIndex * 25 + 8.5}%`, width: '8%' }]} />
-          {tabItems}
-        </View>
-      </View>
-    </View>;
-  }
-
-  return <View style={[styles.iosPositioner, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-    <View style={[styles.iosChrome, { backgroundColor: theme.backgroundElevated }]}>
-      <View pointerEvents="none" style={[styles.iosIndicator, { backgroundColor: theme.accentSoft, left: `${selectedIndex * 25 + 1}%`, width: '23%' }]} />
-      <View accessibilityRole="tablist" style={styles.iosRow}>{tabItems}</View>
-      <View pointerEvents="none" style={[styles.iosChromeBorder, { borderColor: theme.hairline }]} />
-    </View>
-  </View>;
+  const release = useReleaseConfig();
+  return <FloatingNavigation
+    activeKey={active}
+    createDisabled={!release.tasks}
+    hidden={false}
+    items={standaloneTabs}
+    onCreate={onCreate ?? (() => router.navigate(`/today?create=${Date.now()}` as never))}
+    onSelect={(item) => router.replace(item.href as never)}
+  />;
 }
 
-/** Global peer navigation. Each destination owns an independent nested stack. */
+/** Four peer destinations with a non-route creation action in the physical center. */
 export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useLocalSearchParams<NavigationParams>();
+  const release = useReleaseConfig();
+  const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
+  const { createContext, hidden, setHidden } = usePrimaryNavigationVisibility();
+  // Projects remains reachable from Home, but it is not a peer destination in
+  // the global action bar.
+  const visibleRoutes = state.routes.filter((route) => route.name !== '(projects)');
+  const items = visibleRoutes.map((route) => ({
+    ...primaryDestinationForRoute(route.name, !release.tasks),
+    href: route.name,
+  }));
+  const activeRouteName = state.routes[state.index]?.name;
+  const activeKey = items.find((item) => item.href === activeRouteName)?.key ?? 'home';
+  const scopedParams: NavigationParams = createContext
+    ? { ...createContext, archive: createContext.archive ? '1' : undefined }
+    : params;
+  const createHref = contextAwareCreateHref(pathname, scopedParams);
+
+  useEffect(() => setHidden(false), [pathname, setHidden]);
+
+  if (keyboardVisible || !primaryNavigationVisibleForPath(pathname)) return null;
+
+  return <FloatingNavigation
+    activeKey={activeKey}
+    createDisabled={!release.tasks}
+    hidden={hidden}
+    items={items}
+    onCreate={() => {
+      if (pathname.endsWith('/tasks') && scopedParams.projectId) {
+        router.setParams({ create: '1', groupId: scopedParams.groupId });
+        return;
+      }
+      if (pathname.endsWith('/today')) {
+        router.setParams({ create: String(Date.now()) });
+        return;
+      }
+      if (pathname.endsWith('/projects')) {
+        router.setParams({ create: String(Date.now()) });
+        return;
+      }
+      router.push(createHref as never);
+    }}
+    onSelect={(item) => {
+      const route = visibleRoutes.find((candidate) => candidate.name === item.href);
+      if (!route || item.disabled) return;
+      const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+      if (event.defaultPrevented) return;
+      const resetTarget = primaryTabResetTarget(item.key);
+      if (resetTarget) navigation.navigate(route.name, resetTarget);
+      else navigation.navigate(route.name, route.params);
+    }}
+  />;
+}
+
+function contextAwareCreateHref(pathname: string, params: NavigationParams) {
+  const projectId = typeof params.projectId === 'string' ? params.projectId as Id<'projects'> : undefined;
+  if (!projectId && pathname.endsWith('/projects')) return `/projects?create=${Date.now()}`;
+  if (!projectId) return `/today?create=${Date.now()}`;
+
+  const projectScopedRoute = pathname.endsWith('/project') || pathname.endsWith('/groups') || pathname.endsWith('/conversation') || pathname.endsWith('/tasks');
+  if (!projectScopedRoute) return `/today?create=${Date.now()}`;
+
+  const identity = params.companyId && params.membershipId ? {
+    archived: params.archive === '1',
+    companyId: params.companyId as Id<'companies'>,
+    membershipId: params.membershipId as Id<'projectMembers'>,
+  } : null;
+  const groupId = typeof params.groupId === 'string' ? params.groupId as Id<'groups'> : undefined;
+  return taskListHref(projectId, identity, undefined, undefined, { create: true, groupId });
+}
+
+function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate, onSelect }: {
+  activeKey?: StandaloneTabKey;
+  createDisabled: boolean;
+  hidden: boolean;
+  items: Array<NavigationItem | (PrimaryDestination & { href: string })>;
+  onCreate: () => void;
+  onSelect: (item: NavigationItem | (PrimaryDestination & { href: string })) => void;
+}) {
   const theme = useTheme();
   const { theme: themeName } = useThemeOverride();
-  const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
   const insets = useSafeAreaInsets();
-  const { trackUserId } = useTrackUser();
-  const release = useReleaseConfig();
-  const reduceMotion = useReducedMotion();
-  const [reduceTransparency, setReduceTransparency] = useState<boolean | null>(null);
+  const { fontScale } = useWindowDimensions();
+  const navigationHeight = primaryNavigationHeight(fontScale, BottomTabInset);
+  const reducedMotion = useReducedMotion();
   const [rowWidth, setRowWidth] = useState(0);
-  const indicatorLeft = useSharedValue(0);
-  const indicatorLift = useSharedValue(0);
-  const indicatorScaleX = useSharedValue(1);
-  const indicatorScaleY = useSharedValue(1);
-  const indicatorWidth = useSharedValue(0);
-  const indicatorDragging = useSharedValue(0);
-  const isIos = Platform.OS === 'ios';
-
-  const attentionPages = usePaginatedQuery(api.mobile.listAttention, trackUserId
-    ? { userId: trackUserId }
-    : 'skip', { initialNumItems: 10 });
-  const attentionCount = uniqueAttentionItems(attentionPages.results as MobileAttentionItem[]).length;
-  const destinations = state.routes.map((route) => primaryDestinationForRoute(route.name, !release.tasks));
-  const selectedIndex = state.index;
-  const disabledDestinationIndex = destinations.findIndex((destination) => destination.disabled);
-  const glassAvailable = isIos && reduceTransparency === false && safeGlassAvailability();
-
+  const hiddenProgress = useSharedValue(hidden ? 1 : 0);
+  const dragX = useSharedValue(0);
+  const dragOpacity = useSharedValue(0);
+  const dragStretch = useSharedValue(1);
+  const [reduceTransparency, setReduceTransparency] = useState(false);
   useEffect(() => {
-    if (!rowWidth) return;
     void AccessibilityInfo.isReduceTransparencyEnabled().then(setReduceTransparency);
     const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduceTransparency);
     return () => subscription.remove();
-  }, [isIos]);
+  }, []);
+  const left = items.slice(0, 2);
+  const right = items.slice(2, 4);
 
   useEffect(() => {
-    if (!rowWidth) return;
-    if (indicatorDragging.get()) return;
-    const geometry = primaryTabGeometry(rowWidth, destinations.length, selectedIndex);
-    const { cellWidth } = geometry;
-    const restingWidth = isIos ? geometry.indicatorWidth : 28;
-    const targetLeft = isIos
-      ? geometry.indicatorLeft
-      : selectedIndex * cellWidth + (cellWidth - restingWidth) / 2;
-    const currentLeft = indicatorLeft.get();
-    const distance = Math.abs(targetLeft - currentLeft);
+    hiddenProgress.set(reducedMotion
+      ? withTiming(hidden ? 1 : 0, { duration: 120 })
+      : withSpring(hidden ? 1 : 0, { dampingRatio: 1, duration: 280 }));
+  }, [hidden, hiddenProgress, reducedMotion]);
 
-    if (!indicatorWidth.get() || reduceMotion) {
-      cancelAnimation(indicatorLeft);
-      cancelAnimation(indicatorLift);
-      cancelAnimation(indicatorScaleX);
-      cancelAnimation(indicatorScaleY);
-      cancelAnimation(indicatorWidth);
-      indicatorLeft.set(targetLeft);
-      indicatorLift.set(0);
-      indicatorScaleX.set(1);
-      indicatorScaleY.set(1);
-      indicatorWidth.set(restingWidth);
-      return;
-    }
-
-    cancelAnimation(indicatorLeft);
-    cancelAnimation(indicatorLift);
-    cancelAnimation(indicatorScaleX);
-    cancelAnimation(indicatorScaleY);
-    cancelAnimation(indicatorWidth);
-    if (!isIos) {
-      indicatorLeft.set(withSpring(targetLeft, spring));
-      indicatorWidth.set(withSpring(restingWidth, spring));
-      indicatorLift.set(withSpring(0, spring));
-      indicatorScaleX.set(withSpring(1, spring));
-      indicatorScaleY.set(withSpring(1, spring));
-      return;
-    }
-    const stretchedWidth = restingWidth + Math.min(distance, cellWidth * 1.35);
-
-    if (targetLeft >= currentLeft) {
-      indicatorLeft.set(withDelay(78, withSpring(targetLeft, spring)));
-    } else {
-      indicatorLeft.set(withSpring(targetLeft, spring));
-    }
-    indicatorWidth.set(withSequence(
-      withTiming(stretchedWidth, { duration: 118, reduceMotion: ReduceMotion.System }),
-      withSpring(restingWidth, spring),
-    ));
-    indicatorScaleY.set(withSequence(
-      withTiming(0.88, { duration: 105, reduceMotion: ReduceMotion.System }),
-      withSpring(1, spring),
-    ));
-    indicatorLift.set(withSequence(
-      withTiming(-2, { duration: 105, reduceMotion: ReduceMotion.System }),
-      withSpring(0, spring),
-    ));
-  }, [destinations.length, indicatorDragging, indicatorLeft, indicatorLift, indicatorScaleX, indicatorScaleY, indicatorWidth, isIos, reduceMotion, rowWidth, selectedIndex]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: indicatorLeft.get() },
-      { translateY: indicatorLift.get() },
-      { scaleX: indicatorScaleX.get() },
-      { scaleY: indicatorScaleY.get() },
-    ],
-    width: indicatorWidth.get(),
-  }));
-
-  function onRowLayout(event: LayoutChangeEvent) {
-    setRowWidth(event.nativeEvent.layout.width);
+  function commitDrag(index: number) {
+    const item = items[index];
+    if (item && !item.disabled) onSelect(item);
   }
 
-  const activateDestination = useCallback((index: number, withHaptic = true) => {
-    const destination = destinations[index];
-    const route = state.routes[index];
-    if (!destination || !route || destination.disabled) return;
-    if (withHaptic) hapticLight();
-    const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-    if (event.defaultPrevented) return;
-    const resetTarget = primaryTabResetTarget(destination.key);
-    if (resetTarget) {
-      navigation.navigate(route.name, resetTarget);
-      return;
-    }
-    if (index !== selectedIndex) navigation.navigate(route.name, route.params);
-  }, [destinations, navigation, selectedIndex, state.routes]);
-
-  const iosDragGesture = useMemo(() => Gesture.Pan()
-    .enabled(isIos && rowWidth > 0 && !reduceMotion)
+  const drag = Gesture.Pan()
     .activateAfterLongPress(180)
-    .shouldCancelWhenOutside(false)
-    .onStart(() => {
-      const cellWidth = rowWidth / destinations.length;
-      const restingWidth = Math.max(48, cellWidth - Spacing.two);
-      indicatorDragging.set(1);
-      cancelAnimation(indicatorLeft);
-      cancelAnimation(indicatorLift);
-      cancelAnimation(indicatorScaleX);
-      cancelAnimation(indicatorScaleY);
-      cancelAnimation(indicatorWidth);
-      indicatorWidth.set(restingWidth);
-      indicatorLift.set(withSpring(0, spring));
-      indicatorScaleX.set(withSpring(reduceMotion ? 1 : 1.14, spring));
-      indicatorScaleY.set(withSpring(reduceMotion ? 1 : 1.14, spring));
-      scheduleOnRN(hapticLight);
+    .onBegin((event) => {
+      dragX.set(event.x);
+      dragOpacity.set(1);
+      dragStretch.set(1.08);
     })
     .onUpdate((event) => {
-      const cellWidth = rowWidth / destinations.length;
-      const restingWidth = Math.max(48, cellWidth - Spacing.two);
-      const horizontalStretch = reduceMotion ? 0 : Math.min(Math.abs(event.velocityX) / 7_000, 0.12);
-      const verticalStretch = reduceMotion ? 0 : Math.min(Math.abs(event.velocityY) / 8_000, 0.08);
-      const horizontalScale = reduceMotion ? 1 : 1.14 + horizontalStretch;
-      const verticalScale = reduceMotion ? 1 : 1.14 + verticalStretch - horizontalStretch * 0.22;
-      const proposedLeft = event.x - restingWidth / 2;
-      const restingInset = (cellWidth - restingWidth) / 2;
-      indicatorLeft.set(primaryTabRubberBand(
-        proposedLeft,
-        restingInset,
-        rowWidth - restingWidth - restingInset,
-        Spacing.four,
-      ));
-      if (reduceMotion) return;
-      indicatorLift.set(primaryTabRubberBand(
-        event.translationY,
-        -Spacing.three,
-        Spacing.three,
-        Spacing.two,
-      ));
-      indicatorScaleX.set(horizontalScale);
-      indicatorScaleY.set(verticalScale);
+      dragX.set(Math.max(28, Math.min(rowWidth - 28, event.x)));
+      dragStretch.set(Math.min(1.28, 1 + Math.abs(event.velocityX) / 3_000));
     })
     .onEnd((event) => {
-      const cellWidth = rowWidth / destinations.length;
-      const restingWidth = Math.max(48, cellWidth - Spacing.two);
-      const projectedX = event.x + event.velocityX * 0.04;
-      let destinationIndex = primaryTabIndexAtX(projectedX, rowWidth, destinations.length);
-      if (destinationIndex === disabledDestinationIndex) destinationIndex = selectedIndex;
-      const targetLeft = destinationIndex * cellWidth + (cellWidth - restingWidth) / 2;
-      indicatorDragging.set(0);
-      indicatorLeft.set(withSpring(targetLeft, { ...spring, velocity: event.velocityX }));
-      indicatorLift.set(withSpring(0, spring));
-      indicatorScaleX.set(withSpring(1, spring));
-      indicatorScaleY.set(withSpring(1, spring));
-      indicatorWidth.set(withSpring(restingWidth, spring));
-      scheduleOnRN(activateDestination, destinationIndex, false);
+      const index = primaryDestinationIndexAtX(event.x, rowWidth);
+      const slot = index < 2 ? index : index + 1;
+      const target = (slot + 0.5) * (rowWidth / 5);
+      dragX.set(reducedMotion ? target : withSpring(target, { dampingRatio: 1, duration: 320, velocity: event.velocityX }));
+      dragStretch.set(withSpring(1, { dampingRatio: 1, duration: 220 }));
+      dragOpacity.set(withTiming(0, { duration: reducedMotion ? 80 : 140 }));
+      scheduleOnRN(commitDrag, index);
     })
-    .onFinalize((_event, success) => {
-      if (success) return;
-      const cellWidth = rowWidth / destinations.length;
-      const restingWidth = Math.max(48, cellWidth - Spacing.two);
-      const targetLeft = selectedIndex * cellWidth + (cellWidth - restingWidth) / 2;
-      indicatorDragging.set(0);
-      indicatorLeft.set(withSpring(targetLeft, spring));
-      indicatorLift.set(withSpring(0, spring));
-      indicatorScaleX.set(withSpring(1, spring));
-      indicatorScaleY.set(withSpring(1, spring));
-      indicatorWidth.set(withSpring(restingWidth, spring));
-    }), [
-    activateDestination,
-    destinations.length,
-    disabledDestinationIndex,
-    indicatorDragging,
-    indicatorLeft,
-    indicatorLift,
-    indicatorScaleX,
-    indicatorScaleY,
-    indicatorWidth,
-    isIos,
-    reduceMotion,
-    rowWidth,
-    selectedIndex,
-  ]);
+    .onFinalize(() => {
+      dragStretch.set(withSpring(1, { dampingRatio: 1, duration: 180 }));
+      dragOpacity.set(withTiming(0, { duration: 100 }));
+    });
 
-  if (keyboardVisible) return null;
+  const positionStyle = useAnimatedStyle(() => ({
+    opacity: 1 - hiddenProgress.get(),
+    transform: [{ translateY: hiddenProgress.get() * (navigationHeight + insets.bottom + 24) }],
+  }));
+  const dragStyle = useAnimatedStyle(() => ({
+    opacity: dragOpacity.get(),
+    transform: [{ translateX: dragX.get() - 39 }, { scaleX: dragStretch.get() }],
+  }));
 
-  const tabItems = destinations.map((destination, index) => {
-    const route = state.routes[index];
-    const selected = index === selectedIndex;
-    const badge = destination.key === 'home' ? attentionCount : 0;
-    const accessibilityLabel = badge
-      ? destination.label + ', ' + (badge > 99 ? '99 plus' : badge) + ' items needing attention'
-      : destination.label;
-
-    return (
-      <Pressable
-        accessibilityLabel={accessibilityLabel}
-        accessibilityRole="tab"
-        accessibilityState={{ disabled: destination.disabled, selected }}
-        android_ripple={!isIos ? { color: theme.backgroundSelected, borderless: false } : undefined}
-        disabled={destination.disabled}
-        key={route.key}
-        onLongPress={isIos ? undefined : () => navigation.emit({ type: 'tabLongPress', target: route.key })}
-        onPress={() => activateDestination(index)}
-        style={({ pressed }) => [
-          styles.item,
-          { opacity: destination.disabled ? 0.42 : pressed ? 0.62 : 1 },
-        ]}
-      >
-        <View style={[
-          styles.icon,
-          !isIos && styles.androidIcon,
-        ]}>
-          <PlatformIcon
-            color={selected ? theme.accentStrong : theme.textSecondary}
-            name={destination.icon}
-            size={IconSize.large}
-            variant={selected ? 'filled' : 'outline'}
-            weight={selected ? 'medium' : 'regular'}
-          />
-          {badge > 0 ? (
-              <View style={[styles.badge, { backgroundColor: theme.accent, borderColor: theme.backgroundElevated }]}>
-              <ThemedText style={styles.badgeText} type="captionBold">
-                {badge > 99 ? '99+' : badge}
-              </ThemedText>
-            </View>
-          ) : null}
+  return <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.positioner, { paddingBottom: Math.max(insets.bottom, Spacing.two) }, positionStyle]}>
+    <View style={[styles.chrome, { backgroundColor: reduceTransparency ? theme.homeSurface : 'transparent', borderColor: theme.homeBorder, height: navigationHeight }]}>
+      {!reduceTransparency ? <BlurView intensity={Platform.OS === 'ios' ? 22 : 18} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.blurSurface, { backgroundColor: theme.navigationGlass, opacity: Platform.OS === 'ios' ? 0.72 : 1 }]} tint={themeName === 'dark' ? 'dark' : 'light'} /> : null}
+      <GestureDetector gesture={drag}>
+        <View accessibilityRole="tablist" onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)} style={[styles.row, { height: navigationHeight }]}>
+          <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: theme.navigationSelectionGlass, borderColor: theme.homeBorder }, dragStyle]} />
+          {left.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
+          <CreateButton disabled={createDisabled} height={navigationHeight} onPress={onCreate} />
+          {right.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
         </View>
-        <ThemedText
-          themeColor={selected ? 'accentStrong' : 'textSecondary'}
-          type="captionBold"
-        >
-          {destination.label}
-        </ThemedText>
-      </Pressable>
-    );
-  });
-
-  if (!isIos) {
-    return (
-      <View style={[styles.androidPositioner, { backgroundColor: theme.background, paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-        <View style={[styles.androidChrome, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
-          <View accessibilityRole="tablist" onLayout={onRowLayout} style={styles.androidRow}>
-            <Animated.View
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              pointerEvents="none"
-              style={[styles.androidIndicator, indicatorStyle, { backgroundColor: theme.accentSoft, borderColor: theme.hairline }]}
-            />
-            {tabItems}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View
-      pointerEvents="box-none"
-      style={[styles.iosPositioner, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}>
-      <IosChromeSurface glassAvailable={glassAvailable}>
-        {glassAvailable ? (
-          <GlassView
-            colorScheme={themeName}
-            glassEffectStyle="regular"
-            isInteractive={false}
-            pointerEvents="none"
-            style={styles.pillFill}
-            tintColor={theme.navigationGlass}
-          />
-        ) : reduceTransparency !== false ? (
-          <View
-            pointerEvents="none"
-            style={[styles.pillFill, { backgroundColor: theme.backgroundElevated }]}
-          />
-        ) : (
-          <View pointerEvents="none" style={[styles.pillFill, styles.blurClip]}>
-            <BlurView
-              intensity={72}
-              pointerEvents="none"
-              style={[styles.pillFill, { backgroundColor: theme.navigationGlass }]}
-              tint={themeName === 'dark' ? 'systemThinMaterialDark' : 'systemThinMaterialLight'}
-            />
-          </View>
-        )}
-        <View
-          pointerEvents="none"
-          style={[styles.iosChromeBorder, { borderColor: theme.hairline }]}
-        />
-        <GestureDetector gesture={iosDragGesture}>
-          <View accessibilityRole="tablist" onLayout={onRowLayout} style={styles.iosRow}>
-            <Animated.View
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              pointerEvents="none"
-              style={[styles.iosIndicator, indicatorStyle]}
-            >
-              {glassAvailable ? (
-                <GlassView
-                  colorScheme={themeName}
-                  glassEffectStyle="clear"
-                  isInteractive={false}
-                  pointerEvents="none"
-                  style={styles.pillFill}
-                  tintColor={theme.navigationSelectionGlass}
-                />
-              ) : reduceTransparency !== false ? (
-                <View
-                  pointerEvents="none"
-                  style={[styles.pillFill, { backgroundColor: theme.accentSoft }]}
-                />
-              ) : (
-                <View pointerEvents="none" style={[styles.pillFill, styles.blurClip]}>
-                  <BlurView
-                    intensity={46}
-                    pointerEvents="none"
-                    style={[styles.pillFill, { backgroundColor: theme.navigationSelectionGlass }]}
-                    tint={themeName === 'dark' ? 'systemUltraThinMaterialDark' : 'systemUltraThinMaterialLight'}
-                  />
-                </View>
-              )}
-            </Animated.View>
-            {tabItems}
-          </View>
-        </GestureDetector>
-      </IosChromeSurface>
+      </GestureDetector>
     </View>
-  );
+  </Animated.View>;
 }
 
-function IosChromeSurface({ children, glassAvailable }: { children: ReactNode; glassAvailable: boolean }) {
-  if (glassAvailable) {
-    return (
-      <GlassContainer spacing={Spacing.three} style={styles.iosChrome}>
-        {children}
-      </GlassContainer>
-    );
-  }
-  return <View style={styles.iosChrome}>{children}</View>;
+function NavigationTab({ active, item, onPress }: {
+  active: boolean;
+  item: NavigationItem | (PrimaryDestination & { href: string });
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return <Pressable
+    accessibilityLabel={item.label}
+    accessibilityRole="tab"
+    accessibilityState={{ disabled: item.disabled, selected: active }}
+    disabled={item.disabled}
+    onPress={() => { hapticLight(); onPress(); }}
+    style={({ pressed }) => [styles.item, { opacity: item.disabled ? 0.38 : pressed ? 0.62 : 1 }]}
+  >
+    <View style={[styles.iconWell, active && { backgroundColor: theme.navigationSelectionGlass, borderColor: theme.homeBorder }]}>
+      <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={item.icon} size={IconSize.large + 4} variant={active ? 'filled' : 'outline'} weight={active ? 'semibold' : 'regular'} />
+    </View>
+    <ThemedText numberOfLines={1} style={[styles.itemLabel, { color: active ? theme.accentStrong : theme.textSecondary }]} type="captionBold">{item.label}</ThemedText>
+  </Pressable>;
 }
 
-function safeGlassAvailability() {
-  try {
-    return isGlassEffectAPIAvailable();
-  } catch {
-    return false;
-  }
+function CreateButton({ disabled, height, onPress }: { disabled: boolean; height: number; onPress: () => void }) {
+  const theme = useTheme();
+  return <View style={[styles.createSlot, { height }]}>
+    <View style={[styles.createMoat, { backgroundColor: theme.homeBackground }]}><Pressable
+      accessibilityHint="Choose a Project before creating a task"
+      accessibilityLabel="Create"
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={() => { hapticLight(); onPress(); }}
+      style={({ pressed }) => [styles.createButton, { backgroundColor: disabled ? theme.backgroundSelected : theme.accent, borderColor: theme.accentStrong, opacity: disabled ? 0.45 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+    >
+      <PlatformIcon color={disabled ? theme.textTertiary : theme.background} name="plus" size={31} weight="medium" />
+    </Pressable></View>
+  </View>;
 }
 
 const styles = StyleSheet.create({
-  androidIcon: { borderRadius: Radius.pill, height: 28 },
-  androidChrome: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    boxShadow: '0 -2px 8px rgba(0,0,0,0.06)',
-    overflow: 'visible',
-  },
-  androidIndicator: {
-    borderRadius: Radius.pill,
-    bottom: Spacing.one,
-    height: 3,
-    left: 0,
-    position: 'absolute',
-    zIndex: 0,
-  },
-  androidPositioner: { paddingHorizontal: 0, paddingTop: 0 },
-  androidRow: {
-    flexDirection: 'row',
-    minHeight: BottomTabInset,
-    position: 'relative',
-  },
-  badge: {
-    alignItems: 'center',
-    borderRadius: Radius.pill,
-    borderWidth: 2,
-    justifyContent: 'center',
-    minHeight: 18,
-    minWidth: 18,
-    paddingHorizontal: Spacing.one,
-    position: 'absolute',
-    right: -8,
-    top: -7,
-  },
-  badgeText: { color: Colors.light.text, fontSize: 10, lineHeight: 14 },
-  blurClip: { overflow: 'hidden' },
-  icon: { alignItems: 'center', height: 28, justifyContent: 'center', minWidth: 44 },
-  iosChrome: {
-    borderCurve: 'continuous',
-    borderRadius: Radius.pill,
-    boxShadow: '0 8px 24px rgba(0,0,0,0.16)',
-    minHeight: BottomTabInset,
-    overflow: 'visible',
-    position: 'relative',
-  },
-  iosChromeBorder: {
-    ...StyleSheet.absoluteFillObject,
-    borderCurve: 'continuous',
-    borderRadius: Radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  iosIndicator: {
-    borderCurve: 'continuous',
-    borderRadius: Radius.pill,
-    bottom: Spacing.one,
-    boxShadow: '0 4px 14px rgba(240,177,0,0.18)',
-    left: 0,
-    overflow: 'hidden',
-    position: 'absolute',
-    top: Spacing.one,
-    zIndex: 0,
-  },
-  iosPositioner: {
-    backgroundColor: 'transparent',
-    bottom: 0,
-    left: 0,
-    overflow: 'visible',
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.two,
-    position: 'absolute',
-    right: 0,
-    zIndex: 50,
-  },
-  iosRow: { flexDirection: 'row', overflow: 'visible', position: 'relative' },
-  item: {
-    alignItems: 'center',
-    flex: 1,
-    gap: Spacing.one,
-    justifyContent: 'center',
-    minHeight: BottomTabInset,
-    paddingHorizontal: Spacing.one,
-    paddingVertical: Spacing.two,
-    position: 'relative',
-    zIndex: 1,
-  },
-  pillFill: {
-    ...StyleSheet.absoluteFillObject,
-    borderCurve: 'continuous',
-    borderRadius: Radius.pill,
-  },
+  blurSurface: { borderRadius: Radius.pill, overflow: 'hidden' },
+  chrome: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', height: BottomTabInset, overflow: 'visible' },
+  createButton: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 58, justifyContent: 'center', width: 58 },
+  createMoat: { alignItems: 'center', borderRadius: Radius.pill, height: 70, justifyContent: 'center', width: 70 },
+  createSlot: { alignItems: 'center', flex: 1, height: BottomTabInset, justifyContent: 'flex-start', transform: [{ translateY: -14 }] },
+  dragPill: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 58, left: 0, position: 'absolute', top: 9, width: 78 },
+  iconWell: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 40, justifyContent: 'center', width: 48 },
+  item: { alignItems: 'center', alignSelf: 'center', flex: 1, justifyContent: 'center', minHeight: 60, minWidth: 0 },
+  itemLabel: { fontSize: 10, lineHeight: 13, marginTop: 1 },
+  positioner: { bottom: 0, left: 0, paddingHorizontal: 20, paddingTop: Spacing.two, position: 'absolute', right: 0, zIndex: 50 },
+  row: { alignItems: 'center', flexDirection: 'row', height: BottomTabInset, overflow: 'visible', paddingHorizontal: Spacing.two },
 });

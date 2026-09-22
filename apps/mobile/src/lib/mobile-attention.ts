@@ -55,8 +55,28 @@ export type MobileAttentionItem = AttentionContext & ({
 
 export type AttentionSectionKey = 'priority' | 'work' | 'following' | 'other';
 
+export type HomeFeedUpdate = {
+  action: string;
+  actorName: string;
+  companyId?: string;
+  companyName?: string;
+  createdAt: number;
+  groupId?: string;
+  groupName?: string;
+  id: string;
+  kind: 'message' | 'task';
+  membershipId: string;
+  messageId?: string;
+  preview: string;
+  projectId: string;
+  projectName: string;
+  taskKey?: string;
+  threadId?: string;
+  title: string;
+};
+
 export function attentionSection(item: MobileAttentionItem): AttentionSectionKey {
-  if (item.eventType === 'mention' || item.eventType === 'direct_reply') return 'priority';
+  if (item.eventType === 'company_invitation' || item.eventType === 'overdue' || item.eventType === 'mention' || item.eventType === 'direct_reply') return 'priority';
   if (item.kind === 'task') return 'work';
   if (item.kind === 'message') return 'following';
   return 'other';
@@ -81,10 +101,88 @@ export function uniqueAttentionItems(items: MobileAttentionItem[]) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).sort((left, right) => {
-    const order: Record<AttentionSectionKey, number> = { priority: 0, work: 1, following: 2, other: 3 };
-    return order[attentionSection(left)] - order[attentionSection(right)] || right.createdAt - left.createdAt;
-  });
+  }).sort((left, right) => attentionPriority(left) - attentionPriority(right) || right.createdAt - left.createdAt);
+}
+
+function attentionPriority(item: MobileAttentionItem) {
+  if (item.kind === 'invitation') return 0;
+  switch (item.eventType) {
+    case 'overdue': return 1;
+    case 'mention': return 2;
+    case 'direct_reply': return 3;
+    case 'due_soon': return 4;
+    case 'assignment': return 5;
+    case 'task_suggestion': return 6;
+    default: return 7;
+  }
+}
+
+/** Home is an action queue, so passive discussions and lost assignments stay in Inbox. */
+export function actionableHomeAttention(items: MobileAttentionItem[], limit = 4) {
+  return uniqueAttentionItems(items)
+    .filter((item) => item.kind === 'invitation'
+      || item.kind === 'suggestion'
+      || item.eventType === 'assignment'
+      || item.eventType === 'direct_reply'
+      || item.eventType === 'due_soon'
+      || item.eventType === 'mention'
+      || item.eventType === 'overdue')
+    .slice(0, Math.max(0, limit));
+}
+
+/**
+ * Builds the Home update preview from the existing permission-filtered mobile
+ * feed. This keeps client and server rollouts compatible while excluding raw
+ * discussion noise, reminders, invitations, and suggestions.
+ */
+export function recentHomeUpdates(items: MobileAttentionItem[], limit = Number.POSITIVE_INFINITY): HomeFeedUpdate[] {
+  return uniqueAttentionIdentities(items)
+    .filter((item): item is Extract<MobileAttentionItem, { kind: 'message' | 'task' }> => {
+      if (item.kind === 'message') return ['direct_reply', 'mention', 'thread_activity'].includes(item.eventType);
+      return item.eventType !== 'due_soon' && item.eventType !== 'overdue';
+    })
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, Math.max(0, limit))
+    .map((item) => item.kind === 'message' ? {
+      action: item.eventType,
+      actorName: item.senderName,
+      companyId: item.companyId,
+      companyName: item.companyName,
+      createdAt: item.createdAt,
+      groupId: item.groupId,
+      groupName: item.groupName,
+      id: String(item.id),
+      kind: 'message' as const,
+      membershipId: String(item.membershipId),
+      messageId: String(item.messageId),
+      preview: `${item.senderName} ${item.eventType === 'direct_reply' ? 'replied' : item.eventType === 'mention' ? 'mentioned you' : 'added an update'} in #${item.groupName}`,
+      projectId: String(item.projectId),
+      projectName: item.projectName,
+      threadId: item.threadId ? String(item.threadId) : undefined,
+      title: item.eventType === 'direct_reply'
+        ? `New reply in ${item.threadName ?? item.groupName}`
+        : item.eventType === 'mention'
+          ? `New mention in #${item.groupName}`
+          : `New update in ${item.threadName ?? item.groupName}`,
+    } : {
+      action: item.eventType,
+      actorName: 'Track',
+      companyId: item.companyId,
+      companyName: item.companyName,
+      createdAt: item.createdAt,
+      id: String(item.id),
+      kind: 'task' as const,
+      membershipId: String(item.membershipId),
+      preview: `${item.taskTitle} · ${item.projectName}`,
+      projectId: String(item.projectId),
+      projectName: item.projectName,
+      taskKey: item.taskKey,
+      title: item.eventType === 'assignment'
+        ? 'Task assigned to you'
+        : item.eventType === 'commented'
+          ? 'New task comment'
+          : 'Task updated',
+    });
 }
 
 export function attentionTitle(item: MobileAttentionItem) {

@@ -327,6 +327,15 @@ function AttentionRow({ invitationBusy, item, onInvitationDecision, onPress }: {
   const invitationBusyForItem = Boolean(item.kind === 'invitation'
     && invitationBusy?.startsWith(`${item.invitationId}:`));
   if (item.kind !== 'invitation') {
+    const notificationTone = item.kind === 'message'
+      ? item.eventType === 'mention'
+        ? { background: theme.workflowBacklogSoft, foreground: theme.workflowBacklog }
+        : { background: theme.backgroundElement, foreground: theme.info }
+      : item.kind === 'suggestion'
+        ? { background: theme.accentSoft, foreground: theme.accentStrong }
+        : item.eventType === 'overdue'
+          ? { background: theme.dangerSoft, foreground: theme.danger }
+          : { background: theme.backgroundElement, foreground: theme.textSecondary };
     const title = item.kind === 'task' ? item.taskTitle : item.kind === 'message' ? `${item.senderName}: ${item.preview}` : item.title;
     const state = item.kind === 'task'
       ? eventCopy(item.eventType)
@@ -339,19 +348,30 @@ function AttentionRow({ invitationBusy, item, onInvitationDecision, onPress }: {
       item.kind === 'task' ? 'Task' : item.kind === 'message' ? `#${item.groupName}` : 'Suggestion',
     ].filter((part, index, parts) => Boolean(part) && parts.indexOf(part) === index).join(' · ');
     const direct = item.kind === 'message' && (item.eventType === 'mention' || item.eventType === 'direct_reply');
+    const threadId = item.kind === 'message' ? item.threadId : undefined;
+    const sourceLabel = item.kind === 'message' ? threadId ? 'Thread reply' : 'Channel message' : null;
     return (
       <AdaptiveListRow
-        accessibilityLabel={`${title}. ${context}. ${state}`}
+        accessibilityHint={item.kind === 'message' ? item.threadId ? 'Opens the conversation thread' : 'Opens the Channel message' : 'Opens the attention item'}
+        accessibilityLabel={`${title}. ${context}. ${sourceLabel ? `${sourceLabel}. ` : ''}${state}`}
         emphasized={direct}
         leading={(
-          <View style={[styles.iconWrap, { backgroundColor: direct ? theme.backgroundElevated : theme.accentSoft }]}>
-            <PlatformIcon color={theme.accentStrong} name={item.kind === 'task' ? 'task' : item.kind === 'message' ? 'message' : 'inbox'} size={20} />
+          <View style={[styles.iconWrap, { backgroundColor: notificationTone.background }]}>
+            <PlatformIcon color={notificationTone.foreground} name={item.kind === 'task' ? 'task' : item.kind === 'message' ? 'message' : 'inbox'} size={20} />
           </View>
         )}
         onPress={onPress}
-        subtitle={context}
+        subtitle={(
+          <View style={styles.sourceMeta}>
+            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{context}</ThemedText>
+            {sourceLabel ? <View style={[styles.sourcePill, { backgroundColor: threadId ? theme.accentSoft : theme.backgroundElement, borderColor: theme.hairline }]}>
+              <PlatformIcon color={threadId ? theme.accentStrong : theme.textSecondary} name={threadId ? 'thread' : 'channel'} size={13} />
+              <ThemedText themeColor={threadId ? 'accentStrong' : 'textSecondary'} type="captionBold">{sourceLabel}</ThemedText>
+            </View> : null}
+          </View>
+        )}
         title={title}
-        trailingBottom={<ThemedText themeColor={direct ? 'accentStrong' : 'textSecondary'} type="captionBold">{state}</ThemedText>}
+        trailingBottom={<ThemedText style={{ color: notificationTone.foreground }} type="captionBold">{state}</ThemedText>}
         trailingTop={<ThemedText themeColor="textTertiary" type="caption">{relativeTime(item.createdAt)}</ThemedText>}
       />
     );
@@ -422,4 +442,6 @@ const styles = StyleSheet.create({
   project: { flex: 1 },
   screen: { flex: 1 },
   screenContent: { flex: 1 },
+  sourceMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  sourcePill: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 4, paddingHorizontal: Spacing.two, paddingVertical: 3 },
 });
