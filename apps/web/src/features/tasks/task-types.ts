@@ -2,6 +2,7 @@ import type { FunctionReturnType } from 'convex/server'
 
 import type { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
+import type { TaskCapabilities } from '@track/shared/tasks'
 
 export type TaskIdentity = {
   actingCompanyId?: Id<'companies'>
@@ -19,6 +20,32 @@ export type TaskView = {
   labels: Array<Doc<'taskLabels'>>
   references: Array<Doc<'taskReferences'>>
   terminal: boolean
+  capabilities?: TaskCapabilities
+}
+
+export function canManageTaskProject(role: Doc<'projectMembers'>['role'] | undefined) {
+  return role === 'manager' || role === 'owner' || role === 'admin'
+}
+
+export function canEditTaskView(
+  item: {
+    board: Pick<Doc<'taskBoards'>, 'archivedAt'> | null
+    capabilities?: Pick<TaskCapabilities, 'canEdit'>
+    task: Pick<Doc<'tasks'>, 'archivedAt' | 'assigneeProjectMemberId' | 'createdByProjectMemberId'>
+  },
+  currentProjectMemberId: Id<'projectMembers'> | undefined,
+  currentProjectRole: Doc<'projectMembers'>['role'] | undefined,
+) {
+  if (item.capabilities) return item.capabilities.canEdit
+  if (item.task.archivedAt || item.board?.archivedAt || !currentProjectMemberId) return false
+  if (
+    currentProjectRole === 'manager' ||
+    currentProjectRole === 'owner' ||
+    currentProjectRole === 'admin' ||
+    currentProjectRole === 'staff'
+  ) return true
+  return item.task.createdByProjectMemberId === currentProjectMemberId ||
+    item.task.assigneeProjectMemberId === currentProjectMemberId
 }
 
 export type TaskListItem = FunctionReturnType<typeof api.tasks.listPage>['page'][number]

@@ -34,6 +34,7 @@ export async function searchNormalizedProjectArchive(
     term: string
     filter: string
     limit: number
+    threadStatus?: 'active' | 'archived'
   },
 ) {
   const { entitlement, projectMember, term, limit } = input
@@ -102,7 +103,11 @@ export async function searchNormalizedProjectArchive(
     includes('threads') && threadsEnabled()
       ? ctx.db.query('projectExitSnapshotStaging').withSearchIndex('search_name_by_operation', (q) =>
           q.search('searchText', term).eq('operationId', operationId).eq('scope', 'thread')
-            .eq('projectMemberId', projectMember._id)).take(limit)
+            .eq('projectMemberId', projectMember._id))
+          .filter((q) => input.threadStatus
+            ? q.eq(q.field('payload.snapshot.status'), input.threadStatus)
+            : q.eq(q.field('scope'), 'thread'))
+          .take(limit)
       : [],
     includes('tasks') && resolveReleaseFeatureFlag(process.env.TRACK_TASKS_ENABLED)
       ? searchArchivedTasks(ctx, { entitlement, projectMember }, term, limit)
@@ -147,7 +152,11 @@ export async function searchNormalizedProjectArchive(
     preview: `${row.payload.snapshot.kind.replaceAll('_', ' ')} group`, subtitle: 'Channel',
     title: row.payload.snapshot.name,
   }] : [])
-  const threads = await Promise.all(threadRows.map(async (row) => {
+  const matchingThreadRows = threadRows.filter((row) =>
+    row.payload.kind === 'thread' &&
+    (!input.threadStatus || row.payload.snapshot.status === input.threadStatus),
+  ).slice(0, limit)
+  const threads = await Promise.all(matchingThreadRows.map(async (row) => {
     if (row.payload.kind !== 'thread') return null
     const snapshot = row.payload.snapshot
     const group = await channel(snapshot.groupId)

@@ -28,7 +28,7 @@ export function useWorkspaceTypingIndicators({
   pendingAttachmentCount: number
   queryGroupId: Id<'groups'> | null
   trackUserId: Id<'users'> | null
-  view: 'home' | 'project' | 'group' | 'settings'
+  view: 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
   voiceRecordingActive: boolean
 }) {
   const heartbeatTypingIndicator = useMutation(api.typingIndicators.heartbeat)

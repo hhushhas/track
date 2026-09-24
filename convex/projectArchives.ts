@@ -4,14 +4,14 @@ import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import type { Doc } from './_generated/dataModel'
 import { requireAuthenticatedActor } from './lib/actorContext'
+import { appendAuditEvent } from './lib/audit'
 import {
-  requireCompanyAdmin,
   resolveCompanyProjectAccess,
 } from './lib/companyPolicy'
 import { revokePendingProjectInvitations } from './lib/companyProjectLifecycle'
 
 async function requireManagerTerm(
-  ctx: Parameters<typeof requireCompanyAdmin>[0],
+  ctx: Parameters<typeof resolveCompanyProjectAccess>[0],
   actor: Parameters<typeof resolveCompanyProjectAccess>[1],
   input: Parameters<typeof resolveCompanyProjectAccess>[2],
 ) {
@@ -21,7 +21,7 @@ async function requireManagerTerm(
 }
 
 async function getActiveProjectCompany(
-  ctx: Parameters<typeof requireCompanyAdmin>[0],
+  ctx: Parameters<typeof resolveCompanyProjectAccess>[0],
   projectId: Doc<'projects'>['_id'],
   companyId: Doc<'companies'>['_id'],
 ) {
@@ -38,20 +38,11 @@ export const listPending = query({
   args: {
     projectId: v.id('projects'),
     actingCompanyId: v.id('companies'),
-    projectMemberId: v.optional(v.id('projectMembers')),
+    projectMemberId: v.id('projectMembers'),
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
-    if (args.projectMemberId) {
-      await requireManagerTerm(ctx, actor, {
-        projectId: args.projectId,
-        actingCompanyId: args.actingCompanyId,
-        projectMemberId: args.projectMemberId,
-      })
-    } else {
-      await requireCompanyAdmin(ctx, actor, args.actingCompanyId)
-      await getActiveProjectCompany(ctx, args.projectId, args.actingCompanyId)
-    }
+    await requireManagerTerm(ctx, actor, args)
     return await ctx.db
       .query('projectArchiveRequests')
       .withIndex('by_project_status', (q) => q.eq('projectId', args.projectId).eq('status', 'pending'))
@@ -94,6 +85,14 @@ export const request = mutation({
     if (args.operation === 'archive') {
       await ctx.db.patch(access.project._id, { status: 'archive_pending', updatedAt: now })
     }
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, actorId: actor.userId,
+      actorProjectMemberId: access.projectMember._id, actingCompanyId: access.company._id,
+      entityType: 'projectArchiveRequest', entityId: requestId,
+      action: `project.${args.operation}_requested`,
+      before: { status: expected },
+      after: { status: args.operation === 'archive' ? 'archive_pending' : expected },
+    })
     return requestId
   },
 })
@@ -102,20 +101,12 @@ export const approve = mutation({
   args: {
     projectId: v.id('projects'),
     actingCompanyId: v.id('companies'),
-    projectMemberId: v.optional(v.id('projectMembers')),
+    projectMemberId: v.id('projectMembers'),
     requestId: v.id('projectArchiveRequests'),
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
-    if (args.projectMemberId) {
-      await requireManagerTerm(ctx, actor, {
-        projectId: args.projectId,
-        actingCompanyId: args.actingCompanyId,
-        projectMemberId: args.projectMemberId,
-      })
-    } else {
-      await requireCompanyAdmin(ctx, actor, args.actingCompanyId)
-    }
+    await requireManagerTerm(ctx, actor, args)
     const [project, request] = await Promise.all([
       ctx.db.get(args.projectId),
       ctx.db.get(args.requestId),
@@ -159,6 +150,14 @@ export const approve = mutation({
       await revokePendingProjectInvitations(ctx, project._id, now)
     }
     await ctx.db.patch(request._id, { status: 'approved', decidedAt: now, updatedAt: now })
+    await appendAuditEvent(ctx, {
+      companyId: args.actingCompanyId, projectId: project._id, actorId: actor.userId,
+      actorProjectMemberId: args.projectMemberId, actingCompanyId: args.actingCompanyId,
+      entityType: 'projectArchiveRequest', entityId: request._id,
+      action: request.operation === 'archive' ? 'project.archived' : 'project.restored',
+      before: { status: request.operation === 'archive' ? 'archive_pending' : 'archived' },
+      after: { status: request.operation === 'archive' ? 'archived' : 'active' },
+    })
     return request._id
   },
 })
@@ -180,6 +179,12 @@ export const cancel = mutation({
     if (access.project.status === 'archive_pending') {
       await ctx.db.patch(access.project._id, { status: 'active', updatedAt: now })
     }
+    await appendAuditEvent(ctx, {
+      companyId: access.company._id, projectId: access.project._id, actorId: actor.userId,
+      actorProjectMemberId: access.projectMember._id, actingCompanyId: access.company._id,
+      entityType: 'projectArchiveRequest', entityId: request._id,
+      action: 'project_archive.cancelled', before: { status: 'pending' }, after: { status: 'cancelled' },
+    })
     return request._id
   },
 })

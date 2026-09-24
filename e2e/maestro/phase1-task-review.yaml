@@ -1,0 +1,14 @@
+appId: ai.q9labs.track
+---
+- tapOn:
+    point: 62%,92%
+- tapOn: "Track Product Launch"
+- tapOn: "Launch planning"
+- longPressOn: "Welcome to the seeded Track launch workspace. Use this channel to coordinate the rollout."
+- tapOn: "Create task"
+- assertVisible: "Create task from message"
+- assertVisible: "Source message"
+- assertVisible: "This message will stay linked to the task."
+- assertVisible: "Due date"
+- assertVisible: "Priority"
+- assertVisible: "Assignee"

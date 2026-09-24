@@ -104,6 +104,134 @@ describe('Channel threads', () => {
     await expect(actor.query(api.taskBoards.list, { projectId }))
       .rejects.toThrow('tasks_disabled')
   })
+
+  it('rejects blank and oversized messages before persistence', async () => {
+    const { groupId, owner, projectId, t } = await seedLegacyChannel()
+    const actor = asUser(t, owner)
+
+    await expect(actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: '   \n\t',
+      groupId,
+      idempotencyKey: 'blank-message',
+      projectId,
+    })).rejects.toThrow('message_body_required')
+
+    await expect(actor.mutation(api.messages.send, {
+      authorId: owner,
+      body: 'x'.repeat(10_001),
+      groupId,
+      idempotencyKey: 'oversized-message',
+      projectId,
+    })).rejects.toThrow('message_body_too_long')
+  })
+
+  it('lists visible project threads with their channel context', async () => {
+    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    const secondGroupId = await t.run(async (ctx) => {
+      const now = Date.now()
+      const createdGroupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: 'custom',
+        name: 'Design review',
+        status: 'active',
+        revision: 1,
+        createdBy: owner,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('groupMembers', {
+        projectId,
+        groupId: createdGroupId,
+        userId: owner,
+        projectMemberId: ownerMembershipId,
+        status: 'active',
+        isSteward: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return createdGroupId
+    })
+    const actor = asUser(t, owner)
+    const firstThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'project-thread-first',
+      name: 'Launch checklist',
+      projectId,
+    })
+    const secondThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId: secondGroupId,
+      idempotencyKey: 'project-thread-second',
+      name: 'Design review notes',
+      projectId,
+    })
+
+    const result = await actor.query(api.channelThreads.listProject, { projectId, userId: owner })
+    expect(result.map((item) => item.thread._id)).toEqual(expect.arrayContaining([firstThreadId, secondThreadId]))
+    expect(result.find((item) => item.thread._id === secondThreadId)?.channel).toMatchObject({ name: 'Design review' })
+  })
+
+  it('pages project threads without dropping the project scope', async () => {
+    const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
+    const secondGroupId = await t.run(async (ctx) => {
+      const now = Date.now()
+      const createdGroupId = await ctx.db.insert('groups', {
+        projectId,
+        kind: 'custom',
+        name: 'Design review page',
+        status: 'active',
+        revision: 1,
+        createdBy: owner,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await ctx.db.insert('groupMembers', {
+        projectId,
+        groupId: createdGroupId,
+        userId: owner,
+        projectMemberId: ownerMembershipId,
+        status: 'active',
+        isSteward: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return createdGroupId
+    })
+    const actor = asUser(t, owner)
+    const firstThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId,
+      idempotencyKey: 'project-thread-page-first',
+      name: 'Page one',
+      projectId,
+    })
+    const secondThreadId = await actor.mutation(api.channelThreads.create, {
+      creatorId: owner,
+      groupId: secondGroupId,
+      idempotencyKey: 'project-thread-page-second',
+      name: 'Page two',
+      projectId,
+    })
+
+    const firstPage = await actor.query(api.channelThreads.listProjectPage, {
+      paginationOpts: { cursor: null, numItems: 1 },
+      projectId,
+      userId: owner,
+    })
+    expect(firstPage.page).toHaveLength(1)
+    expect(firstPage.isDone).toBe(false)
+
+    const secondPage = await actor.query(api.channelThreads.listProjectPage, {
+      paginationOpts: { cursor: firstPage.continueCursor, numItems: 1 },
+      projectId,
+      userId: owner,
+    })
+    const pagedIds = [...firstPage.page, ...secondPage.page].map((item) => item.thread._id)
+    expect(pagedIds).toEqual(expect.arrayContaining([firstThreadId, secondThreadId]))
+  })
+
   it('preserves channel sequence and converges create/send retries', async () => {
     {
       const { groupId, owner, ownerMembershipId, projectId, t } = await seedLegacyChannel()
@@ -181,6 +309,11 @@ describe('Channel threads', () => {
 
     expect(timeline.map((message) => message._id)).toEqual([sourceMessageId])
     expect(replies.map((item) => item.message._id)).toEqual([replyId])
+    await t.run(async (ctx) => await ctx.db.patch(sourceMessageId, { channelThreadId: threadId }))
+    expect(await ownerActor.query(api.channelThreads.get, { threadId, userId: owner }))
+      .toMatchObject({ source: { messageId: sourceMessageId, body: 'We should decide this separately.' } })
+    expect((await ownerActor.query(api.channelThreads.listMessages, { threadId, userId: owner }))
+      .map((item) => item.message._id)).toEqual([replyId])
     expect(memberThreads[0]).toMatchObject({ following: true, replyCount: 1, unread: true })
     expect(memberThreads[0].thread).toMatchObject({ name: 'Decision log', sourceMessageId })
   })
@@ -397,8 +530,8 @@ describe('Channel threads', () => {
 
     expect(await asUser(t, outsider).query(api.channelThreads.get, { threadId, userId: outsider }))
       .toBeNull()
-    expect(await asUser(t, outsider).query(api.channelThreads.listMessages, { threadId, userId: outsider }))
-      .toEqual([])
+    await expect(asUser(t, outsider).query(api.channelThreads.listMessages, { threadId, userId: outsider }))
+      .rejects.toThrow()
     expect(await asUser(t, outsider).query(api.assistant.listForThread, { threadId, userId: outsider }))
       .toEqual([])
     await t.run(async (ctx) => await ctx.db.delete(sourceMessageId))

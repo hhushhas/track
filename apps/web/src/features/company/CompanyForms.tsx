@@ -1,14 +1,16 @@
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Label } from "#/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
+import { Textarea } from "#/components/ui/textarea";
 
-type AsyncAction = (action: () => Promise<unknown>) => Promise<void>;
+type AsyncAction = (action: () => Promise<unknown>) => Promise<void | boolean>;
 
 function formatProjectInvitationError(error: unknown) {
   if (!(error instanceof Error)) return "The invitation could not be sent.";
@@ -50,6 +52,7 @@ export function CreateCompanyForm({ run }: { run: AsyncAction }) {
         <Label htmlFor="company-name">Company name</Label>
         <Input
           id="company-name"
+          name="companyName"
           onChange={(event) => setDisplayName(event.target.value)}
           required
           value={displayName}
@@ -59,7 +62,10 @@ export function CreateCompanyForm({ run }: { run: AsyncAction }) {
         <Label htmlFor="company-handle">Private handle</Label>
         <Input
           autoCapitalize="none"
+          autoComplete="organization"
           id="company-handle"
+          name="companyHandle"
+          spellCheck={false}
           onChange={(event) => setHandle(event.target.value)}
           required
           value={handle}
@@ -93,9 +99,12 @@ export function InviteMemberForm({
     >
       <div>
         <Label htmlFor="member-email">Email</Label>
-        <Input
+          <Input
+            autoComplete="email"
           id="member-email"
-          onChange={(event) => setEmail(event.target.value)}
+            name="email"
+            onChange={(event) => setEmail(event.target.value)}
+            spellCheck={false}
           required
           type="email"
           value={email}
@@ -103,16 +112,17 @@ export function InviteMemberForm({
       </div>
       <div>
         <Label htmlFor="member-role">Role</Label>
-        <select
-          id="member-role"
-          onChange={(event) =>
-            setRole(event.target.value as "admin" | "member")
-          }
-          value={role}
-        >
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
-        </select>
+          <NativeSelect
+            aria-label="Company role"
+            autoComplete="off"
+            id="member-role"
+            name="role"
+            onChange={(event) => setRole(event.target.value as "admin" | "member")}
+            value={role}
+          >
+            <NativeSelectOption value="member">Member</NativeSelectOption>
+            <NativeSelectOption value="admin">Admin</NativeSelectOption>
+          </NativeSelect>
       </div>
       <Button type="submit">Invite member</Button>
     </form>
@@ -122,32 +132,52 @@ export function InviteMemberForm({
 export function CompanyProfileForm({
   actingCompanyId,
   displayName: initialDisplayName,
+  description: initialDescription,
+  handle: initialHandle,
   run,
 }: {
   actingCompanyId: Id<"companies">;
   displayName: string;
+  description?: string;
+  handle?: string;
   run: AsyncAction;
 }) {
   const updateProfile = useMutation(api.companies.updateProfile);
   const [displayName, setDisplayName] = useState(initialDisplayName);
+  const [description, setDescription] = useState(initialDescription ?? "");
+  const [handle, setHandle] = useState(initialHandle ?? "");
+  useEffect(() => {
+    setDisplayName(initialDisplayName);
+    setDescription(initialDescription ?? "");
+    setHandle(initialHandle ?? "");
+  }, [actingCompanyId, initialDescription, initialDisplayName, initialHandle]);
   return (
     <form
       className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
         void run(() =>
-          updateProfile({ companyId: actingCompanyId, displayName }),
+          updateProfile({ companyId: actingCompanyId, displayName, description, handle }),
         );
       }}
     >
       <div>
         <Label htmlFor="company-profile-name">Company display name</Label>
-        <Input
-          id="company-profile-name"
+          <Input
+            id="company-profile-name"
+            name="companyName"
           onChange={(event) => setDisplayName(event.target.value)}
           required
           value={displayName}
         />
+      </div>
+      <div>
+        <Label htmlFor="company-profile-handle">Company handle</Label>
+        <Input autoComplete="organization" id="company-profile-handle" name="companyHandle" onChange={(event) => setHandle(event.target.value)} required spellCheck={false} value={handle} />
+      </div>
+      <div>
+        <Label htmlFor="company-profile-description">Description</Label>
+        <Textarea autoComplete="off" className="company-profile-description-input" id="company-profile-description" name="description" onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
       </div>
       <Button type="submit">Save profile</Button>
     </form>
@@ -196,6 +226,9 @@ export function RelationshipForm({
       </div>
       <div>
         <Label htmlFor="target-handle">Exact Company handle</Label>
+        <span className="company-field-hint">
+          Enter the private handle of the Company you want to collaborate with.
+        </span>
         <Input
           autoCapitalize="none"
           id="target-handle"
@@ -301,6 +334,9 @@ export function InternalProjectForm({
     >
       <div>
         <Label htmlFor="company-project-name">Project name</Label>
+        <span className="company-field-hint">
+          Starts inside this Company. You can invite collaborators later.
+        </span>
         <Input
           id="company-project-name"
           onChange={(event) => setName(event.target.value)}
@@ -308,9 +344,6 @@ export function InternalProjectForm({
           required
           value={name}
         />
-        <span className="company-field-hint">
-          Starts inside this Company. You can invite collaborators later.
-        </span>
       </div>
       <Button type="submit">Create Project</Button>
     </form>
@@ -420,7 +453,8 @@ export function ProjectCompanyInviteForm({
         >
           <div>
             <Label htmlFor={relationshipSelectId}>Relationship</Label>
-            <select
+            <NativeSelect
+              aria-label="Project relationship"
               disabled={Boolean(projectRelationshipId) || submitting}
               id={relationshipSelectId}
               onChange={(event) => {
@@ -433,15 +467,15 @@ export function ProjectCompanyInviteForm({
               }}
               value={selectedRelationshipId}
             >
-              {eligibleRelationships.map((item) => (
-                <option
+            {eligibleRelationships.map((item) => (
+                <NativeSelectOption
                   key={item.relationship._id}
                   value={item.relationship._id}
                 >
                   {item.relationship.name}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
+            </NativeSelect>
             <span className="company-field-hint">
               {projectRelationshipId
                 ? "Invitations stay within this Project’s Relationship."
@@ -450,7 +484,8 @@ export function ProjectCompanyInviteForm({
           </div>
           <div>
             <Label htmlFor={companySelectId}>Company</Label>
-            <select
+            <NativeSelect
+              aria-label="Company to invite"
               disabled={submitting}
               id={companySelectId}
               onChange={(event) => {
@@ -463,11 +498,11 @@ export function ProjectCompanyInviteForm({
               value={selectedCompanyId}
             >
               {selectedRelationship?.companies.map((company) => (
-                <option key={company._id} value={company._id}>
+                <NativeSelectOption key={company._id} value={company._id}>
                   {company.displayName}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <Button disabled={!selectedCompanyId || submitting} type="submit">
             {submitting ? "Sending invitation…" : "Invite Company"}
@@ -540,6 +575,7 @@ export function SharedProjectForm({
         <Label htmlFor="shared-project-name">Project name</Label>
         <Input
           id="shared-project-name"
+          name="projectName"
           onChange={(event) => setName(event.target.value)}
           required
           value={name}
@@ -547,21 +583,24 @@ export function SharedProjectForm({
       </div>
       <div>
         <Label htmlFor="shared-project-relationship">Relationship</Label>
-        <select
+        <NativeSelect
+          aria-label="Project relationship"
+          autoComplete="off"
           id="shared-project-relationship"
+          name="relationshipId"
           onChange={(event) =>
             setRelationshipId(event.target.value as Id<"relationships">)
           }
           required
           value={relationshipId}
         >
-          <option value="">Select Relationship</option>
+          <NativeSelectOption value="">Select Relationship</NativeSelectOption>
           {relationships.map((item) => (
-            <option key={item.relationship._id} value={item.relationship._id}>
+            <NativeSelectOption key={item.relationship._id} value={item.relationship._id}>
               {item.relationship.name}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
         <span className="company-field-hint">
           {targets.length
             ? `Invites ${targets.map((company) => company.displayName).join(", ")}`

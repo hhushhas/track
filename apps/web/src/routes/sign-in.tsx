@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useConvex } from 'convex/react'
 import { Eye, EyeOff, KeyRound, Lock, Mail, MessageSquareText, Search, ShieldCheck } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
 import TrackLoader from '#/components/TrackLoader'
+import { appToast, queueToastAfterNavigation } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import {
@@ -19,6 +20,7 @@ import { authClient } from '../lib/auth-client'
 
 const pendingSetPasswordEmailKey = 'track-pending-set-password-email'
 const supportEmail = 'q9labs.ai@gmail.com'
+const emailAuthHintTimeoutMs = 5000
 
 type SignInVariant = 'default' | 'conversation-a' | 'conversation-b'
 
@@ -118,6 +120,18 @@ function getPasswordMessage(error: unknown) {
   return 'Could not continue. Check the details and try again.'
 }
 
+async function getEmailAuthHintWithTimeout(
+  convex: ReturnType<typeof useConvex>,
+  email: string,
+) {
+  return await Promise.race([
+    convex.query(api.auth.getEmailAuthHint, { email }),
+    new Promise<null>((resolve) => {
+      window.setTimeout(() => resolve(null), emailAuthHintTimeoutMs)
+    }),
+  ])
+}
+
 export function SignInExperience({ variant }: { variant: SignInVariant }) {
   const convex = useConvex()
   const navigate = useNavigate()
@@ -133,11 +147,17 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
   })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const messageRef = useRef<HTMLParagraphElement>(null)
   const pendingSetPasswordEmail = useMemo(() => {
     if (typeof window === 'undefined') return ''
     return window.localStorage.getItem(pendingSetPasswordEmailKey) ?? ''
   }, [mode])
   const authenticatedDestination = getAuthenticatedSignInDestination(Boolean(session.data), mode)
+
+  useEffect(() => {
+    if (!message) return
+    requestAnimationFrame(() => messageRef.current?.focus())
+  }, [message])
 
   useEffect(() => {
     if (!authenticatedDestination) return
@@ -149,9 +169,12 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
     setMessage('')
     try {
       await enableDevAuthBypass()
+      appToast.success('Signed in', 'Development workspace access is ready.')
       await navigate({ to: '/workspace' })
     } catch {
-      setMessage('Demo sign-in is unavailable in this development environment.')
+      const errorMessage = 'Demo sign-in is unavailable in this development environment.'
+      setMessage(errorMessage)
+      appToast.error('Sign-in failed', errorMessage)
     } finally {
       setBusy(false)
     }
@@ -172,14 +195,18 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         ).toString(),
       })
       if (result.error) {
-        setMessage(getPasswordMessage(result.error))
+        const errorMessage = getPasswordMessage(result.error)
+        setMessage(errorMessage)
+        appToast.error('Google sign-in failed', errorMessage)
         return
       }
       if (result.data?.url) {
         window.location.href = result.data.url
       }
     } catch (error) {
-      setMessage(getPasswordMessage(error))
+      const errorMessage = getPasswordMessage(error)
+      setMessage(errorMessage)
+      appToast.error('Google sign-in failed', errorMessage)
     } finally {
       setBusy(false)
     }
@@ -217,10 +244,13 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         }
         const result = await client.setPassword({ newPassword: passwordValue })
         if (result.error) {
-          setMessage(getPasswordMessage(result.error))
+          const errorMessage = getPasswordMessage(result.error)
+          setMessage(errorMessage)
+          appToast.error('Password not added', errorMessage)
           return
         }
         window.localStorage.removeItem(pendingSetPasswordEmailKey)
+        appToast.success('Password added', 'Your login methods are up to date.')
         await navigate({ to: '/workspace' })
         return
       }
@@ -233,25 +263,13 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
           callbackURL: new URL('/workspace', window.location.origin).toString(),
         })
         if (result.error) {
-          setMessage(getPasswordMessage(result.error))
+          const errorMessage = getPasswordMessage(result.error)
+          setMessage(errorMessage)
+          appToast.error('Account not created', errorMessage)
           return
         }
+        queueToastAfterNavigation({ type: 'success', title: 'Account created', description: 'Welcome to Track.' })
         finishEmailAuthHandoff()
-        return
-      }
-
-      const hint = await convex.query(api.auth.getEmailAuthHint, { email: normalizedEmail })
-      if (hint.status === 'new') {
-        setMode('confirm-new')
-        setConfirmPassword('')
-        return
-      }
-      if (hint.status === 'google_only' || hint.status === 'existing_without_password') {
-        setMode('google-proof')
-        return
-      }
-      if (hint.status === 'invalid') {
-        setMessage('Enter a valid email address.')
         return
       }
 
@@ -261,15 +279,35 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
         password: passwordValue,
         callbackURL: new URL('/workspace', window.location.origin).toString(),
       })
-      if (result.error) {
-        setMessage('Email or password is incorrect.')
+      if (!result.error) {
+        if (shouldFinishEmailAuthHandoff(result.data)) {
+          queueToastAfterNavigation({ type: 'success', title: 'Signed in', description: 'Welcome back.' })
+          finishEmailAuthHandoff()
+        }
         return
       }
-      if (shouldFinishEmailAuthHandoff(result.data)) {
-        finishEmailAuthHandoff()
+
+      const hint = await getEmailAuthHintWithTimeout(convex, normalizedEmail)
+      if (hint?.status === 'new') {
+        setMode('confirm-new')
+        setConfirmPassword('')
+        return
       }
+      if (hint?.status === 'google_only' || hint?.status === 'existing_without_password') {
+        setMode('google-proof')
+        return
+      }
+      if (hint?.status === 'invalid') {
+        setMessage('Enter a valid email address.')
+        return
+      }
+      const errorMessage = 'Email or password is incorrect.'
+      setMessage(errorMessage)
+      appToast.error('Sign-in failed', errorMessage)
     } catch (error) {
-      setMessage(getPasswordMessage(error))
+      const errorMessage = getPasswordMessage(error)
+      setMessage(errorMessage)
+      appToast.error('Sign-in failed', errorMessage)
     } finally {
       setBusy(false)
     }
@@ -367,10 +405,15 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
                 <label>
                   <span>Email</span>
                   <Input
+                    aria-describedby={message ? 'sign-in-error' : undefined}
+                    aria-invalid={Boolean(message)}
                     autoComplete="email"
                     className="track-auth-input-with-icon"
                     onChange={(event) => setEmail(event.currentTarget.value)}
                     placeholder="you@example.com"
+                    name="email"
+                    required
+                    spellCheck={false}
                     type="email"
                     value={email}
                   />
@@ -380,10 +423,14 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
               <label>
                 <span>Password</span>
                 <Input
+                  aria-describedby={message ? 'sign-in-error' : undefined}
+                  aria-invalid={Boolean(message)}
                   autoComplete={mode === 'continue' ? 'current-password' : 'new-password'}
                   className="track-auth-input-with-icon track-auth-input-with-action"
                   onChange={(event) => setPassword(event.currentTarget.value)}
                   placeholder="At least 10 characters"
+                  name="password"
+                  required
                   type={passwordVisible ? 'text' : 'password'}
                   value={password}
                 />
@@ -401,10 +448,14 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
                 <label>
                   <span>Confirm password</span>
                   <Input
+                    aria-describedby={message ? 'sign-in-error' : undefined}
+                    aria-invalid={Boolean(message)}
                     autoComplete="new-password"
                     className="track-auth-input-with-icon track-auth-input-with-action"
                     onChange={(event) => setConfirmPassword(event.currentTarget.value)}
                     placeholder="Repeat password"
+                    name="confirmPassword"
+                    required
                     type={confirmPasswordVisible ? 'text' : 'password'}
                     value={confirmPassword}
                   />
@@ -474,7 +525,7 @@ export function SignInExperience({ variant }: { variant: SignInVariant }) {
             </Button>
           ) : null}
 
-          {message ? <p className="track-auth-error">{message}</p> : null}
+          {message ? <p aria-live="assertive" className="track-auth-error" id="sign-in-error" ref={messageRef} role="alert" tabIndex={-1}>{message}</p> : null}
 
           <div className="track-auth-note">
             <ShieldCheck size={16} />

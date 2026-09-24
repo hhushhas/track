@@ -136,11 +136,22 @@ export async function uploadPendingAttachment({
   let storageId = intent.storageId
   if (!storageId) {
     if (!intent.uploadUrl) throw new Error('upload_intent_unavailable')
-    const uploadResponse = await fetch(intent.uploadUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': contentType },
-      body: pendingAttachment.file,
-    })
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 120_000)
+    let uploadResponse: Response
+    try {
+      uploadResponse = await fetch(intent.uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType },
+        body: pendingAttachment.file,
+        signal: controller.signal,
+      })
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('upload_timeout')
+      throw error
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
     if (!uploadResponse.ok) throw new Error('upload_failed')
     const uploadResult: unknown = await uploadResponse.json()
     if (!isUploadResponse(uploadResult)) throw new Error('upload_response_invalid')

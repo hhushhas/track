@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
+import { fileURLToPath } from 'node:url'
 import { devtools } from '@tanstack/devtools-vite'
 
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
@@ -8,6 +9,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { nitro } from 'nitro/vite'
 
 const config = defineConfig(({ mode }) => {
+  const webRoot = fileURLToPath(new URL('.', import.meta.url)).replaceAll('\\', '/').replace(/\/$/, '')
+  const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url)).replaceAll('\\', '/').replace(/\/$/, '')
   const env = loadEnv(mode, '../..', '')
   for (const [key, value] of Object.entries(env)) {
     process.env[key] ??= value
@@ -16,22 +19,61 @@ const config = defineConfig(({ mode }) => {
   process.env.VITE_CONVEX_SITE_URL ??= env.CONVEX_SITE_URL
 
   return {
+    cacheDir: '../../node_modules/.vite',
     envDir: '../..',
+    server: {
+      host: 'localhost',
+      port: 3000,
+      fs: {
+        allow: [
+          workspaceRoot,
+          webRoot,
+        ],
+      },
+    },
     resolve: {
       dedupe: ['react', 'react-dom'],
       tsconfigPaths: true,
     },
     plugins: [
+      {
+        name: 'track-dev-workspace-url-bridge',
+        apply: 'serve',
+        configureServer(server) {
+          server.middlewares.use((request, _response, next) => {
+            const requestUrl = request.url
+            if (!requestUrl) {
+              next()
+              return
+            }
+
+            const [pathname, query] = requestUrl.split('?')
+            const targetRoot = pathname.startsWith('/src/')
+              ? webRoot
+              : pathname.startsWith('/node_modules/.vite/')
+                ? workspaceRoot
+                : undefined
+
+            if (!targetRoot) {
+              next()
+              return
+            }
+
+            request.url = `/@fs/${targetRoot}${pathname}${query ? `?${query}` : ''}`
+            next()
+          })
+        },
+      },
       devtools(),
+      tailwindcss(),
+      tanstackStart(),
+      viteReact(),
       nitro({
         compatibilityDate: '2026-07-01',
         preset: 'cloudflare-module',
         cloudflare: { wrangler: { name: 'track-web' } },
         rollupConfig: { external: [/^@sentry\//] },
       }),
-      tailwindcss(),
-      tanstackStart(),
-      viteReact(),
     ],
   }
 })

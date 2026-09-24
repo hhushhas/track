@@ -1,16 +1,22 @@
-export const releaseFeatureNames = ['companyModel', 'tasks', 'threads'] as const
+export const releaseFeatureNames = ['companyModel', 'tasks', 'threads', 'projectSnapshots'] as const
 export type ReleaseFeatureName = (typeof releaseFeatureNames)[number]
 
 export type ReleaseFeatureFlags = Readonly<Record<ReleaseFeatureName, boolean>>
+export type ReleaseFeatureProjection = Readonly<
+  Omit<ReleaseFeatureFlags, 'projectSnapshots'> &
+  Partial<Pick<ReleaseFeatureFlags, 'projectSnapshots'>>
+>
 
 export const defaultReleaseFeatureFlags = Object.freeze({
   companyModel: true,
+  projectSnapshots: true,
   tasks: true,
   threads: true,
 }) satisfies ReleaseFeatureFlags
 
 export const unavailableReleaseFeatureFlags = Object.freeze({
   companyModel: false,
+  projectSnapshots: false,
   tasks: false,
   threads: false,
 }) satisfies ReleaseFeatureFlags

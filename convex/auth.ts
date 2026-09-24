@@ -15,17 +15,24 @@ import { devAuthBypassUser, isDevAuthBypassEnabled } from './lib/devAuth'
 import { cancelProjectSnapshotForSourceRemoval } from './lib/projectSnapshotLock'
 
 const siteUrl = process.env.SITE_URL ?? process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+const developmentOrigins = process.env.NODE_ENV === 'production'
+  ? []
+  : [process.env.DEV_WEB_ORIGIN]
 const trustedOrigins = [
   siteUrl,
+  ...developmentOrigins,
   'https://track.q9labs.ai',
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
   'http://localhost:8081',
   'http://localhost:8082',
   'http://localhost:8083',
   'track://',
   'exp://',
   'https://appleid.apple.com',
-]
+].filter((origin): origin is string => Boolean(origin))
 const stepUpFreshMs = 10 * 60 * 1000
 
 export const authComponent = createClient<DataModel>(components.betterAuth)

@@ -53,6 +53,12 @@ export async function shareAttachment(target: AttachmentTarget) {
 
 /** Human-readable failure copy for a download or share attempt. */
 export function attachmentActionError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.trim() || 'Download failed';
+  const message = error instanceof Error ? error.message : '';
+  if (/network|fetch|offline|timed?\s*out|connection/i.test(message)) {
+    return 'The attachment could not be downloaded. Check your connection and try again.';
+  }
+  if (/permission|forbidden|unauthori[sz]ed/i.test(message)) {
+    return 'You no longer have permission to open this attachment.';
+  }
+  return 'The attachment could not be opened. Please try again.';
 }

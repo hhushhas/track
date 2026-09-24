@@ -146,9 +146,12 @@ export async function requireTaskBoardAccess(
   actor: AuthenticatedActor,
   boardId: Id<'taskBoards'>,
   identity: TaskRequestIdentity,
+  expectedProjectId: Id<'projects'>,
 ) {
   const board = await ctx.db.get(boardId)
-  if (!board) throw new Error('task_destination_invalid')
+  if (!board || board.projectId !== expectedProjectId) {
+    throw new Error('task_destination_invalid')
+  }
   const access = await resolveTaskRequestContext(ctx, actor, board.projectId, identity, board.groupId)
   const canReadScope = board.groupId
     ? access.capabilities.canReadChannel

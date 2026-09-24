@@ -1,7 +1,15 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { Button } from '#/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
 
@@ -18,8 +26,8 @@ function getInitialMode(): ThemeMode {
   return 'auto'
 }
 
-const THEME_COLOR_LIGHT = '#faf9f7'
-const THEME_COLOR_DARK = '#151412'
+const THEME_COLOR_LIGHT = '#f6f6f4'
+const THEME_COLOR_DARK = '#171716'
 
 function applyThemeColor(resolved: 'light' | 'dark') {
   const meta = document.querySelector('meta[name="theme-color"]')
@@ -45,7 +53,11 @@ function applyThemeMode(mode: ThemeMode) {
   applyThemeColor(resolved)
 }
 
-export default function ThemeToggle() {
+type ThemeToggleProps = {
+  showLabel?: boolean
+}
+
+export default function ThemeToggle({ showLabel = false }: ThemeToggleProps) {
   const [mode, setMode] = useState<ThemeMode>('auto')
 
   useEffect(() => {
@@ -68,29 +80,39 @@ export default function ThemeToggle() {
     }
   }, [mode])
 
-  function toggleMode() {
-    const nextMode: ThemeMode =
-      mode === 'light' ? 'dark' : mode === 'dark' ? 'auto' : 'light'
+  function setThemeMode(nextMode: ThemeMode) {
     setMode(nextMode)
     applyThemeMode(nextMode)
     window.localStorage.setItem('theme', nextMode)
   }
 
-  const label =
-    mode === 'auto'
-      ? 'Theme mode: auto (system). Click to switch to light mode.'
-      : `Theme mode: ${mode}. Click to switch mode.`
+  const modeLabel = mode === 'auto' ? 'System' : mode === 'dark' ? 'Dark' : 'Light'
   const Icon = mode === 'auto' ? Monitor : mode === 'dark' ? Moon : Sun
 
   return (
-    <Button
-      aria-label={label}
-      className="track-theme-toggle"
-      onClick={toggleMode}
-      title={label}
-      type="button"
-    >
-      <Icon size={14} />
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Appearance: ${modeLabel}`}
+        className={showLabel ? 'track-theme-toggle track-theme-toggle-labeled' : 'track-theme-toggle'}
+        title={`Appearance: ${modeLabel}`}
+      >
+        <Icon aria-hidden="true" size={14} />
+        {showLabel ? <><span>Appearance</span><small>{modeLabel}</small></> : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="track-theme-menu" side="top" sideOffset={8}>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Appearance</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            aria-label="Color mode"
+            onValueChange={(value) => setThemeMode(value as ThemeMode)}
+            value={mode}
+          >
+            <DropdownMenuRadioItem value="auto"><Monitor aria-hidden="true" />System</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="light"><Sun aria-hidden="true" />Light</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="dark"><Moon aria-hidden="true" />Dark</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

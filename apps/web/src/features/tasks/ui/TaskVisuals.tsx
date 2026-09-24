@@ -3,6 +3,7 @@ import { getTaskDueState } from '@track/shared/tasks'
 
 import type { Doc } from '../../../../../../convex/_generated/dataModel'
 import type { TaskListItem } from '../task-types'
+import { formatDateInputValue } from '../task-date'
 
 type StateCategory = Doc<'taskWorkflowStates'>['category']
 type Priority = Doc<'tasks'>['priority']
@@ -20,7 +21,7 @@ export function PriorityGlyph({ priority, showLabel = false }: { priority: Prior
   )
 }
 
-export function TaskAvatar({ member, size = 'default' }: { member: Doc<'projectMembers'> | null; size?: 'default' | 'rail' }) {
+export function TaskAvatar({ member, size = 'default' }: { member: Doc<'projectMembers'> | null; size?: 'default' | 'rail' | 'table' }) {
   const name = member?.userDisplayNameSnapshot ?? 'Unassigned'
   const initials = member
     ? name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
@@ -30,7 +31,7 @@ export function TaskAvatar({ member, size = 'default' }: { member: Doc<'projectM
 
 export function DueChip({ dueDate, terminal = false }: { dueDate?: string; terminal?: boolean }) {
   if (!dueDate) return null
-  const today = new Date().toLocaleDateString('en-CA')
+  const today = formatDateInputValue(new Date())
   const overdue = getTaskDueState(dueDate, today, terminal) === 'overdue'
   return (
     <span className={`task-due-chip${overdue ? ' overdue' : ''}`}>
@@ -42,6 +43,27 @@ export function DueChip({ dueDate, terminal = false }: { dueDate?: string; termi
 
 export function formatTaskDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+export function formatTaskDateLong(value: string) {
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+export function formatTaskCommentCount(count: number) {
+  return count >= 101 ? '100+' : String(count)
+}
+
+export function PriorityPill({ priority }: { priority: Priority }) {
+  return <span className={`task-priority-pill ${priority}`}>{priority === 'none' ? 'No priority' : priority}</span>
+}
+
+export function StateBadge({ state }: { state: Doc<'taskWorkflowStates'> | null }) {
+  return <span className="task-state-badge"><StateRing category={state?.category ?? 'backlog'} size="dense" />{state?.name ?? 'Unknown'}</span>
+}
+
+export function TaskLabelPill({ labels }: { labels: Array<Doc<'taskLabels'>> }) {
+  if (!labels.length) return <span className="task-muted">No label</span>
+  return <span className="task-label-pill">{labels[0].name}{labels.length > 1 ? ` +${labels.length - 1}` : ''}</span>
 }
 
 export function OriginCaption({ item, boardName }: { item: TaskListItem; boardName?: string }) {

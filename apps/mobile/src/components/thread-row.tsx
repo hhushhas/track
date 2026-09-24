@@ -2,7 +2,8 @@ import { parseMentions } from '@track/shared';
 import type { FunctionReturnType } from 'convex/server';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import type { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -35,11 +36,14 @@ type Props = {
   isFirstInGroup: boolean;
   isOwnMessage?: boolean;
   onLongPress: () => void;
+  /** Opens the source of a forwarded snapshot when still authorized. */
+  onOpenForwardSource?: () => void;
   /** Opens the Channel thread attached to this message. */
   onOpenThread?: () => void;
   /** Jumps to the message this one quotes. */
   onPressReply?: () => void;
   onSwipeReply?: () => void;
+  variant?: 'conversation' | 'thread';
 };
 
 export function ThreadRow({
@@ -47,11 +51,14 @@ export function ThreadRow({
   isFirstInGroup,
   isOwnMessage,
   onLongPress,
+  onOpenForwardSource,
   onOpenThread,
   onPressReply,
   onSwipeReply,
+  variant = 'conversation',
 }: Props) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const translateX = useSharedValue(0);
 
   const gesture = Gesture.Pan()
@@ -63,9 +70,9 @@ export function ThreadRow({
     })
     .onEnd((e) => {
       if (e.translationX > SWIPE_THRESHOLD && onSwipeReply) {
-        runOnJS(onSwipeReply)();
+        scheduleOnRN(onSwipeReply);
       }
-      translateX.value = withSpring(0, { damping: 20 });
+      translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
     });
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -85,7 +92,10 @@ export function ThreadRow({
             <PlatformIcon color={theme.textSecondary} name="reply" size={16} />
           </View>
         </Animated.View>
-        <Animated.View style={[isFirstInGroup ? styles.groupStart : styles.grouped, animatedStyle]}>
+        <Animated.View style={[
+          isFirstInGroup ? (variant === 'thread' ? styles.threadGroupStart : styles.groupStart) : styles.grouped,
+          animatedStyle,
+        ]}>
           {item.kind === 'assistant' ? (
             <AssistantMessage
               isFirstInGroup={isFirstInGroup}
@@ -99,9 +109,11 @@ export function ThreadRow({
               isOwnMessage={Boolean(isOwnMessage)}
               message={item.item}
               onLongPress={onLongPress}
+              onOpenForwardSource={onOpenForwardSource}
               onOpenThread={onOpenThread}
               onPressReply={onPressReply}
               timeLabel={fmtTime(item.item.message.createdAt)}
+              variant={variant}
             />
           )}
         </Animated.View>
@@ -197,5 +209,8 @@ const styles = StyleSheet.create({
   },
   swipeContainer: {
     position: 'relative',
+  },
+  threadGroupStart: {
+    paddingTop: Spacing.two,
   },
 });

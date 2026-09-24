@@ -14,3 +14,7 @@ export function hapticMedium() {
 export function hapticDestructive() {
   if (native) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 }
+
+export function hapticSuccess() {
+  if (native) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+}

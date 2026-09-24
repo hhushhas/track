@@ -10,6 +10,7 @@ import type { GroupReference } from '../group-types'
 import type { MessageCitationPreview } from '../thread-item-components'
 import { AssistantInlineTasks, CreateTaskFromAssistant } from '#/features/tasks/ConversationTaskActions'
 import type { TaskIdentity } from '#/features/tasks/task-types'
+import { TrackMorphMark } from '#/components/TrackMorphMark'
 import { MediaPreview } from './MediaPreview'
 import type { MediaPreviewAttachment } from './MediaPreview'
 
@@ -63,7 +64,10 @@ export function AssistantAnswer({
         {isFailed ? (
           <AssistantFailure errorCode={progress.errorCode} />
         ) : isThinking ? (
-          <TextShimmer>{progress.label}</TextShimmer>
+          <span className="track-assistant-thinking" role="status" aria-live="polite">
+            <TrackMorphMark className="track-morph-mark-inline" />
+            <TextShimmer>{progress.label}</TextShimmer>
+          </span>
         ) : answer ? (
           <MarkdownText
             className="track-markdown"

@@ -22,11 +22,12 @@ import {
 } from './lib/companyInvitations'
 import {
   bumpProjectParticipants,
-  createCompanyProject,
+  createCompanyProject as lifecycleCreateCompanyProject,
   createCompanyProjectMembership,
   requireEligibleCompanyUser,
 } from './lib/companyProjectLifecycle'
 import { removeTaskMemberFromScope } from './lib/taskLifecycle'
+import { listArchivedMemberSnapshotsPage } from './lib/projectExitArchive'
 
 const initialMember = v.object({
   userId: v.id('users'),
@@ -34,7 +35,7 @@ const initialMember = v.object({
 })
 
 async function createProjectCompanyInvitations(
-  ctx: Parameters<typeof createCompanyProject>[0],
+  ctx: Parameters<typeof lifecycleCreateCompanyProject>[0],
   input: {
     projectId: Id<'projects'>
     invitingCompanyId: Id<'companies'>
@@ -246,7 +247,7 @@ export const createInternal = mutation({
     }
     const name = args.name.trim()
     if (!name) throw new Error('project_name_required')
-    const { projectId } = await createCompanyProject(ctx, {
+    const { projectId } = await lifecycleCreateCompanyProject(ctx, {
       name,
       description: args.description?.trim() || undefined,
       owningCompanyId: company._id,
@@ -267,6 +268,123 @@ export const createInternal = mutation({
       after: { name, owningCompanyId: company._id },
     })
     return { projectId }
+  },
+})
+
+// Compatibility entry point used by older clients. New clients should use createInternal.
+export const createCompanyProject = mutation({
+  args: { actingCompanyId: v.id('companies'), name: v.string(), description: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const { company } = await requireCompanyAdmin(ctx, actor, args.actingCompanyId)
+    const name = args.name.trim()
+    if (!name) throw new Error('project_name_required')
+    const result = await lifecycleCreateCompanyProject(ctx, {
+      name,
+      description: args.description?.trim() || undefined,
+      owningCompanyId: company._id,
+      owningCompanyDisplayName: company.displayName,
+      origin: 'single_company',
+      status: 'active',
+      createdBy: actor.userId,
+      initialMembers: [{ userId: actor.userId, role: 'manager' }],
+    })
+    const general = await ctx.db.query('groups').withIndex('by_project', (q) => q.eq('projectId', result.projectId)).first()
+    const membership = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) => q.eq('projectId', result.projectId).eq('userId', actor.userId)).first()
+    if (!general || !membership) throw new Error('project_creation_incomplete')
+    return { ...result, projectMemberId: membership._id, groupId: general._id }
+  },
+})
+
+export const getOverview = query({
+  args: { projectId: v.id('projects'), actingCompanyId: v.id('companies'), projectMemberId: v.id('projectMembers') },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await resolveCompanyProjectAccess(ctx, actor, args)
+    if (access.entitlement) {
+      const memberSnapshots = access.entitlement.snapshotOperationId
+        ? (await listArchivedMemberSnapshotsPage(ctx, {
+            operationId: access.entitlement.snapshotOperationId,
+            cursor: null,
+            numItems: 101,
+          })).page
+        : (access.entitlement.memberSnapshots ?? [])
+      const archivedCompanies = new Map<string, { _id: Id<'companies'>; displayName: string }>()
+      for (const snapshot of memberSnapshots) {
+        if (snapshot.company) archivedCompanies.set(String(snapshot.company._id), snapshot.company)
+      }
+      const archivedManagers = memberSnapshots
+        .filter((snapshot) => snapshot.membership.role === 'manager')
+        .map((snapshot) => snapshot.user)
+      return {
+        project: access.entitlement.projectSnapshot ?? access.project,
+        creator: null,
+        companies: [...archivedCompanies.values()].slice(0, 20),
+        participantsTruncated: archivedCompanies.size > 20,
+        managers: archivedManagers.slice(0, 20),
+        managersTruncated: archivedManagers.length > 20,
+        memberCount: Math.min(memberSnapshots.length, 100),
+        memberCountTruncated: memberSnapshots.length > 100,
+      }
+    }
+    const [creator, companies, members] = await Promise.all([
+      ctx.db.get(access.project.createdBy),
+      ctx.db.query('projectCompanies').withIndex('by_project_status', (q) => q.eq('projectId', access.project._id).eq('status', 'active')).take(21),
+      ctx.db.query('projectMembers').withIndex('by_project_status', (q) => q.eq('projectId', access.project._id).eq('status', 'active')).take(101),
+    ])
+    const companyRows = await Promise.all(companies.slice(0, 20).map(async (row) => {
+      const company = await ctx.db.get(row.companyId)
+      return company ? { _id: company._id, displayName: company.displayName, status: company.status } : null
+    }))
+    const managers = await Promise.all(members.slice(0, 20).map(async (member) => {
+      if (member.role !== 'manager') return null
+      const user = await ctx.db.get(member.userId)
+      return user ? { _id: user._id, displayName: user.displayName } : null
+    }))
+    return { project: access.project, creator, companies: companyRows.filter((company): company is NonNullable<typeof company> => company !== null), participantsTruncated: companies.length > 20, managers: managers.filter((manager): manager is NonNullable<typeof manager> => manager !== null), managersTruncated: members.length > 100, memberCount: members.length, memberCountTruncated: members.length > 100 }
+  },
+})
+
+export const listEligibleCompanyMembers = query({
+  args: { projectId: v.id('projects'), actingCompanyId: v.id('companies'), projectMemberId: v.id('projectMembers') },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    await requireCompanyProjectManager(ctx, actor, args)
+    const memberships = await ctx.db.query('companyMembers').withIndex('by_company', (q) => q.eq('companyId', args.actingCompanyId)).take(501)
+    return Promise.all(memberships.filter((m) => m.status === 'active').map(async (membership) => ({ membership: { _id: membership._id, userId: membership.userId, status: membership.status }, user: await ctx.db.get(membership.userId) })))
+  },
+})
+
+export const updateDetails = mutation({
+  args: { projectId: v.id('projects'), actingCompanyId: v.id('companies'), projectMemberId: v.id('projectMembers'), name: v.optional(v.string()), description: v.optional(v.string()), label: v.optional(v.string()), iconStorageId: v.optional(v.union(v.id('_storage'), v.null())) },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await requireCompanyProjectManager(ctx, actor, args)
+    if (args.name === undefined && args.description === undefined && args.label === undefined && args.iconStorageId === undefined) {
+      throw new Error('project_update_required')
+    }
+    const name = args.name?.trim() ?? access.project.name
+    const description = args.description === undefined ? access.project.description : args.description.trim() || undefined
+    const clientLabel = args.label === undefined ? access.project.clientLabel : args.label.trim() || undefined
+    if (!name) throw new Error('project_name_required')
+    if (name.length > 120) throw new Error('project_name_too_long')
+    if (description && description.length > 2000) throw new Error('project_description_too_long')
+    if (clientLabel && clientLabel.length > 80) throw new Error('project_label_too_long')
+    const now = Date.now()
+    const revision = (access.project.revision ?? 0) + 1
+    await ctx.db.patch(access.project._id, { name, description, clientLabel, iconStorageId: args.iconStorageId === undefined ? access.project.iconStorageId : args.iconStorageId ?? undefined, revision, updatedAt: now })
+    await appendAuditEvent(ctx, {
+      projectId: access.project._id,
+      actorId: actor.userId,
+      actorProjectMemberId: access.projectMember._id,
+      actingCompanyId: access.company._id,
+      entityType: 'project',
+      entityId: access.project._id,
+      action: 'project.updated',
+      before: { name: access.project.name, description: access.project.description, clientLabel: access.project.clientLabel, revision: access.project.revision ?? 0 },
+      after: { name, description, clientLabel, revision },
+    })
+    return { projectId: access.project._id }
   },
 })
 
@@ -317,16 +435,16 @@ export const propose = mutation({
       const targetCompany = await ctx.db.get(targetCompanyId)
       if (!targetCompany || targetCompany.status !== 'active') throw new Error('mapped_company_unavailable')
     }
-    if (!args.initialMembers.some((member) => member.role === 'manager')) {
-      throw new Error('initial_manager_required')
-    }
-    for (const member of args.initialMembers) {
+    const initialMemberMap = new Map(args.initialMembers.map((member) => [member.userId, member]))
+    initialMemberMap.set(actor.userId, { userId: actor.userId, role: 'manager' })
+    const initialMembers = Array.from(initialMemberMap.values())
+    for (const member of initialMembers) {
       await requireEligibleCompanyUser(ctx, company._id, member.userId)
     }
     const name = args.name.trim()
     if (!name) throw new Error('project_name_required')
     const now = Date.now()
-    const { projectId } = await createCompanyProject(ctx, {
+    const { projectId } = await lifecycleCreateCompanyProject(ctx, {
       name,
       description: args.description?.trim() || undefined,
       relationshipId: relationship._id,
@@ -336,7 +454,7 @@ export const propose = mutation({
       origin: 'shared',
       status: 'proposed',
       createdBy: actor.userId,
-      initialMembers: args.initialMembers,
+      initialMembers,
     })
     const invitations = await createProjectCompanyInvitations(ctx, {
         projectId,
@@ -459,7 +577,18 @@ export const decideInvitation = mutation({
     const now = Date.now()
     if (invitation.expiresAt <= now) {
       await ctx.db.patch(invitation._id, { status: 'expired', updatedAt: now })
-      throw new Error('invitation_expired')
+      await appendAuditEvent(ctx, {
+        companyId: company._id,
+        projectId: invitation.projectId,
+        actorId: actor.userId,
+        actingCompanyId: company._id,
+        entityType: 'projectCompanyInvitation',
+        entityId: invitation._id,
+        action: 'project_company_invitation.expired',
+        before: { status: 'pending' },
+        after: { status: 'expired' },
+      })
+      return { invitationId: invitation._id, status: 'expired' as const }
     }
     if (args.decision === 'decline') {
       await ctx.db.patch(invitation._id, { status: 'declined', decidedBy: actor.userId, decidedAt: now, updatedAt: now })
@@ -642,6 +771,16 @@ export const updateMember = mutation({
         .collect()
       await Promise.all(stewardMemberships.filter((membership) => membership.isSteward).map((membership) =>
         ctx.db.patch(membership._id, { isSteward: false, updatedAt: now })),
+      )
+    }
+    if (target.role !== 'manager' && args.role === 'manager') {
+      const channelMemberships = await ctx.db
+        .query('groupMembers')
+        .withIndex('by_project_member_status', (q) =>
+          q.eq('projectMemberId', target._id).eq('status', 'active'))
+        .collect()
+      await Promise.all(channelMemberships.map((membership) =>
+        ctx.db.patch(membership._id, { isSteward: true, updatedAt: now })),
       )
     }
     if (args.status === 'removed' || args.status === 'suspended') {

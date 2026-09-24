@@ -1,10 +1,12 @@
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from 'react'
 
-import { Navigate } from '@tanstack/react-router'
+import { Link, Navigate } from '@tanstack/react-router'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '#/components/ui/sheet'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { GroupChatPage } from '#/features/workspace/components/GroupChatPage'
 import { WorkspaceHeader } from '#/features/workspace/components/WorkspaceHeader'
+import { WorkspaceMembersDialog } from '#/features/workspace/components/WorkspaceMembersDialog'
 import { ProjectMemoryImportDialog } from '#/features/workspace/components/ProjectMemoryImportDialog'
 import { WorkspaceRail } from '#/features/workspace/components/WorkspaceRail'
 import { WorkspaceSidebar } from '#/features/workspace/components/WorkspaceSidebar'
@@ -26,9 +28,13 @@ import { ChatSearchPopover } from '#/features/workspace/search/ChatSearchPopover
 import type { ProjectSearchFilter } from '#/features/workspace/search/ProjectSearchDialog'
 import { ProjectSearchDialog } from '#/features/workspace/search/ProjectSearchDialog'
 import { ProjectSettingsPage } from '#/features/workspace/settings/ProjectSettingsPage'
+import { ProjectChannelsPage } from './ProjectChannelsPage'
+import { ProjectEvidencePage } from './ProjectEvidencePage'
+import { ProjectOverviewPage } from './ProjectOverviewPage'
+import { WorkspaceHomePage } from './WorkspaceHomePage'
 import { getSessionUser } from '#/features/workspace/workspace-session'
 
-type WorkspaceView = 'home' | 'project' | 'group' | 'settings'
+type WorkspaceView = 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 
 type WorkspacePageSurfaceModel = {
   attachments: ReturnType<typeof usePendingAttachments>
@@ -82,10 +88,13 @@ type WorkspacePageSurfaceModel = {
     loadingOlderMessages: boolean
     logoutConfirmOpen: boolean
     memoryImportOpen: boolean
+    membersDialogOpen: boolean
     mentionIndex: number
     mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
     mobileNavOpen: boolean
+    mobileRailOpen: boolean
     navCollapsed: boolean
+    navWidth: number
     projectSearchFilter: ProjectSearchFilter
     projectSearchOpen: boolean
     projectSearchQuery: string
@@ -102,6 +111,7 @@ type WorkspacePageSurfaceModel = {
     onActionError: (error: unknown) => void
     onComposerChange: (value: string, cursor: number) => void
     onMemoryImportBusyChange: (busy: boolean) => void
+    onMembersOpen: () => void
     onOpenProjectSearch: () => void
     loadOlderMessages: () => void
     onSearchClose: () => void
@@ -112,9 +122,13 @@ type WorkspacePageSurfaceModel = {
     setChatSearchQuery: Dispatch<SetStateAction<string>>
     setEmojiPickerOpen: Dispatch<SetStateAction<boolean>>
     setMemoryImportOpen: Dispatch<SetStateAction<boolean>>
+    setMembersDialogOpen: Dispatch<SetStateAction<boolean>>
     setMentionIndex: Dispatch<SetStateAction<number>>
     setMobileNavOpen: Dispatch<SetStateAction<boolean>>
+    setMobileRailOpen: Dispatch<SetStateAction<boolean>>
     setNavCollapsed: Dispatch<SetStateAction<boolean>>
+    setNavResizing: Dispatch<SetStateAction<boolean>>
+    setNavWidth: Dispatch<SetStateAction<number>>
     setLogoutConfirmOpen: Dispatch<SetStateAction<boolean>>
     setProjectSearchFilter: Dispatch<SetStateAction<ProjectSearchFilter>>
     setProjectSearchOpen: Dispatch<SetStateAction<boolean>>
@@ -146,6 +160,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
   } = model
   const {
     activeGroup,
+    activeChannelMembers,
     activeProject,
     activeProjectMembers,
     currentTrackUser,
@@ -172,8 +187,15 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         route.view === 'group' ? 'track-app-shell-with-rail' : '',
         route.view === 'group' && state.railCollapsed ? 'track-app-shell-rail-collapsed' : '',
       ].filter(Boolean).join(' ')}
-      style={{ '--track-rail-width': `${state.railWidth}px` } as CSSProperties}
+      style={{
+        '--track-nav-width': `${state.navWidth}px`,
+        '--track-rail-width': `${state.railWidth}px`,
+      } as CSSProperties}
     >
+      <a className="track-skip-link" href="#track-main-content">Skip to main content</a>
+      <p aria-live="polite" className="sr-only">
+        {route.view === 'group' && activeGroup ? `Opened #${activeGroup.name} conversation` : route.view === 'home' ? 'Opened workspace home' : route.view === 'settings' && activeProject ? `Opened ${activeProject.project.name} settings` : activeProject ? `Opened ${activeProject.project.name} channels` : 'Opened workspace'}
+      </p>
       <WorkspaceSidebar
         activeGroupId={state.activeGroupId}
         activeProject={activeProject}
@@ -188,12 +210,14 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         logoutConfirmOpen={state.logoutConfirmOpen}
         mobileNavOpen={state.mobileNavOpen}
         navCollapsed={state.navCollapsed}
+        navWidth={state.navWidth}
         onCreateGroup={dialogState.openGroupDialog}
         onCreateProject={dialogState.openProjectDialog}
         onLogoutConfirmOpenChange={update.setLogoutConfirmOpen}
         onMobileNavOpenChange={update.setMobileNavOpen}
-        onNavigateProjectSettings={navigation.navigateToProjectSettings}
         onNavCollapsedChange={update.setNavCollapsed}
+        onNavResizeStart={() => update.setNavResizing(true)}
+        onNavWidthChange={update.setNavWidth}
         onOpenProjectSearch={update.onOpenProjectSearch}
         onPreloadGroupRoute={navigation.preloadGroupRoute}
         onPreloadProjectRoute={navigation.preloadProjectRoute}
@@ -206,7 +230,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         visibleGroups={visibleGroups}
       />
 
-      <section className="track-workspace">
+      <section aria-label="Workspace content" className="track-workspace" id="track-main-content" tabIndex={-1}>
         <WorkspaceHeader
           activeGroup={activeGroup}
           activeProject={activeProject}
@@ -220,7 +244,9 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           onCreateGroup={dialogState.openGroupDialog}
           onFileSelected={(event) => void attachments.handleFileSelected(event)}
           onInvite={dialogState.openInviteDialog}
+          onMembersOpen={update.onMembersOpen}
           onMobileNavOpen={() => update.setMobileNavOpen(true)}
+          onMobileRailOpen={() => update.setMobileRailOpen(true)}
           onSearchToggle={update.onSearchToggle}
           view={route.view}
         />
@@ -248,7 +274,17 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           projectId={state.activeProjectId}
         />
 
-        {route.isProjectLoading || route.isGroupLoading ? (
+        {route.view !== 'home' && !route.isProjectLoading && state.activeProjectId && !activeProject ? (
+          <div className="track-empty" role="status">
+            <p className="mono-label m-0">Project unavailable</p>
+            <p>This Project link is outdated or you no longer have access.</p>
+            <Link className="track-button track-button-primary" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company">
+              Return to Projects
+            </Link>
+          </div>
+        ) : route.view === 'home' ? (
+          <WorkspaceHomePage projects={projectItems} />
+        ) : route.isProjectLoading || route.isGroupLoading ? (
           <WorkspaceRouteLoader label={route.view === 'group' ? 'Opening channel conversation' : route.view === 'settings' ? 'Loading project settings' : 'Loading project channels'} />
         ) : route.view === 'group' ? (
           <GroupChatPage
@@ -320,6 +356,19 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             visibleMessages={presentation.visibleMessages}
             voiceRecordingActive={state.voiceRecordingActive}
           />
+        ) : route.view === 'project' && activeProject ? (
+          <ProjectOverviewPage groups={visibleGroups} members={activeProjectMembers} project={activeProject.project} />
+        ) : route.view === 'channels' && activeProject ? (
+          <ProjectChannelsPage groups={visibleGroups} onCreate={dialogState.openGroupDialog} onOpen={navigation.navigateToGroup} projectName={activeProject.project.name} />
+        ) : route.view === 'evidence' && state.activeProjectId ? (
+          <ProjectEvidencePage
+            actorId={auth.trackUserId}
+            actingCompanyId={activeProject?.membership.companyId}
+            firstGroup={visibleGroups[0]}
+            projectId={state.activeProjectId}
+            projectName={activeProject?.project.name}
+            projectMemberId={activeProject?.membership.companyId ? activeProject.membership._id : undefined}
+          />
         ) : route.view === 'settings' ? (
           <ProjectSettingsPage
             activeProject={activeProject?.project ?? null}
@@ -330,15 +379,13 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
             groupNotificationSettings={notifications.groupNotificationSettings}
             groups={visibleGroups}
             members={activeProjectMembers}
-            onDeleteGroup={(groupIdToDelete) => void dialogActions.handleDeleteGroup(groupIdToDelete)}
-            onDeleteProject={() => void dialogActions.handleDeleteProject()}
+            onDeleteGroup={dialogActions.handleDeleteGroup}
+            onDeleteProject={dialogActions.handleDeleteProject}
             onEditGroup={dialogState.openEditGroupDialog}
             onEditProject={dialogState.openEditProjectDialog}
             onInvite={dialogState.openInviteDialog}
             onNotificationMode={notifications.handleNotificationMode}
           />
-        ) : visibleGroups.length > 0 ? (
-          <WorkspaceRouteLoader label="Opening first channel" />
         ) : (
           <div className="track-empty">
             <p className="mono-label m-0">No channels</p>
@@ -350,7 +397,10 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
       {route.view === 'group' ? (
         <WorkspaceRail
           activeGroup={activeGroup}
+          activeCompanyId={activeProject?.membership.companyId}
+          activeCompanyName={activeProject?.membership.companyDisplayNameSnapshot ?? activeProject?.project.clientLabel ?? undefined}
           activeProjectId={state.activeProjectId}
+          projectMemberId={activeProject?.membership._id}
           busyAction={notifications.notificationBusyAction ?? state.busyAction}
           globalNotificationMode={notifications.globalNotificationMode}
           groupNotificationMode={notifications.groupNotificationMode}
@@ -367,6 +417,36 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           visibleMessages={presentation.visibleMessages}
         />
       ) : null}
+      {route.view === 'group' ? (
+        <Sheet onOpenChange={update.setMobileRailOpen} open={state.mobileRailOpen}>
+          <SheetContent className="track-mobile-controls-sheet" side="right">
+            <SheetHeader><SheetTitle>Project controls</SheetTitle><SheetDescription>Company threads, references, and notifications for this Project.</SheetDescription></SheetHeader>
+            <SheetBody className="track-mobile-controls-content">
+              <WorkspaceRail
+                activeGroup={activeGroup}
+                activeCompanyId={activeProject?.membership.companyId}
+                activeCompanyName={activeProject?.membership.companyDisplayNameSnapshot ?? activeProject?.project.clientLabel ?? undefined}
+                activeProjectId={state.activeProjectId}
+                projectMemberId={activeProject?.membership._id}
+                busyAction={notifications.notificationBusyAction ?? state.busyAction}
+                globalNotificationMode={notifications.globalNotificationMode}
+                groupNotificationMode={notifications.groupNotificationMode}
+                notificationPermission={notifications.notificationPermission}
+                notificationStatus={notifications.notificationStatus}
+                onCollapse={() => update.setMobileRailOpen(false)}
+                onEnableBrowserNotifications={() => void notifications.handleEnableBrowserNotifications()}
+                onExpand={() => undefined}
+                onNotificationMode={(mode) => void notifications.handleNotificationMode(mode)}
+                onSendTestNotification={() => void notifications.handleSendTestNotification()}
+                onStartResize={() => undefined}
+                railCollapsed={false}
+                userId={auth.trackUserId}
+                visibleMessages={presentation.visibleMessages}
+              />
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
+      ) : null}
       <ProjectSearchDialog
         filter={state.projectSearchFilter}
         loading={state.projectSearchOpen && state.projectSearchQuery.trim().length >= 2 && projectSearchResults === undefined}
@@ -382,6 +462,16 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         total={presentation.projectSearchTotal}
         updating={projectSearchUpdating}
       />
+      {route.view === 'group' ? (
+        <WorkspaceMembersDialog
+          channelName={activeGroup?.name}
+          members={activeChannelMembers}
+          onInvite={dialogState.openInviteDialog}
+          onOpenChange={update.setMembersDialogOpen}
+          open={state.membersDialogOpen}
+          projectMemberRoleByUserId={projectMemberRoleByUserId}
+        />
+      ) : null}
       <WorkspaceDialogs
         activeGroupId={state.activeGroupId}
         busyAction={state.busyAction}

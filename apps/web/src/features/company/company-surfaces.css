@@ -35,7 +35,7 @@
 .company-panel {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-panel);
   margin-top: 20px;
   padding: 24px;
 }
@@ -54,11 +54,16 @@
   gap: 6px;
 }
 
+.company-inline-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
 .company-inline-form select,
 .company-panel > select {
   background: var(--background);
   border: 1px solid var(--input);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   min-height: 40px;
   padding: 0 10px;
 }
@@ -83,7 +88,7 @@
 .company-list li,
 .company-admin-card {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   padding: 12px;
 }
 
@@ -101,12 +106,27 @@
 
 .company-migration-form fieldset {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   padding: 12px;
 }
 
-.company-migration-form select {
+.company-migration-form [data-slot="native-select-wrapper"] {
+  width: 100%;
+}
+
+.company-inline-form [data-slot="native-select-wrapper"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.company-inline-form [data-slot="native-select"] {
+  width: 100%;
+  min-height: var(--control-height-regular, 36px);
+}
+
+.company-migration-form [data-slot="native-select"] {
+  width: 100%;
   background: var(--background);
   border: 1px solid var(--input);
   border-radius: 8px;
@@ -128,7 +148,7 @@
 
 .company-project-shell {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 280px;
+  grid-template-columns: var(--company-project-nav-width, 236px) minmax(0, 1fr) 292px;
   min-height: 100vh;
 }
 
@@ -765,10 +785,10 @@
   display: inline-flex;
   min-height: 24px;
   align-items: center;
-  border: 1px solid var(--hairline);
+  border: 1px solid #cfdbd5;
   border-radius: 999px;
-  background: var(--paper);
-  color: var(--ink-3);
+  background: #e8eddf;
+  color: #333533;
   padding: 3px 9px;
   font-family: var(--font-meta);
   font-size: 10px;
@@ -1337,6 +1357,8 @@
 .company-project-shell {
   width: 100vw;
   height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   grid-template-columns: 236px minmax(0, 1fr) 292px;
   overflow: hidden;
   background: var(--paper);
@@ -1393,6 +1415,28 @@
   height: 100vh;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+.company-project-shell-member {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.company-project-details {
+  align-self: stretch;
+  background: var(--paper-2);
+  border-left: 1px solid var(--hairline);
+  padding: 18px 16px;
+}
+
+.company-project-details h2 {
+  margin: 0 0 10px;
+  font: 650 13px/1.25 var(--font-display);
+}
+
+.company-project-details p {
+  color: var(--ink-4);
+  font: 500 11px/1.5 var(--font-meta);
 }
 
 .company-conversation > header {
@@ -1508,6 +1552,13 @@
 .company-admin-heading div {
   display: grid;
   gap: 1px;
+}
+
+.company-admin-description {
+  max-width: 30ch;
+  margin: 7px 0 0;
+  color: var(--ink-4);
+  font: 500 11px/1.5 var(--font-meta);
 }
 
 .company-admin-heading h2 {
@@ -1634,6 +1685,38 @@
   flex: 0 0 auto;
 }
 
+.company-conversation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.company-conversation > header,
+.company-conversation > .company-project-snapshot-notice,
+.company-conversation > .company-notice {
+  grid-column: 1 / -1;
+}
+
+.company-conversation > .company-message-scroll {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.company-conversation > .company-project-composer-wrap {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.company-project-conversation-rail {
+  grid-column: 2;
+  grid-row: 3 / 5;
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--hairline);
+  background: var(--paper-2);
+  padding: 12px;
+}
+
 .company-composer-hint {
   margin-right: auto;
   color: var(--ink-4);
@@ -1704,6 +1787,15 @@
     border-bottom: 1px solid var(--hairline);
   }
 
+  .company-conversation {
+    display: flex;
+  }
+
+  .company-project-conversation-rail {
+    border-top: 1px solid var(--hairline);
+    border-left: 0;
+  }
+
   .company-hub-sidebar nav {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1765,6 +1857,12 @@
   }
 }
 
+@media (min-width: 861px) and (max-width: 1100px) {
+  .company-project-shell-member {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 620px) {
   .company-hub {
     padding-inline: 12px;
@@ -1819,6 +1917,41 @@
   }
 }
 
+@media (min-width: 861px) {
+  body {
+    background: var(--paper-2);
+  }
+
+  .company-hub-shell.company-unified-shell,
+  .company-project-shell.company-unified-shell {
+    width: 100vw;
+    height: 100dvh;
+    min-height: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: var(--paper);
+    box-shadow: none;
+  }
+
+  .company-hub-shell.company-unified-shell > .company-project-nav,
+  .company-project-shell.company-unified-shell > .company-project-nav,
+  .company-project-shell.company-unified-shell > .company-conversation,
+  .company-project-shell.company-unified-shell > .company-project-admin {
+    height: 100%;
+  }
+
+  .company-hub-shell.company-unified-shell > .company-hub,
+  .company-project-shell.company-unified-shell > .company-conversation {
+    position: relative;
+    z-index: 1;
+    border-left: 1px solid var(--hairline);
+    border-radius: 12px 0 0 12px;
+    background: var(--paper);
+  }
+}
+
 @media (max-width: 1080px) {
   .track-app-shell-with-rail,
   .track-app-shell-nav-collapsed.track-app-shell-with-rail {
@@ -1847,4 +1980,319 @@
     border-top: 1px solid var(--hairline);
     padding-top: 12px;
   }
+}
+
+/* One contextual rail keeps conversation, work, and administration in one place. */
+.company-conversation {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.company-project-context-rail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--hairline);
+  background: var(--paper-2);
+}
+
+.company-project-context-heading {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--hairline);
+  padding: 16px 14px 12px;
+}
+
+.company-project-context-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.company-project-context-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font: 650 14px/1.2 var(--font-display);
+}
+
+.company-project-context-heading p {
+  max-width: 30ch;
+  margin: 7px 0 0;
+  color: var(--ink-4);
+  font: 500 10.5px/1.45 var(--font-meta);
+}
+
+.company-project-context-tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 4px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--hairline);
+  padding: 8px 10px;
+}
+
+.company-project-context-tabs button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  padding: 6px 7px;
+  text-align: center;
+}
+
+.company-project-context-tabs button:hover,
+.company-project-context-tabs button:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--paper-3);
+  color: var(--ink);
+  outline: 0;
+}
+
+.company-project-context-tabs button.active {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--hairline));
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+
+.company-project-context-tabs strong,
+.company-project-context-tabs small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-project-context-tabs strong {
+  font: 650 11.5px/1.15 var(--font-display);
+}
+
+.company-project-context-tabs button svg {
+  flex: 0 0 auto;
+  color: var(--ink-4);
+}
+
+.company-project-context-tabs button.active svg {
+  color: var(--accent-strong);
+}
+
+.company-project-context-panel {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 12px;
+}
+
+.company-project-context-panel > .track-rail-task-section,
+.company-project-context-panel > .track-thread-panel,
+.company-project-context-panel > .company-project-admin,
+.company-project-context-panel > .company-project-details {
+  min-height: 0;
+}
+
+.company-project-context-panel > .company-project-admin {
+  display: block;
+  height: auto;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.company-project-context-panel > .company-project-admin .company-admin-heading {
+  position: static;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  padding: 0 0 12px;
+}
+
+.company-project-context-panel > .company-project-details {
+  height: auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+@media (min-width: 861px) {
+  .company-project-shell.company-project-shell-member {
+    grid-template-columns: var(--company-project-nav-width, 236px) minmax(0, 1fr) 292px;
+  }
+}
+
+@media (max-width: 860px) {
+  .company-project-context-rail {
+    min-height: 320px;
+    height: auto;
+    border-top: 1px solid var(--hairline);
+    border-left: 0;
+  }
+
+  .company-project-context-panel {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 520px) {
+  .company-project-context-tabs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .company-project-context-tabs button {
+    min-height: 40px;
+  }
+}
+
+/* Readability and context-rail interaction refinements. */
+.company-project-shell.company-unified-shell:has(.company-project-context-rail.is-collapsed) {
+  grid-template-columns: var(--company-project-nav-width, 236px) minmax(0, 1fr) 48px;
+}
+
+.company-project-context-rail.is-collapsed {
+  align-items: center;
+  padding: 10px 6px;
+}
+
+.company-project-context-expand,
+.company-project-context-collapse {
+  display: inline-flex;
+  min-width: 36px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.company-project-context-expand:hover,
+.company-project-context-expand:focus-visible,
+.company-project-context-collapse:hover,
+.company-project-context-collapse:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--paper-3);
+  color: var(--ink);
+  outline: 0;
+}
+
+.company-project-context-heading {
+  position: relative;
+}
+
+.company-project-context-heading > p {
+  padding-right: 34px;
+}
+
+.company-project-context-collapse {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+}
+
+.company-conversation-title > div {
+  gap: 1px;
+}
+
+.company-conversation h1 {
+  margin: 0;
+  color: var(--ink);
+  font: 680 16px/1.2 var(--font-display);
+}
+
+.company-conversation-title p {
+  overflow: hidden;
+  max-width: min(62ch, 56vw);
+  margin: 2px 0 0;
+  color: var(--ink-4);
+  font: 500 11px/1.25 var(--font-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-unified-shell .company-conversation > header {
+  min-height: 64px;
+  padding-inline: 20px;
+}
+
+.company-conversation-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.company-conversation-actions [data-slot="button"] {
+  min-height: 34px;
+  gap: 6px;
+  border-color: var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink-3);
+  padding-inline: 10px;
+}
+
+.company-conversation-actions [data-slot="button"]:hover,
+.company-conversation-actions [data-slot="button"]:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+.company-unified-shell .company-channel-mark {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.company-unified-shell .company-eyebrow,
+.company-unified-shell .company-read-only,
+.company-unified-shell .company-badge {
+  font-size: 12px;
+}
+
+.company-unified-shell .company-project-context-heading p,
+.company-unified-shell .company-project-context-tabs strong,
+.company-unified-shell .company-project-nav-channel small {
+  font-size: 12px;
+}
+
+.company-unified-shell .company-project-context-tabs button {
+  min-height: 44px;
+}
+
+.task-page .task-eyebrow,
+.task-page .task-back-link,
+.task-page .task-card-key,
+.task-page .task-card-meta,
+.task-page .task-form label,
+.task-page .task-create-dialog label,
+.task-page .task-archive-filter,
+.task-page .task-notification-feed,
+.task-page .task-notification-feed a span {
+  font-size: 12px;
+}
+
+@media (max-width: 860px) {
+  .company-project-shell.company-unified-shell:has(.company-project-context-rail.is-collapsed) {
+    display: block;
+  }
+
+  .company-project-context-rail.is-collapsed {
+    min-height: 52px;
+    height: 52px;
+  }
+}
+
+@media (max-width: 620px) {
+  .company-conversation-actions [data-slot="button"] span { display: none; }
+  .company-conversation-actions [data-slot="button"] { min-width: 34px; padding-inline: 0; }
 }

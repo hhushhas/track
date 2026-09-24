@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
-import { FolderKanban, ListTodo, LoaderCircle, MessagesSquare, Paperclip, Search, X } from 'lucide-react'
+import { Building2, FolderKanban, ListTodo, LoaderCircle, MessagesSquare, Paperclip, Search, UserRound, X } from 'lucide-react'
 
 import { Button } from '#/components/ui/button'
 import {
@@ -15,7 +15,7 @@ import { Input } from '#/components/ui/input'
 import { AttachmentTypeIcon } from '#/features/workspace/attachment-ui'
 import { useReleaseConfig } from '#/lib/release-config'
 
-export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups' | 'tasks' | 'threads'
+export type ProjectSearchFilter = 'all' | 'messages' | 'files' | 'groups' | 'people' | 'projects' | 'tasks' | 'threads'
 
 export type ProjectSearchResult = {
   attachmentId?: Id<'attachments'>
@@ -24,7 +24,7 @@ export type ProjectSearchResult = {
   groupId?: Id<'groups'>
   groupName: string
   id: string
-  kind: 'message' | 'file' | 'group' | 'task' | 'thread'
+  kind: 'message' | 'file' | 'group' | 'person' | 'project' | 'task' | 'thread'
   messageId?: Id<'messages'>
   taskKey?: string
   threadId?: Id<'channelThreads'>
@@ -90,7 +90,9 @@ export function ProjectSearchDialog({
     { Icon: Search, label: 'All', value: 'all' },
     { Icon: MessagesSquare, label: 'Messages', value: 'messages' },
     { Icon: Paperclip, label: 'Files', value: 'files' },
-    { Icon: FolderKanban, label: 'Groups', value: 'groups' },
+    { Icon: FolderKanban, label: 'Channels', value: 'groups' },
+    { Icon: UserRound, label: 'People', value: 'people' },
+    { Icon: Building2, label: 'Projects', value: 'projects' },
     ...(releaseConfig.tasks ? [{ Icon: ListTodo, label: 'Tasks', value: 'tasks' as const }] : []),
     ...(releaseConfig.threads ? [{ Icon: MessagesSquare, label: 'Threads', value: 'threads' as const }] : []),
   ]
@@ -136,41 +138,37 @@ export function ProjectSearchDialog({
             <span className="mono-label">Current project search</span>
             <DialogTitle>{projectName}</DialogTitle>
             <DialogDescription className="sr-only">
-              Search messages, files, groups, threads, and tasks in the current project.
+              Search messages, files, Channels, people, the Project, threads, and tasks in the current Project.
             </DialogDescription>
           </div>
           <Button aria-label="Close project search" className="icon-button" onClick={onClose} type="button">
-            <X size={15} />
+            <X aria-hidden="true" size={15} />
           </Button>
         </header>
         <div className="track-project-search-box">
-          <Search size={16} />
+          <Search aria-hidden="true" size={16} />
           <Input
             autoFocus
+            autoComplete="off"
             className="track-project-search-input"
+            name="project-search"
             onChange={(event) => onQueryChange(event.currentTarget.value)}
             onKeyDown={handleScopedKeyboard}
-            placeholder={releaseConfig.tasks && releaseConfig.threads
-              ? 'Search messages, files, threads, groups, and tasks...'
-              : releaseConfig.tasks
-                ? 'Search messages, files, groups, and tasks...'
-                : releaseConfig.threads
-                  ? 'Search messages, files, groups, and threads...'
-                  : 'Search messages, files, and groups...'}
+            placeholder="Search messages, files, tasks, people, Projects, and Channels…"
             value={query}
           />
           <span aria-live="polite">{updating ? 'Updating…' : `${total} results`}</span>
         </div>
-        <div className="track-project-search-filters" role="list" aria-label="Search filters">
+        <div aria-label="Search filters" className="track-project-search-filters" role="toolbar">
           {filters.map((item) => (
             <button
               className={filter === item.value ? 'active' : ''}
+              aria-pressed={filter === item.value}
               key={item.value}
               onClick={() => onFilterChange(item.value)}
-              title={item.label}
               type="button"
             >
-              <item.Icon size={15} />
+              <item.Icon aria-hidden="true" size={15} />
               <span>{item.label}</span>
             </button>
           ))}
@@ -178,18 +176,18 @@ export function ProjectSearchDialog({
         <div className="track-project-search-results">
           {!hasQuery ? (
             <div className="track-project-search-state">
-              <Search size={18} />
+              <Search aria-hidden="true" size={18} />
               <p>Type at least 2 characters to search this project.</p>
-              <small>Use ⌘K anywhere, or / inside a group when the composer is not focused.</small>
+              <small>Use Ctrl K anywhere, or / inside a Channel when the composer is not focused.</small>
             </div>
           ) : loading ? (
             <div className="track-project-search-state">
-              <LoaderCircle className="spin" size={18} />
-              <p>{updating ? 'Updating results…' : 'Searching project...'}</p>
+              <LoaderCircle aria-hidden="true" className="spin" size={18} />
+              <p>{updating ? 'Updating results…' : 'Searching project…'}</p>
             </div>
           ) : total === 0 ? (
             <div className="track-project-search-state">
-              <Search size={18} />
+              <Search aria-hidden="true" size={18} />
               <p>No results for "{query.trim()}".</p>
             </div>
           ) : (
@@ -206,6 +204,7 @@ export function ProjectSearchDialog({
                         className={isActive ? 'track-project-search-result active' : 'track-project-search-result'}
                         key={`${result.kind}-${result.id}`}
                         onClick={() => onOpenResult(result)}
+                        onFocus={() => setActiveResultIndex(currentResultIndex)}
                         onKeyDown={handleScopedKeyboard}
                         ref={(element) => {
                           resultButtonsRef.current[currentResultIndex] = element
@@ -220,11 +219,15 @@ export function ProjectSearchDialog({
                               size={16}
                             />
                           ) : result.kind === 'group' ? (
-                            <FolderKanban size={16} />
+                            <FolderKanban aria-hidden="true" size={16} />
                           ) : result.kind === 'task' ? (
-                            <ListTodo size={16} />
+                            <ListTodo aria-hidden="true" size={16} />
+                          ) : result.kind === 'person' ? (
+                            <UserRound aria-hidden="true" size={16} />
+                          ) : result.kind === 'project' ? (
+                            <Building2 aria-hidden="true" size={16} />
                           ) : (
-                            <MessagesSquare size={16} />
+                            <MessagesSquare aria-hidden="true" size={16} />
                           )}
                         </span>
                         <span className="track-project-search-copy">
@@ -240,6 +243,11 @@ export function ProjectSearchDialog({
             )
           )}
         </div>
+        <footer className="track-project-search-footer">
+          <span><kbd>{'\u2191'}</kbd><kbd>{'\u2193'}</kbd> Move</span>
+          <span><kbd>Enter</kbd> Open</span>
+          <span><kbd>Esc</kbd> Close</span>
+        </footer>
       </DialogContent> : null}
     </Dialog>
   )

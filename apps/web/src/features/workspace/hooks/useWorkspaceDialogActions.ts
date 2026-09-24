@@ -67,8 +67,10 @@ export function useWorkspaceDialogActions({
     onClearError()
     try {
       await action()
+      return true
     } catch (error) {
       onError(error)
+      return false
     } finally {
       onBusyChange(null)
     }
@@ -131,8 +133,8 @@ export function useWorkspaceDialogActions({
   }
 
   async function handleDeleteProject() {
-    if (!trackUserId || !activeProjectId) return
-    await withDialogBusy('delete-project', async () => {
+    if (!trackUserId || !activeProjectId) return false
+    return withDialogBusy('delete-project', async () => {
       const projectId = activeProjectId
       await deleteProject({
         projectId,
@@ -143,8 +145,8 @@ export function useWorkspaceDialogActions({
   }
 
   async function handleDeleteGroup(groupId: Id<'groups'>) {
-    if (!trackUserId || !activeProjectId) return
-    await withDialogBusy('delete-group', async () => {
+    if (!trackUserId || !activeProjectId) return false
+    return withDialogBusy('delete-group', async () => {
       await deleteGroup({
         projectId: activeProjectId,
         groupId,

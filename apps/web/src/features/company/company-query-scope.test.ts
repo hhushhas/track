@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
-import { resolveActiveActingCompanyId } from "./company-query-scope";
+import {
+  canQueryPendingChannelArchives,
+  canQueryProjectManagement,
+  resolveActiveActingCompanyId,
+  resolveCompanyAdministrationId,
+} from "./company-query-scope";
 import {
   getCompanyProjectScopeKey,
   getMessageIdFromHash,
 } from "./company-project-context";
 import {
   getCompanyProjectConversationSearch,
+  getCompanyProjectEvidenceSearch,
   getCompanyProjectTaskSearch,
 } from "./company-project-links";
 import { formatCompanyError, formatSnapshotError } from "./company-errors";
@@ -42,6 +48,78 @@ describe("Company query scope", () => {
     );
   });
 
+  it("queries Company administration only for active owners and admins", () => {
+    const memberships = [
+      {
+        company: { _id: "owner-company", status: "active" },
+        membership: { role: "owner" },
+      },
+      {
+        company: { _id: "admin-company", status: "active" },
+        membership: { role: "admin" },
+      },
+      {
+        company: { _id: "member-company", status: "active" },
+        membership: { role: "member" },
+      },
+    ];
+
+    expect(resolveCompanyAdministrationId(memberships, "owner-company")).toBe(
+      "owner-company",
+    );
+    expect(resolveCompanyAdministrationId(memberships, "admin-company")).toBe(
+      "admin-company",
+    );
+    expect(resolveCompanyAdministrationId(memberships, "member-company")).toBeNull();
+  });
+
+  it("queries pending Channel archives only for an active Project manager steward", () => {
+    const eligible = {
+      channelSteward: true,
+      exitStatus: "active",
+      projectMemberRole: "manager",
+      projectMemberStatus: "active",
+      projectStatus: "active",
+    };
+
+    expect(canQueryPendingChannelArchives(eligible)).toBe(true);
+    expect(
+      canQueryPendingChannelArchives({
+        ...eligible,
+        projectMemberRole: "member",
+      }),
+    ).toBe(false);
+    expect(
+      canQueryPendingChannelArchives({
+        ...eligible,
+        projectStatus: "archived",
+      }),
+    ).toBe(false);
+  });
+
+  it("queries Project management only while the Project is writable", () => {
+    const eligible = {
+      exitStatus: "active",
+      projectMemberRole: "manager",
+      projectMemberStatus: "active",
+      projectStatus: "active",
+    };
+
+    expect(canQueryProjectManagement(eligible)).toBe(true);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectStatus: "proposed" }),
+    ).toBe(true);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectStatus: "archive_pending" }),
+    ).toBe(false);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectStatus: "archived" }),
+    ).toBe(false);
+    expect(
+      canQueryProjectManagement({ ...eligible, projectMemberRole: "member" }),
+    ).toBe(false);
+  });
+
   it("keeps reply and draft scopes distinct across Company, Project, and Channel", () => {
     const first = getCompanyProjectScopeKey({
       actingCompanyId: "active-company",
@@ -63,6 +141,19 @@ describe("Company query scope", () => {
     });
 
     expect(new Set([first, second, otherCompany]).size).toBe(3);
+  });
+
+  it("preserves represented Company identity in the Evidence route", () => {
+    expect(getCompanyProjectEvidenceSearch({
+      actingCompanyId: "active-company" as Id<"companies">,
+      projectId: "project-a" as Id<"projects">,
+      projectMemberId: "member-a" as Id<"projectMembers">,
+    })).toEqual({
+      companyId: "active-company",
+      groupId: "",
+      membershipId: "member-a",
+      view: "evidence",
+    });
   });
 
   it("only accepts a well-formed message hash for source navigation", () => {
@@ -104,12 +195,13 @@ describe("Company query scope", () => {
       companyId: "active-company",
       groupId: "channel-a",
       membershipId: "member-a",
+      view: "channels",
     });
     expect(getCompanyProjectTaskSearch(context)).toEqual({
       actingCompanyId: "active-company",
       groupId: "channel-a",
       projectMemberId: "member-a",
-      view: "board",
+      view: "list",
     });
   });
 });

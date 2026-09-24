@@ -97,7 +97,7 @@ describe('ScopedConversationComposer lifecycle', () => {
       </StrictMode>,
     )
 
-    const textbox = screen.getByRole('textbox', { name: 'Message General' })
+    const textbox = screen.getByRole('combobox', { name: 'Message General' })
     const sendButton = screen.getByRole('button', { name: /Send/ })
     fireEvent.change(textbox, { target: { value: '@track summarize this' } })
     expect(sendButton).toHaveProperty('disabled', false)

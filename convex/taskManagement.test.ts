@@ -11,6 +11,7 @@ import {
 } from './lib/taskLifecycle'
 import { searchArchivedTasks } from './lib/taskData'
 import schema from './schema'
+import { ensureStandardWorkflow } from './taskBoards'
 
 const modules = (
   import.meta as ImportMeta & {
@@ -29,6 +30,53 @@ afterEach(() => {
 })
 
 describe('task management authorization and invariants', () => {
+  it('repairs an incomplete default workflow without duplicating its existing state', async () => {
+    const fixture = await seedLegacyProject()
+    const now = Date.now()
+    const result = await fixture.t.run(async (ctx) => {
+      const boardId = await ctx.db.insert('taskBoards', {
+        projectId: fixture.projectId,
+        name: 'Incomplete demo board',
+        rank: '00000001',
+        isDefault: true,
+        createdByProjectMemberId: fixture.ownerMemberId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      const existingStateId = await ctx.db.insert('taskWorkflowStates', {
+        projectId: fixture.projectId,
+        boardId,
+        name: 'In progress',
+        category: 'started',
+        visualToken: 'amber',
+        rank: '0001',
+        isDefault: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      await ensureStandardWorkflow(ctx, fixture.projectId, boardId, now + 1)
+
+      const states = await ctx.db
+        .query('taskWorkflowStates')
+        .withIndex('by_board_rank', (q) => q.eq('boardId', boardId))
+        .collect()
+      return { existingStateId, states }
+    })
+
+    expect(result.states.map((state) => state.name)).toEqual([
+      'Backlog',
+      'To do',
+      'In progress',
+      'Done',
+      'Canceled',
+    ])
+    expect(result.states.find((state) => state.name === 'In progress')?._id)
+      .toBe(result.existingStateId)
+    expect(result.states.filter((state) => state.isDefault).map((state) => state.name))
+      .toEqual(['To do'])
+  })
+
   it('keeps membership-loss cleanup active while task surfaces are disabled', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })
@@ -125,8 +173,16 @@ describe('task management authorization and invariants', () => {
       boardId,
       parentTaskId: parent.taskId,
       title: 'Paged child',
+      description: 'Run the regression suite before release.',
       priority: 'none',
       idempotencyKey: 'paged-child',
+    })
+    const filteredTask = await owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId,
+      title: 'High-priority page result',
+      priority: 'high',
+      idempotencyKey: 'paged-filtered-task',
     })
     await owner.mutation(api.taskComments.create, {
       taskId: parent.taskId,
@@ -150,12 +206,20 @@ describe('task management authorization and invariants', () => {
       paginationOpts: { cursor: first.continueCursor, numItems: 1 },
     })
     expect([first.page[0]?.task._id, second?.page[0]?.task._id]).toContain(child.taskId)
+    const filtered = await owner.query(api.tasks.listPage, {
+      projectId: fixture.projectId,
+      boardId,
+      priority: 'high',
+      paginationOpts: { cursor: null, numItems: 1 },
+    })
+    expect(filtered.page.map((item) => item.task._id)).toEqual([filteredTask.taskId])
 
     const children = await owner.query(api.tasks.listChildren, {
       parentTaskId: parent.taskId,
       paginationOpts: { cursor: null, numItems: 1 },
     })
     expect(children.page.map((item) => item.task._id)).toContain(child.taskId)
+    expect(children.page[0]?.task.description).toBe('Run the regression suite before release.')
     const history = await owner.query(api.tasks.listHistory, {
       taskId: parent.taskId,
       kind: 'comments',
@@ -280,6 +344,11 @@ describe('task management authorization and invariants', () => {
       priority: 'none',
       idempotencyKey: 'owner-create-1',
     })
+    const clientTasks = await client.query(api.tasks.list, { projectId: fixture.projectId })
+    expect(clientTasks.find((item) => item.task._id === created.taskId)?.capabilities.canEdit).toBe(true)
+    expect(clientTasks.find((item) => item.task._id === ownerCreated.taskId)?.capabilities.canEdit).toBe(false)
+    const staffTasks = await staff.query(api.tasks.list, { projectId: fixture.projectId })
+    expect(staffTasks.every((item) => item.capabilities.canEdit)).toBe(true)
     await expect(
       client.mutation(api.tasks.update, {
         taskId: ownerCreated.taskId,
@@ -480,6 +549,13 @@ describe('task management authorization and invariants', () => {
       idempotencyKey: 'message-task-1',
     })
     expect(repeated.taskId).toBe(created.taskId)
+    await expect(fixture.t.withIdentity({ subject: 'outsider' }).mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      groupId: fixture.groupId,
+      title: 'Unauthorized idempotent retry',
+      priority: 'none',
+      idempotencyKey: 'message-task-1',
+    })).rejects.toThrow()
 
     const detail = await owner.query(api.tasks.getByKey, {
       projectId: fixture.projectId,
@@ -632,6 +708,8 @@ describe('task management authorization and invariants', () => {
       projectId: fixture.projectId,
     })
     expect(inbox).toHaveLength(1)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await fixture.t.finishInProgressScheduledFunctions()
     const continued = await fixture.t.run(async (ctx) => ({
       setting: await ctx.db.query('taskDetectionSettings')
         .withIndex('by_group', (q) => q.eq('groupId', fixture.groupId))

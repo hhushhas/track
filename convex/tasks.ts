@@ -66,6 +66,22 @@ const identityArgs = {
   projectMemberId: v.optional(v.id('projectMembers')),
 }
 
+/** Checklist rows keep their short description so mobile can expand context
+ * without loading each child task separately. Board/list summaries stay lean. */
+type TaskChildSummary<T extends { task: object }> = Omit<T, 'task'> & {
+  task: T['task'] & Pick<Doc<'tasks'>, 'description'>
+}
+
+function taskChildSummary<T extends { task: object }>(
+  summary: T,
+  task: Doc<'tasks'>,
+): TaskChildSummary<T> {
+  return {
+    ...summary,
+    task: { ...summary.task, description: task.description },
+  }
+}
+
 const referenceInput = v.object({
   type: v.union(
     v.literal('message'), v.literal('attachment'),
@@ -106,6 +122,7 @@ type TaskListFilters = {
 }
 
 const taskPageLimit = 100
+const taskPageScanLimit = 256
 const taskNeighborScanLimit = 256
 
 function expectedReadFailure(error: unknown) {
@@ -241,11 +258,26 @@ function taskListQuery(ctx: QueryCtx, filters: TaskListFilters) {
   const includeArchived = filters.includeArchived === true
   const boardId = filters.boardId
   const workflowStateId = filters.workflowStateId
+  const priority = filters.priority
   const assigneeProjectMemberId = filters.assigneeProjectMemberId
   const groupId = filters.groupId
+  if (boardId && workflowStateId && priority) {
+    return ctx.db.query('tasks').withIndex('by_board_state_priority_archived_rank', (q) => {
+      const indexed = q.eq('boardId', boardId).eq('workflowStateId', workflowStateId).eq('priority', priority)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
   if (boardId && workflowStateId) {
     return ctx.db.query('tasks').withIndex('by_board_state_archived_rank', (q) => {
       const indexed = q.eq('boardId', boardId).eq('workflowStateId', workflowStateId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (boardId && priority) {
+    return ctx.db.query('tasks').withIndex('by_board_priority_archived_rank', (q) => {
+      const indexed = q.eq('boardId', boardId).eq('priority', priority)
       // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
       return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
     })
@@ -267,6 +299,13 @@ function taskListQuery(ctx: QueryCtx, filters: TaskListFilters) {
   if (groupId) {
     return ctx.db.query('tasks').withIndex('by_project_scope_archived', (q) => {
       const indexed = q.eq('projectId', filters.projectId).eq('groupId', groupId)
+      // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
+      return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
+    })
+  }
+  if (priority) {
+    return ctx.db.query('tasks').withIndex('by_project_priority_archived_rank', (q) => {
+      const indexed = q.eq('projectId', filters.projectId).eq('priority', priority)
       // eslint-disable-next-line unicorn/no-useless-undefined -- reason: Convex compares absent fields explicitly.
       return includeArchived ? indexed : indexed.eq('archivedAt', undefined)
     })
@@ -354,8 +393,7 @@ async function collectTaskListPage(
   paginationOpts: PaginationOptions,
 ) {
   const pageSize = Math.min(Math.max(Math.trunc(paginationOpts.numItems), 1), taskPageLimit)
-  const source = taskListQuery(ctx, filters)
-  const result = await source.paginate({ ...paginationOpts, numItems: pageSize })
+  const result = await taskListQuery(ctx, filters).paginate({ ...paginationOpts, numItems: pageSize })
   const tasks = await filterTaskRows(ctx, scope, filters, result.page)
   const page = await taskSummaryPage(ctx, tasks)
   return { page, isDone: result.isDone, continueCursor: result.continueCursor }
@@ -377,44 +415,42 @@ async function archivedTaskListPage(
   })
   const page: Array<ReturnType<typeof taskArchiveSummary>> = []
   for (const row of result.page) {
-    const task = taskFromArchiveRow(row)
-    if (!task || (task.groupId && !await taskArchiveGroupIsVisible(
-      ctx,
-      entitlement,
-      scope.project.projectMember._id,
-      task.groupId,
-    ))) continue
-    if (!filters.includeArchived && task.archivedAt) continue
-    if (filters.boardId && task.boardId !== filters.boardId) continue
-    if (filters.groupId && task.groupId !== filters.groupId) continue
-    if (filters.assigneeProjectMemberId && task.assigneeProjectMemberId !== filters.assigneeProjectMemberId) continue
-    if (filters.creatorProjectMemberId && task.createdByProjectMemberId !== filters.creatorProjectMemberId) continue
-    if (filters.workflowStateId && task.workflowStateId !== filters.workflowStateId) continue
-    if (filters.priority && task.priority !== filters.priority) continue
+      const task = taskFromArchiveRow(row)
+      if (!task || (task.groupId && !await taskArchiveGroupIsVisible(
+        ctx,
+        entitlement,
+        scope.project.projectMember._id,
+        task.groupId,
+      ))) continue
+      if (!filters.includeArchived && task.archivedAt) continue
+      if (filters.boardId && task.boardId !== filters.boardId) continue
+      if (filters.groupId && task.groupId !== filters.groupId) continue
+      if (filters.assigneeProjectMemberId && task.assigneeProjectMemberId !== filters.assigneeProjectMemberId) continue
+      if (filters.creatorProjectMemberId && task.createdByProjectMemberId !== filters.creatorProjectMemberId) continue
+      if (filters.workflowStateId && task.workflowStateId !== filters.workflowStateId) continue
+      if (filters.priority && task.priority !== filters.priority) continue
 
-    const [boardRow, stateRow] = await Promise.all([
-      taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(task.boardId)),
-      taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(task.workflowStateId)),
-    ])
-    const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
-    const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
-    if (!board || !state || (!filters.includeArchived && board.archivedAt)) continue
-    if (filters.stateCategory && state.category !== filters.stateCategory) continue
-    if (filters.openOnly && isTerminalTaskState(state.category)) continue
-    if (filters.dueState && getTaskDueState(
-      task.dueDate,
-      filters.localDate ?? new Date().toISOString().slice(0, 10),
-      isTerminalTaskState(state.category),
-    ) !== filters.dueState) continue
-    if (filters.labelId) {
-      if (!await taskArchiveHasLabel(ctx, archiveSource, task._id, filters.labelId)) continue
-    }
-    page.push(taskArchiveSummary(
-      task,
-      board,
-      state,
-      await taskArchiveHasEvidence(ctx, archiveSource, task._id),
-    ))
+      const [boardRow, stateRow] = await Promise.all([
+        taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(task.boardId)),
+        taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(task.workflowStateId)),
+      ])
+      const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
+      const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
+      if (!board || !state || (!filters.includeArchived && board.archivedAt)) continue
+      if (filters.stateCategory && state.category !== filters.stateCategory) continue
+      if (filters.openOnly && isTerminalTaskState(state.category)) continue
+      if (filters.dueState && getTaskDueState(
+        task.dueDate,
+        filters.localDate ?? new Date().toISOString().slice(0, 10),
+        isTerminalTaskState(state.category),
+      ) !== filters.dueState) continue
+      if (filters.labelId && !await taskArchiveHasLabel(ctx, archiveSource, task._id, filters.labelId)) continue
+      page.push(taskArchiveSummary(
+        task,
+        board,
+        state,
+        await taskArchiveHasEvidence(ctx, archiveSource, task._id),
+      ))
     if (page.length >= pageSize) break
   }
   return { page, isDone: result.isDone, continueCursor: result.continueCursor }
@@ -525,7 +561,7 @@ async function archivedTaskDetailByKey(
   const activities = visibleActivityRows.flatMap((row) =>
     row.sourceTable === 'taskActivities' && isTaskArchiveActivityPayload(row.payload) ? [row.payload] : [])
   return {
-    ...taskArchiveSummary(task, board, state, referenceRows.length > 0),
+    ...taskArchiveSummary(task, board, state, visibleReferenceRows.length > 0),
     // Detail consumers need the complete archived task payload. Keep list and
     // link projections compact, but do not drop description from getByKey.
     task,
@@ -569,9 +605,8 @@ export const list = query({
     const scope = await createTaskRequestScope(ctx, actor, args.projectId, args)
     if (scope.project.capabilities.accessMode === 'archive') {
       const archived = await archivedTaskListPage(ctx, scope, args, { cursor: null, numItems: taskPageLimit })
-      return archived.page
+      return archived.page.map((item) => ({ ...item, capabilities: { ...scope.project.capabilities, canView: true, canCreate: false, canEdit: false, canAssignOthers: false, canTransfer: false, canManage: false, canChangeScope: false, canArchive: false, canComment: false } }))
     }
-    const access = scope.project
     const rows = args.assigneeProjectMemberId
       ? await ctx.db.query('tasks')
           .withIndex('by_assignee_archived', (q) => q.eq('assigneeProjectMemberId', args.assigneeProjectMemberId))
@@ -600,15 +635,16 @@ export const list = query({
           .withIndex('by_task_label', (q) => q.eq('taskId', task._id).eq('labelId', args.labelId!)).unique()
         if (!link) continue
       }
-      if (task.groupId) {
-        try {
-          const scoped = await resolveTaskRequestContext(ctx, actor, task.projectId, args, task.groupId)
-          if (!scoped.capabilities.canReadChannel) continue
-        } catch {
-          continue
-        }
-      } else if (!access.capabilities.canReadProject) continue
-      visible.push(await taskView(ctx, task))
+      let taskAccess
+      try {
+        taskAccess = await requireTaskAccess(ctx, actor, task._id, args)
+      } catch {
+        continue
+      }
+      visible.push({
+        ...await taskView(ctx, task),
+        capabilities: taskAccess.taskCapabilities,
+      })
     }
     return visible
   },
@@ -693,6 +729,37 @@ async function canReadOriginalTaskGroup(
   }
 }
 
+async function collectVisiblePage<Source, Output>(
+  paginationOpts: PaginationOptions,
+  load: (pagination: PaginationOptions) => Promise<{
+    continueCursor: string;
+    isDone: boolean;
+    page: Source[];
+  }>,
+  project: (row: Source) => Promise<Output | null>,
+) {
+  const pageSize = Math.min(Math.max(Math.trunc(paginationOpts.numItems), 1), taskPageLimit)
+  const page: Output[] = []
+  let cursor = paginationOpts.cursor
+  let isDone = false
+  let scanned = 0
+  while (page.length < pageSize && !isDone && scanned < taskPageScanLimit) {
+    const result = await load({
+      cursor,
+      numItems: Math.min(pageSize - page.length, taskPageScanLimit - scanned),
+    })
+    scanned += result.page.length
+    cursor = result.continueCursor
+    isDone = result.isDone
+    for (const row of result.page) {
+      const value = await project(row)
+      if (value !== null) page.push(value)
+    }
+    if (result.page.length === 0) break
+  }
+  return { page, isDone, continueCursor: cursor ?? '' }
+}
+
 export const listChildren = query({
   args: {
     parentTaskId: v.id('tasks'),
@@ -703,48 +770,44 @@ export const listChildren = query({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.parentTaskId, args)
-    const pageSize = Math.min(Math.max(Math.trunc(args.paginationOpts.numItems), 1), taskPageLimit)
     const entitlement = access.entitlement
     if (entitlement) {
       const archiveSource = taskArchiveSourceForEntitlement(entitlement)
-      const page: Array<ReturnType<typeof taskArchiveSummary>> = []
-      const result = await taskArchiveRowsPage(ctx, archiveSource, 'tasks', {
-        ...args.paginationOpts,
-        numItems: pageSize,
-      })
-      for (const row of result.page) {
+      return await collectVisiblePage<
+        TaskArchiveSnapshotRow,
+        TaskChildSummary<ReturnType<typeof taskArchiveSummary>>
+      >(args.paginationOpts, (pagination) =>
+        taskArchiveRowsPage(ctx, archiveSource, 'tasks', pagination), async (row) => {
         const child = taskFromArchiveRow(row)
-        if (!child || child.parentTaskId !== access.task._id || (!args.includeArchived && child.archivedAt)) continue
+        if (!child || child.parentTaskId !== access.task._id || (!args.includeArchived && child.archivedAt)) return null
         if (child.groupId && !await taskArchiveGroupIsVisible(
           ctx,
           entitlement,
           access.projectMember._id,
           child.groupId,
-        )) continue
+        )) return null
         const [boardRow, stateRow] = await Promise.all([
           taskArchiveSourceRow(ctx, archiveSource, 'taskBoards', String(child.boardId)),
           taskArchiveSourceRow(ctx, archiveSource, 'taskWorkflowStates', String(child.workflowStateId)),
         ])
         const board = boardRow && isTaskArchiveBoardPayload(boardRow.payload) ? boardRow.payload : null
         const state = stateRow && isTaskArchiveStatePayload(stateRow.payload) ? stateRow.payload : null
-        if (!board || !state) continue
-        page.push(taskArchiveSummary(
+        if (!board || !state) return null
+        return taskChildSummary(taskArchiveSummary(
           child,
           board,
           state,
           await taskArchiveHasEvidence(ctx, archiveSource, child._id),
-        ))
-      }
-      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+        ), child)
+      })
     }
-    const source = ctx.db.query('tasks').withIndex('by_parent_rank', (q) => q.eq('parentTaskId', access.task._id))
-    const result = await source.paginate({ ...args.paginationOpts, numItems: pageSize })
-    const tasks = result.page.filter((task) => args.includeArchived === true || !task.archivedAt)
-    return {
-      page: await taskSummaryPage(ctx, tasks),
-      isDone: result.isDone,
-      continueCursor: result.continueCursor,
-    }
+    return await collectVisiblePage(args.paginationOpts, (pagination) => ctx.db.query('tasks')
+      .withIndex('by_parent_rank', (q) => q.eq('parentTaskId', access.task._id))
+      .paginate(pagination), async (task) => {
+      if (!args.includeArchived && task.archivedAt) return null
+      const [summary] = await taskSummaryPage(ctx, [task])
+      return summary ? taskChildSummary(summary, task) : null
+    })
   },
 })
 
@@ -759,51 +822,37 @@ export const listHistory = query({
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
     const kind = args.kind ?? 'comments'
-    const pageSize = Math.min(Math.max(Math.trunc(args.paginationOpts.numItems), 1), taskPageLimit)
     const entitlement = access.entitlement
     if (entitlement) {
       const archiveSource = taskArchiveSourceForEntitlement(entitlement)
-      const result = await taskArchiveTaskRowsPage(
-        ctx,
-        archiveSource,
-        access.task._id,
-        kind === 'comments' ? 'taskComments' : 'taskActivities',
-        { ...args.paginationOpts, numItems: pageSize },
-      )
-      const page: Array<Doc<'taskComments'> | Doc<'taskActivities'>> = []
-      for (const row of result.page) {
+      return await collectVisiblePage<
+        TaskArchiveSnapshotRow,
+        Doc<'taskComments'> | Doc<'taskActivities'>
+      >(args.paginationOpts, (pagination) => taskArchiveTaskRowsPage(
+        ctx, archiveSource, access.task._id,
+        kind === 'comments' ? 'taskComments' : 'taskActivities', pagination,
+      ), async (row) => {
         const item = kind === 'comments'
           ? isTaskArchiveCommentPayload(row.payload) ? row.payload : null
           : isTaskArchiveActivityPayload(row.payload) ? row.payload : null
-        if (item && (!row.groupId || await taskArchiveGroupIsVisible(
+        return item && (!row.groupId || await taskArchiveGroupIsVisible(
           ctx,
           entitlement,
           access.projectMember._id,
           row.groupId,
-        ))) page.push(item)
-      }
-      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+        )) ? item : null
+      })
     }
     if (kind === 'comments') {
-      const result = await ctx.db.query('taskComments')
-        .withIndex('by_task_created_at', (q) => q.eq('taskId', access.task._id))
-        .order('desc')
-        .paginate({ ...args.paginationOpts, numItems: pageSize })
-      const page = []
-      for (const comment of result.page) {
-        if (await canReadOriginalTaskGroup(ctx, actor, access.task, args, comment.originalGroupId)) page.push(comment)
-      }
-      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+      return await collectVisiblePage(args.paginationOpts, (pagination) => ctx.db.query('taskComments')
+        .withIndex('by_task_created_at', (q) => q.eq('taskId', access.task._id)).order('desc')
+        .paginate(pagination), async (comment) =>
+        await canReadOriginalTaskGroup(ctx, actor, access.task, args, comment.originalGroupId) ? comment : null)
     }
-    const result = await ctx.db.query('taskActivities')
-      .withIndex('by_task_created_at', (q) => q.eq('taskId', access.task._id))
-      .order('desc')
-      .paginate({ ...args.paginationOpts, numItems: pageSize })
-    const page = []
-    for (const activity of result.page) {
-      if (await canReadOriginalTaskGroup(ctx, actor, access.task, args, activity.originalGroupId)) page.push(activity)
-    }
-    return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+    return await collectVisiblePage(args.paginationOpts, (pagination) => ctx.db.query('taskActivities')
+      .withIndex('by_task_created_at', (q) => q.eq('taskId', access.task._id)).order('desc')
+      .paginate(pagination), async (activity) =>
+      await canReadOriginalTaskGroup(ctx, actor, access.task, args, activity.originalGroupId) ? activity : null)
   },
 })
 
@@ -816,38 +865,26 @@ export const listReferences = query({
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireTaskAccess(ctx, actor, args.taskId, args)
-    const pageSize = Math.min(Math.max(Math.trunc(args.paginationOpts.numItems), 1), taskPageLimit)
     const entitlement = access.entitlement
     if (entitlement) {
       const archiveSource = taskArchiveSourceForEntitlement(entitlement)
-      const result = await taskArchiveTaskRowsPage(
-        ctx,
-        archiveSource,
-        access.task._id,
-        'taskReferences',
-        { ...args.paginationOpts, numItems: pageSize },
-      )
-      const page: Array<Doc<'taskReferences'>> = []
-      for (const row of result.page) {
-        if (isTaskArchiveReferencePayload(row.payload) &&
+      return await collectVisiblePage<TaskArchiveSnapshotRow, Doc<'taskReferences'>>(
+        args.paginationOpts, (pagination) => taskArchiveTaskRowsPage(
+        ctx, archiveSource, access.task._id, 'taskReferences', pagination,
+      ), async (row) => {
+        return isTaskArchiveReferencePayload(row.payload) &&
           (!row.groupId || await taskArchiveGroupIsVisible(
             ctx,
             entitlement,
             access.projectMember._id,
             row.groupId,
-          ))) {
-          page.push(row.payload)
-        }
-      }
-      return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+          )) ? row.payload : null
+      })
     }
-    const source = ctx.db.query('taskReferences').withIndex('by_task_rank', (q) => q.eq('taskId', access.task._id))
-    const result = await source.paginate({ ...args.paginationOpts, numItems: pageSize })
-    const page: Array<Doc<'taskReferences'>> = []
-    for (const reference of result.page) {
-      if (await canReadOriginalTaskGroup(ctx, actor, access.task, args, reference.groupId)) page.push(reference)
-    }
-    return { page, isDone: result.isDone, continueCursor: result.continueCursor }
+    return await collectVisiblePage(args.paginationOpts, (pagination) => ctx.db.query('taskReferences')
+      .withIndex('by_task_rank', (q) => q.eq('taskId', access.task._id))
+      .paginate(pagination), async (reference) =>
+      await canReadOriginalTaskGroup(ctx, actor, access.task, args, reference.groupId) ? reference : null)
   },
 })
 
@@ -1085,12 +1122,7 @@ export const create = mutation({
     const actor = await requireAuthenticatedActor(ctx)
     await assertProjectSnapshotWritable(ctx, args.projectId)
     validateTaskFields(args)
-    const existing = await ctx.db.query('tasks')
-      .withIndex('by_project_idempotency', (q) =>
-        q.eq('projectId', args.projectId).eq('createIdempotencyKey', args.idempotencyKey),
-      ).unique()
-    if (existing) return { publicKey: existing.publicKey, taskId: existing._id }
-
+    if ((args.references?.length ?? 0) > 20) throw new Error('task_references_limit_exceeded')
     let initialAccess
     let board: Doc<'taskBoards'>
     if (args.boardId) {
@@ -1117,6 +1149,12 @@ export const create = mutation({
     })
     if (!baseCapabilities.canCreate) throw new Error('task_access_changed')
 
+    const existing = await ctx.db.query('tasks')
+      .withIndex('by_project_idempotency', (q) =>
+        q.eq('projectId', args.projectId).eq('createIdempotencyKey', args.idempotencyKey),
+      ).unique()
+    if (existing) return { publicKey: existing.publicKey, taskId: existing._id }
+
     if (board.projectId !== args.projectId || board.groupId !== groupId || board.archivedAt) {
       throw new Error('task_destination_invalid')
     }
@@ -1141,7 +1179,7 @@ export const create = mutation({
     if (args.parentTaskId) {
       parent = await ctx.db.get(args.parentTaskId)
       if (!parent || parent.parentTaskId || parent.projectId !== args.projectId ||
-        parent.boardId !== board._id || parent.groupId !== groupId) {
+        parent.boardId !== board._id || parent.groupId !== groupId || parent.archivedAt) {
         throw new Error('task_parent_invalid')
       }
     }

@@ -11,9 +11,16 @@ import { getAvatarTone, getInitials } from './identity'
 import { MarkdownText } from './markdown'
 import { VoiceNotePlayer, isAudioAttachment } from './voice-notes'
 import { MessageInlineTasks } from '#/features/tasks/ConversationTaskActions'
+import { useTaskLinkBatch } from '#/features/tasks/task-link-context'
 import type { TaskIdentity } from '#/features/tasks/task-types'
 import { threadHref } from '#/features/threads/thread-navigation'
 import type { RepresentedThreadContext } from '#/features/threads/thread-navigation'
+import {
+  formatCopiedAttachmentCount,
+  formatMessageTime,
+} from './message-presentation'
+
+export { formatCopiedAttachmentCount } from './message-presentation'
 
 export type ReplyToMessagePreview = {
   messageId: Id<'messages'>
@@ -85,10 +92,6 @@ export function getForwardedSourceLabel(forwarded: Pick<ForwardedMessagePreview,
   return forwarded.sourceGroupName ? `Forwarded from ${forwarded.sourceGroupName}` : 'Forwarded message'
 }
 
-export function formatCopiedAttachmentCount(count: number) {
-  return `${count} attachment${count === 1 ? '' : 's'} copied`
-}
-
 export function MessageRow({
   activeGroupId,
   busyAction,
@@ -138,9 +141,12 @@ export function MessageRow({
 }) {
   const authorName = item.author?.displayName ?? 'Unknown Member'
   const canForward = canForwardMessages && groups.some((group) => group._id !== item.message.groupId)
+  const linkedTasks = useTaskLinkBatch()?.messageTasks.get(String(item.message._id))
   return (
     <article
+      aria-label={`${authorName} message`}
       className={isFlashing ? 'track-message-row flashing' : 'track-message-row'}
+      data-author-id={item.message.authorId}
       data-thread-item-key={item.message._id}
       data-channel-sequence={item.message.channelSequence}
       id={`message-${item.message._id}`}
@@ -171,6 +177,7 @@ export function MessageRow({
           groups={groups}
           identity={identity}
           item={item}
+          linkedTasks={linkedTasks}
           canDelete={canDeleteMessages && item.message.authorId === currentUserId}
           onDeleteMessage={onDeleteMessage}
           onForwardMessage={onForwardMessage}
@@ -178,13 +185,12 @@ export function MessageRow({
         />
         <div className="track-message-meta">
           <strong>{authorName}</strong>
-          {item.authorCompany ? (
-            <span className="track-author-company">{item.authorCompany.displayName}</span>
-          ) : null}
           {/*<Badge className="track-role-chip" variant="outline">
             {visibleRole}
           </Badge>*/}
-          <time>{new Date(item.message.createdAt).toLocaleTimeString()}</time>
+          <time dateTime={new Date(item.message.createdAt).toISOString()}>
+            {formatMessageTime(item.message.createdAt)}
+          </time>
         </div>
         {item.replyTo ? <QuotedMessageBlock quote={item.replyTo} /> : null}
         {item.forwardedFrom ? (
@@ -241,7 +247,7 @@ export function MessageRow({
               const content = isImage ? (
                 <>
                   {url ? (
-                    <img alt={attachment.filename} src={url} />
+                    <img alt={attachment.filename} height={96} src={url} width={154} />
                   ) : (
                     <span className="track-attachment-file-icon">
                       <AttachmentTypeIcon

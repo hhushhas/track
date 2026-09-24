@@ -27,14 +27,12 @@ export async function enableDevAuthBypass() {
   const signIn = await authClient.signIn.email({
     email: devAuthBypassUser.email,
     password: devAuthBypassPassword,
-    callbackURL: '/',
   });
   if (signIn.error) {
     const signUp = await authClient.signUp.email({
       email: devAuthBypassUser.email,
       password: devAuthBypassPassword,
       name: devAuthBypassUser.displayName,
-      callbackURL: '/',
     });
     if (signUp.error) throw new Error('dev_auth_sign_in_failed');
   }

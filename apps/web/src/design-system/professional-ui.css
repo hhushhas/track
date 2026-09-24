@@ -1,0 +1,955 @@
+/* Track UI v2
+ * Authoritative visual layer for the professionalization migration.
+ * Feature styles continue to own behavior and feature-only layout.
+ */
+
+.track-ui-v2 {
+  --palette-canvas: #f6f6f4;
+  --palette-surface: #ffffff;
+  --palette-subtle: #efefec;
+  --palette-hover: #e9e9e5;
+  --palette-ink: #1d1d1b;
+  --palette-ink-secondary: #51514d;
+  --palette-ink-muted: #777771;
+  --palette-rule: #dfdfda;
+  --palette-rule-strong: #cacac3;
+  --palette-signal: #e2a800;
+  --palette-signal-strong: #765700;
+  --palette-signal-soft: #fff7d8;
+
+  --surface-canvas: var(--palette-canvas);
+  --surface-raised: var(--palette-surface);
+  --surface-subtle: var(--palette-subtle);
+  --surface-hover: var(--palette-hover);
+  --text-primary: var(--palette-ink);
+  --text-secondary: var(--palette-ink-secondary);
+  --text-muted: var(--palette-ink-muted);
+  --border-subtle: var(--palette-rule);
+  --border-strong: var(--palette-rule-strong);
+  --action-primary: var(--palette-ink);
+  --action-primary-hover: #353532;
+  --action-signal: var(--palette-signal);
+  --action-signal-strong: var(--palette-signal-strong);
+  --action-signal-soft: var(--palette-signal-soft);
+  --focus-ring: var(--palette-signal-strong);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --control-sm: 32px;
+  --control-md: 36px;
+  --control-lg: 40px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-panel: 10px;
+  --app-nav-width: 236px;
+  --context-rail-width: 300px;
+  --page-max-width: 1180px;
+  --page-gutter: clamp(20px, 3vw, 40px);
+
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-display);
+  --font-meta: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --paper: var(--surface-raised);
+  --paper-2: var(--surface-canvas);
+  --paper-3: var(--surface-subtle);
+  --ink: var(--text-primary);
+  --ink-2: var(--text-secondary);
+  --ink-3: var(--text-muted);
+  --ink-4: #92928b;
+  --hairline: var(--border-subtle);
+  --hairline-strong: var(--border-strong);
+  --accent: var(--action-signal);
+  --accent-tint: var(--action-signal-soft);
+  --accent-strong: var(--action-signal-strong);
+  --background: var(--surface-raised);
+  --card: var(--surface-raised);
+  --secondary: var(--surface-subtle);
+  --muted: var(--surface-subtle);
+  --border: var(--border-subtle);
+  --input: var(--border-strong);
+  --ring: var(--focus-ring);
+  --sidebar: var(--surface-canvas);
+  --shadow-pop: 0 12px 32px rgb(29 29 27 / 12%);
+  --shadow-sheet: 0 24px 72px rgb(29 29 27 / 18%);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  background: var(--surface-canvas);
+}
+
+.track-ui-v2.dark,
+.dark .track-ui-v2,
+.dark.track-ui-v2 {
+  --palette-canvas: #171716;
+  --palette-surface: #1d1d1c;
+  --palette-subtle: #252523;
+  --palette-hover: #2e2e2b;
+  --palette-ink: #f0f0eb;
+  --palette-ink-secondary: #ccccc4;
+  --palette-ink-muted: #a0a099;
+  --palette-rule: #343431;
+  --palette-rule-strong: #4a4a45;
+  --palette-signal: #e9b11b;
+  --palette-signal-strong: #f4ca53;
+  --palette-signal-soft: #302913;
+  --focus-ring: var(--palette-signal-strong);
+  --action-primary: #f0f0eb;
+  --action-primary-hover: #ffffff;
+  --shadow-pop: 0 14px 36px rgb(0 0 0 / 42%);
+  --shadow-sheet: 0 24px 72px rgb(0 0 0 / 58%);
+}
+
+.track-ui-v2 *,
+.track-ui-v2 *::before,
+.track-ui-v2 *::after {
+  box-sizing: border-box;
+}
+
+.track-ui-v2 :where(h1, h2, h3) {
+  text-wrap: balance;
+}
+
+.track-ui-v2 :where(p, li, dd) {
+  text-wrap: pretty;
+}
+
+.track-ui-v2 :where(button, a, input, textarea, select, [role="button"]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.track-ui-v2 :where(button, [role="button"], a) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--action-signal) 16%, transparent);
+}
+
+.track-ui-v2 :where([data-slot="dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"]) {
+  overscroll-behavior: contain;
+}
+
+/* Shared overlays are matte, compact, and elevated only while floating. */
+.track-ui-v2 :where(
+  [data-slot="dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="select-content"]
+) {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(6px);
+}
+
+.track-ui-v2 :where([data-slot="dialog-overlay"], [data-slot="sheet-overlay"]) {
+  background: rgb(8 8 7 / 72%);
+  backdrop-filter: blur(2px);
+}
+
+/* Drawers share one structural contract; feature CSS only owns content layout. */
+.track-ui-v2 .track-drawer-overlay {
+  background: rgb(8 8 7 / 64%);
+  backdrop-filter: blur(2px);
+}
+
+.track-ui-v2 .track-drawer[data-slot="sheet-content"] {
+  max-width: none !important;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sheet);
+  backdrop-filter: none;
+}
+
+.track-ui-v2 .track-drawer[data-side="left"],
+.track-ui-v2 .track-drawer[data-side="right"] {
+  width: min(var(--track-drawer-width, 420px), calc(100vw - 16px));
+}
+
+.track-ui-v2 .track-drawer[data-side="top"],
+.track-ui-v2 .track-drawer[data-side="bottom"] {
+  width: 100%;
+}
+
+.track-ui-v2 .track-drawer[data-side="right"] {
+  border-left: 1px solid var(--border-strong);
+}
+
+.track-ui-v2 .track-drawer[data-side="left"] {
+  border-right: 1px solid var(--border-strong);
+}
+
+.track-ui-v2 .track-drawer[data-side="top"] {
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.track-ui-v2 .track-drawer[data-side="bottom"] {
+  border-top: 1px solid var(--border-strong);
+}
+
+.track-ui-v2 .track-drawer-header {
+  min-height: 72px;
+  flex: 0 0 auto;
+  justify-content: center;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  padding: 16px 52px 16px 20px;
+}
+
+.track-ui-v2 .track-drawer-header [data-slot="sheet-title"] {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.track-ui-v2 .track-drawer-header [data-slot="sheet-description"] {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.track-ui-v2 .track-drawer-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--track-drawer-body-padding, 20px);
+  scrollbar-gutter: stable;
+}
+
+.track-ui-v2 .track-drawer-footer {
+  min-height: 68px;
+  flex: 0 0 auto;
+  justify-content: center;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+}
+
+.track-ui-v2 .track-drawer-close {
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+}
+
+.track-ui-v2 .track-drawer-close:hover {
+  border-color: var(--border-subtle);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.track-ui-v2 .track-drawer-close:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .track-ui-v2 .track-drawer[data-side="left"],
+  .track-ui-v2 .track-drawer[data-side="right"] {
+    width: min(var(--track-drawer-width, 420px), calc(100vw - 8px));
+  }
+
+  .track-ui-v2 .track-drawer-header {
+    min-height: 64px;
+    padding: calc(14px + env(safe-area-inset-top)) 48px 14px 16px;
+  }
+
+  .track-ui-v2 .track-drawer-body {
+    padding: var(--track-drawer-mobile-body-padding, 16px);
+  }
+
+  .track-ui-v2 .track-drawer-footer {
+    padding-inline: 16px;
+  }
+}
+
+.track-ui-v2 :where([data-slot="dropdown-menu-item"], [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-checkbox-item"], [data-slot="select-item"]) {
+  min-height: var(--control-sm);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.track-ui-v2 :where([data-slot="dropdown-menu-item"], [data-slot="dropdown-menu-radio-item"], [data-slot="dropdown-menu-checkbox-item"], [data-slot="select-item"]):where([data-highlighted], :hover) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.track-ui-v2 :where([data-slot="dropdown-menu-radio-item"][data-checked], [data-slot="dropdown-menu-checkbox-item"][data-checked], [data-slot="select-item"][data-selected]) {
+  background: var(--action-signal-soft);
+  color: var(--action-signal-strong);
+}
+
+/* Portal-mounted select items inherit the base focus utility, which uses the
+ * dark accent foreground in dark mode. Keep input dropdown hover readable. */
+.track-dropdown-input-menu [data-slot="select-item"]:where([data-highlighted], :hover, :focus) {
+  background: var(--paper-3);
+  color: var(--ink) !important;
+}
+
+.track-dropdown-input-menu [data-slot="select-item"][data-selected] {
+  background: var(--accent-tint);
+  color: var(--accent-strong) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-ui-v2 :where([data-slot="dialog-content"], [data-slot="sheet-content"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-slot="select-content"]) {
+    animation: none;
+    transition: none;
+  }
+}
+
+.track-ui-v2 :where(.track-button, [data-slot="button"], .company-overview-new-project) {
+  min-height: var(--control-md);
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: -0.005em;
+}
+
+.track-ui-v2 :where(.icon-button, [data-slot="button"][aria-label]:not(:has(span))) {
+  min-width: var(--control-md);
+  min-height: var(--control-md);
+}
+
+.track-ui-v2 :where(input, textarea, select, [data-slot="input"], [data-slot="textarea"], [data-slot="native-select"]) {
+  border-color: var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.track-ui-v2 :where(input, textarea, select):focus-visible,
+.track-ui-v2 :where([data-slot="input"], [data-slot="textarea"], [data-slot="native-select"]):focus-visible {
+  border-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Application shells */
+.track-ui-v2 :where(.track-app-shell, .company-hub-shell, .company-project-shell, .company-task-shell, .track-company-thread-workspace) {
+  background: var(--surface-raised);
+}
+
+@media (min-width: 821px) {
+  .track-ui-v2 .track-app-shell,
+  .track-ui-v2 .track-app-shell-with-rail,
+  .track-ui-v2 .track-app-shell-rail-collapsed {
+    grid-template-columns: var(--track-nav-width, var(--app-nav-width)) minmax(0, 1fr);
+  }
+
+  .track-ui-v2 .track-app-shell-with-rail {
+    grid-template-columns: var(--track-nav-width, var(--app-nav-width)) minmax(0, 1fr) var(--track-rail-width, var(--context-rail-width));
+  }
+
+  .track-ui-v2 .track-app-shell-with-rail.track-app-shell-rail-collapsed {
+    grid-template-columns: var(--track-nav-width, var(--app-nav-width)) minmax(0, 1fr) 44px;
+  }
+
+  .track-ui-v2 .track-app-shell-nav-collapsed,
+  .track-ui-v2 .track-app-shell-nav-collapsed.track-app-shell-with-rail {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .track-ui-v2 .track-app-shell-nav-collapsed.track-app-shell-with-rail {
+    grid-template-columns: 48px minmax(0, 1fr) var(--track-rail-width, var(--context-rail-width));
+  }
+
+  .track-ui-v2 .track-app-shell-nav-collapsed.track-app-shell-with-rail.track-app-shell-rail-collapsed {
+    grid-template-columns: 48px minmax(0, 1fr) 44px;
+  }
+}
+
+@media (min-width: 821px) and (max-width: 1080px) {
+  .track-ui-v2 .track-app-shell-with-rail,
+  .track-ui-v2 .track-app-shell-rail-collapsed {
+    grid-template-columns: var(--track-nav-width, var(--app-nav-width)) minmax(0, 1fr);
+  }
+
+  .track-ui-v2 .track-app-shell-nav-collapsed.track-app-shell-with-rail,
+  .track-ui-v2 .track-app-shell-nav-collapsed.track-app-shell-rail-collapsed {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+}
+
+.track-ui-v2 :where(.track-nav, .company-hub-sidebar, .company-project-nav, .company-channel-sidebar, .task-route-sidebar) {
+  border-color: var(--border-subtle);
+  background: var(--surface-canvas);
+}
+
+.track-ui-v2 :where(.track-nav-item, .company-project-nav-item, .company-sidebar-link, .task-view-tabs a, .task-view-tabs button) {
+  min-height: var(--control-sm);
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  background: transparent;
+  box-shadow: none;
+}
+
+.track-ui-v2 :where(.track-nav-item, .company-project-nav-item, .company-sidebar-link, .task-view-tabs a, .task-view-tabs button):hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  transform: none;
+}
+
+.track-ui-v2 :where(.track-nav-item.active, .company-project-nav-item.active, .company-sidebar-link.active, .task-view-tabs a.active, .task-view-tabs button.active) {
+  border: 0;
+  color: var(--text-primary);
+  background: var(--action-signal-soft);
+  box-shadow: inset 2px 0 0 var(--action-signal);
+}
+
+/* Page hierarchy */
+.track-ui-v2 :where(.company-hub, .company-settings-page) {
+  width: min(100%, calc(var(--page-max-width) + 2 * var(--page-gutter)));
+  max-width: none;
+  margin: 0 auto;
+  padding: var(--space-8) var(--page-gutter) var(--space-16);
+}
+
+.track-ui-v2 :where(.company-overview-page-header, .company-settings-header, .task-page-header, .track-settings-header, .track-profile-section-header) {
+  align-items: flex-start;
+  gap: var(--space-6);
+  margin: 0 0 var(--space-6);
+}
+
+.track-ui-v2 :where(.company-overview-page-header h1, .company-settings-header h1, .task-page-header h1, .track-settings-header h1, .track-profile-section h2) {
+  margin: var(--space-1) 0 0;
+  color: var(--text-primary);
+  font: 650 28px/1.14 var(--font-display);
+  letter-spacing: -0.035em;
+}
+
+.track-ui-v2 :where(.company-overview-page-header p, .company-settings-header p, .task-page-context, .track-settings-header p) {
+  max-width: 680px;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font: 450 13px/1.55 var(--font-body);
+}
+
+.track-ui-v2 :where(.company-eyebrow, .company-settings-kicker, .company-settings-eyebrow, .task-eyebrow, .mono-label) {
+  color: var(--action-signal-strong);
+  font: 650 10px/1.2 var(--font-meta);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* Persistent surfaces use rules; overlays alone receive elevation. */
+.track-ui-v2 :where(.company-panel, .company-settings-card, .company-overview-identity, .company-overview-panel, .task-column, .track-settings-card) {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+
+.track-ui-v2 :where(.company-overview-stats, .company-settings-summary) {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-canvas);
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.track-ui-v2 .company-overview-new-project {
+  border-color: var(--action-signal);
+  background: var(--action-signal);
+  color: #211a08;
+  box-shadow: none;
+}
+
+.track-ui-v2 .company-overview-new-project:hover {
+  background: color-mix(in srgb, var(--action-signal) 86%, white);
+  transform: none;
+}
+
+/* Conversation shell and header */
+.track-ui-v2 .track-workspace {
+  min-width: 0;
+  background: var(--surface-raised);
+}
+
+.track-ui-v2 .track-thread-header {
+  min-height: 64px;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-raised) 96%, transparent);
+  padding: 0 var(--space-5);
+  backdrop-filter: blur(12px);
+}
+
+.track-ui-v2 .track-header-title {
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.track-ui-v2 .track-header-title h1 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-primary);
+  font: 650 16px/1.25 var(--font-display);
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-ui-v2 .track-header-topic {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.track-ui-v2 .track-header-view-tabs :where(a, span) {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.track-ui-v2 .track-header-view-tabs .active {
+  color: var(--text-primary);
+}
+
+.track-ui-v2 .track-rail,
+.track-ui-v2 .track-thread-context-rail {
+  border-color: var(--border-subtle);
+  background: var(--surface-canvas);
+}
+
+/* Message rows form a conversation ledger instead of a card stack. */
+.track-ui-v2 .track-thread-scroll {
+  background:
+    linear-gradient(var(--border-subtle), var(--border-subtle)) calc(var(--page-gutter) + 15px) 0 / 1px 100% no-repeat,
+    var(--surface-raised);
+  padding: var(--space-6) var(--page-gutter) var(--space-3);
+}
+
+.track-ui-v2 .track-thread {
+  width: min(100%, 880px);
+  margin: 0 auto;
+  gap: var(--space-4);
+}
+
+.track-ui-v2 :where(.track-message-row, .track-assistant-row) {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  margin: 0;
+  border-radius: var(--radius-card);
+  padding: var(--space-2);
+  transition: background-color 140ms ease;
+}
+
+.track-ui-v2 :where(.track-message-row, .track-assistant-row):hover,
+.track-ui-v2 :where(.track-message-row, .track-assistant-row):focus-within {
+  background: color-mix(in srgb, var(--surface-canvas) 72%, transparent);
+}
+
+.track-ui-v2 .track-message-avatar {
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border: 2px solid var(--surface-raised);
+  font-size: 11px;
+}
+
+.track-ui-v2 .track-message-body {
+  position: relative;
+  min-width: 0;
+  gap: var(--space-2);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.track-ui-v2 .track-message-meta {
+  display: flex;
+  min-height: 22px;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-right: 170px;
+}
+
+.track-ui-v2 .track-message-meta strong {
+  color: var(--text-primary);
+  font: 650 13px/1.3 var(--font-display);
+}
+
+.track-ui-v2 .track-message-meta time {
+  color: var(--text-muted);
+  font: 500 10px/1.3 var(--font-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.track-ui-v2 .track-markdown {
+  color: var(--text-secondary);
+  font: 450 14px/1.55 var(--font-body);
+  overflow-wrap: anywhere;
+}
+
+.track-ui-v2 .track-message-actions {
+  top: -5px;
+  right: 0;
+  gap: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+  padding: 2px;
+}
+
+.track-ui-v2 .track-message-action-button {
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.track-ui-v2 .track-message-action-button:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.track-ui-v2 .track-message-quote,
+.track-ui-v2 .track-forwarded-message {
+  max-width: 680px;
+  border: 0;
+  border-left: 2px solid var(--border-strong);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-1) var(--space-3);
+}
+
+.track-ui-v2 .track-message-quote::before {
+  display: none;
+}
+
+.track-ui-v2 .track-thread-day-separator {
+  position: relative;
+  z-index: 1;
+  margin: var(--space-2) 0;
+}
+
+.track-ui-v2 .track-thread-day-separator span {
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font: 600 10px/1.2 var(--font-meta);
+}
+
+.track-ui-v2 .track-attachment-card,
+.track-ui-v2 .track-source-thread-link,
+.track-ui-v2 .task-inline-cards {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-canvas);
+  box-shadow: none;
+}
+
+/* Composer */
+.track-ui-v2 .track-composer-wrap {
+  border-top: 0;
+  background: linear-gradient(to bottom, transparent, var(--surface-raised) 20%);
+  padding: var(--space-2) var(--page-gutter) var(--space-5);
+}
+
+.track-ui-v2 .track-composer {
+  width: min(100%, 880px);
+  margin: 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 28px rgb(29 29 27 / 8%);
+}
+
+.track-ui-v2 .track-composer:focus-within {
+  border-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: 0 8px 28px rgb(29 29 27 / 8%);
+}
+
+.track-ui-v2 .track-composer :where(textarea, [data-slot="textarea"]) {
+  min-height: 68px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  resize: none;
+}
+
+.track-ui-v2 .track-composer :where(textarea, [data-slot="textarea"]):focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+.track-ui-v2 .track-composer-bar {
+  min-height: 44px;
+  border-color: var(--border-subtle);
+  padding: var(--space-1) var(--space-2);
+}
+
+.track-ui-v2 .track-send-key {
+  color: currentColor;
+  opacity: 0.58;
+}
+
+/* Focused thread */
+.track-ui-v2 .track-company-thread-workspace {
+  grid-template-columns: var(--company-project-nav-width, var(--app-nav-width)) minmax(0, 1fr) var(--context-rail-width);
+}
+
+.track-ui-v2 .track-company-thread-workspace .track-thread-route-header {
+  min-height: 64px;
+  border-color: var(--border-subtle);
+  background: var(--surface-raised);
+  padding: var(--space-3) var(--space-5);
+}
+
+.track-ui-v2 .track-company-thread-workspace .track-thread-message-list {
+  padding: var(--space-5) var(--page-gutter) var(--space-3);
+}
+
+.track-ui-v2 .track-company-thread-workspace .track-thread-message {
+  border-bottom-color: var(--border-subtle);
+}
+
+/* Tasks */
+.track-ui-v2 .task-page {
+  grid-template-columns: var(--app-nav-width) minmax(0, 1fr);
+  background: var(--surface-raised);
+}
+
+.track-ui-v2 .task-page-main {
+  min-width: 0;
+  background: var(--surface-raised);
+}
+
+.track-ui-v2 .task-page-header {
+  min-height: 96px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-5) var(--page-gutter) var(--space-4);
+}
+
+.track-ui-v2 .task-board {
+  gap: var(--space-3);
+  padding: var(--space-3) 0 0;
+}
+
+.track-ui-v2 .task-column {
+  border-color: var(--border-subtle);
+  background: var(--surface-canvas);
+  padding: var(--space-2);
+}
+
+.track-ui-v2 .task-card {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+
+.track-ui-v2 .task-card:hover {
+  border-color: var(--border-strong);
+  transform: none;
+}
+
+/* Company settings */
+.track-ui-v2 .company-settings-layout {
+  grid-template-columns: 196px minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.track-ui-v2 .company-settings-nav {
+  position: sticky;
+  top: var(--space-5);
+  align-self: start;
+  gap: 2px;
+}
+
+.track-ui-v2 .company-settings-nav a {
+  min-height: var(--control-md);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  padding: 0 var(--space-3);
+}
+
+.track-ui-v2 .company-settings-nav a:hover,
+.track-ui-v2 .company-settings-nav a:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.track-ui-v2 .company-settings-card {
+  scroll-margin-top: var(--space-5);
+  padding: var(--space-5);
+}
+
+.track-ui-v2 .company-settings-card + .company-settings-card {
+  margin-top: var(--space-3);
+}
+
+.track-ui-v2 .company-settings-card-heading {
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--space-4);
+}
+
+.track-ui-v2 .company-settings-list-row {
+  min-height: 52px;
+  border-color: var(--border-subtle);
+}
+
+/* Profile and public forms inherit the same surface language. */
+.track-ui-v2 .track-profile-page {
+  background: var(--surface-canvas);
+}
+
+.track-ui-v2 .track-profile-shell {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: 0 20px 60px rgb(29 29 27 / 10%);
+}
+
+.track-ui-v2 .track-profile-sidebar {
+  border-color: var(--border-subtle);
+  background: var(--surface-canvas);
+}
+
+@media (max-width: 1100px) {
+  .track-ui-v2 .track-company-thread-workspace {
+    grid-template-columns: var(--company-project-nav-width, 220px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .track-ui-v2 :where(.company-hub, .company-settings-page) {
+    padding: var(--space-6) var(--space-4) var(--space-12);
+  }
+
+  .track-ui-v2 .task-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .track-ui-v2 .company-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .track-ui-v2 .company-settings-nav {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: var(--space-2);
+    scrollbar-width: thin;
+  }
+
+  .track-ui-v2 .company-settings-nav a {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 700px) {
+  .track-ui-v2 {
+    --page-gutter: 14px;
+  }
+
+  .track-ui-v2 :where(.company-overview-page-header h1, .company-settings-header h1, .task-page-header h1, .track-settings-header h1, .track-profile-section h2) {
+    font-size: 24px;
+  }
+
+  .track-ui-v2 .track-thread-header {
+    min-height: 56px;
+    padding: 0 var(--space-3);
+  }
+
+  .track-ui-v2 .track-thread-scroll {
+    background:
+      linear-gradient(var(--border-subtle), var(--border-subtle)) 29px 0 / 1px 100% no-repeat,
+      var(--surface-raised);
+    padding: var(--space-4) var(--page-gutter) var(--space-2);
+  }
+
+  .track-ui-v2 :where(.track-message-row, .track-assistant-row) {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+  }
+
+  .track-ui-v2 .track-message-meta {
+    min-height: 20px;
+    padding-right: 0;
+  }
+
+  .track-ui-v2 .track-message-actions {
+    position: static;
+    width: fit-content;
+    margin: var(--space-2) 0 0;
+    box-shadow: none;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .track-ui-v2 .track-composer-wrap {
+    padding: var(--space-2) var(--page-gutter) max(var(--space-3), env(safe-area-inset-bottom));
+  }
+
+  .track-ui-v2 .task-page-header {
+    min-height: 0;
+    padding: var(--space-4) var(--page-gutter);
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .track-ui-v2 .track-message-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track-ui-v2 *,
+  .track-ui-v2 *::before,
+  .track-ui-v2 *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

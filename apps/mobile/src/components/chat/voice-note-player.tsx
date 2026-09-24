@@ -2,11 +2,12 @@ import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { formatDuration } from '@/lib/attachment-presentation';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
@@ -76,7 +77,7 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
     .minDistance(0)
     .onBegin((event) => {
       if (trackWidth <= 0) return;
-      runOnJS(beginScrub)();
+      scheduleOnRN(beginScrub);
       progress.value = clamp01(event.x / trackWidth);
     })
     .onUpdate((event) => {
@@ -84,7 +85,7 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
       progress.value = clamp01(event.x / trackWidth);
     })
     .onFinalize(() => {
-      runOnJS(seekToFraction)(progress.value);
+      scheduleOnRN(seekToFraction, progress.value);
     });
 
   const playedStyle = useAnimatedStyle(() => ({ width: progress.value * trackWidth }));
@@ -129,12 +130,12 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
         style={[styles.playButton, { backgroundColor: theme.accent }]}>
         {status.isLoaded ? (
           <PlatformIcon
-            color={Colors.light.text}
+            color={theme.background}
             name={status.playing ? 'pause' : 'play'}
             size={20}
           />
         ) : (
-          <ActivityIndicator color={Colors.light.text} size="small" />
+          <ActivityIndicator color={theme.background} size="small" />
         )}
       </Pressable>
 
@@ -188,7 +189,7 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
             <Pressable
               accessibilityLabel={`Playback speed ${speed} times`}
               accessibilityRole="button"
-              hitSlop={10}
+              hitSlop={12}
               onPress={cycleSpeed}
               style={[styles.speed, { backgroundColor: theme.backgroundSelected }]}>
               <ThemedText themeColor="textSecondary" type="captionBold">{`${speed}x`}</ThemedText>

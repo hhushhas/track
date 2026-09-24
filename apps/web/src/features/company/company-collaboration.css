@@ -1,0 +1,282 @@
+/* Workflow 4: Company collaboration directories and access boundaries. */
+.company-directory-header-tools {
+  display: flex;
+  width: min(620px, 54%);
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 3px;
+}
+
+.company-directory-search {
+  display: flex;
+  width: min(360px, 100%);
+  height: 42px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--company-ref-border-strong);
+  border-radius: var(--radius-card);
+  background: var(--company-ref-surface);
+  color: var(--company-ref-faint);
+  padding: 0 12px;
+}
+
+.company-directory-search:focus-within {
+  border-color: var(--company-ref-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.company-directory-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--company-ref-text);
+  font: 500 12px/1.2 var(--font-body);
+}
+
+.company-directory-search input::placeholder { color: var(--company-ref-faint); }
+
+.company-directory-view { gap: 12px; }
+
+.company-collaboration-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.company-collaboration-summary > div {
+  display: grid;
+  min-height: 92px;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-content: center;
+  align-items: center;
+  gap: 3px 13px;
+  border: 1px solid var(--company-ref-border);
+  border-radius: var(--radius-panel);
+  background: var(--company-ref-surface-raised);
+  padding: 14px 17px;
+}
+
+.company-collaboration-summary > div > i {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  grid-row: 1 / span 3;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--company-ref-border);
+  border-radius: 9px;
+  background: var(--company-ref-surface-subtle);
+  color: var(--company-ref-muted);
+  font-style: normal;
+}
+.company-collaboration-summary > div:first-child > i { color: var(--accent-strong); }
+.company-collaboration-summary > div:last-child > i { color: var(--danger); }
+.company-collaboration-summary span {
+  grid-column: 2;
+  color: var(--company-ref-muted);
+  font: 600 10.5px/1.2 var(--font-meta);
+}
+.company-collaboration-summary strong {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  color: var(--company-ref-text);
+  font: 700 24px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+.company-collaboration-summary small { grid-column: 2 / -1; color: var(--company-ref-faint); font: 500 9.5px/1.2 var(--font-meta); }
+
+.company-filter-bar {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--company-ref-border);
+  border-radius: var(--radius-card);
+  background: var(--company-ref-surface-raised);
+  padding: 6px 8px;
+}
+
+.company-filter-bar > span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--company-ref-muted);
+  padding: 0 9px 0 6px;
+  font: 600 10px/1 var(--font-meta);
+}
+
+.company-filter-bar button {
+  display: inline-flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--company-ref-muted);
+  padding: 6px 11px;
+  font: 600 11px/1 var(--font-meta);
+}
+
+.company-filter-bar button:hover { background: var(--company-ref-surface-subtle); color: var(--company-ref-text); }
+.company-filter-bar button.active {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--company-ref-border));
+  background: var(--accent-tint);
+  color: var(--accent-strong);
+}
+.company-filter-bar button small {
+  min-width: 18px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--company-ref-muted) 10%, transparent);
+  padding: 3px 5px;
+  font-size: 8.5px;
+  text-align: center;
+}
+
+.company-directory-panel { overflow: visible; }
+.company-directory-table { margin-top: 16px; border-top: 1px solid var(--company-ref-border); }
+.company-directory-table-head,
+.company-directory-row {
+  display: grid;
+  grid-template-columns: minmax(230px, 2fr) minmax(120px, 1fr) 104px 112px 82px 18px;
+  align-items: center;
+  gap: 14px;
+}
+.company-directory-table-head {
+  min-height: 38px;
+  color: var(--company-ref-faint);
+  font: 650 9px/1 var(--font-meta);
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+.company-directory-row {
+  min-height: 78px;
+  border-top: 1px solid var(--company-ref-border);
+  color: var(--company-ref-muted);
+  font-size: 10.5px;
+  text-decoration: none;
+}
+.company-directory-row:hover { background: color-mix(in srgb, var(--company-ref-surface-subtle) 72%, transparent); }
+.company-directory-row:focus-visible,
+.company-filter-bar button:focus-visible,
+.company-directory-search:focus-within {
+  outline: 2px solid var(--company-ref-focus);
+  outline-offset: 2px;
+}
+.company-directory-identity {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+}
+.company-directory-identity .company-project-graphic { width: 42px; height: 42px; }
+.company-directory-identity > span:last-child { display: grid; min-width: 0; gap: 3px; }
+.company-directory-identity strong,
+.company-directory-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.company-directory-identity strong { color: var(--company-ref-text); font-size: 12.5px; }
+.company-directory-identity small { color: var(--company-ref-faint); font-size: 10px; }
+.company-access-cell,
+.company-role-cell { display: inline-flex; align-items: center; gap: 6px; text-transform: capitalize; }
+
+.company-state-pill {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid var(--company-ref-border);
+  border-radius: 999px;
+  background: var(--company-ref-surface-subtle);
+  color: var(--company-ref-muted);
+  padding: 4px 8px;
+  font: 650 9px/1 var(--font-meta);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.company-state-pill.active { border-color: color-mix(in srgb, var(--success) 30%, var(--company-ref-border)); color: var(--success); }
+.company-state-pill.proposed,
+.company-state-pill.forming { border-color: color-mix(in srgb, var(--accent) 34%, var(--company-ref-border)); background: var(--accent-tint); color: var(--accent-strong); }
+.company-state-pill.archived,
+.company-state-pill.inactive { color: var(--company-ref-faint); }
+
+.company-directory-view .company-people-list > li {
+  min-height: 62px;
+  grid-template-columns: 36px minmax(180px, 1.7fr) minmax(90px, .75fr) 96px minmax(84px, .6fr) 32px;
+  gap: 12px;
+}
+.company-directory-view .company-people-list > .company-people-list-head {
+  min-height: 30px;
+  color: var(--company-ref-faint);
+  font: 650 9px/1 var(--font-meta);
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+.company-directory-view .company-person-copy small { text-transform: none; }
+.company-role-cell { color: var(--company-ref-muted); font: 600 10px/1 var(--font-meta); }
+.company-directory-view .company-people-list time { color: var(--company-ref-muted); font: 500 10px/1.2 var(--font-meta); }
+
+.company-directory-view .company-relationship-grid { grid-template-columns: 1fr; }
+.company-directory-view .company-relationship-card { padding: 18px; }
+.company-directory-view .company-relationship-card > header { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; }
+.company-boundary-trace {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  border: 1px solid var(--company-ref-border);
+  border-radius: 8px;
+  background: var(--company-ref-surface-subtle);
+  padding: 10px 12px;
+}
+.company-boundary-trace span { display: inline-flex; min-width: 0; align-items: center; gap: 5px; color: var(--company-ref-muted); font-size: 9.5px; }
+.company-boundary-trace i { width: 14px; height: 1px; flex: 0 0 14px; background: var(--company-ref-border-strong); }
+.company-directory-view .company-relationship-card > button { margin-top: 12px; }
+
+.company-management-body .company-inline-form > button[type="submit"],
+.company-settings-view .company-inline-form > button[type="submit"],
+.company-directory-view .company-relationship-card > button {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--company-ref-border));
+  background: var(--accent);
+  color: #211a08;
+}
+.company-management-body .company-inline-form > button[type="submit"]:disabled { opacity: .48; }
+.company-settings-profile .company-section-heading { border-bottom: 1px solid var(--company-ref-border); padding-bottom: 16px; }
+.company-settings-profile .company-section-heading > p { max-width: 520px; margin: 0; color: var(--company-ref-muted); font-size: 10.5px; text-align: right; }
+.company-current-badge { display: inline-flex; margin-left: 8px; border-radius: 999px; background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); padding: 5px 8px; font: 650 9px/1 var(--font-meta); vertical-align: middle; }
+
+@media (max-width: 1160px) {
+  .company-directory-table-head,
+  .company-directory-row { grid-template-columns: minmax(220px, 2fr) minmax(110px, 1fr) 100px 92px 18px; }
+  .company-directory-table-head > :nth-child(5),
+  .company-directory-row > :nth-child(5) { display: none; }
+  .company-boundary-trace { align-items: flex-start; flex-direction: column; }
+  .company-boundary-trace i { width: 1px; height: 8px; margin-left: 7px; }
+}
+
+@media (max-width: 860px) {
+  .company-directory-header-tools { width: 100%; justify-content: flex-start; }
+  .company-collaboration-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .company-directory-table { overflow-x: auto; }
+  .company-directory-table-head,
+  .company-directory-row { min-width: 720px; }
+  .company-directory-view .company-relationship-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 620px) {
+  .company-collaboration-summary { grid-template-columns: 1fr; gap: 10px; }
+  .company-directory-header-tools { display: grid; grid-template-columns: 1fr; }
+  .company-directory-search { width: 100%; }
+  .company-settings-profile .company-section-heading > p { text-align: left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .company-directory-view *,
+  .company-directory-header-tools * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}

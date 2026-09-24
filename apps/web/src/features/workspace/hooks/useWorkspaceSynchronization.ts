@@ -3,10 +3,12 @@ import { useEffect } from 'react'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
+import { companyProjectViewFromWorkspaceView } from '../lib/project-classification'
 import { findVisibleRouteGroupId } from '../lib/route-state'
 import { getResolvedTrackUserId, setResolvedTrackUserId } from '../workspace-session'
+import { SIDEBAR_COLLAPSE_THRESHOLD, clampSidebarWidth } from '../sidebar-sizing'
 
-type WorkspaceView = 'home' | 'project' | 'group' | 'settings'
+type WorkspaceView = 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 type SessionUser = { id: string; email: string; name: string }
 
 export function useWorkspaceSynchronization({
@@ -22,6 +24,8 @@ export function useWorkspaceSynchronization({
   mentionIndex,
   mentionOptionRefs,
   navCollapsed,
+  navResizing,
+  navWidth,
   projectItems,
   projects,
   railResizing,
@@ -33,6 +37,9 @@ export function useWorkspaceSynchronization({
   setActionError,
   setLogoutConfirmOpen,
   setMentionIndex,
+  setNavCollapsed,
+  setNavResizing,
+  setNavWidth,
   setRailResizing,
   setRailWidth,
   setShowJumpToLatest,
@@ -45,6 +52,8 @@ export function useWorkspaceSynchronization({
   view,
   visibleGroups,
 }: {
+  actingCompanyId?: Id<'companies'> | null
+  autoSelectCompanyProject?: boolean
   acceptPendingInvitations: (args: { userId: Id<'users'> }) => Promise<unknown>
   activeGroupId: Id<'groups'> | null
   activeMentionQuery: string | undefined
@@ -57,7 +66,14 @@ export function useWorkspaceSynchronization({
   mentionIndex: number
   mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
   navCollapsed: boolean
-  projectItems: Array<{ project: Doc<'projects'>; membership: Doc<'projectMembers'> }>
+  navResizing: boolean
+  navWidth: number
+  projectItems: Array<{
+    project: Doc<'projects'>
+    membership: Doc<'projectMembers'>
+    company?: { _id: Id<'companies'>; displayName?: string } | null
+    projectType?: 'legacy' | 'company' | 'shared'
+  }>
   projects: unknown[] | undefined
   railResizing: boolean
   routeGroupId: Id<'groups'> | undefined
@@ -68,6 +84,9 @@ export function useWorkspaceSynchronization({
   setActionError: (error: unknown) => void
   setLogoutConfirmOpen: Dispatch<SetStateAction<boolean>>
   setMentionIndex: Dispatch<SetStateAction<number>>
+  setNavCollapsed: Dispatch<SetStateAction<boolean>>
+  setNavResizing: Dispatch<SetStateAction<boolean>>
+  setNavWidth: Dispatch<SetStateAction<number>>
   setRailResizing: Dispatch<SetStateAction<boolean>>
   setRailWidth: Dispatch<SetStateAction<number>>
   setShowJumpToLatest: Dispatch<SetStateAction<boolean>>
@@ -91,8 +110,38 @@ export function useWorkspaceSynchronization({
     window.localStorage.setItem('track-nav-collapsed', String(navCollapsed))
   }, [navCollapsed])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem('track-nav-width', String(navWidth))
+  }, [navWidth])
+
   useEffect(() => setLogoutConfirmOpen(false), [navCollapsed, setLogoutConfirmOpen])
   useEffect(() => setMentionIndex(0), [activeMentionQuery, setMentionIndex])
+
+  useEffect(() => {
+    if (!navResizing) return
+    const shellLeft = document.querySelector<HTMLElement>('.track-app-shell')?.getBoundingClientRect().left ?? 0
+    function handlePointerMove(event: PointerEvent) {
+      const localWidth = event.clientX - shellLeft
+      if (localWidth < SIDEBAR_COLLAPSE_THRESHOLD) {
+        setNavCollapsed(true)
+        return
+      }
+      setNavCollapsed(false)
+      setNavWidth(clampSidebarWidth(localWidth))
+    }
+    function handlePointerUp() {
+      setNavResizing(false)
+    }
+    document.body.classList.add('track-nav-resizing')
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    return () => {
+      document.body.classList.remove('track-nav-resizing')
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [navResizing, setNavCollapsed, setNavResizing, setNavWidth])
 
   useEffect(() => {
     if (!showMentionMenu) return
@@ -122,38 +171,58 @@ export function useWorkspaceSynchronization({
   }, [activeProjectId, routeProjectId, setActiveProjectId])
 
   useEffect(() => {
-    if (!sessionUser?.id) {
+    if (!routeProjectId || projects === undefined) return
+    const routeProject = projectItems.find((item) => item.project._id === routeProjectId)
+    if (!routeProject || routeProject.projectType === 'legacy' || !routeProject.company?._id) return
+
+    void navigate({
+      replace: true,
+      to: '/workspace/company-projects/$projectId',
+      params: { projectId: routeProjectId },
+      search: {
+        companyId: routeProject.company._id,
+        groupId: routeGroupId ?? '',
+        membershipId: routeProject.membership._id,
+        view: companyProjectViewFromWorkspaceView(view),
+      },
+    })
+  }, [navigate, projectItems, projects, routeGroupId, routeProjectId, view])
+
+  useEffect(() => {
+    if (!sessionUser?.id && !devAuthEnabled) {
       setTrackUserId(null)
       return
     }
-    const cachedTrackUserId = getResolvedTrackUserId(sessionUser.id)
-    if (cachedTrackUserId) {
-      if (trackUserId !== cachedTrackUserId) setTrackUserId(cachedTrackUserId)
-      return
+    if (!devAuthEnabled && sessionUser?.id) {
+      const cachedTrackUserId = getResolvedTrackUserId(sessionUser.id)
+      if (cachedTrackUserId) {
+        if (trackUserId !== cachedTrackUserId) setTrackUserId(cachedTrackUserId)
+        return
+      }
+      if (trackUserId) return
     }
-    if (trackUserId) return
     const syncUser = devAuthEnabled
       ? syncDevUser()
       : syncCurrentUser({
-          googleSubject: sessionUser.id,
-          email: sessionUser.email,
-          displayName: sessionUser.name,
+          googleSubject: sessionUser!.id,
+          email: sessionUser!.email,
+          displayName: sessionUser!.name,
         })
     void syncUser.then(async (userId) => {
-      setResolvedTrackUserId(sessionUser.id, userId)
+      if (sessionUser?.id) setResolvedTrackUserId(sessionUser.id, userId)
       setTrackUserId(userId)
       await acceptPendingInvitations({ userId })
     }).catch(setActionError)
   }, [acceptPendingInvitations, devAuthEnabled, sessionUser, setActionError, setTrackUserId, syncCurrentUser, syncDevUser, trackUserId])
 
   useEffect(() => {
-    if (!trackUserId || projects === undefined || projectItems.length > 0) return
+    if (!trackUserId || routeProjectId || projects === undefined || projectItems.length > 0) return
     if (currentTrackProfileIncomplete) return
     void ensureStarterProject({ userId: trackUserId }).then((starterProjectId) => {
       setActiveProjectId(starterProjectId)
       void navigate({ to: '/workspace/projects/$projectId', params: { projectId: starterProjectId } })
     }).catch(setActionError)
-  }, [currentTrackProfileIncomplete, ensureStarterProject, navigate, projectItems.length, projects, setActionError, setActiveProjectId, trackUserId])
+  }, [currentTrackProfileIncomplete, ensureStarterProject, navigate, projectItems.length, projects, routeProjectId, setActionError, setActiveProjectId, trackUserId])
 
   useEffect(() => {
     if (!trackUserId || currentTrackUser === undefined || !currentTrackProfileIncomplete) return

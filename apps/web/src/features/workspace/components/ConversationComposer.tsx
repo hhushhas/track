@@ -1,10 +1,11 @@
 import { AtSign, Bot, CornerUpLeft, Import, MessagesSquare, Paperclip, Smile, X } from 'lucide-react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ClipboardEvent, ComponentProps, RefObject } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
+import { MentionListbox } from '#/components/ui/mention-listbox'
 import { Textarea } from '#/components/ui/textarea'
 import { AttachmentTypeIcon, formatFileSize } from '#/features/workspace/attachment-ui'
 import type { PendingWorkspaceAttachment } from '#/features/workspace/hooks/usePendingAttachments'
@@ -122,6 +123,16 @@ export function ConversationComposer({
 }: ConversationComposerProps) {
   const mentionMenuVisible = showMentionMenu && !emojiPickerOpen
   const composingRef = useRef(false)
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null)
+  const emojiTriggerRef = useRef<HTMLButtonElement | null>(null)
+
+  useEffect(() => {
+    if (emojiPickerOpen) {
+      requestAnimationFrame(() => emojiPickerRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
+      return
+    }
+    if (document.activeElement !== composerRef.current) emojiTriggerRef.current?.focus()
+  }, [composerRef, emojiPickerOpen])
 
   function insertEmoji(emoji: string) {
     onInsertComposerText(emoji)
@@ -167,7 +178,7 @@ export function ConversationComposer({
                     previewUrl={attachment.previewUrl}
                   />
                 ) : attachment.previewUrl ? (
-                  <img alt="" src={attachment.previewUrl} />
+                  <img alt="" height={42} src={attachment.previewUrl} width={42} />
                 ) : (
                   <span className="track-composer-file-icon">
                     <AttachmentTypeIcon
@@ -207,8 +218,11 @@ export function ConversationComposer({
         ) : null}
         {!voiceRecordingActive ? (
           <Textarea
+            aria-activedescendant={mentionMenuVisible ? `composer-mention-option-${mentionIndex}` : undefined}
             aria-label={ariaLabel}
-            autoFocus
+            aria-controls={mentionMenuVisible ? 'composer-mention-options' : undefined}
+            aria-expanded={mentionMenuVisible}
+            aria-autocomplete="list"
             disabled={!available || contentLocked || busyAction === 'send-message'}
             onBlur={onComposerBlur}
             onChange={(event) => {
@@ -265,63 +279,65 @@ export function ConversationComposer({
             onSelect={onComposerSelect}
             placeholder={placeholder}
             ref={composerRef}
+            role="combobox"
             value={composer}
           />
         ) : null}
         {!voiceRecordingActive && mentionMenuVisible ? (
-          <div aria-label="Mention someone" className="track-mention-menu" role="listbox">
-            {mentionSections.map((section) => (
-              <div className="track-mention-section" key={section.label}>
-                <p className="track-mention-section-label">{section.label}</p>
-                {section.options.map((option) => {
-                  const index = filteredMentionOptions.findIndex((item) => item.id === option.id)
-                  return (
-                    <button
-                      aria-selected={index === mentionIndex}
-                      className={index === mentionIndex ? 'track-mention-option active' : 'track-mention-option'}
-                      key={option.id}
-                      onMouseDown={(event) => {
-                        event.preventDefault()
-                        onMentionSelect(option)
-                      }}
-                      ref={(element) => {
-                        mentionOptionRefs.current[index] = element
-                      }}
-                      role="option"
-                      type="button"
-                    >
-                      <Avatar
-                        className={
-                          option.tone === 'bot'
-                            ? 'track-mention-avatar bot'
-                            : `track-mention-avatar ${option.tone}`
-                        }
-                      >
-                        <AvatarFallback>
-                          {option.kind === 'assistant' ? (
-                            <Bot aria-hidden="true" size={13} />
-                          ) : option.kind === 'group' ? (
-                            <MessagesSquare aria-hidden="true" size={13} />
-                          ) : (
-                            getInitials(option.label)
-                          )}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span>
-                        <strong>@{option.handle}</strong>
-                        <small>
-                          {option.label} · {option.sublabel}
-                        </small>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            ))}
-          </div>
+          <MentionListbox
+            activeIndex={mentionIndex}
+            ariaLabel="Mention someone"
+            className="track-mention-menu"
+            getKey={(option) => option.id}
+            id="composer-mention-options"
+            onSelect={onMentionSelect}
+            optionIdPrefix="composer-mention-option"
+            optionRefs={mentionOptionRefs}
+            renderOption={(option) => (
+              <>
+                <Avatar
+                  className={
+                    option.tone === 'bot'
+                      ? 'track-mention-avatar bot'
+                      : `track-mention-avatar ${option.tone}`
+                  }
+                >
+                  <AvatarFallback>
+                    {option.kind === 'assistant' ? (
+                      <Bot aria-hidden="true" size={13} />
+                    ) : option.kind === 'group' ? (
+                      <MessagesSquare aria-hidden="true" size={13} />
+                    ) : (
+                      getInitials(option.label)
+                    )}
+                  </AvatarFallback>
+                </Avatar>
+                <span>
+                  <strong>@{option.handle}</strong>
+                  <small>
+                    {option.label} · {option.sublabel}
+                  </small>
+                </span>
+              </>
+            )}
+            sections={mentionSections}
+          />
         ) : null}
         {!voiceRecordingActive && emojiPickerOpen ? (
-          <div aria-label="Emoji picker" className="track-emoji-picker" role="dialog">
+          <div
+            aria-label="Emoji picker"
+            aria-modal="true"
+            className="track-emoji-picker"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                onEmojiPickerOpenChange(false)
+              }
+            }}
+            ref={emojiPickerRef}
+            role="dialog"
+            tabIndex={-1}
+          >
             {emojiGroups.map((group) => (
               <div className="track-emoji-group" key={group.label}>
                 <p className="mono-label m-0">{group.label}</p>
@@ -352,18 +368,6 @@ export function ConversationComposer({
         <div className="track-composer-bar">
           {!voiceRecordingActive ? (
             <Button
-              aria-label="Import project memory"
-              className="icon-button"
-              disabled={!available || contentLocked || busyAction === 'memory-import'}
-              onClick={onOpenMemoryImport}
-              title="Import project memory"
-              type="button"
-            >
-              <Import aria-hidden="true" size={15} />
-            </Button>
-          ) : null}
-          {!voiceRecordingActive ? (
-            <Button
               aria-label="Add attachment"
               className="icon-button"
               disabled={!available || contentLocked || busyAction === 'send-message'}
@@ -374,47 +378,24 @@ export function ConversationComposer({
               <Paperclip aria-hidden="true" size={15} />
             </Button>
           ) : null}
-          <VoiceRecorder
-            disabled={!available || contentLocked || busyAction === 'send-message'}
-            onRecordingChange={onRecordingChange}
-            onRecorded={onVoiceNoteRecorded}
-          />
           {!voiceRecordingActive ? (
-            <>
-              <Button
-                aria-label="Mention"
-                className="icon-button"
-                disabled={!available || contentLocked || busyAction === 'send-message'}
-                onClick={() => {
+              <div aria-label="Message options" className="track-composer-more-menu" role="group">
+                <Button aria-label="Import project memory" className="icon-button" disabled={!available || contentLocked || busyAction === 'memory-import'} onClick={onOpenMemoryImport} title="Import project memory" type="button"><Import aria-hidden="true" size={15} /></Button>
+                <VoiceRecorder disabled={!available || contentLocked || busyAction === 'send-message'} onRecordingChange={onRecordingChange} onRecorded={onVoiceNoteRecorded} />
+                <Button aria-label="Mention" className="icon-button" disabled={!available || contentLocked || busyAction === 'send-message'} onClick={() => {
                   onEmojiPickerOpenChange(false)
                   const cursor = composerRef.current?.selectionStart ?? composer.length
                   const spacer = cursor > 0 && !/\s$/.test(composer.slice(0, cursor)) ? ' @' : '@'
                   const nextComposer = `${composer.slice(0, cursor)}${spacer}${composer.slice(cursor)}`
                   const nextCursor = cursor + spacer.length
                   onComposerChange(nextComposer, nextCursor)
-                  requestAnimationFrame(() => {
-                    composerRef.current?.focus()
-                    composerRef.current?.setSelectionRange(nextCursor, nextCursor)
-                  })
-                }}
-                title="Mention"
-                type="button"
-              >
-                <AtSign aria-hidden="true" size={15} />
-              </Button>
-              <Button
-                aria-label="Emoji"
-                className="icon-button"
-                disabled={!available || contentLocked}
-                onClick={() => {
-                  setComposerCursorFromRef()
-                  onEmojiPickerOpenChange(!emojiPickerOpen)
-                }}
-                title="Emoji"
-                type="button"
-              >
-                <Smile aria-hidden="true" size={15} />
-              </Button>
+                  requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(nextCursor, nextCursor) })
+                }} title="Mention" type="button"><AtSign aria-hidden="true" size={15} /></Button>
+                <Button aria-label="Emoji" className="icon-button" disabled={!available || contentLocked} onClick={() => { setComposerCursorFromRef(); onEmojiPickerOpenChange(!emojiPickerOpen) }} ref={emojiTriggerRef} title="Emoji" type="button"><Smile aria-hidden="true" size={15} /></Button>
+              </div>
+          ) : null}
+          {!voiceRecordingActive ? (
+            <>
               <span className="track-composer-spacer" />
               <Button
                 className="track-button track-button-primary"

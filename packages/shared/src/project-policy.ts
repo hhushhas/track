@@ -1,4 +1,4 @@
-import type { CompanyProjectRole } from './company'
+import type { CompanyProjectRole, ProjectStatus } from './company'
 import type { ProjectRole as LegacyProjectRole } from './domain'
 import type { ProjectAccessProfile } from './feature-flags'
 
@@ -10,6 +10,7 @@ type PolicyScope = {
   channelMember: boolean
   channelActive?: boolean
   channelSteward?: boolean
+  projectStatus?: ProjectStatus
 }
 
 export type ProjectChannelPolicyInput =
@@ -37,17 +38,20 @@ export type ProjectChannelCapabilities = Readonly<{
 export function resolveProjectChannelCapabilities(
   input: ProjectChannelPolicyInput,
 ): ProjectChannelCapabilities {
-  const readOnly = input.accessMode === 'archive'
+  const projectStatus = input.projectStatus ?? 'active'
+  const collaborationWritable = input.accessMode === 'active' && projectStatus === 'active'
+  const managementWritable = input.accessMode === 'active' &&
+    (projectStatus === 'active' || projectStatus === 'proposed')
   const manager =
     input.accessProfile === 'legacy'
       ? input.projectRole === 'owner' || input.projectRole === 'admin'
       : input.projectRole === 'manager'
   const channelActive = input.channelActive ?? true
   const authorizedSteward =
-    input.accessProfile === 'legacy' ? manager : manager && input.channelSteward === true
+    input.accessProfile === 'legacy' ? manager : input.channelSteward === true
 
   let taskCollaboration: ProjectChannelCapabilities['taskCollaboration'] = 'scoped'
-  if (readOnly) {
+  if (!collaborationWritable) {
     taskCollaboration = 'read_only'
   } else if (manager) {
     taskCollaboration = 'admin'
@@ -59,11 +63,11 @@ export function resolveProjectChannelCapabilities(
     accessProfile: input.accessProfile,
     accessMode: input.accessMode,
     canReadProject: true,
-    canWriteProject: !readOnly,
-    canManageProject: !readOnly && manager,
+    canWriteProject: collaborationWritable,
+    canManageProject: managementWritable && manager,
     canReadChannel: input.channelMember,
-    canWriteChannel: !readOnly && input.channelMember && channelActive,
-    canStewardChannel: !readOnly && input.channelMember && authorizedSteward,
+    canWriteChannel: collaborationWritable && input.channelMember && channelActive,
+    canStewardChannel: collaborationWritable && input.channelMember && authorizedSteward,
     taskCollaboration,
   }
 }

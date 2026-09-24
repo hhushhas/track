@@ -6,6 +6,7 @@ describe('web release config', () => {
   it('fails closed while the server projection is unavailable', () => {
     expect(resolveReleaseConfig(undefined)).toEqual({
       companyModel: false,
+      projectSnapshots: false,
       tasks: false,
       threads: false,
     })
@@ -16,6 +17,7 @@ describe('web release config', () => {
       status: 'loading',
       config: {
         companyModel: false,
+        projectSnapshots: false,
         tasks: false,
         threads: false,
       },
@@ -24,9 +26,19 @@ describe('web release config', () => {
       status: 'ready',
       config: {
         companyModel: false,
+        projectSnapshots: false,
         tasks: false,
         threads: false,
       },
+    })
+  })
+
+  it('does not call a capability that an older backend has not advertised', () => {
+    expect(resolveReleaseConfig({ companyModel: true, tasks: true, threads: true })).toEqual({
+      companyModel: true,
+      projectSnapshots: false,
+      tasks: true,
+      threads: true,
     })
   })
 })

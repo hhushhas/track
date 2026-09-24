@@ -196,6 +196,7 @@ export default defineSchema({
     name: v.string(),
     clientLabel: v.optional(v.string()),
     description: v.optional(v.string()),
+    iconStorageId: v.optional(v.id('_storage')),
     accessProfile: v.optional(projectAccessProfile),
     owningCompanyId: v.optional(v.id('companies')),
     relationshipId: v.optional(v.id('relationships')),
@@ -232,6 +233,9 @@ export default defineSchema({
     .index('by_project', ['projectId'])
     .index('by_project_status', ['projectId', 'status'])
     .index('by_user', ['userId'])
+    .index('by_user_status', ['userId', 'status'])
+    .index('by_user_company_status', ['userId', 'companyId', 'status'])
+    .index('by_company', ['companyId'])
     .index('by_project_user', ['projectId', 'userId'])
     .index('by_project_company_status', ['projectId', 'companyId', 'status'])
     .index('by_project_company_user_term', ['projectId', 'companyId', 'userId', 'term']),
@@ -263,6 +267,7 @@ export default defineSchema({
       v.union(v.literal('active'), v.literal('suspended'), v.literal('removed'), v.literal('archived')),
     ),
     isSteward: v.optional(v.boolean()),
+    endedByProjectMembership: v.optional(v.boolean()),
     endedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -270,6 +275,7 @@ export default defineSchema({
     .index('by_group', ['groupId'])
     .index('by_project_user', ['projectId', 'userId'])
     .index('by_user', ['userId'])
+    .index('by_user_status', ['userId', 'status'])
     .index('by_group_user', ['groupId', 'userId'])
     .index('by_group_project_member', ['groupId', 'projectMemberId'])
     .index('by_project_member_status', ['projectMemberId', 'status']),
@@ -313,6 +319,8 @@ export default defineSchema({
     replyToMessageId: v.optional(v.id('messages')),
     forwardedFrom: v.optional(forwardedMessageSnapshot),
     notificationPreview: v.optional(v.string()),
+    revision: v.optional(v.number()),
+    editedAt: v.optional(v.number()),
     trackInvocationId: v.optional(v.id('assistantStreams')),
     createdAt: v.number(),
   })
@@ -375,6 +383,7 @@ export default defineSchema({
   })
     .index('by_project', ['projectId'])
     .index('by_group', ['groupId'])
+    .index('by_group_project_member_preference', ['groupId', 'projectMemberId', 'preference'])
     .index('by_thread_project_member', ['channelThreadId', 'projectMemberId'])
     .index('by_project_member_preference', ['projectMemberId', 'preference'])
     .index('by_thread_preference', ['channelThreadId', 'preference']),
@@ -408,7 +417,8 @@ export default defineSchema({
     .index('by_user_group', ['userId', 'groupId'])
     .index('by_project_member_group', ['projectMemberId', 'groupId'])
     .index('by_user_project', ['userId', 'projectId'])
-    .index('by_group', ['groupId']),
+    .index('by_group', ['groupId'])
+    .index('by_project', ['projectId']),
 
   lastActiveContexts: defineTable({
     userId: v.id('users'),
@@ -434,6 +444,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index('by_project', ['projectId'])
     .index('by_group_updated_at', ['groupId', 'updatedAt'])
     .index('by_group_user', ['groupId', 'userId'])
     .index('by_group_project_member', ['groupId', 'projectMemberId'])
@@ -468,6 +479,7 @@ export default defineSchema({
     ),
     createdAt: v.number(),
   })
+    .index('by_project', ['projectId'])
     .index('by_message', ['messageId'])
     .index('by_group', ['groupId'])
     .index('by_storage', ['storageId'])
@@ -495,6 +507,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index('by_group', ['groupId'])
     .index('by_user_group', ['userId', 'groupId'])
     .index('by_project_member_group', ['projectMemberId', 'groupId']),
 
@@ -516,6 +529,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_project_created_at', ['projectId', 'createdAt'])
+    .index('by_project_action_created_at', ['projectId', 'action', 'createdAt'])
     .index('by_company_created_at', ['companyId', 'createdAt'])
     .index('by_relationship_created_at', ['relationshipId', 'createdAt'])
     .index('by_group_created_at', ['groupId', 'createdAt'])
@@ -709,6 +723,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
+    .index('by_project', ['projectId'])
     .index('by_group_created_at', ['groupId', 'createdAt'])
     .index('by_group_thread_created_at', ['groupId', 'channelThreadId', 'createdAt'])
     .index('by_thread_created_at', ['channelThreadId', 'createdAt']),

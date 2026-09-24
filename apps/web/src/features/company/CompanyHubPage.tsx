@@ -2,20 +2,33 @@ import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import {
   ArrowUpRight,
+  Archive,
+  Bell,
   Building2,
+  CircleAlert,
+  Clock3,
+  Filter,
   FolderKanban,
   Handshake,
   LayoutGrid,
+  Mail,
+  MessageSquareText,
   MoreHorizontal,
   Plus,
+  Search,
   Settings2,
+  ShieldCheck,
+  UserPlus,
   UsersRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import TrackLoader from "#/components/TrackLoader";
+import { ConfirmDialog } from "#/components/ui/confirm-dialog";
 import { Button } from "#/components/ui/button";
+import { authClient } from "#/lib/auth-client";
+import { useDevAuthBypass } from "#/lib/dev-auth-bypass";
 import { useReleaseConfigState } from "#/lib/release-config";
 import {
   CreateCompanyForm,
@@ -27,17 +40,31 @@ import {
   SharedProjectForm,
 } from "./CompanyForms";
 import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
+import { CompanyGlobalWork } from "./CompanyGlobalWork";
+import { CompanyOverviewDashboard } from "./CompanyOverviewDashboard";
+import { CompanyTaskCreateFlow } from "./CompanyTaskCreateFlow";
 import { useActingCompany } from "./use-acting-company";
+import { resolveCompanyMemberActionCapabilities } from "./company-member-capabilities";
 import { MigrationPanel } from "./MigrationPanel";
 import { UnassignedProjects } from "./UnassignedProjects";
 import { formatCompanyError } from "./company-errors";
+import {
+  getCompanyProjectConversationSearch,
+} from "./company-project-links";
+import { resolveCompanyAdministrationId } from "./company-query-scope";
+import { type CompanyHubView, type CompanyTaskFilter } from "./company-view-state";
+import {
+  filterPeopleDirectory,
+  filterProjectDirectory,
+  filterRelationshipDirectory,
+  type PeopleDirectoryFilter,
+  type ProjectDirectoryFilter,
+  type RelationshipDirectoryFilter,
+} from "./company-collaboration-state";
 
-type CompanyHubView =
-  | "overview"
-  | "projects"
-  | "relationships"
-  | "people"
-  | "settings";
+import "./company-overview-reference.css";
+import "./company-collaboration.css";
+import "./company-global-work.css";
 
 function getInitials(name: string) {
   return name
@@ -48,13 +75,39 @@ function getInitials(name: string) {
     .join("");
 }
 
-export function CompanyHubPage() {
+function formatRelativeTime(timestamp: number) {
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  const hours = Math.floor(elapsed / 3_600_000);
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+export function CompanyHubPage({
+  initialView = "overview",
+  initialTaskFilter = "all",
+  onViewChange,
+}: {
+  initialView?: CompanyHubView;
+  initialTaskFilter?: CompanyTaskFilter;
+  onViewChange?: (view: CompanyHubView) => void;
+}) {
   const releaseState = useReleaseConfigState();
   const flags = releaseState.config;
-  const currentUser = useQuery(api.auth.getCurrentUser);
+  const session = authClient.useSession();
+  const devAuthBypass = useDevAuthBypass();
+  const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
+  const syncDevUser = useMutation(api.auth.syncDevUser);
+  const authReady = Boolean(session.data || devAuthBypass.enabled);
+  useEffect(() => {
+    if (!authReady) return;
+    void (devAuthBypass.enabled ? syncDevUser({}) : ensureCurrentUser({}));
+  }, [authReady, devAuthBypass.enabled, ensureCurrentUser, syncDevUser]);
+  const currentUser = useQuery(api.auth.getCurrentUser, authReady ? {} : "skip");
   const companies = useQuery(
     api.companies.listMine,
-    flags.companyModel ? {} : "skip",
+    flags.companyModel && currentUser ? {} : "skip",
   );
   const availableCompanyIds = useMemo(
     () =>
@@ -75,9 +128,15 @@ export function CompanyHubPage() {
     actingCompany?.membership.role === "admin";
   const activeActingCompanyId =
     actingCompany?.company?.status === "active" ? actingCompanyId : null;
+  const companyAdministrationId = resolveCompanyAdministrationId(
+    companies,
+    actingCompanyId,
+  );
   const administration = useQuery(
     api.companies.getAdministration,
-    activeActingCompanyId ? { companyId: activeActingCompanyId } : "skip",
+    companyAdministrationId && canAdministerActingCompany
+      ? { companyId: companyAdministrationId }
+      : "skip",
   );
   const companyInvitations = useQuery(
     api.companies.listPendingForMe,
@@ -105,6 +164,37 @@ export function CompanyHubPage() {
     api.sharedProjects.listForActingCompany,
     activeActingCompanyId ? { actingCompanyId: activeActingCompanyId } : "skip",
   );
+  const companyOverview = useQuery(
+    api.companyOverview.get,
+    activeActingCompanyId ? { companyId: activeActingCompanyId, days: 7 } : "skip",
+  );
+  const companyTasks = useQuery(
+    api.companyOverview.listTasks,
+    currentUser && activeActingCompanyId && flags.tasks
+      ? { companyId: activeActingCompanyId }
+      : "skip",
+  );
+  const attention = useQuery(
+    api.mobile.listAttention,
+    currentUser && activeActingCompanyId
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          paginationOpts: { cursor: null, numItems: 40 },
+          userId: currentUser._id,
+        }
+      : "skip",
+  );
+  const projectSummaries = useQuery(
+    api.mobile.listProjects,
+    currentUser && activeActingCompanyId
+      ? {
+          actingCompanyId: activeActingCompanyId,
+          paginationOpts: { cursor: null, numItems: 50 },
+          userId: currentUser._id,
+        }
+      : "skip",
+  );
+  const taskCreateProjects = projectSummaries?.page ?? [];
   const decideCompanyInvitation = useMutation(api.companies.decideInvitation);
   const decideRelationshipInvitation = useMutation(
     api.relationships.decideInvitation,
@@ -120,19 +210,150 @@ export function CompanyHubPage() {
     api.relationships.approveRemoval,
   );
   const updateMember = useMutation(api.companies.updateMember);
+  const revokeInvitation = useMutation(api.companies.revokeInvitation);
   const setSuspended = useMutation(api.companies.setSuspended);
   const closeCompany = useMutation(api.companies.close);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeView, setActiveView] =
-    useState<CompanyHubView>("overview");
+  const [activeView, setActiveView] = useState<CompanyHubView>(initialView);
+  const [overviewSearch, setOverviewSearch] = useState("");
+  const [directorySearch, setDirectorySearch] = useState("");
+  const [projectFilter, setProjectFilter] = useState<ProjectDirectoryFilter>("all");
+  const [relationshipFilter, setRelationshipFilter] =
+    useState<RelationshipDirectoryFilter>("all");
+  const [peopleFilter, setPeopleFilter] = useState<PeopleDirectoryFilter>("all");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [closeCompanyOpen, setCloseCompanyOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "task" | "message" | "suggestion" | "invitation">("all");
+  const [projectCreatorRequested, setProjectCreatorRequested] = useState(false);
+  const [overviewProjectCreatorRequest, setOverviewProjectCreatorRequest] = useState(0);
+  const overviewSearchRef = useRef<HTMLInputElement>(null);
+  const notificationButtonRef = useRef<HTMLButtonElement>(null);
+  const notificationContainerRef = useRef<HTMLDivElement>(null);
+  const firstProjectCreatorRef = useRef<HTMLElement>(null);
+  const projectCreatorDisclosureRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    setActiveView(initialView);
+  }, [initialView]);
+
+  useEffect(() => {
+    function focusOverviewSearch(event: KeyboardEvent) {
+      if (
+        activeView === "overview" &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        overviewSearchRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", focusOverviewSearch);
+    return () => window.removeEventListener("keydown", focusOverviewSearch);
+  }, [activeView]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !notificationContainerRef.current?.contains(event.target)
+      ) {
+        setNotificationsOpen(false);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setNotificationsOpen(false);
+      notificationButtonRef.current?.focus();
+    }
+
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePointer);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [notificationsOpen]);
+
+  useEffect(() => {
+    if (
+      !projectCreatorRequested ||
+      activeView !== "projects" ||
+      projects === undefined
+    ) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const creator =
+        firstProjectCreatorRef.current ?? projectCreatorDisclosureRef.current;
+      if (!creator) return;
+      if (creator instanceof HTMLDetailsElement) creator.open = true;
+      const reduceMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      creator.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      creator
+        .querySelector<HTMLElement>("input, textarea, select, button")
+        ?.focus({ preventScroll: true });
+      setProjectCreatorRequested(false);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [activeView, projectCreatorRequested, projects]);
+
+  const selectView = (view: CompanyHubView) => {
+    if (view !== activeView) setDirectorySearch("");
+    setActiveView(view);
+    onViewChange?.(view);
+  };
+
+  const scrollToManagement = (id: string) => {
+    const target = document.getElementById(id);
+    if (!target) return;
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    target.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "start",
+    });
+    target.querySelector<HTMLElement>("input, button, select")?.focus({
+      preventScroll: true,
+    });
+  };
+
+  const showProjectCreator = () => {
+    setProjectCreatorRequested(true);
+    selectView("projects");
+  };
+
+  const showOverviewProjectCreator = () => {
+    setOverviewProjectCreatorRequest((request) => request + 1);
+  };
 
   async function run(action: () => Promise<unknown>) {
+    if (busy) return;
     setBusy(true);
     setNotice(null);
     try {
-      await action();
-      setNotice("Saved.");
+      const result = await action();
+      if (
+        result &&
+        typeof result === "object" &&
+        "status" in result &&
+        result.status === "expired"
+      ) {
+        setNotice("This invitation expired. Refresh the page to see current invitations.");
+      } else {
+        setNotice("Saved.");
+      }
     } catch (error) {
       setNotice(formatCompanyError(error));
     } finally {
@@ -141,7 +362,7 @@ export function CompanyHubPage() {
   }
 
   if (releaseState.status === "loading")
-    return <TrackLoader label="Loading Company workspace" />;
+    return <TrackLoader label="Loading Company workspace" timeoutMs={8000} />;
 
   if (!flags.companyModel)
     return (
@@ -156,11 +377,9 @@ export function CompanyHubPage() {
     );
 
   if (companies === undefined || currentUser === undefined)
-    return <TrackLoader label="Loading Company workspace" />;
+    return <TrackLoader label="Loading Company workspace" timeoutMs={8000} />;
 
-  const isCompanyAdmin =
-    administration?.membership.role === "owner" ||
-    administration?.membership.role === "admin";
+  const isCompanyAdmin = canAdministerActingCompany;
   const visibleView =
     (activeView === "relationships" || activeView === "settings") &&
     !isCompanyAdmin
@@ -181,123 +400,154 @@ export function CompanyHubPage() {
   const unassignedProjects =
     projects?.filter((item) => item.participationRole === "unassigned_legacy") ??
     [];
-  const pendingInvitationCount =
-    (companyInvitations?.length ?? 0) +
-    (relationshipInvitations?.length ?? 0) +
-    (projectInvitations?.length ?? 0);
+  const directoryProjects = filterProjectDirectory(
+    projects ?? [],
+    projectFilter,
+    directorySearch,
+  );
+  const visibleRelationships = filterRelationshipDirectory(
+    relationships ?? [],
+    relationshipFilter,
+    directorySearch,
+  );
+  const visiblePeople = filterPeopleDirectory(
+    administration?.members ?? [],
+    peopleFilter,
+    directorySearch,
+  );
+  const attentionItems = attention?.page.slice(0, 5) ?? [];
+  const visibleAttentionItems = attentionItems.filter((item) => notificationFilter === "all" || item.kind === notificationFilter);
   const viewCopy: Record<CompanyHubView, { title: string; description: string }> = {
     overview: {
       title: "Company overview",
       description: "Shared work, partners, and people in one place.",
     },
+    tasks: {
+      title: "Global tasks",
+      description: "Open tasks assigned to you across every Project in this Company.",
+    },
+    threads: {
+      title: "Threads",
+      description: "Open and archived discussions from the Channels you can access.",
+    },
     projects: {
       title: "Projects",
-      description: "Your Company’s own work and the Projects where it collaborates.",
+      description: "Manage all company projects. Track ownership, access, and progress across your workspace.",
     },
     relationships: {
       title: "Relationships",
-      description: "Manage the Companies allowed to collaborate with you.",
+      description: "Manage company relationships, shared projects, and collaboration access.",
     },
     people: {
       title: "People",
-      description: "See who can represent this Company across shared work.",
+      description: "Manage company members, roles, and collaboration across projects.",
     },
     settings: {
-      title: "Company settings",
-      description: "Profile, migration, and Company-level administration.",
+      title: "Company profile",
+      description: "The display name appears anywhere this Company represents its people and projects.",
     },
   };
   const currentViewCopy = viewCopy[visibleView];
 
   return (
-    <main aria-busy={busy} className="company-hub-shell company-unified-shell">
+    <main aria-busy={busy} className="company-hub-shell company-unified-shell company-reference-shell">
       <CompanyProjectNavigation
         actingCompanyId={actingCompanyId}
         activeArea="company"
         onCompanyChange={setActingCompanyId}
-        tasksEnabled={flags.tasks}
+        tasksEnabled={false}
         companyNavigation={
           <nav aria-label="Company workspace">
-            <span className="company-project-nav-label">Company</span>
-          <button
-            aria-pressed={visibleView === "overview"}
+            <span className="company-project-nav-label">Workspace</span>
+          <Link
+            aria-current={visibleView === "overview" ? "page" : undefined}
             className={
               visibleView === "overview"
                 ? "company-project-nav-item active"
                 : "company-project-nav-item"
             }
-            onClick={() => setActiveView("overview")}
-            type="button"
+            search={{ view: "overview", taskFilter: undefined }}
+            to="/workspace/company"
           >
             <LayoutGrid aria-hidden="true" size={14} />
             Overview
-          </button>
-          {actingCompanyId && currentUser && administration ? (
-            <button
-              aria-pressed={visibleView === "projects"}
+          </Link>
+          {activeActingCompanyId && currentUser ? (
+            <Link
+              aria-current={visibleView === "projects" ? "page" : undefined}
               className={
                 visibleView === "projects"
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              onClick={() => setActiveView("projects")}
-              type="button"
+              search={{ view: "projects", taskFilter: undefined }}
+              to="/workspace/company"
             >
               <FolderKanban aria-hidden="true" size={14} />
               Projects
-            </button>
+            </Link>
+          ) : null}
+          {activeActingCompanyId && currentUser ? (
+            <Link
+              aria-current={visibleView === "threads" ? "page" : undefined}
+              className={visibleView === "threads" ? "company-project-nav-item active" : "company-project-nav-item"}
+              search={{ view: "threads", taskFilter: undefined }}
+              to="/workspace/company"
+            >
+              <MessageSquareText aria-hidden="true" size={14} />
+              Threads
+            </Link>
           ) : null}
           {actingCompanyId && isCompanyAdmin ? (
-            <button
-              aria-pressed={visibleView === "relationships"}
+            <Link
+              aria-current={visibleView === "relationships" ? "page" : undefined}
               className={
                 visibleView === "relationships"
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              onClick={() => setActiveView("relationships")}
-              type="button"
+              search={{ view: "relationships", taskFilter: undefined }}
+              to="/workspace/company"
             >
               <Handshake aria-hidden="true" size={14} />
               Relationships
-            </button>
+            </Link>
           ) : null}
           {actingCompanyId && administration ? (
-            <button
-              aria-pressed={visibleView === "people"}
+            <Link
+              aria-current={visibleView === "people" ? "page" : undefined}
               className={
                 visibleView === "people"
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              onClick={() => setActiveView("people")}
-              type="button"
+              search={{ view: "people", taskFilter: undefined }}
+              to="/workspace/company"
             >
               <UsersRound aria-hidden="true" size={14} />
               People
-            </button>
+            </Link>
           ) : null}
           {actingCompanyId && isCompanyAdmin ? (
-            <button
-              aria-pressed={visibleView === "settings"}
+            <Link
+              aria-current={visibleView === "settings" ? "page" : undefined}
               className={
                 visibleView === "settings"
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              onClick={() => setActiveView("settings")}
-              type="button"
+              to="/workspace/company/settings"
             >
               <Settings2 aria-hidden="true" size={14} />
               Settings
-            </button>
+            </Link>
           ) : null}
           </nav>
         }
       />
 
       <section className="company-hub">
-        <header className="company-hub-header">
+        <header className={`company-hub-header company-overview-page-header ${visibleView === "overview" ? "is-overview" : "is-directory"}`}>
           <div>
             <span className="company-eyebrow">
               {actingCompany?.company?.displayName ?? "Company workspace"}
@@ -305,6 +555,160 @@ export function CompanyHubPage() {
             <h1>{currentViewCopy.title}</h1>
             <p>{currentViewCopy.description}</p>
           </div>
+          {visibleView === "overview" ? (
+            <div className="company-overview-header-tools">
+              <label className="company-overview-search">
+                <Search aria-hidden="true" size={18} />
+                <span className="sr-only">Search company projects</span>
+                <input
+                  autoComplete="off"
+                  name="companySearch"
+                  onChange={(event) => setOverviewSearch(event.target.value)}
+                  placeholder="Search projects, tasks, or people…"
+                  ref={overviewSearchRef}
+                  type="search"
+                  value={overviewSearch}
+                />
+                <kbd>Ctrl K</kbd>
+              </label>
+              <div
+                className="company-overview-notifications"
+                ref={notificationContainerRef}
+              >
+                <button
+                  aria-controls="company-overview-notifications"
+                  aria-expanded={notificationsOpen}
+                  aria-label={
+                    notificationsOpen
+                      ? "Close notifications"
+                      : "Open notifications"
+                  }
+                  className="company-overview-icon-button"
+                  onClick={() => setNotificationsOpen((value) => !value)}
+                  ref={notificationButtonRef}
+                  type="button"
+                >
+                  <Bell aria-hidden="true" size={21} />
+                  {(attention?.page.length ?? 0) > 0 ? <i aria-hidden="true" /> : null}
+                </button>
+                {notificationsOpen ? (
+                  <section
+                    aria-label="Notifications"
+                    className="company-overview-notification-popover"
+                    id="company-overview-notifications"
+                  >
+                    <header>
+                      <strong>Notifications</strong>
+                      <span>{attention?.page.length ?? 0} unread</span>
+                    </header>
+                    <div aria-label="Notification filters" className="company-notification-filters" role="group">
+                      {(["all", "task", "message", "suggestion", "invitation"] as const).map((filter) => (
+                        <button aria-pressed={notificationFilter === filter} className={notificationFilter === filter ? "active" : undefined} key={filter} onClick={() => setNotificationFilter(filter)} type="button">
+                          {filter === "all" ? "All" : filter === "message" ? "Messages" : filter === "suggestion" ? "Suggestions" : filter === "invitation" ? "Invites" : "Tasks"}
+                        </button>
+                      ))}
+                    </div>
+                    {visibleAttentionItems.length > 0 ? (
+                      <ul>
+                        {visibleAttentionItems.map((item) => {
+                          const scope = item.companyId
+                            ? `&companyId=${encodeURIComponent(String(item.companyId))}${"membershipId" in item && item.membershipId ? `&membershipId=${encodeURIComponent(String(item.membershipId))}` : ""}`
+                            : "";
+                          const href = item.kind === "task"
+                            ? `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=board&task=${encodeURIComponent(item.taskKey)}${scope}`
+                            : item.kind === "message"
+                              ? `/workspace/company-projects/${encodeURIComponent(String(item.projectId))}?view=channels&groupId=${encodeURIComponent(String(item.groupId))}${item.threadId ? `&threadId=${encodeURIComponent(String(item.threadId))}` : ""}${scope}`
+                              : item.kind === "invitation"
+                                ? `/workspace/company/settings?companyId=${encodeURIComponent(String(item.companyId))}`
+                                : `/workspace/projects/${encodeURIComponent(String(item.projectId))}/tasks?view=inbox${scope}`
+                          return <li key={`${item.kind}-${item.id}`}>
+                            <span className={`activity-dot ${item.kind}`} />
+                            <a href={href}>
+                              <strong>
+                                {item.kind === "task"
+                                  ? item.taskTitle
+                                  : item.kind === "suggestion"
+                                    ? item.title
+                                    : item.kind === "message"
+                                      ? item.senderName
+                                      : item.title}
+                              </strong>
+                              <span>{item.projectName} · View</span>
+                            </a>
+                          </li>
+                        })}
+                      </ul>
+                    ) : (
+                      <p>{attentionItems.length ? "No notifications match this filter." : "You are all caught up."}</p>
+                    )}
+                  </section>
+                ) : null}
+              </div>
+              {isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={showOverviewProjectCreator}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={19} />
+                  New project
+                </button>
+              ) : null}
+            </div>
+          ) : visibleView !== "settings" ? (
+            <div className="company-directory-header-tools">
+              <label className="company-directory-search">
+                <Search aria-hidden="true" size={16} />
+                <span className="sr-only">Search {currentViewCopy.title}</span>
+                <input
+                  autoComplete="off"
+                  name={`${visibleView}Search`}
+                  onChange={(event) => setDirectorySearch(event.target.value)}
+                  placeholder={`Search ${currentViewCopy.title.toLocaleLowerCase()}…`}
+                  type="search"
+                  value={directorySearch}
+                />
+              </label>
+              {visibleView === "projects" && isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={showProjectCreator}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={18} />
+                  New project
+                </button>
+              ) : visibleView === "tasks" ? (
+                <button
+                  className="company-overview-new-project"
+                  disabled={taskCreateProjects.length === 0}
+                  onClick={() => setCreateTaskOpen(true)}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={18} />
+                  New task
+                </button>
+              ) : visibleView === "relationships" && isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={() => scrollToManagement("create-company-relationship")}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={18} />
+                  New relationship
+                </button>
+              ) : visibleView === "people" && isCompanyAdmin ? (
+                <button
+                  className="company-overview-new-project"
+                  onClick={() => scrollToManagement("invite-company-member")}
+                  type="button"
+                >
+                  <UserPlus aria-hidden="true" size={18} />
+                  Invite person
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </header>
         {notice ? (
           <p aria-live="polite" className="company-notice">
@@ -314,7 +718,7 @@ export function CompanyHubPage() {
 
         <div className="company-hub-content">
           {currentUser &&
-          (visibleView === "overview" || visibleView === "projects") ? (
+          visibleView === "projects" ? (
             <UnassignedProjects userId={currentUser._id} />
           ) : null}
           {companies.length === 0 ? (
@@ -329,6 +733,27 @@ export function CompanyHubPage() {
               </p>
               <CreateCompanyForm run={run} />
             </section>
+          ) : null}
+
+          {(visibleView === "tasks" || visibleView === "threads") && activeActingCompanyId && currentUser ? (
+            <CompanyGlobalWork
+              actingCompanyId={activeActingCompanyId}
+              companyName={actingCompany?.company?.displayName ?? "Company"}
+              currentUserId={currentUser._id}
+              projects={projects ?? []}
+              searchQuery={directorySearch}
+              tasks={companyTasks ?? []}
+              initialFilter={initialTaskFilter}
+              view={visibleView}
+            />
+          ) : null}
+          {activeActingCompanyId ? (
+            <CompanyTaskCreateFlow
+              actingCompanyId={activeActingCompanyId}
+              onOpenChange={setCreateTaskOpen}
+              open={createTaskOpen}
+              projects={taskCreateProjects}
+            />
           ) : null}
 
           {(companyInvitations ?? []).length > 0 ? (
@@ -411,226 +836,61 @@ export function CompanyHubPage() {
             </section>
           ) : null}
 
+
           {visibleView === "overview" &&
           actingCompanyId &&
-          actingCompany?.company &&
-          administration ? (
-            <>
-              <section className="company-overview-mast">
-                <div className="company-overview-identity">
-                  <span className="company-overview-mark">
-                    <Building2 aria-hidden="true" size={20} />
-                  </span>
-                  <div>
-                    <span className="company-status-label">
-                      <i aria-hidden="true" /> Active Company
-                    </span>
-                    <h2>{actingCompany.company.displayName}</h2>
-                    <p>
-                      @{actingCompany.company.normalizedHandle} · You represent
-                      this Company as {actingCompany.membership.role}.
-                    </p>
-                  </div>
-                </div>
-                <div className="company-overview-stats">
-                  <button
-                    onClick={() => setActiveView("projects")}
-                    type="button"
-                  >
-                    <strong>{projects?.length ?? "–"}</strong>
-                    <span>Projects</span>
-                  </button>
-                  {isCompanyAdmin ? (
-                    <button
-                      onClick={() => setActiveView("relationships")}
-                      type="button"
-                    >
-                      <strong>{relationships?.length ?? "–"}</strong>
-                      <span>Relationships</span>
-                    </button>
-                  ) : null}
-                  <button
-                    onClick={() => setActiveView("people")}
-                    type="button"
-                  >
-                    <strong>{activeMembers.length}</strong>
-                    <span>Active people</span>
-                  </button>
-                  {pendingInvitationCount > 0 ? (
-                    <div>
-                      <strong>{pendingInvitationCount}</strong>
-                      <span>Pending invites</span>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-
-              <div className="company-overview-grid">
-                <section className="company-workspace-section company-overview-projects">
-                  <div className="company-section-heading">
-                    <div>
-                      <span className="company-section-kicker">
-                        Your work
-                      </span>
-                      <h2>Projects</h2>
-                    </div>
-                    <button
-                      className="company-section-link"
-                      onClick={() => setActiveView("projects")}
-                      type="button"
-                    >
-                      View all
-                      <ArrowUpRight aria-hidden="true" size={13} />
-                    </button>
-                  </div>
-                  {(projects ?? []).length > 0 ? (
-                    <div className="company-project-gallery">
-                      {projects?.map((item, index) => (
-                        <Link
-                          className="company-project-card"
-                          key={item.membership._id}
-                          params={{ projectId: item.project._id }}
-                          search={{
-                            companyId: actingCompanyId,
-                            groupId: "",
-                            membershipId: item.membership._id,
-                          }}
-                          to="/workspace/company-projects/$projectId"
-                        >
-                          <span
-                            className={`company-project-graphic tone-${(index % 3) + 1}`}
-                          >
-                            <FolderKanban aria-hidden="true" size={19} />
-                          </span>
-                          <span className="company-project-card-copy">
-                            <strong>{item.project.name}</strong>
-                            <span>
-                              {item.participationRole === "owner"
-                                ? `Owned by ${item.owningCompany?.displayName ?? "unavailable Company"}`
-                                : item.participationRole === "collaborator"
-                                  ? `Collaborating · owned by ${item.owningCompany?.displayName ?? "unavailable Company"}`
-                                  : "Company owner needs confirmation"}
-                            </span>
-                          </span>
-                          <ArrowUpRight
-                            aria-hidden="true"
-                            className="company-project-card-arrow"
-                            size={15}
-                          />
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="company-quiet-empty">
-                      <FolderKanban aria-hidden="true" size={18} />
-                      <div>
-                        <strong>No Projects yet</strong>
-                        <span>
-                          Create this Company’s first Project to start working.
-                        </span>
-                        {isCompanyAdmin ? (
-                          <Button onClick={() => setActiveView("projects")}>
-                            Create first Project
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                <div className="company-overview-side">
-                  {isCompanyAdmin ? (
-                    <section className="company-workspace-section">
-                      <div className="company-section-heading">
-                        <div>
-                          <span className="company-section-kicker">
-                            Collaboration
-                          </span>
-                          <h2>Relationships</h2>
-                        </div>
-                        <button
-                          aria-label="Open Relationships"
-                          className="company-icon-link"
-                          onClick={() => setActiveView("relationships")}
-                          type="button"
-                        >
-                          <ArrowUpRight aria-hidden="true" size={14} />
-                        </button>
-                      </div>
-                      <ul className="company-preview-list">
-                        {activeRelationships.slice(0, 3).map((item) => (
-                          <li key={item.relationship._id}>
-                            <span className="company-preview-icon">
-                              <Handshake aria-hidden="true" size={14} />
-                            </span>
-                            <span>
-                              <strong>{item.relationship.name}</strong>
-                              <small>
-                                {item.participants
-                                  .filter(
-                                    (company) => company._id !== actingCompanyId,
-                                  )
-                                  .map((company) => company.displayName)
-                                  .join(", ") || "No partner added"}
-                              </small>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      {activeRelationships.length === 0 ? (
-                        <p className="company-section-empty">
-                          No active relationships.
-                        </p>
-                      ) : null}
-                    </section>
-                  ) : null}
-
-                  <section className="company-workspace-section">
-                    <div className="company-section-heading">
-                      <div>
-                        <span className="company-section-kicker">Company</span>
-                        <h2>People</h2>
-                      </div>
-                      <button
-                        aria-label="Open People"
-                        className="company-icon-link"
-                        onClick={() => setActiveView("people")}
-                        type="button"
-                      >
-                        <ArrowUpRight aria-hidden="true" size={14} />
-                      </button>
-                    </div>
-                    <div className="company-avatar-stack" aria-label="Active Company members">
-                      {activeMembers.slice(0, 7).map(({ membership, user }) => {
-                        const name =
-                          user?.displayName ?? membership.userDisplayNameSnapshot;
-                        return (
-                          <span key={membership._id} title={name}>
-                            {getInitials(name)}
-                          </span>
-                        );
-                      })}
-                      {activeMembers.length > 7 ? (
-                        <span>+{activeMembers.length - 7}</span>
-                      ) : null}
-                    </div>
-                    <p className="company-people-summary">
-                      {activeMembers.length} active people can represent{" "}
-                      {actingCompany.company.displayName}. Project and Channel
-                      access remains separate.
-                    </p>
-                  </section>
-                </div>
-              </div>
-            </>
+          activeActingCompanyId &&
+          currentUser &&
+          actingCompany?.company ? (
+            <CompanyOverviewDashboard
+              activeCompanyId={activeActingCompanyId}
+              companyName={actingCompany.company.displayName}
+              createProjectRequest={overviewProjectCreatorRequest}
+              currentUserId={currentUser._id}
+              isAdmin={isCompanyAdmin}
+              onCreateProjectRequestHandled={() => setOverviewProjectCreatorRequest(0)}
+              onCreateTaskRequest={() => setCreateTaskOpen(true)}
+              overview={companyOverview}
+              projects={projects}
+              run={run}
+              userName={currentUser.displayName}
+            />
           ) : null}
 
           {visibleView === "projects" &&
           actingCompanyId &&
           currentUser &&
-          administration ? (
-            <div className="company-view-stack">
-              {(projectInvitations ?? []).length > 0 ? (
+          actingCompany?.company ? (
+            <div className="company-view-stack company-directory-view">
+              <section className="company-collaboration-summary" aria-label="Project portfolio summary">
+                <div><i><FolderKanban aria-hidden="true" size={20} /></i><span>Visible projects</span><strong>{projects?.length ?? 0}</strong><small>Across your Company</small></div>
+                <div><i><UserPlus aria-hidden="true" size={20} /></i><span>Owned</span><strong>{companyProjects.length}</strong><small>Managed by your Company</small></div>
+                <div><i><UsersRound aria-hidden="true" size={20} /></i><span>Collaborating</span><strong>{collaboratingProjects.length}</strong><small>Shared with partners</small></div>
+                <div><i><CircleAlert aria-hidden="true" size={20} /></i><span>Needs attention</span><strong>{(projectInvitations?.length ?? 0) + unassignedProjects.length}</strong><small>Pending decisions</small></div>
+              </section>
+              <nav aria-label="Filter Projects" className="company-filter-bar">
+                <span><Filter aria-hidden="true" size={14} /> View</span>
+                {([
+                  ["all", "All", projects?.length ?? 0],
+                  ["owned", "Owned", companyProjects.filter((item) => item.project.status !== "archived").length],
+                  ["collaborating", "Collaborating", collaboratingProjects.filter((item) => item.project.status !== "archived").length],
+                  ["proposed", "Proposed", (projectInvitations?.length ?? 0) + (projects ?? []).filter((item) => item.project.status === "proposed").length],
+                  ["archived", "Archived", (projects ?? []).filter((item) => item.project.status === "archived").length],
+                  ["ownership", "Ownership pending", unassignedProjects.length],
+                ] as const).map(([value, label, count]) => (
+                  <button
+                    aria-pressed={projectFilter === value}
+                    className={projectFilter === value ? "active" : undefined}
+                    key={value}
+                    onClick={() => setProjectFilter(value)}
+                    type="button"
+                  >
+                    {label}<small>{count}</small>
+                  </button>
+                ))}
+              </nav>
+              {(projectFilter === "all" || projectFilter === "proposed") &&
+              (projectInvitations ?? []).length > 0 ? (
                 <section className="company-workspace-section company-inbox">
                   <div className="company-section-heading">
                     <div>
@@ -695,14 +955,19 @@ export function CompanyHubPage() {
                 </section>
               ) : null}
 
-              {isCompanyAdmin && companyProjects.length === 0 ? (
-                <section className="company-workspace-section company-first-project">
+              {isCompanyAdmin &&
+              projects !== undefined &&
+              projects.length === 0 ? (
+                <section
+                  className="company-workspace-section company-first-project"
+                  ref={firstProjectCreatorRef}
+                >
                   <div className="company-section-heading">
                     <div>
                       <span className="company-section-kicker">Get started</span>
                       <h2>Create your first Company Project</h2>
                       <p>
-                        Start inside {administration.company.displayName}. Add
+                        Start inside {actingCompany.company.displayName}. Add
                         collaborating Companies only when the work needs them.
                       </p>
                     </div>
@@ -715,7 +980,9 @@ export function CompanyHubPage() {
                 </section>
               ) : null}
 
-              {!isCompanyAdmin && (projects ?? []).length === 0 ? (
+              {!isCompanyAdmin &&
+              projects !== undefined &&
+              projects.length === 0 ? (
                 <section className="company-workspace-section">
                   <div className="company-quiet-empty">
                     <FolderKanban aria-hidden="true" size={18} />
@@ -730,75 +997,56 @@ export function CompanyHubPage() {
                 </section>
               ) : null}
 
-              {[
-                {
-                  description: "Projects owned by this Company.",
-                  items: companyProjects,
-                  title: "Company Projects",
-                },
-                {
-                  description: "Projects owned by another Company where your team participates.",
-                  items: collaboratingProjects,
-                  title: "Collaborating",
-                },
-                {
-                  description: "Existing Projects that need explicit Company ownership confirmation.",
-                  items: unassignedProjects,
-                  title: "Ownership to confirm",
-                },
-              ].map((section) =>
-                section.items.length > 0 ? (
-                  <section className="company-workspace-section" key={section.title}>
-                    <div className="company-section-heading">
-                      <div>
-                        <span className="company-section-kicker">Workspace</span>
-                        <h2>{section.title}</h2>
-                        <p>{section.description}</p>
-                      </div>
-                      <span className="company-count-badge">
-                        {section.items.length}
+              <section className="company-workspace-section company-directory-panel">
+                  <div className="company-section-heading">
+                    <div>
+                      <span className="company-overview-section-icon"><FolderKanban aria-hidden="true" size={21} /></span>
+                      <span>
+                        <h2>Project directory</h2>
+                        <p>Ownership, participation, lifecycle, and the next route in one scan.</p>
                       </span>
                     </div>
-                    <div className="company-project-gallery large">
-                      {section.items.map((item, index) => (
-                        <Link
-                          className="company-project-card"
-                          key={item.membership._id}
-                          params={{ projectId: item.project._id }}
-                          search={{
-                            companyId: actingCompanyId,
-                            groupId: "",
-                            membershipId: item.membership._id,
-                          }}
-                          to="/workspace/company-projects/$projectId"
-                        >
-                          <span
-                            className={`company-project-graphic tone-${(index % 3) + 1}`}
-                          >
-                            <FolderKanban aria-hidden="true" size={19} />
-                          </span>
-                          <span className="company-project-card-copy">
-                            <strong>{item.project.name}</strong>
-                            <span>
-                              {item.participationRole === "unassigned_legacy"
-                                ? "Company owner not yet assigned"
-                                : `Owned by ${item.owningCompany?.displayName ?? "unavailable Company"}`}
-                            </span>
-                          </span>
-                          <ArrowUpRight
-                            aria-hidden="true"
-                            className="company-project-card-arrow"
-                            size={15}
-                          />
-                        </Link>
-                      ))}
+                    <span className="company-count-badge">{directoryProjects.length} shown</span>
+                  </div>
+                  <div className="company-directory-table" role="table" aria-label="Company Projects">
+                    <div className="company-directory-table-head" role="row">
+                      <span role="columnheader">Project</span><span role="columnheader">Owner</span><span role="columnheader">Access</span><span role="columnheader">Status</span><span role="columnheader">Updated</span><span aria-hidden="true" />
                     </div>
-                  </section>
-                ) : null,
-              )}
+                    {directoryProjects.map((item, index) => (
+                      <Link
+                        className="company-directory-row"
+                        key={item.membership._id}
+                        params={{ projectId: item.project._id }}
+                        role="row"
+                        search={getCompanyProjectConversationSearch({ actingCompanyId, projectId: item.project._id, projectMemberId: item.membership._id })}
+                        to="/workspace/company-projects/$projectId"
+                      >
+                        <span className="company-directory-identity" role="cell">
+                          <span className={`company-project-graphic tone-${(index % 3) + 1}`}><FolderKanban aria-hidden="true" size={18} /></span>
+                          <span><strong>{item.project.name}</strong><small>{item.project.description || "No description added"}</small></span>
+                        </span>
+                        <span role="cell">{item.owningCompany?.displayName ?? "Unassigned"}</span>
+                        <span role="cell" className="company-access-cell"><ShieldCheck aria-hidden="true" size={14} /> {item.membership.role}</span>
+                        <span role="cell" className={`company-state-pill ${item.project.status}`}>
+                          {item.participationRole === "unassigned_legacy" ? "Ownership pending" : item.project.status}
+                        </span>
+                        <span role="cell">{formatRelativeTime(item.project.updatedAt)}</span>
+                        <ArrowUpRight aria-label={`Open ${item.project.name}`} role="img" size={16} />
+                      </Link>
+                    ))}
+                  </div>
+                  {directoryProjects.length === 0 ? (
+                    <div className="company-quiet-empty"><Archive aria-hidden="true" size={18} /><div><strong>No matching Projects</strong><span>Change the filter or search term to see more work.</span></div></div>
+                  ) : null}
+              </section>
 
-              {isCompanyAdmin && companyProjects.length > 0 ? (
-                <details className="company-management-disclosure">
+              {isCompanyAdmin &&
+              projects !== undefined &&
+              projects.length > 0 ? (
+                <details
+                  className="company-management-disclosure"
+                  ref={projectCreatorDisclosureRef}
+                >
                   <summary>
                     <span>
                       <Plus aria-hidden="true" size={15} />
@@ -841,27 +1089,47 @@ export function CompanyHubPage() {
           ) : null}
 
           {visibleView === "people" && actingCompanyId && administration ? (
-            <div className="company-view-stack">
-              <section className="company-workspace-section">
+            <div className="company-view-stack company-directory-view">
+              <section className="company-collaboration-summary" aria-label="People and membership summary">
+                <div><i><UsersRound aria-hidden="true" size={20} /></i><span>Company people</span><strong>{administration.members.length}</strong><small>Total members</small></div>
+                <div><i><UserPlus aria-hidden="true" size={20} /></i><span>Active</span><strong>{activeMembers.length}</strong><small>Currently active</small></div>
+                <div><i><ShieldCheck aria-hidden="true" size={20} /></i><span>Admin / Owners</span><strong>{administration.members.filter(({ membership }) => membership.status === "active" && (membership.role === "owner" || membership.role === "admin")).length}</strong><small>Manage workspace</small></div>
+                <div><i><Mail aria-hidden="true" size={20} /></i><span>Invited</span><strong>{administration.invitations.length}</strong><small>Pending invitations</small></div>
+              </section>
+              <nav aria-label="Filter people" className="company-filter-bar">
+                <span><Filter aria-hidden="true" size={14} /> View</span>
+                {([
+                  ["all", "All", administration.members.length],
+                  ["active", "Active", activeMembers.length],
+                  ["suspended", "Suspended", administration.members.filter(({ membership }) => membership.status === "suspended").length],
+                  ["invited", "Invited", administration.invitations.length],
+                ] as const).map(([value, label, count]) => (
+                  <button aria-pressed={peopleFilter === value} className={peopleFilter === value ? "active" : undefined} key={value} onClick={() => setPeopleFilter(value)} type="button">
+                    {label}<small>{count}</small>
+                  </button>
+                ))}
+              </nav>
+              {peopleFilter !== "invited" ? <section className="company-workspace-section company-directory-panel">
                 <div className="company-section-heading">
                   <div>
-                    <span className="company-section-kicker">Directory</span>
-                    <h2>Company people</h2>
-                    <p>
-                      Company membership identifies representation. Project and
-                      Channel membership still controls content access.
-                    </p>
+                    <span className="company-overview-section-icon"><UsersRound aria-hidden="true" size={21} /></span>
+                    <span><h2>People directory</h2><p>Company role establishes representation. Project and Channel access remain separate.</p></span>
                   </div>
                   <span className="company-count-badge">
-                    {activeMembers.length} active
+                    {visiblePeople.length} shown
                   </span>
                 </div>
                 <ul className="company-people-list">
-                  {administration.members.map(({ membership, user }) => {
+                  <li className="company-people-list-head" aria-hidden="true"><span /><span>Person</span><span>Role</span><span>Status</span><span>Last active</span><span /></li>
+                  {visiblePeople.map(({ membership, user }) => {
                     const name =
                       user?.displayName ?? membership.userDisplayNameSnapshot;
-                    const canManageMember =
-                      isCompanyAdmin && membership.userId !== currentUser?._id;
+                    const memberActions = resolveCompanyMemberActionCapabilities({
+                      actorRole: administration.membership.role,
+                      isCurrentUser: membership.userId === currentUser?._id,
+                      targetRole: membership.role,
+                      targetStatus: membership.status,
+                    });
                     return (
                       <li key={membership._id}>
                         <span className="company-person-avatar">
@@ -869,21 +1137,32 @@ export function CompanyHubPage() {
                         </span>
                         <span className="company-person-copy">
                           <strong>{name}</strong>
-                          <small>{membership.role}</small>
+                          <small>{user?.email ?? "Account details unavailable"}</small>
                         </span>
+                        <span className="company-role-cell"><ShieldCheck aria-hidden="true" size={13} /> {membership.role}</span>
                         <span
                           className={`company-member-status ${membership.status}`}
                         >
                           <i aria-hidden="true" />
                           {membership.status}
                         </span>
-                        {canManageMember ? (
-                          <details className="company-member-actions">
+                        <time dateTime={new Date(membership.updatedAt).toISOString()}>{formatRelativeTime(membership.updatedAt)}</time>
+                        {memberActions.showMenu ? (
+                          <details
+                            aria-busy={busy}
+                            className="company-member-actions"
+                            onClick={(event) => {
+                              if ((event.target as HTMLElement).closest("button")) {
+                                event.currentTarget.removeAttribute("open");
+                              }
+                            }}
+                          >
                             <summary aria-label={`Manage ${name}`}>
                               <MoreHorizontal aria-hidden="true" size={16} />
                             </summary>
-                            <div>
-                              {membership.status === "active" &&
+                            <div aria-label={`Actions for ${name}`} role="group">
+                              {memberActions.canChangeRole &&
+                              membership.status === "active" &&
                               membership.role !== "admin" ? (
                                 <Button
                                   onClick={() =>
@@ -900,7 +1179,8 @@ export function CompanyHubPage() {
                                   Make admin
                                 </Button>
                               ) : null}
-                              {membership.status === "active" &&
+                              {memberActions.canChangeRole &&
+                              membership.status === "active" &&
                               membership.role !== "member" ? (
                                 <Button
                                   onClick={() =>
@@ -917,9 +1197,7 @@ export function CompanyHubPage() {
                                   Make member
                                 </Button>
                               ) : null}
-                              {administration.membership.role === "owner" &&
-                              membership.status === "active" &&
-                              membership.role !== "owner" ? (
+                              {memberActions.canPromoteToOwner ? (
                                 <Button
                                   onClick={() =>
                                     void run(() =>
@@ -935,7 +1213,7 @@ export function CompanyHubPage() {
                                   Promote to owner
                                 </Button>
                               ) : null}
-                              <Button
+                              {memberActions.canChangeStatus ? <Button
                                 onClick={() =>
                                   void run(() =>
                                     updateMember({
@@ -953,8 +1231,8 @@ export function CompanyHubPage() {
                                 {membership.status === "active"
                                   ? "Suspend"
                                   : "Reactivate"}
-                              </Button>
-                              <Button
+                              </Button> : null}
+                              {memberActions.canChangeStatus ? <Button
                                 onClick={() =>
                                   void run(() =>
                                     updateMember({
@@ -967,7 +1245,7 @@ export function CompanyHubPage() {
                                 variant="destructive"
                               >
                                 Remove
-                              </Button>
+                              </Button> : null}
                             </div>
                           </details>
                         ) : null}
@@ -975,9 +1253,18 @@ export function CompanyHubPage() {
                     );
                   })}
                 </ul>
-              </section>
+                {visiblePeople.length === 0 ? <div className="company-quiet-empty"><UsersRound aria-hidden="true" size={18} /><div><strong>No matching people</strong><span>Change the filter or search term.</span></div></div> : null}
+              </section> : null}
+              {(peopleFilter === "all" || peopleFilter === "invited") && administration.invitations.length > 0 ? (
+                <section className="company-workspace-section company-inbox">
+                  <div className="company-section-heading"><div><span className="company-overview-section-icon"><Mail aria-hidden="true" size={20} /></span><span><h2>Pending invitations</h2><p>Invitations remain inactive until the recipient accepts.</p></span></div><span className="company-count-badge">{administration.invitations.length}</span></div>
+                  <ul className="company-request-list">
+                    {administration.invitations.map((invitation) => <li key={invitation._id}><div><strong>{invitation.normalizedEmail}</strong><span>Invited as {invitation.role} · expires {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(invitation.expiresAt)}</span></div><div className="company-row-actions"><span className="company-state-pill proposed">Pending</span>{isCompanyAdmin ? <Button disabled={busy} onClick={() => void run(() => revokeInvitation({ companyId: actingCompanyId, invitationId: invitation._id }))} type="button" variant="outline">Revoke</Button> : null}</div></li>)}
+                  </ul>
+                </section>
+              ) : peopleFilter === "invited" ? <section className="company-workspace-section"><div className="company-quiet-empty"><Mail aria-hidden="true" size={18} /><div><strong>No pending invitations</strong><span>Everyone invited to this Company has responded.</span></div></div></section> : null}
               {isCompanyAdmin ? (
-                <details className="company-management-disclosure">
+                <details className="company-management-disclosure" id="invite-company-member" open>
                   <summary>
                     <span>
                       <Plus aria-hidden="true" size={15} />
@@ -999,7 +1286,24 @@ export function CompanyHubPage() {
           {visibleView === "relationships" &&
           actingCompanyId &&
           isCompanyAdmin ? (
-            <div className="company-view-stack">
+            <div className="company-view-stack company-directory-view">
+              <section className="company-collaboration-summary" aria-label="Relationship summary">
+                <div><i><Handshake aria-hidden="true" size={20} /></i><span>Relationships</span><strong>{relationships?.length ?? 0}</strong><small>Total connections</small></div>
+                <div><i><ShieldCheck aria-hidden="true" size={20} /></i><span>Active</span><strong>{activeRelationships.length}</strong><small>Currently collaborating</small></div>
+                <div><i><FolderKanban aria-hidden="true" size={20} /></i><span>Shared projects</span><strong>{(projects ?? []).filter((item) => item.project.origin === "shared").length}</strong><small>Across relationships</small></div>
+                <div><i><Clock3 aria-hidden="true" size={20} /></i><span>Invitations</span><strong>{relationshipInvitations?.length ?? 0}</strong><small>Pending invitations</small></div>
+              </section>
+              <nav aria-label="Filter relationships" className="company-filter-bar">
+                <span><Filter aria-hidden="true" size={14} /> View</span>
+                {([
+                  ["all", "All", relationships?.length ?? 0],
+                  ["active", "Active", activeRelationships.length],
+                  ["forming", "Forming", (relationships ?? []).filter(({ relationship }) => relationship.status === "forming").length],
+                  ["inactive", "Inactive", (relationships ?? []).filter(({ relationship }) => relationship.status === "inactive").length],
+                ] as const).map(([value, label, count]) => (
+                  <button aria-pressed={relationshipFilter === value} className={relationshipFilter === value ? "active" : undefined} key={value} onClick={() => setRelationshipFilter(value)} type="button">{label}<small>{count}</small></button>
+                ))}
+              </nav>
               {(relationshipInvitations ?? []).length > 0 ? (
                 <section className="company-workspace-section company-inbox">
                   <div className="company-section-heading">
@@ -1058,22 +1362,21 @@ export function CompanyHubPage() {
                 </section>
               ) : null}
 
-              <section className="company-workspace-section">
+              <section className="company-workspace-section company-directory-panel">
                 <div className="company-section-heading">
                   <div>
-                    <span className="company-section-kicker">Partners</span>
-                    <h2>Company relationships</h2>
-                    <p>
-                      A relationship permits shared work. It does not grant
-                      access to a Project or Channel by itself.
-                    </p>
+                    <span className="company-overview-section-icon"><Handshake aria-hidden="true" size={21} /></span>
+                    <span><h2>Partner directory</h2><p>A relationship permits an invitation. Project and Channel access still require explicit grants.</p></span>
                   </div>
                   <span className="company-count-badge">
-                    {activeRelationships.length} active
+                    {visibleRelationships.length} shown
                   </span>
                 </div>
                 <div className="company-relationship-grid">
-                  {relationships?.map((item) => (
+                  {visibleRelationships.map((item) => {
+                    const partnerCompanies = item.participants.filter((company) => company._id !== actingCompanyId);
+                    const sharedProjectCount = (projects ?? []).filter((projectItem) => projectItem.project.relationshipId === item.relationship._id).length;
+                    return (
                     <article
                       className="company-relationship-card"
                       key={item.relationship._id}
@@ -1084,14 +1387,22 @@ export function CompanyHubPage() {
                         </span>
                         <span>
                           <strong>{item.relationship.name}</strong>
-                          <small>{item.relationship.status}</small>
+                          <small>{partnerCompanies.map((company) => company.displayName).join(", ") || "No partner Company"}</small>
                         </span>
+                        <span className={`company-state-pill ${item.relationship.status}`}>{item.relationship.status}</span>
                       </header>
-                      <div className="company-participant-list">
-                        {item.participants.map((company) => (
-                          <span key={company._id}>{company.displayName}</span>
-                        ))}
+                      <div className="company-boundary-trace" aria-label="Collaboration boundary">
+                        <span><Building2 aria-hidden="true" size={14} /> {item.participants.length} Companies</span>
+                        <i aria-hidden="true" />
+                        <span><FolderKanban aria-hidden="true" size={14} /> {sharedProjectCount} shared Projects</span>
+                        <i aria-hidden="true" />
+                        <span><ShieldCheck aria-hidden="true" size={14} /> Explicit Channel access</span>
                       </div>
+                      {item.relationship.status === "active" ? (
+                        <Button onClick={() => selectView("projects")} type="button">
+                          Create shared Project
+                        </Button>
+                      ) : null}
                       <details className="company-card-management">
                         <summary>Manage relationship</summary>
                         <div>
@@ -1167,9 +1478,9 @@ export function CompanyHubPage() {
                         </div>
                       </details>
                     </article>
-                  ))}
+                  );})}
                 </div>
-                {(relationships ?? []).length === 0 ? (
+                {visibleRelationships.length === 0 ? (
                   <div className="company-quiet-empty">
                     <Handshake aria-hidden="true" size={18} />
                     <div>
@@ -1183,7 +1494,7 @@ export function CompanyHubPage() {
                 ) : null}
               </section>
 
-              <details className="company-management-disclosure">
+              <details className="company-management-disclosure" id="create-company-relationship" open>
                 <summary>
                   <span>
                     <Plus aria-hidden="true" size={15} />
@@ -1207,21 +1518,23 @@ export function CompanyHubPage() {
           administration &&
           isCompanyAdmin ? (
             <div className="company-view-stack company-settings-view">
-              <section className="company-workspace-section">
+              <section className="company-workspace-section company-settings-profile">
                 <div className="company-section-heading">
                   <div>
-                    <span className="company-section-kicker">Identity</span>
-                    <h2>Company profile</h2>
-                    <p>
-                      The display name appears anywhere this Company represents
-                      its people.
-                    </p>
+                    <span className="company-overview-section-icon"><Building2 aria-hidden="true" size={21} /></span>
+                    <span>
+                      <h2>{administration.company.displayName} <em className="company-current-badge">Current company</em></h2>
+                      <p>@{administration.company.normalizedHandle}</p>
+                    </span>
                   </div>
+                  <p>This identity is visible to members across projects, Channels, and shared resources.</p>
                 </div>
                 <CompanyProfileForm
                   key={actingCompanyId}
                   actingCompanyId={actingCompanyId}
+                  description={administration.company.description ?? ""}
                   displayName={administration.company.displayName}
+                  handle={administration.company.normalizedHandle}
                   run={run}
                 />
               </section>
@@ -1282,21 +1595,7 @@ export function CompanyHubPage() {
                     >
                       Suspend Company
                     </Button>
-                    <Button
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            "Close this Company after confirming retention? Projects must be exited first; retained history is not erased.",
-                          )
-                        ) {
-                          void run(() =>
-                            closeCompany({
-                              companyId: actingCompanyId,
-                              retentionConfirmed: true,
-                            }),
-                          );
-                        }
-                      }}
+                    <Button onClick={() => setCloseCompanyOpen(true)}
                       variant="destructive"
                     >
                       Close Company
@@ -1304,6 +1603,14 @@ export function CompanyHubPage() {
                   </div>
                 </section>
               ) : null}
+              <ConfirmDialog
+                confirmLabel="Close Company"
+                description="Projects must be exited first. Retained history is preserved and the close action cannot be undone."
+                onConfirm={() => run(() => closeCompany({ companyId: actingCompanyId, retentionConfirmed: true }))}
+                onOpenChange={setCloseCompanyOpen}
+                open={closeCompanyOpen}
+                title="Close this Company?"
+              />
             </div>
           ) : null}
         </div>

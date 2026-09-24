@@ -19,12 +19,12 @@
   "scripts": {
     "dev": "turbo dev --concurrency=2",
     "build": "turbo build --concurrency=1",
-    "typecheck": "pnpm run typecheck:backend && NODE_OPTIONS=--max-old-space-size=1024 turbo typecheck --concurrency=1",
+    "typecheck": "pnpm run typecheck:backend && node scripts/run-with-env.mjs NODE_OPTIONS=--max-old-space-size=1024 -- turbo typecheck --concurrency=1",
     "typecheck:backend": "tsc -p convex/tsconfig.json --noEmit",
     "lint": "turbo lint --concurrency=1 && pnpm run lint:backend",
     "lint:backend": "oxlint convex",
     "architecture:semgrep": "node scripts/gates/semgrep-ratchet.mjs",
-    "test": "VITEST_MAX_WORKERS=1 turbo test --concurrency=1 && VITEST_MAX_WORKERS=1 vitest run --config vitest.config.ts --environment node --no-file-parallelism",
+    "test": "node scripts/run-with-env.mjs VITEST_MAX_WORKERS=1 -- turbo test --concurrency=1 && node scripts/run-with-env.mjs VITEST_MAX_WORKERS=1 -- vitest run --config vitest.config.ts --environment node --no-file-parallelism",
     "e2e": "playwright test --config e2e/playwright.config.ts e2e/tests/track-journeys.spec.ts e2e/tests/task-editing.spec.ts",
     "perf:fixture": "PERF_OUTPUT_PATH=artifacts/performance/fixture-performance.json playwright test --config e2e/playwright.config.ts e2e/tests/performance.spec.mjs",
     "perf:build": "node scripts/perf/measure-web-build.mjs",
@@ -50,7 +50,7 @@
     "oxlint-tsgolint": "7.0.2001",
     "turbo": "^2.10.4",
     "typescript": "7.0.2",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wrangler": "^4.110.0"
   },
   "dependencies": {
@@ -63,10 +63,10 @@
     "better-auth": "1.6.25",
     "fflate": "0.8.3",
     "firebase-admin": "14.2.0",
-    "hono": "4.12.34",
+    "hono": "4.13.5",
     "jose": "6.2.5",
     "react": "19.2.7",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "web-push": "^3.6.7"
   }
 }

@@ -349,11 +349,12 @@ function ScopedConversationComposerSession({
         </div>
       ) : null}
       <input
-        aria-label="Attach files"
+        aria-hidden="true"
         className="sr-only"
         multiple
         onChange={attachments.handleFileSelected}
         ref={fileInputRef}
+        tabIndex={-1}
         type="file"
       />
       <ConversationComposer

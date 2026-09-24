@@ -5,26 +5,49 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderKanban,
+  FileSearch,
+  LayoutDashboard,
   ListTodo,
   MessagesSquare,
+  LogOut,
+  Menu,
+  UserRound,
+  X,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { resolveActiveActingCompanyId } from "./company-query-scope";
 import {
   getCompanyProjectConversationSearch,
+  getCompanyProjectEvidenceSearch,
+  getCompanyProjectOverviewSearch,
   getCompanyProjectTaskSearch,
   type CompanyProjectLinkContext,
 } from "./company-project-links";
 
 import "./company-project-navigation.css";
 import "./company-surfaces.css";
+import { authClient } from "#/lib/auth-client";
+import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "#/components/ui/sheet";
+import ThemeToggle from "#/components/ThemeToggle";
+import {
+  SIDEBAR_COLLAPSE_THRESHOLD,
+  SIDEBAR_COLLAPSED_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  clampSidebarWidth,
+  getStoredSidebarWidth,
+} from "#/features/workspace/sidebar-sizing";
 
 export type CompanyProjectNavigationArea =
   | "company"
+  | "overview"
   | "conversation"
+  | "evidence"
   | "tasks";
 
 export type CompanyProjectNavigationIdentity = {
@@ -44,6 +67,7 @@ export type CompanyProjectNavigationProps = {
 };
 
 const collapseStorageKey = "track-company-project-nav-collapsed";
+const widthStorageKey = "track-company-project-nav-width";
 
 function ProjectLink({
   actingCompanyId,
@@ -69,7 +93,7 @@ function ProjectLink({
           : "company-project-nav-project"
       }
       params={{ projectId: item.project._id }}
-      search={getCompanyProjectConversationSearch({
+      search={getCompanyProjectOverviewSearch({
         actingCompanyId,
         projectId: item.project._id,
         projectMemberId: item.membership._id,
@@ -99,11 +123,14 @@ export function CompanyProjectNavigation({
   secondaryNavigation,
   tasksEnabled = true,
 }: CompanyProjectNavigationProps) {
-  const [collapsed, setCollapsed] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : window.localStorage.getItem(collapseStorageKey) === "true",
-  );
+  const [collapsed, setCollapsed] = useState(false);
+  const [width, setWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileCompanyNavigation, setMobileCompanyNavigation] = useState(false);
+  const navigationRef = useRef<HTMLElement>(null);
+  const session = authClient.useSession();
   const companies = useQuery(api.companies.listMine, {});
   const actingCompany = companies?.find(
     (item) => item.company?._id === actingCompanyId,
@@ -130,9 +157,11 @@ export function CompanyProjectNavigation({
   const unassignedProjects =
     projects?.filter((item) => item.participationRole === "unassigned_legacy") ??
     [];
-  const navClassName = collapsed
-    ? "company-project-nav is-collapsed"
-    : "company-project-nav";
+  const navClassName = [
+    "company-project-nav",
+    collapsed ? "is-collapsed" : "",
+    activeArea === "company" ? "is-company-workspace" : "",
+  ].filter(Boolean).join(" ");
   const activeLinkContext: CompanyProjectLinkContext | null =
     activeActingCompanyId && activeProjectItem
       ? {
@@ -143,21 +172,177 @@ export function CompanyProjectNavigation({
         }
       : null;
 
+  async function handleSignOut() {
+    await authClient.signOut();
+    window.location.href = "/sign-in";
+  }
+
   useEffect(() => {
+    setCollapsed(
+      activeArea === "company"
+        ? false
+        : window.localStorage.getItem(collapseStorageKey) === "true",
+    );
+    setWidth(getStoredSidebarWidth(window.localStorage.getItem(widthStorageKey)));
+    setPreferencesLoaded(true);
+  }, [activeArea]);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
     window.localStorage.setItem(collapseStorageKey, String(collapsed));
-  }, [collapsed]);
+  }, [collapsed, preferencesLoaded]);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    window.localStorage.setItem(widthStorageKey, String(width));
+  }, [preferencesLoaded, width]);
+
+  useEffect(() => {
+    if (activeArea === "company") setCollapsed(false);
+  }, [activeArea]);
+
+  useEffect(() => {
+    const viewport = window.matchMedia("(max-width: 860px)");
+    const update = () => {
+      setMobileCompanyNavigation(viewport.matches);
+      if (!viewport.matches) setMobileMenuOpen(false);
+    };
+    update();
+    viewport.addEventListener("change", update);
+    return () => viewport.removeEventListener("change", update);
+  }, []);
+
+  const renderedWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
+
+  useLayoutEffect(() => {
+    const shell = navigationRef.current?.closest<HTMLElement>(".company-unified-shell");
+    shell?.style.setProperty("--company-project-nav-width", `${renderedWidth}px`);
+    return () => {
+      shell?.style.removeProperty("--company-project-nav-width");
+    };
+  }, [renderedWidth]);
+
+  useEffect(() => {
+    if (!resizing) return;
+    const navigation = navigationRef.current;
+    const shell = navigation?.closest<HTMLElement>(".company-unified-shell");
+    const shellLeft = shell?.getBoundingClientRect().left ?? 0;
+    function applyRenderedWidth(nextWidth: number) {
+      shell?.style.setProperty("--company-project-nav-width", `${nextWidth}px`);
+    }
+    function handlePointerMove(event: PointerEvent) {
+      const localWidth = event.clientX - shellLeft;
+      if (localWidth < SIDEBAR_COLLAPSE_THRESHOLD) {
+        applyRenderedWidth(SIDEBAR_COLLAPSED_WIDTH);
+        setCollapsed(true);
+        return;
+      }
+      const nextWidth = clampSidebarWidth(localWidth);
+      applyRenderedWidth(nextWidth);
+      setCollapsed(false);
+      setWidth(nextWidth);
+    }
+    function handlePointerUp() {
+      setResizing(false);
+    }
+    document.body.classList.add("company-project-nav-resizing");
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    return () => {
+      document.body.classList.remove("company-project-nav-resizing");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [resizing]);
+
+  const companySwitcher = companies && companies.length > 1 && onCompanyChange ? (
+    <label className="company-project-nav-switcher">
+      <span>Representing</span>
+      <NativeSelect
+        aria-label="Representing Company"
+        onChange={(event) => {
+          const selectedCompany = companies.find((item) => item.company?._id === event.target.value)?.company;
+          if (selectedCompany) {
+            onCompanyChange(selectedCompany._id);
+            setMobileMenuOpen(false);
+          }
+        }}
+        value={actingCompanyId ?? ""}
+      >
+        {companies.flatMap((item) => item.company ? [
+          <NativeSelectOption key={item.company._id} value={item.company._id}>
+            {item.company.displayName}
+          </NativeSelectOption>,
+        ] : [])}
+      </NativeSelect>
+    </label>
+  ) : null;
+  const companyLinks = companyNavigation ? (
+    <div className="company-project-nav-custom" onClickCapture={(event) => {
+      if (event.target instanceof Element && event.target.closest('a[href]')) setMobileMenuOpen(false);
+    }}>{companyNavigation}</div>
+  ) : null;
+  const companySheetEnabled = activeArea === "company" && mobileCompanyNavigation && Boolean(companyNavigation);
+  const accountControls = (
+    <footer className="company-project-nav-profile">
+      <Link aria-label="Open profile settings" className="company-project-nav-profile-link" title="Profile settings" to="/profile">
+        <span className="company-project-nav-profile-icon" aria-hidden="true"><UserRound size={14} /></span>
+        <span className="company-project-nav-copy">
+          <strong>{session.data?.user.name ?? "Your profile"}</strong>
+          <small>{session.data?.user.email ?? "Account settings"}</small>
+        </span>
+      </Link>
+      <ThemeToggle showLabel={companySheetEnabled || !collapsed} />
+      <button aria-label="Log out" className="company-project-nav-profile-logout" onClick={() => void handleSignOut()} title="Log out" type="button">
+        <LogOut aria-hidden="true" size={14} />
+        <span>Log out</span>
+      </button>
+    </footer>
+  );
 
   return (
-    <aside aria-label="Company and Project navigation" className={navClassName}>
+    <>
+    <aside
+      aria-label="Company and Project navigation"
+      className={navClassName}
+      ref={navigationRef}
+    >
+      <div
+        aria-label="Resize Company and Project navigation"
+        aria-orientation="vertical"
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
+        aria-valuenow={collapsed ? SIDEBAR_COLLAPSED_WIDTH : width}
+        aria-valuetext={collapsed ? "Collapsed" : `${width} pixels`}
+        className="company-project-nav-resize-handle"
+        onDoubleClick={() => setCollapsed((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            if (collapsed || width <= SIDEBAR_MIN_WIDTH) setCollapsed(true);
+            else setWidth((value) => clampSidebarWidth(value - 16));
+          }
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            if (collapsed) setCollapsed(false);
+            else setWidth((value) => clampSidebarWidth(value + 16));
+          }
+        }}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          setResizing(true);
+        }}
+        role="separator"
+        tabIndex={0}
+        data-tooltip="Drag to resize"
+      >
+        <span className="company-project-nav-resize-grip">
+          <ChevronLeft aria-hidden="true" size={10} strokeWidth={2} />
+          <span aria-hidden="true" className="company-project-nav-resize-rule" />
+          <ChevronRight aria-hidden="true" size={10} strokeWidth={2} />
+        </span>
+      </div>
       <header className="company-project-nav-header">
-        <Link
-          aria-label="Company workspace"
-          className="company-project-nav-brand"
-          to="/workspace/company"
-        >
-          <img alt="" height={22} src="/track-mark.svg" width={28} />
-          <span>Track</span>
-        </Link>
         <button
           aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
           className="company-project-nav-collapse"
@@ -171,6 +356,27 @@ export function CompanyProjectNavigation({
             <ChevronLeft aria-hidden="true" size={14} />
           )}
         </button>
+        <Link
+          aria-label="Company workspace"
+          className="company-project-nav-brand"
+          search={{ view: "overview", taskFilter: undefined }}
+          to="/workspace/company"
+        >
+          <img alt="" height={22} src="/track-mark.svg" width={28} />
+          <span>Track</span>
+        </Link>
+        {activeArea === "company" && companyNavigation ? (
+          <button
+            aria-controls="company-mobile-navigation"
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? "Close Company navigation" : "Open Company navigation"}
+            className="company-project-nav-mobile-toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            type="button"
+          >
+            {mobileMenuOpen ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
+          </button>
+        ) : null}
       </header>
 
       <Link
@@ -185,6 +391,7 @@ export function CompanyProjectNavigation({
             ? "company-project-nav-company active"
             : "company-project-nav-company"
         }
+        search={{ view: "overview", taskFilter: undefined }}
         title={actingCompany?.company?.displayName ?? "Companies"}
         to="/workspace/company"
       >
@@ -201,34 +408,9 @@ export function CompanyProjectNavigation({
         </span>
       </Link>
 
-      {companies && companies.length > 1 && onCompanyChange ? (
-        <label className="company-project-nav-switcher">
-          <span>Representing</span>
-          <select
-            onChange={(event) => {
-              const selectedCompany = companies.find(
-                (item) => item.company?._id === event.target.value,
-              )?.company;
-              if (selectedCompany) onCompanyChange(selectedCompany._id);
-            }}
-            value={actingCompanyId ?? ""}
-          >
-            {companies.flatMap((item) =>
-              item.company
-                ? [
-                    <option key={item.company._id} value={item.company._id}>
-                      {item.company.displayName}
-                    </option>,
-                  ]
-                : [],
-            )}
-          </select>
-        </label>
-      ) : null}
+      {!companySheetEnabled ? companySwitcher : null}
 
-      {companyNavigation ? (
-        <div className="company-project-nav-custom">{companyNavigation}</div>
-      ) : null}
+      {!companySheetEnabled ? companyLinks : null}
 
       {activeProject && !activeProjectItem && projects !== undefined ? (
         <p className="company-project-nav-warning">
@@ -255,6 +437,18 @@ export function CompanyProjectNavigation({
           </section>
           <nav aria-label="Project workspace" className="company-project-nav-areas">
             <Link
+              aria-label={`Open ${activeProjectItem.project.name} overview`}
+              aria-current={activeArea === "overview" ? "page" : undefined}
+              className={activeArea === "overview" ? "active" : undefined}
+              params={{ projectId: activeProjectItem.project._id }}
+              search={getCompanyProjectOverviewSearch(activeLinkContext)}
+              title="Project overview"
+              to="/workspace/company-projects/$projectId"
+            >
+              <LayoutDashboard aria-hidden="true" size={14} />
+              <span>Overview</span>
+            </Link>
+            <Link
               aria-label={`Open ${activeProjectItem.project.name} conversation`}
               aria-current={activeArea === "conversation" ? "page" : undefined}
               className={activeArea === "conversation" ? "active" : undefined}
@@ -265,6 +459,18 @@ export function CompanyProjectNavigation({
             >
               <MessagesSquare aria-hidden="true" size={14} />
               <span>Conversation</span>
+            </Link>
+            <Link
+              aria-label={`Open ${activeProjectItem.project.name} evidence and memory`}
+              aria-current={activeArea === "evidence" ? "page" : undefined}
+              className={activeArea === "evidence" ? "active" : undefined}
+              params={{ projectId: activeProjectItem.project._id }}
+              search={getCompanyProjectEvidenceSearch(activeLinkContext)}
+              title="Evidence and memory"
+              to="/workspace/company-projects/$projectId"
+            >
+              <FileSearch aria-hidden="true" size={14} />
+              <span>Evidence</span>
             </Link>
             {tasksEnabled ? (
               <Link
@@ -290,13 +496,23 @@ export function CompanyProjectNavigation({
         </div>
       ) : null}
 
-      {actingCompanyId && projects && projects.length > 0 ? (
+      {activeArea !== "company" &&
+      actingCompanyId &&
+      projects &&
+      projects.length > 0 ? (
         <div className="company-project-nav-projects">
-          <span className="company-project-nav-label">Switch Project</span>
+          <details>
+            <summary aria-label="Switch project" className="company-project-nav-projects-summary">
+              <span className="company-project-nav-projects-summary-copy">
+                <strong>Switch project</strong>
+                <small>{projects.length} available</small>
+              </span>
+              <ChevronRight aria-hidden="true" size={13} />
+            </summary>
           {companyProjects.length > 0 ? (
             <nav aria-label="Company Projects">
               <span className="company-project-nav-group-label">Company Projects</span>
-              {companyProjects.map((item) => (
+              {companyProjects.filter((item) => item.membership._id !== activeProject?.projectMemberId).map((item) => (
                 <ProjectLink
                   actingCompanyId={actingCompanyId}
                   active={item.membership._id === activeProject?.projectMemberId}
@@ -309,7 +525,7 @@ export function CompanyProjectNavigation({
           {collaboratingProjects.length > 0 ? (
             <nav aria-label="Collaborating Projects">
               <span className="company-project-nav-group-label">Collaborating</span>
-              {collaboratingProjects.map((item) => (
+              {collaboratingProjects.filter((item) => item.membership._id !== activeProject?.projectMemberId).map((item) => (
                 <ProjectLink
                   actingCompanyId={actingCompanyId}
                   active={item.membership._id === activeProject?.projectMemberId}
@@ -322,7 +538,7 @@ export function CompanyProjectNavigation({
           {unassignedProjects.length > 0 ? (
             <nav aria-label="Projects awaiting ownership confirmation">
               <span className="company-project-nav-group-label">Ownership to confirm</span>
-              {unassignedProjects.map((item) => (
+              {unassignedProjects.filter((item) => item.membership._id !== activeProject?.projectMemberId).map((item) => (
                 <ProjectLink
                   actingCompanyId={actingCompanyId}
                   active={item.membership._id === activeProject?.projectMemberId}
@@ -332,8 +548,27 @@ export function CompanyProjectNavigation({
               ))}
             </nav>
           ) : null}
+          </details>
         </div>
       ) : null}
+
+      {!companySheetEnabled ? accountControls : null}
     </aside>
+    {companySheetEnabled ? (
+      <Sheet onOpenChange={setMobileMenuOpen} open={mobileMenuOpen}>
+        <SheetContent className="company-mobile-navigation-sheet" id="company-mobile-navigation" side="left">
+          <SheetHeader>
+            <SheetTitle>Company workspace</SheetTitle>
+            <SheetDescription>{actingCompany?.company?.displayName ?? "Choose a Company"}</SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            {companySwitcher}
+            {companyLinks}
+          </SheetBody>
+          {accountControls}
+        </SheetContent>
+      </Sheet>
+    ) : null}
+    </>
   );
 }

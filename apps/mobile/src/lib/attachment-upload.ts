@@ -74,6 +74,7 @@ export type ComposerSubmissionResult = {
 
 /** Progress updates land in React state, so only report meaningful steps. */
 const ProgressStep = 0.05;
+const UploadTimeoutMs = 120_000;
 
 function fallbackBody(attachments: UploadableFile[]) {
   const [first] = attachments;
@@ -105,15 +106,20 @@ function putBlob(input: {
         reject(new Error('upload_failed'));
         return;
       }
-      const payload: unknown = JSON.parse(request.responseText);
-      if (!isStoragePayload(payload)) {
+      try {
+        const payload: unknown = JSON.parse(request.responseText);
+        if (!isStoragePayload(payload)) {
+          reject(new Error('upload_failed'));
+          return;
+        }
+        resolve(payload.storageId);
+      } catch {
         reject(new Error('upload_failed'));
-        return;
       }
-      resolve(payload.storageId);
     };
     request.onerror = () => reject(new Error('upload_failed'));
     request.ontimeout = () => reject(new Error('upload_timeout'));
+    request.timeout = UploadTimeoutMs;
     request.send(input.blob);
   });
 }

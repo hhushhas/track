@@ -2,6 +2,7 @@ import { CornerUpLeft, CornerUpRight, MoreHorizontal, Paperclip, Search, Trash2 
 import { useEffect, useRef, useState } from 'react'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
+import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Button } from '#/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
 import { Input } from '#/components/ui/input'
@@ -23,6 +24,7 @@ export function MessageActions({
   groups,
   identity,
   item,
+  linkedTasks,
   onDeleteMessage,
   onForwardMessage,
   onReplyMessage,
@@ -36,6 +38,7 @@ export function MessageActions({
   groups: Array<GroupReference>
   identity?: TaskIdentity
   item: GroupMessageItem
+  linkedTasks?: ReadonlyArray<{ task: { publicKey: string; title: string } }>
   onDeleteMessage: (messageId: Id<'messages'>) => Promise<boolean>
   onForwardMessage: (input: {
     sourceMessageId: Id<'messages'>
@@ -44,6 +47,18 @@ export function MessageActions({
   }) => Promise<boolean>
   onReplyMessage: (item: GroupMessageItem) => void
 }) {
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  function selectMessageText() {
+    const messageNode = document.getElementById(`message-${String(item.message._id)}`)?.querySelector('.track-markdown')
+    if (!messageNode) return
+    const range = document.createRange()
+    range.selectNodeContents(messageNode)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
+
   return (
     <div className="track-message-actions" aria-label="Message actions">
       {canReply ? (
@@ -54,9 +69,10 @@ export function MessageActions({
           title="Reply"
           type="button"
         >
-          <CornerUpLeft size={14} />
+          <CornerUpLeft aria-hidden="true" size={14} />
         </Button>
       ) : null}
+      {canCreateTasks ? <CreateTaskFromMessage identity={identity} message={item.message} /> : null}
       <ForwardMessagePopover
         activeGroupId={activeGroupId}
         busyAction={busyAction}
@@ -65,7 +81,6 @@ export function MessageActions({
         item={item}
         onForwardMessage={onForwardMessage}
       />
-      {canCreateTasks ? <CreateTaskFromMessage identity={identity} message={item.message} /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -77,7 +92,7 @@ export function MessageActions({
             />
           }
         >
-          <MoreHorizontal size={14} />
+          <MoreHorizontal aria-hidden="true" size={14} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="track-message-menu">
           <DropdownMenuGroup>
@@ -89,22 +104,43 @@ export function MessageActions({
             >
               Copy text
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={selectMessageText}>Select message</DropdownMenuItem>
+            {linkedTasks?.length ? (
+              <DropdownMenuItem
+                onClick={() => {
+                  const task = linkedTasks[0]?.task
+                  if (!task) return
+                  const identityQuery = identity?.actingCompanyId && identity.projectMemberId
+                    ? `&actingCompanyId=${identity.actingCompanyId}&projectMemberId=${identity.projectMemberId}`
+                    : ''
+                  const taskUrl = `${window.location.origin}/workspace/projects/${item.message.projectId}/tasks?view=board&task=${encodeURIComponent(task.publicKey)}&groupId=${encodeURIComponent(String(item.message.groupId))}${identityQuery}`
+                  void navigator.clipboard?.writeText(taskUrl)
+                }}
+              >
+                Copy task link
+              </DropdownMenuItem>
+            ) : null}
             {canDelete ? (
               <DropdownMenuItem
                 disabled={busyAction === `delete-${item.message._id}`}
-                onClick={() => {
-                  if (!window.confirm('Delete this message? This can’t be undone.')) return
-                  void onDeleteMessage(item.message._id)
-                }}
+                onClick={() => setDeleteOpen(true)}
                 variant="destructive"
               >
-                <Trash2 />
+                <Trash2 aria-hidden="true" />
                 Delete message
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ConfirmDialog
+        confirmLabel="Delete message"
+        description="This removes the message from the conversation. The action cannot be undone."
+        onConfirm={() => onDeleteMessage(item.message._id)}
+        onOpenChange={setDeleteOpen}
+        open={deleteOpen}
+        title="Delete this message?"
+      />
     </div>
   )
 }
@@ -174,7 +210,7 @@ function ForwardMessagePopover({
           />
         }
       >
-        <CornerUpRight size={14} />
+        <CornerUpRight aria-hidden="true" size={14} />
       </PopoverTrigger>
       <PopoverContent align="end" className="track-forward-popover" side="top" sideOffset={8}>
         <PopoverHeader>
@@ -182,7 +218,7 @@ function ForwardMessagePopover({
           <PopoverDescription>Send a copied snapshot with an optional note.</PopoverDescription>
         </PopoverHeader>
         <div className="track-forward-search">
-          <Search size={13} />
+          <Search aria-hidden="true" size={13} />
           <Input
             aria-label="Search Groups"
             autoComplete="off"
@@ -193,7 +229,7 @@ function ForwardMessagePopover({
                 focusTargetAt(0)
               }
             }}
-            placeholder="Search groups..."
+            placeholder="Search groups…"
             value={query}
           />
         </div>
@@ -202,7 +238,7 @@ function ForwardMessagePopover({
           aria-label="Optional forwarding note"
           className="track-forward-note"
           onChange={(event) => setNote(event.currentTarget.value)}
-          placeholder="Add a note for this Group..."
+          placeholder="Add a note for this Group…"
           value={note}
         />
         <div
@@ -257,7 +293,7 @@ function ForwardMessagePopover({
                     <strong>{group.name}</strong>
                     <small>{group.kind.replaceAll('_', ' ')} Group</small>
                   </span>
-                  <CornerUpRight size={13} />
+                  <CornerUpRight aria-hidden="true" size={13} />
                 </button>
               )
             })
@@ -291,8 +327,8 @@ function ForwardPreview({ item }: { item: GroupMessageItem }) {
       <p>{item.message.body || 'Attachment message'}</p>
       {attachmentCount > 0 ? (
         <small>
-          <Paperclip size={12} />
-            {attachmentCount} attachment{attachmentCount === 1 ? '' : 's'} will be copied
+          <Paperclip aria-hidden="true" size={12} />
+          {attachmentCount} attachment{attachmentCount === 1 ? '' : 's'} will be copied
         </small>
       ) : null}
     </div>

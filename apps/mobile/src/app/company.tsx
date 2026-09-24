@@ -1,500 +1,160 @@
-import { Stack } from 'expo-router';
-import { useMutation, useQuery } from 'convex/react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 
 import { api } from '../../../../convex/_generated/api';
-import { ColoredAvatar } from '@/components/colored-avatar';
+import { useAppToast } from '@/components/app-toast';
+import {
+  ActingCompanyCard,
+  CompanyChoice,
+  CompanySectionHeading,
+  CompanyTrustNotice,
+  InvitationCard,
+  type CompanyAudience,
+} from '@/components/company-dashboard';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
+import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
+import { companyRoleLabel } from '@/lib/role-label';
+import { projectOverviewHref } from '@/lib/company-navigation';
+import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 
-type NamedCompany = { displayName: string; _id?: string };
-
 export default function CompanyScreen() {
+  const { showToast } = useAppToast();
+  const router = useRouter();
   const theme = useTheme();
+  const bottomContentInset = useBottomTabContentInset(Spacing.six);
   const { trackUserId } = useTrackUser();
   const { actingCompanyId, companies, companyModelEnabled, setActingCompanyId } = useCompany();
+  const [pendingDecision, setPendingDecision] = useState<string | null>(null);
+  const pendingDecisionRef = useRef<string | null>(null);
   const actingCompany = companies?.find(({ company }) => company?._id === actingCompanyId);
-  const canAdministerActingCompany =
-    actingCompany?.membership.role === 'owner' || actingCompany?.membership.role === 'admin';
-  const administerArgs =
-    actingCompanyId && canAdministerActingCompany ? { actingCompanyId } : 'skip';
-  const companyInvitations = useQuery(
-    api.companies.listPendingForMe,
-    companyModelEnabled ? {} : 'skip',
-  );
-  const relationshipInvitations = useQuery(api.relationships.listInvitations, administerArgs);
-  const projectInvitations = useQuery(api.sharedProjects.listInvitations, administerArgs);
-  const relationships = useQuery(api.relationships.listMine, administerArgs);
+  const companyInvitations = useQuery(api.companies.listPendingForMe, companyModelEnabled ? {} : 'skip');
+  const relationshipInvitations = useQuery(api.relationships.listInvitations, actingCompanyId ? { actingCompanyId } : 'skip');
+  const projectInvitations = useQuery(api.sharedProjects.listInvitations, actingCompanyId ? { actingCompanyId } : 'skip');
+  const profile = useQuery(api.auth.getProfileStatus, trackUserId ? { userId: trackUserId } : 'skip');
+  const projectPage = usePaginatedQuery(api.mobile.listProjects, trackUserId ? {
+    userId: trackUserId,
+    actingCompanyId: actingCompanyId ?? undefined,
+  } : 'skip', { initialNumItems: 100 });
+  useEffect(() => {
+    if (projectPage.status === 'CanLoadMore') projectPage.loadMore(100);
+  }, [projectPage.loadMore, projectPage.status]);
+  const projectCount = projectPage.status === 'LoadingFirstPage'
+    ? undefined
+    : projectPage.results.filter(Boolean).length;
+  const activeProjects = useMemo(() => projectPage.results
+    .filter((item): item is NonNullable<typeof item> => Boolean(item && item.membership.status !== 'archived'))
+    .slice(0, 4), [projectPage.results]);
   const decideCompanyInvitation = useMutation(api.companies.decideInvitation);
   const decideRelationshipInvitation = useMutation(api.relationships.decideInvitation);
   const decideProjectInvitation = useMutation(api.sharedProjects.decideInvitation);
-
-  async function run(action: () => Promise<unknown>, success: string) {
+  const sortedCompanies = useMemo(() => [...(companies ?? [])].sort((left, right) => {
+    if (left.company?._id === actingCompanyId) return -1;
+    if (right.company?._id === actingCompanyId) return 1;
+    if (left.company?.status !== right.company?.status) return left.company?.status === 'active' ? -1 : 1;
+    return (left.company?.displayName ?? '').localeCompare(right.company?.displayName ?? '');
+  }), [actingCompanyId, companies]);
+  async function run(id: string, action: () => Promise<unknown>, success: string) {
+    if (pendingDecisionRef.current) return;
+    pendingDecisionRef.current = id;
+    setPendingDecision(id);
     try {
-      await action();
-      Alert.alert(success);
+      const result = await action();
+      if (typeof result === 'object' && result !== null && 'status' in result && result.status === 'expired') throw new Error('invitation_expired');
+      showToast({ title: success, tone: 'success' });
     } catch {
-      Alert.alert(
-        'Action unavailable',
-        'Your authority or the invitation changed. Refresh and try again.',
-      );
+      showToast({ title: 'Action unavailable', message: 'Your authority or the invitation changed. Refresh and try again.', tone: 'error' });
+    } finally {
+      pendingDecisionRef.current = null;
+      setPendingDecision(null);
     }
   }
 
-  if (!companyModelEnabled)
-    return (
-      <ThemedView style={styles.screen}>
-        <Stack.Screen options={{ title: 'Companies' }} />
-        <EmptyState
-          body="This server has not enabled the Company release."
-          icon="office-building"
-          title="Company collaboration is disabled"
-        />
-      </ThemedView>
-    );
+  if (!companyModelEnabled) return <ThemedView style={styles.screen}>
+    <Stack.Screen options={{ title: 'Companies' }} />
+    <EmptyState body="This server has not enabled the Company release." icon="office-building" title="Company collaboration is disabled" />
+  </ThemedView>;
 
-  return (
-    <ThemedView style={styles.screen}>
-      <Stack.Screen options={{ title: 'Companies' }} />
-      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
-        <ActingIdentityCard company={actingCompany?.company} role={actingCompany?.membership.role} />
+  return <ThemedView style={styles.screen}>
+    <Stack.Screen options={{ title: 'Companies' }} />
+    <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
+      <ConnectivityBanner />
+      <CompanyTrustNotice />
+      <ActingCompanyCard companyId={actingCompany?.company?._id} companyName={actingCompany?.company?.displayName} projectCount={projectCount} role={actingCompany ? companyRoleLabel(actingCompany.membership.role) : 'Individual workspace'} status={actingCompany?.company?.status} />
 
-        <Section title="Act as">
-          <ThemedText style={styles.sectionNote} themeColor="textSecondary" type="caption">
-            Choose the identity represented by Project and Channel actions. Company membership alone
-            never grants content.
-          </ThemedText>
-          <CompanyChoice
-            label="Personal / legacy Projects"
-            onPress={() => setActingCompanyId(null)}
-            selected={!actingCompanyId}
-          />
-          {companies === undefined ? (
-            <SkeletonList count={2} label="Loading your Companies" />
-          ) : (
-            companies.map(({ company, membership }) =>
-              company ? (
-                <CompanyChoice
-                  detail={
-                    company.status === 'active'
-                      ? membership.role
-                      : `${membership.role} · ${company.status}`
-                  }
-                  key={company._id}
-                  label={company.displayName}
-                  onPress={() =>
-                    company.status === 'active'
-                      ? setActingCompanyId(company._id)
-                      : Alert.alert(
-                          'Company suspended',
-                          'An owner can reactivate this Company from the web administration surface.',
-                        )
-                  }
-                  selected={company._id === actingCompanyId}
-                  suspended={company.status !== 'active'}
-                />
-              ) : null,
-            )
-          )}
-        </Section>
-
-        {companyInvitations?.length ? (
-          <Section title="Company invitations">
-            {companyInvitations.map(({ company, invitation }) => (
-              <InvitationCard
-                accept={() =>
-                  run(
-                    () =>
-                      decideCompanyInvitation({
-                        invitationId: invitation._id,
-                        decision: 'accept',
-                      }),
-                    'Company joined',
-                  )
-                }
-                decline={() =>
-                  run(
-                    () =>
-                      decideCompanyInvitation({
-                        invitationId: invitation._id,
-                        decision: 'decline',
-                      }),
-                    'Invitation declined',
-                  )
-                }
-                detail={`Join as ${invitation.role}`}
-                key={invitation._id}
-                title={company?.displayName ?? 'Company'}
-              />
-            ))}
-          </Section>
-        ) : null}
-
-        {actingCompanyId && relationshipInvitations?.length ? (
-          <Section title="Relationship invitations">
-            {relationshipInvitations.map(
-              ({ invitation, inviter, invitingCompany, relationship, participants }) => (
-                <InvitationCard
-                  accept={() =>
-                    run(
-                      () =>
-                        decideRelationshipInvitation({
-                          actingCompanyId,
-                          invitationId: invitation._id,
-                          decision: 'accept',
-                        }),
-                      'Relationship joined',
-                    )
-                  }
-                  audience={participants}
-                  audienceLabel="Accepting shares this relationship with"
-                  decline={() =>
-                    run(
-                      () =>
-                        decideRelationshipInvitation({
-                          actingCompanyId,
-                          invitationId: invitation._id,
-                          decision: 'decline',
-                        }),
-                      'Invitation declined',
-                    )
-                  }
-                  detail={`${invitingCompany?.displayName ?? 'A Company'} invited ${participants.map((company) => company.displayName).join(', ')}`}
-                  invitedBy={inviter?.displayName}
-                  key={invitation._id}
-                  title={relationship?.name ?? 'Relationship'}
-                />
-              ),
-            )}
-          </Section>
-        ) : null}
-
-        {actingCompanyId && trackUserId && projectInvitations?.length ? (
-          <Section title="Shared Project invitations">
-            {projectInvitations.map(({ invitation, invitingCompany, project }) => (
-              <InvitationCard
-                accept={() =>
-                  run(
-                    () =>
-                      decideProjectInvitation({
-                        actingCompanyId,
-                        invitationId: invitation._id,
-                        decision: 'accept',
-                        initialMembers: [{ userId: trackUserId, role: 'manager' }],
-                      }),
-                    'Project joined',
-                  )
-                }
-                audience={invitingCompany ? [invitingCompany] : []}
-                audienceLabel="Accepting grants access to"
-                decline={() =>
-                  run(
-                    () =>
-                      decideProjectInvitation({
-                        actingCompanyId,
-                        invitationId: invitation._id,
-                        decision: 'decline',
-                        initialMembers: [],
-                      }),
-                    'Invitation declined',
-                  )
-                }
-                detail={`${invitingCompany?.displayName ?? 'A Company'} will gain only the confirmed General Channel audience.`}
-                key={invitation._id}
-                title={project?.name ?? 'Shared Project'}
-              />
-            ))}
-          </Section>
-        ) : null}
-
-        {actingCompanyId ? (
-          <Section title="Relationships">
-            {!canAdministerActingCompany ? (
-              <ThemedText style={styles.sectionNote} themeColor="textSecondary" type="caption">
-                Relationship administration is limited to this Company&apos;s owners and admins.
-              </ThemedText>
-            ) : relationships === undefined ? (
-              <SkeletonList count={2} label="Loading relationships" />
-            ) : relationships.length ? (
-              relationships.map((entry) =>
-                entry ? (
-                  <View
-                    key={entry.relationship._id}
-                    style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-                    <ThemedText type="title">{entry.relationship.name}</ThemedText>
-                    <AudienceList companies={entry.participants} label="Participating Companies" />
-                  </View>
-                ) : null,
-              )
-            ) : (
-              <ThemedText style={styles.sectionNote} themeColor="textSecondary" type="caption">
-                No relationships yet.
-              </ThemedText>
-            )}
-            <View style={[styles.webNote, { borderColor: theme.hairline }]}>
-              <PlatformIcon color={theme.textSecondary} name="open-in-new" size={17} />
-              <ThemedText style={styles.webNoteText} themeColor="textSecondary" type="caption">
-                Profile editing, member administration, removal votes, migration, and archive
-                administration are available on web in this release.
-              </ThemedText>
-            </View>
-          </Section>
-        ) : null}
-      </ScrollView>
-    </ThemedView>
-  );
-}
-
-function ActingIdentityCard({
-  company,
-  role,
-}: {
-  company?: { displayName: string; status: string; _id: string } | null;
-  role?: string;
-}) {
-  const theme = useTheme();
-  const suspended = Boolean(company) && company?.status !== 'active';
-
-  return (
-    <View style={[styles.identity, { backgroundColor: theme.backgroundElement }]}>
-      {company ? (
-        <ColoredAvatar label={company.displayName} seed={company._id} shape="rounded" size={48} />
-      ) : (
-        <View style={[styles.identityIcon, { backgroundColor: theme.backgroundSelected }]}>
-          <PlatformIcon color={theme.textSecondary} name="person" size={24} />
-        </View>
-      )}
-      <View style={styles.identityBody}>
-        <ThemedText themeColor="textSecondary" type="captionBold">
-          Acting as
-        </ThemedText>
-        <ThemedText numberOfLines={1} type="subtitle">
-          {company?.displayName ?? 'Personal / legacy Projects'}
-        </ThemedText>
-        <ThemedText themeColor="textSecondary" type="caption">
-          {company ? `${role} · ${company.status}` : 'No Company identity represented'}
-        </ThemedText>
+      <View style={styles.section}>
+        <CompanySectionHeading count={activeProjects.length} meta="Available now" title="ACTIVE PROJECTS" />
+        {projectPage.status === 'LoadingFirstPage' ? <SkeletonList count={3} label="Loading Company Projects" /> : activeProjects.length ? activeProjects.map((item) => (
+          <Pressable
+            accessibilityLabel={`${item.project.name}. Open Project.`}
+            accessibilityRole="button"
+            android_ripple={{ color: theme.backgroundSelected }}
+            key={item.membership._id}
+            onPress={() => router.push(projectOverviewHref(item.project._id, item.membership.companyId ? { archived: false, companyId: item.membership.companyId, membershipId: item.membership._id } : null) as never)}
+            style={[styles.projectRow, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}
+          >
+            <View style={[styles.projectIcon, { backgroundColor: theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="project" size={18} /></View>
+            <View style={styles.projectCopy}><ThemedText numberOfLines={1} type="title">{item.project.name}</ThemedText><ThemedText themeColor="textSecondary" type="caption">{item.groupCount} {item.groupCount === 1 ? 'Channel' : 'Channels'}{item.unreadCount ? ` · ${item.unreadCount} unread` : ''}</ThemedText></View>
+            <PlatformIcon color={theme.textTertiary} name="chevron-right" size={17} />
+          </Pressable>
+        )) : <ThemedText themeColor="textSecondary" type="caption">No active Projects are available in this Company.</ThemedText>}
+        {activeProjects.length ? <Pressable accessibilityRole="button" onPress={() => router.replace('/projects')} style={styles.allProjects}><ThemedText themeColor="accentStrong" type="captionBold">View all Projects</ThemedText><PlatformIcon color={theme.accentStrong} name="chevron-right" size={15} /></Pressable> : null}
       </View>
-      {suspended ? (
-        <PlatformIcon color={theme.warning} name="alert-circle" size={20} />
-      ) : company ? (
-        <PlatformIcon color={theme.success} name="shield-check" size={20} />
-      ) : null}
-    </View>
-  );
-}
 
-function CompanyChoice({
-  detail,
-  label,
-  onPress,
-  selected,
-  suspended,
-}: {
-  detail?: string;
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-  suspended?: boolean;
-}) {
-  const theme = useTheme();
-
-  return (
-    // See projects.tsx: a themed fill and a ripple on the same pressable share
-    // one Android drawable that never repaints on a theme change.
-    <View
-      style={[
-        styles.choice,
-        {
-          backgroundColor: selected ? theme.backgroundSelected : theme.backgroundElement,
-          borderColor: selected ? theme.accent : 'transparent',
-        },
-      ]}>
-      <Pressable
-        accessibilityRole="radio"
-        accessibilityState={{ selected }}
-        android_ripple={{ color: theme.backgroundSelected }}
-        onPress={onPress}
-        style={styles.choicePressable}>
-        <ColoredAvatar label={label} shape="rounded" size={32} />
-        <View style={styles.choiceBody}>
-          <ThemedText numberOfLines={1} type="title">
-            {label}
-          </ThemedText>
-          {detail ? (
-            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
-              {detail}
-            </ThemedText>
-          ) : null}
-        </View>
-        {suspended ? <PlatformIcon color={theme.warning} name="alert-circle" size={19} /> : null}
-        {selected ? <PlatformIcon color={theme.accent} name="check-circle" size={19} /> : null}
-      </Pressable>
-    </View>
-  );
-}
-
-function Section({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <View style={styles.section}>
-      <ThemedText type="titleLarge">{title}</ThemedText>
-      {children}
-    </View>
-  );
-}
-
-/** Names the Companies that gain access, so consent is informed before it is given. */
-function AudienceList({ companies, label }: { companies: NamedCompany[]; label: string }) {
-  if (!companies.length) return null;
-
-  return (
-    <View style={styles.audience}>
-      <ThemedText themeColor="textSecondary" type="captionBold">
-        {label}
-      </ThemedText>
-      {companies.map((company) => (
-        <View key={company._id ?? company.displayName} style={styles.audienceRow}>
-          <ColoredAvatar
-            label={company.displayName}
-            seed={company._id}
-            shape="rounded"
-            size={24}
-          />
-          <ThemedText numberOfLines={1} style={styles.audienceName} type="caption">
-            {company.displayName}
-          </ThemedText>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function InvitationCard({
-  accept,
-  audience,
-  audienceLabel,
-  decline,
-  detail,
-  invitedBy,
-  title,
-}: {
-  accept: () => void;
-  audience?: NamedCompany[];
-  audienceLabel?: string;
-  decline: () => void;
-  detail: string;
-  invitedBy?: string;
-  title: string;
-}) {
-  const theme = useTheme();
-
-  return (
-    <View style={[styles.card, { backgroundColor: theme.backgroundElement }]}>
-      <View style={styles.cardHeader}>
-        <ColoredAvatar label={title} shape="rounded" size={36} />
-        <View style={styles.cardHeading}>
-          <ThemedText numberOfLines={2} type="title">
-            {title}
-          </ThemedText>
-          {invitedBy ? (
-            <ThemedText themeColor="textSecondary" type="caption">
-              Invited by {invitedBy}
-            </ThemedText>
-          ) : null}
-        </View>
+      <View style={styles.section}>
+        <CompanySectionHeading meta={`${companies?.length ?? 0} available`} title="ACT AS" />
+        <ThemedText themeColor="textSecondary" type="small">Choose the identity represented by Project actions. Company membership alone never grants content access.</ThemedText>
+        {companies === undefined ? <SkeletonList count={3} label="Loading your Companies" /> : <>
+          {sortedCompanies.map(({ company, membership }) => company ? <CompanyChoice detail={company.status === 'active' ? companyRoleLabel(membership.role) : `${companyRoleLabel(membership.role)} · Contact workspace admin`} key={company._id} label={company.displayName} onPress={() => company.status === 'active' ? setActingCompanyId(company._id) : undefined} selected={company._id === actingCompanyId} suspended={company.status !== 'active'} /> : null)}
+          <CompanyChoice detail={`${profile?.user?.displayName || 'Track member'} · Individual workspace`} label="Personal Projects" onPress={() => setActingCompanyId(null)} personal selected={!actingCompanyId} />
+        </>}
       </View>
-      <ThemedText themeColor="textSecondary" type="caption">
-        {detail}
-      </ThemedText>
-      {audience && audienceLabel ? (
-        <AudienceList companies={audience} label={audienceLabel} />
-      ) : null}
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          android_ripple={{ color: theme.backgroundSelected }}
-          onPress={accept}
-          style={[styles.button, { backgroundColor: theme.text }]}>
-          <ThemedText style={{ color: theme.background }} type="title">
-            Accept
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          android_ripple={{ color: theme.backgroundSelected }}
-          onPress={decline}
-          style={[styles.button, { borderColor: theme.hairline, borderWidth: 1 }]}>
-          <ThemedText type="title">Decline</ThemedText>
-        </Pressable>
-      </View>
-    </View>
-  );
+
+      {companyInvitations?.length ? <View style={styles.section}>
+        <CompanySectionHeading count={companyInvitations.length} meta="Action required" title="COMPANY INVITATIONS" />
+        {companyInvitations.map(({ company, invitation }) => {
+          const id = String(invitation._id);
+          return <InvitationCard audienceLabel="Access stays restricted to accepted shared Projects and joined Channels." busy={pendingDecision !== null} decision={pendingDecision === id ? 'accept' : pendingDecision === `${id}:decline` ? 'decline' : null} detail={`Join as ${companyRoleLabel(invitation.role)}`} key={id} onAccept={() => void run(id, () => decideCompanyInvitation({ invitationId: invitation._id, decision: 'accept' }), 'Company joined')} onDecline={() => void run(`${id}:decline`, () => decideCompanyInvitation({ invitationId: invitation._id, decision: 'decline' }), 'Invitation declined')} title={company?.displayName ?? 'Company'} />;
+        })}
+      </View> : null}
+
+      {actingCompanyId && relationshipInvitations?.length ? <View style={styles.section}>
+        <CompanySectionHeading count={relationshipInvitations.length} meta="Action required" title="RELATIONSHIP INVITATIONS" />
+        {relationshipInvitations.map(({ invitation, inviter, invitingCompany, relationship, participants }) => {
+          const id = String(invitation._id);
+          return <InvitationCard audience={participants as CompanyAudience[]} audienceLabel={`Accepting shares this relationship with ${participants.map((company) => company.displayName).join(', ')}.`} busy={pendingDecision !== null} decision={pendingDecision === id ? 'accept' : pendingDecision === `${id}:decline` ? 'decline' : null} detail={`${invitingCompany?.displayName ?? 'A Company'} · Invited by ${inviter?.displayName ?? 'an administrator'}`} key={id} onAccept={() => void run(id, () => decideRelationshipInvitation({ actingCompanyId, invitationId: invitation._id, decision: 'accept' }), 'Relationship joined')} onDecline={() => void run(`${id}:decline`, () => decideRelationshipInvitation({ actingCompanyId, invitationId: invitation._id, decision: 'decline' }), 'Invitation declined')} title={relationship?.name ?? 'Relationship'} />;
+        })}
+      </View> : null}
+
+      {actingCompanyId && trackUserId && projectInvitations?.length ? <View style={styles.section}>
+        <CompanySectionHeading count={projectInvitations.length} meta="Channel sync" title="SHARED PROJECT INVITATIONS" />
+        {projectInvitations.map(({ invitation, invitingCompany, project }) => {
+          const id = String(invitation._id);
+          return <InvitationCard acceptLabel="Accept Project" audience={invitingCompany ? [invitingCompany] : []} audienceLabel={`${invitingCompany?.displayName ?? 'The inviting Company'} will gain only the confirmed Channel audience.`} busy={pendingDecision !== null} decision={pendingDecision === id ? 'accept' : pendingDecision === `${id}:decline` ? 'decline' : null} detail={`From ${invitingCompany?.displayName ?? 'a collaborating Company'}`} eyebrow="PROJECT INVITE" key={id} onAccept={() => void run(id, () => decideProjectInvitation({ actingCompanyId, invitationId: invitation._id, decision: 'accept', initialMembers: [{ userId: trackUserId, role: 'manager' }] }), 'Project joined')} onDecline={() => void run(`${id}:decline`, () => decideProjectInvitation({ actingCompanyId, invitationId: invitation._id, decision: 'decline', initialMembers: [] }), 'Invitation declined')} title={project?.name ?? 'Shared Project'} />;
+        })}
+      </View> : null}
+
+    </ScrollView>
+    <StandalonePrimaryNavigation active="team" />
+  </ThemedView>;
 }
 
 const styles = StyleSheet.create({
-  actions: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.one },
-  audience: { gap: Spacing.one },
-  audienceName: { flex: 1 },
-  audienceRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  button: {
-    alignItems: 'center',
-    borderRadius: Radius.medium,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: TouchTarget,
-    paddingHorizontal: Spacing.three,
-  },
-  card: { borderRadius: Radius.large, gap: Spacing.two, padding: Spacing.three },
-  cardHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three },
-  cardHeading: { flex: 1, gap: 2 },
-  choice: {
-    borderRadius: Radius.large,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  choiceBody: { flex: 1, gap: 2, minWidth: 0 },
-  choicePressable: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: Spacing.three,
-    minHeight: TouchTarget + 12,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-  },
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
-  identity: {
-    alignItems: 'center',
-    borderRadius: Radius.large,
-    flexDirection: 'row',
-    gap: Spacing.three,
-    padding: Spacing.three,
-  },
-  identityBody: { flex: 1, gap: 2, minWidth: 0 },
-  identityIcon: {
-    alignItems: 'center',
-    borderRadius: Radius.medium,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
-  },
+  content: { gap: Spacing.four, padding: Spacing.four, paddingBottom: Spacing.six },
+  allProjects: { alignItems: 'center', alignSelf: 'flex-end', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget },
+  projectCopy: { flex: 1, gap: 2, minWidth: 0 },
+  projectIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 36, justifyContent: 'center', width: 36 },
+  projectRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: 68, padding: Spacing.three },
   screen: { flex: 1 },
   section: { gap: Spacing.two },
-  sectionNote: { lineHeight: 17 },
-  webNote: {
-    alignItems: 'flex-start',
-    borderRadius: Radius.medium,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: Spacing.two,
-    marginTop: Spacing.one,
-    padding: Spacing.three,
-  },
-  webNoteText: { flex: 1, lineHeight: 17 },
 });

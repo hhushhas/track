@@ -241,6 +241,26 @@ export const markRead = mutation({
   },
 })
 
+/** Opening a task acknowledges every unread event represented by its one Home row. */
+export const markTaskRead = mutation({
+  args: { taskId: v.id('tasks'), ...identityArgs },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    const access = await requireTaskAccess(ctx, actor, args.taskId, args)
+    const rows = await ctx.db.query('taskNotifications')
+      .withIndex('by_member_task_read', (q) =>
+        q.eq('recipientProjectMemberId', access.projectMember._id)
+          .eq('taskId', args.taskId)
+          .eq('readAt', undefined),
+      )
+      .collect()
+    const now = Date.now()
+    const matching = rows.filter((row) => row.recipientUserId === actor.user._id)
+    await Promise.all(matching.map((row) => ctx.db.patch(row._id, { readAt: now })))
+    return matching.length
+  },
+})
+
 export const markAllRead = mutation({
   args: { projectId: v.id('projects'), ...identityArgs },
   handler: async (ctx, args) => {
