@@ -210,6 +210,7 @@ export function CompanyHubPage({
     api.relationships.approveRemoval,
   );
   const updateMember = useMutation(api.companies.updateMember);
+  const revokeInvitation = useMutation(api.companies.revokeInvitation);
   const setSuspended = useMutation(api.companies.setSuspended);
   const closeCompany = useMutation(api.companies.close);
   const [busy, setBusy] = useState(false);
@@ -1258,7 +1259,7 @@ export function CompanyHubPage({
                 <section className="company-workspace-section company-inbox">
                   <div className="company-section-heading"><div><span className="company-overview-section-icon"><Mail aria-hidden="true" size={20} /></span><span><h2>Pending invitations</h2><p>Invitations remain inactive until the recipient accepts.</p></span></div><span className="company-count-badge">{administration.invitations.length}</span></div>
                   <ul className="company-request-list">
-                    {administration.invitations.map((invitation) => <li key={invitation._id}><div><strong>{invitation.normalizedEmail}</strong><span>Invited as {invitation.role} · expires {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(invitation.expiresAt)}</span></div><span className="company-state-pill proposed">Pending</span></li>)}
+                    {administration.invitations.map((invitation) => <li key={invitation._id}><div><strong>{invitation.normalizedEmail}</strong><span>Invited as {invitation.role} · expires {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(invitation.expiresAt)}</span></div><div className="company-row-actions"><span className="company-state-pill proposed">Pending</span>{isCompanyAdmin ? <Button disabled={busy} onClick={() => void run(() => revokeInvitation({ companyId: actingCompanyId, invitationId: invitation._id }))} type="button" variant="outline">Revoke</Button> : null}</div></li>)}
                   </ul>
                 </section>
               ) : peopleFilter === "invited" ? <section className="company-workspace-section"><div className="company-quiet-empty"><Mail aria-hidden="true" size={18} /><div><strong>No pending invitations</strong><span>Everyone invited to this Company has responded.</span></div></div></section> : null}
