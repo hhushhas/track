@@ -38,6 +38,8 @@ describe('Company model authorization and lifecycle', () => {
     const userId = await seedUser(t, 'activity-owner')
     const companyId = await createCompany(t, userId, 'Activity Company', 'activity-company')
     const projectId = await seedCompanyProject(t, userId, companyId, 'Patient Portal')
+    const otherCompanyId = await createCompany(t, userId, 'Other Activity Company', 'other-activity-company')
+    const otherProjectId = await seedCompanyProject(t, userId, otherCompanyId, 'Private Launch')
     const now = Date.now()
     await t.run(async (ctx) => {
       await ctx.db.insert('auditEvents', {
@@ -50,13 +52,20 @@ describe('Company model authorization and lifecycle', () => {
           action: 'memory_tool.read.allowed', createdAt: now + index,
         })
       }
+      await ctx.db.insert('auditEvents', {
+        companyId: otherCompanyId, projectId: otherProjectId, actorId: userId,
+        entityType: 'project', entityId: String(otherProjectId),
+        action: 'company_project.created', createdAt: now + 200,
+      })
     })
 
     const overview = await asUser(t, userId).query(api.companyOverview.get, { companyId })
+    expect(overview.stats.activePeople).toBe(0)
     expect(overview.recentActivity).toEqual(expect.arrayContaining([
       expect.objectContaining({ action: 'Created project', preview: 'activity-owner created the project Patient Portal.' }),
     ]))
     expect(overview.recentActivity).toHaveLength(1)
+    expect(overview.projects.map((project) => project.name)).toEqual(['Patient Portal'])
   })
 
   it('enforces Company task scope and suspended assignee authorization', async () => {

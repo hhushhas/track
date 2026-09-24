@@ -276,9 +276,8 @@ export const get = query({
     const { company } = await requireActiveCompanyMembership(ctx, actor, args.companyId)
     const rangeDays = args.days ?? 7
 
-    const [actorProjectMemberships, companyMembers, relationshipRows] = await Promise.all([
+    const [actorProjectMemberships, relationshipRows] = await Promise.all([
       ctx.db.query('projectMembers').withIndex('by_user', (q) => q.eq('userId', actor.userId)).collect(),
-      ctx.db.query('companyMembers').withIndex('by_company', (q) => q.eq('companyId', company._id)).collect(),
       ctx.db.query('relationshipCompanies').withIndex('by_company_status', (q) => q.eq('companyId', company._id).eq('status', 'active')).collect(),
     ])
 
@@ -363,11 +362,11 @@ export const get = query({
         const category = state?.category ?? 'unstarted'
         const done = isCompletedWorkflowState(state ? { category: state.category, stateName: state.name } : undefined)
         const terminal = done || category === 'canceled'
-        if (task.assigneeProjectMemberId) {
-          const assignee = members.find((member) => member._id === task.assigneeProjectMemberId)
-          if (assignee) assignedPeople.add(assignee.userId)
-        }
         if (!terminal) {
+          if (task.assigneeProjectMemberId) {
+            const assignee = members.find((member) => member._id === task.assigneeProjectMemberId)
+            if (assignee) assignedPeople.add(assignee.userId)
+          }
           openTasks += 1
           actionable += 1
           if (task.dueDate === today) dailyTasks += 1
@@ -601,7 +600,7 @@ export const get = query({
         inProgressTasks: distribution.inProgress,
         completedTasks: distribution.completed,
         upcomingTasks,
-        activePeople: assignedPeople.size || companyMembers.filter((member) => member.status === 'active').length,
+        activePeople: assignedPeople.size,
         trends: statTrends,
       },
       projects: projectRows.sort((left, right) => right.overdueTasks - left.overdueTasks || right.progress - left.progress).slice(0, 5),
