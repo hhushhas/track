@@ -66,6 +66,7 @@ describe('Company model authorization and lifecycle', () => {
     ]))
     expect(overview.recentActivity).toHaveLength(1)
     expect(overview.projects.map((project) => project.name)).toEqual(['Patient Portal'])
+    expect(await asUser(t, userId).query(api.companyOverview.listTasks, { companyId })).toEqual([])
   })
 
   it('enforces Company task scope and suspended assignee authorization', async () => {
@@ -88,6 +89,9 @@ describe('Company model authorization and lifecycle', () => {
       expect((await actor.query(api.tasks.list, {
         projectId, actingCompanyId: companyId, projectMemberId,
       })).map((item) => item.task._id)).toContain(created.taskId)
+      expect((await actor.query(api.companyOverview.listTasks, { companyId }))
+        .map((item) => item.task._id)).toContain(created.taskId)
+      expect(await actor.query(api.companyOverview.listTasks, { companyId: otherCompanyId })).toEqual([])
       await expect(actor.query(api.tasks.list, {
         projectId, actingCompanyId: otherCompanyId, projectMemberId,
       })).rejects.toThrow('project_unavailable')
