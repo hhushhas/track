@@ -18,4 +18,4 @@ The local Company Tasks route loaded after the `companyOverview:listTasks` funct
 
 Recent activity uses a plain-language description for the supported project audit event. With no assigned tasks, the workload card stays compact; with no task creation or completion, the chart shows an empty-state message. On narrow screens, Company navigation starts compact and opens from a labeled button. The mobile menu closes with Escape. A 320–1600 px viewport sweep found no page overflow.
 
-These checks do not prove every role, failure state, dialog, drawer, or shared-development session. The Company Workspace remains under review until those paths are exercised with representative data and permissions.
+These checks do not prove every role, failure state, dialog, drawer, or shared-development session. The filtered audit query finds supported events beyond 100 newer internal events, but its scan cost with very large project histories has not been measured. The Company Workspace remains under review until those paths and data volumes are exercised.

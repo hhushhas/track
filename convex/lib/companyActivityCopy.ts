@@ -8,6 +8,8 @@ const auditActions = {
   'project_company.invited': { action: 'Invited company', verb: 'invited a company to' },
 } as const
 
+export const companyFeedAuditActions = Object.keys(auditActions)
+
 export function describeCompanyAuditActivity(action: string, actorName: string, projectName: string) {
   const description = auditActions[action as keyof typeof auditActions]
   if (!description) return null

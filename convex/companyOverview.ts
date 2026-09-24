@@ -8,7 +8,7 @@ import { requireActiveCompanyMembership } from './lib/companyPolicy'
 import { createTaskRequestScope } from './lib/taskPolicy'
 import { requireTaskAccess } from './lib/taskPolicy'
 import { deriveProjectTaskMetrics, isCompletedWorkflowState } from './lib/projectOverviewMetrics'
-import { describeCompanyAuditActivity } from './lib/companyActivityCopy'
+import { companyFeedAuditActions, describeCompanyAuditActivity } from './lib/companyActivityCopy'
 
 const dashboardQuotes = [
   'Better systems build brighter tomorrows.',
@@ -303,7 +303,11 @@ export const get = query({
         Promise.all(['backlog', 'unstarted', 'started', 'completed', 'canceled'].map((category) => ctx.db.query('taskWorkflowStates').withIndex('by_project_category', (q) => q.eq('projectId', project._id).eq('category', category as 'backlog')).collect())).then((groups) => groups.flat()),
         ctx.db.query('taskActivities').withIndex('by_project_created_at', (q) => q.eq('projectId', project._id)).order('desc').take(100),
         ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', project._id)).order('desc').take(100),
-        ctx.db.query('auditEvents').withIndex('by_project_created_at', (q) => q.eq('projectId', project._id)).order('desc').take(100),
+        ctx.db.query('auditEvents')
+          .withIndex('by_project_created_at', (q) => q.eq('projectId', project._id))
+          .filter((q) => q.or(...companyFeedAuditActions.map((action) => q.eq(q.field('action'), action))))
+          .order('desc')
+          .take(5),
         ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) => q.eq('projectMemberId', representedMembership._id).eq('status', 'active')).collect(),
       ])
       const visibleGroupIds = new Set(groupMemberships.map((membership) => String(membership.groupId)))

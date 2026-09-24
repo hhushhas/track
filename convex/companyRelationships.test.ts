@@ -33,6 +33,32 @@ afterEach(async () => {
 })
 
 describe('Company model authorization and lifecycle', () => {
+  it('keeps meaningful project activity visible beyond newer internal audit events', async () => {
+    const t = convexTest(schema, modules)
+    const userId = await seedUser(t, 'activity-owner')
+    const companyId = await createCompany(t, userId, 'Activity Company', 'activity-company')
+    const projectId = await seedCompanyProject(t, userId, companyId, 'Patient Portal')
+    const now = Date.now()
+    await t.run(async (ctx) => {
+      await ctx.db.insert('auditEvents', {
+        companyId, projectId, actorId: userId, entityType: 'project', entityId: String(projectId),
+        action: 'company_project.created', createdAt: now - 1_000,
+      })
+      for (let index = 0; index < 110; index += 1) {
+        await ctx.db.insert('auditEvents', {
+          companyId, projectId, actorId: userId, entityType: 'project', entityId: String(projectId),
+          action: 'memory_tool.read.allowed', createdAt: now + index,
+        })
+      }
+    })
+
+    const overview = await asUser(t, userId).query(api.companyOverview.get, { companyId })
+    expect(overview.recentActivity).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'Created project', preview: 'activity-owner created the project Patient Portal.' }),
+    ]))
+    expect(overview.recentActivity).toHaveLength(1)
+  })
+
   it('enforces Company task scope and suspended assignee authorization', async () => {
     {
       const t = convexTest(schema, modules)
