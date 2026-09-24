@@ -1,4 +1,4 @@
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { MessageSquare, Plus, Search } from 'lucide-react'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -288,8 +288,13 @@ export function ThreadLink({
   projectId: Id<'projects'>
   threadId: Id<'channelThreads'>
 }) {
+  const location = useLocation()
+  const activePath = `/workspace/projects/${encodeURIComponent(projectId)}/groups/${encodeURIComponent(groupId)}/threads/${encodeURIComponent(threadId)}`
+  const isActive = location.pathname === activePath
   return (
     <Link
+      aria-current={isActive ? 'page' : undefined}
+      className={isActive ? 'is-active' : undefined}
       hash={messageId ? `message-${messageId}` : undefined}
       params={{ groupId, projectId, threadId }}
       search={{

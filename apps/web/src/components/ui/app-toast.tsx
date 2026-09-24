@@ -1,8 +1,8 @@
 import { Toast } from '@base-ui/react/toast'
-import { AlertCircle, CheckCircle2, Info, LoaderCircle, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, LoaderCircle, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 
-type AppToastType = 'error' | 'info' | 'loading' | 'success'
+type AppToastType = 'error' | 'info' | 'loading' | 'success' | 'warning'
 
 const toastManager = Toast.createToastManager()
 const pendingToastKey = 'track-pending-toast'
@@ -14,7 +14,7 @@ function addToast(type: AppToastType, title: string, description?: string) {
     description,
     id: toastIdentity(type, title, description),
     priority: type === 'error' ? 'high' : 'low',
-    timeout: type === 'error' ? 7000 : 4500,
+    timeout: type === 'error' ? 7000 : type === 'warning' ? 5000 : 4500,
     title,
     type,
   })
@@ -35,6 +35,7 @@ export const appToast = {
   error: (title: string, description?: string) => addToast('error', title, description),
   info: (title: string, description?: string) => addToast('info', title, description),
   success: (title: string, description?: string) => addToast('success', title, description),
+  warning: (title: string, description?: string) => addToast('warning', title, description),
   promise<Value>(
     promise: Promise<Value>,
     messages: { loading: string; success: string | ((value: Value) => string); error: string | ((error: unknown) => string) },
@@ -82,7 +83,7 @@ export function AppToastProvider({ children }: { children: ReactNode }) {
         typeof toast.title !== 'string' ||
         !toast.title.trim() ||
         (toast.description !== undefined && typeof toast.description !== 'string') ||
-        toast.type !== 'error' && toast.type !== 'info' && toast.type !== 'success'
+        toast.type !== 'error' && toast.type !== 'info' && toast.type !== 'success' && toast.type !== 'warning'
       ) return
       addToast(toast.type, toast.title, toast.description)
     } catch {
@@ -125,5 +126,6 @@ function ToastIcon({ type }: { type?: AppToastType }) {
   if (type === 'success') return <CheckCircle2 size={16} strokeWidth={2} />
   if (type === 'error') return <AlertCircle size={16} strokeWidth={2} />
   if (type === 'loading') return <LoaderCircle className="track-toast-spinner" size={16} strokeWidth={2} />
+  if (type === 'warning') return <AlertTriangle size={16} strokeWidth={2} />
   return <Info size={16} strokeWidth={2} />
 }

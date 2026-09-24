@@ -5,8 +5,7 @@ import {
   Archive,
   Bell,
   Building2,
-  CalendarDays,
-  CheckSquare2,
+  CircleAlert,
   Clock3,
   Filter,
   FolderKanban,
@@ -28,6 +27,8 @@ import { api } from "../../../../../convex/_generated/api";
 import TrackLoader from "#/components/TrackLoader";
 import { ConfirmDialog } from "#/components/ui/confirm-dialog";
 import { Button } from "#/components/ui/button";
+import { authClient } from "#/lib/auth-client";
+import { useDevAuthBypass } from "#/lib/dev-auth-bypass";
 import { useReleaseConfigState } from "#/lib/release-config";
 import {
   CreateCompanyForm,
@@ -39,6 +40,9 @@ import {
   SharedProjectForm,
 } from "./CompanyForms";
 import { CompanyProjectNavigation } from "./CompanyProjectNavigation";
+import { CompanyGlobalWork } from "./CompanyGlobalWork";
+import { CompanyOverviewDashboard } from "./CompanyOverviewDashboard";
+import { CompanyTaskCreateFlow } from "./CompanyTaskCreateFlow";
 import { useActingCompany } from "./use-acting-company";
 import { resolveCompanyMemberActionCapabilities } from "./company-member-capabilities";
 import { MigrationPanel } from "./MigrationPanel";
@@ -46,10 +50,9 @@ import { UnassignedProjects } from "./UnassignedProjects";
 import { formatCompanyError } from "./company-errors";
 import {
   getCompanyProjectConversationSearch,
-  getCompanyProjectTaskSearch,
 } from "./company-project-links";
 import { resolveCompanyAdministrationId } from "./company-query-scope";
-import { type CompanyHubView } from "./company-view-state";
+import { type CompanyHubView, type CompanyTaskFilter } from "./company-view-state";
 import {
   filterPeopleDirectory,
   filterProjectDirectory,
@@ -61,6 +64,7 @@ import {
 
 import "./company-overview-reference.css";
 import "./company-collaboration.css";
+import "./company-global-work.css";
 
 function getInitials(name: string) {
   return name
@@ -80,30 +84,30 @@ function formatRelativeTime(timestamp: number) {
   return `${days}d ago`;
 }
 
-function formatTaskDueDate(value?: string) {
-  if (!value) return "No due date";
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-  }).format(date);
-}
-
 export function CompanyHubPage({
   initialView = "overview",
+  initialTaskFilter = "all",
   onViewChange,
 }: {
   initialView?: CompanyHubView;
+  initialTaskFilter?: CompanyTaskFilter;
   onViewChange?: (view: CompanyHubView) => void;
 }) {
   const releaseState = useReleaseConfigState();
   const flags = releaseState.config;
-  const currentUser = useQuery(api.auth.getCurrentUser);
+  const session = authClient.useSession();
+  const devAuthBypass = useDevAuthBypass();
+  const ensureCurrentUser = useMutation(api.auth.ensureCurrentUser);
+  const syncDevUser = useMutation(api.auth.syncDevUser);
+  const authReady = Boolean(session.data || devAuthBypass.enabled);
+  useEffect(() => {
+    if (!authReady) return;
+    void (devAuthBypass.enabled ? syncDevUser({}) : ensureCurrentUser({}));
+  }, [authReady, devAuthBypass.enabled, ensureCurrentUser, syncDevUser]);
+  const currentUser = useQuery(api.auth.getCurrentUser, authReady ? {} : "skip");
   const companies = useQuery(
     api.companies.listMine,
-    flags.companyModel ? {} : "skip",
+    flags.companyModel && currentUser ? {} : "skip",
   );
   const availableCompanyIds = useMemo(
     () =>
@@ -134,10 +138,6 @@ export function CompanyHubPage({
       ? { companyId: companyAdministrationId }
       : "skip",
   );
-  const companyBasic = useQuery(
-    api.companies.getBasic,
-    activeActingCompanyId ? { companyId: activeActingCompanyId } : "skip",
-  );
   const companyInvitations = useQuery(
     api.companies.listPendingForMe,
     flags.companyModel ? {} : "skip",
@@ -164,15 +164,14 @@ export function CompanyHubPage({
     api.sharedProjects.listForActingCompany,
     activeActingCompanyId ? { actingCompanyId: activeActingCompanyId } : "skip",
   );
-  const openTasks = useQuery(
-    api.mobile.listMyTasks,
+  const companyOverview = useQuery(
+    api.companyOverview.get,
+    activeActingCompanyId ? { companyId: activeActingCompanyId, days: 7 } : "skip",
+  );
+  const companyTasks = useQuery(
+    api.companyOverview.listTasks,
     currentUser && activeActingCompanyId && flags.tasks
-      ? {
-          actingCompanyId: activeActingCompanyId,
-          openOnly: true,
-          paginationOpts: { cursor: null, numItems: 50 },
-          userId: currentUser._id,
-        }
+      ? { companyId: activeActingCompanyId }
       : "skip",
   );
   const attention = useQuery(
@@ -195,6 +194,7 @@ export function CompanyHubPage({
         }
       : "skip",
   );
+  const taskCreateProjects = projectSummaries?.page ?? [];
   const decideCompanyInvitation = useMutation(api.companies.decideInvitation);
   const decideRelationshipInvitation = useMutation(
     api.relationships.decideInvitation,
@@ -223,8 +223,10 @@ export function CompanyHubPage({
   const [peopleFilter, setPeopleFilter] = useState<PeopleDirectoryFilter>("all");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [closeCompanyOpen, setCloseCompanyOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<"all" | "task" | "message" | "suggestion" | "invitation">("all");
   const [projectCreatorRequested, setProjectCreatorRequested] = useState(false);
+  const [overviewProjectCreatorRequest, setOverviewProjectCreatorRequest] = useState(0);
   const overviewSearchRef = useRef<HTMLInputElement>(null);
   const notificationButtonRef = useRef<HTMLButtonElement>(null);
   const notificationContainerRef = useRef<HTMLDivElement>(null);
@@ -331,6 +333,10 @@ export function CompanyHubPage({
     selectView("projects");
   };
 
+  const showOverviewProjectCreator = () => {
+    setOverviewProjectCreatorRequest((request) => request + 1);
+  };
+
   async function run(action: () => Promise<unknown>) {
     if (busy) return;
     setBusy(true);
@@ -382,7 +388,6 @@ export function CompanyHubPage({
     administration?.members.filter(
       ({ membership }) => membership.status === "active",
     ) ?? [];
-  const overviewMemberCount = companyBasic?.memberCount ?? activeMembers.length;
   const activeRelationships =
     relationships?.filter(
       ({ relationship }) => relationship.status === "active",
@@ -409,56 +414,36 @@ export function CompanyHubPage({
     peopleFilter,
     directorySearch,
   );
-  const normalizedOverviewSearch = overviewSearch.trim().toLocaleLowerCase();
-  const visibleOverviewProjects = normalizedOverviewSearch
-    ? (projects ?? []).filter((item) =>
-        [item.project.name, item.project.description]
-          .filter(Boolean)
-          .some((value) =>
-            value?.toLocaleLowerCase().includes(normalizedOverviewSearch),
-          ),
-      )
-    : (projects ?? []);
-  const upcomingTasks = [...(openTasks?.page ?? [])]
-    .filter((item) => {
-      if (!item.task.dueDate) return false;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const end = new Date(today);
-      end.setDate(end.getDate() + 7);
-      const [year, month, day] = item.task.dueDate.split("-").map(Number);
-      const dueDate = new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
-      return dueDate >= today && dueDate < end;
-    })
-    .sort((left, right) =>
-      (left.task.dueDate ?? "").localeCompare(right.task.dueDate ?? ""),
-    )
-    .slice(0, 3);
-  const attentionItems = attention?.page.slice(0, 4) ?? [];
+  const attentionItems = attention?.page.slice(0, 5) ?? [];
   const visibleAttentionItems = attentionItems.filter((item) => notificationFilter === "all" || item.kind === notificationFilter);
-  const projectSummaryById = new Map(
-    (projectSummaries?.page ?? []).map((item) => [item.project._id, item]),
-  );
   const viewCopy: Record<CompanyHubView, { title: string; description: string }> = {
     overview: {
       title: "Company overview",
       description: "Shared work, partners, and people in one place.",
     },
+    tasks: {
+      title: "Global tasks",
+      description: "Open tasks assigned to you across every Project in this Company.",
+    },
+    threads: {
+      title: "Threads",
+      description: "Open and archived discussions from the Channels you can access.",
+    },
     projects: {
       title: "Projects",
-      description: "Your Company’s own work and the Projects where it collaborates.",
+      description: "Manage all company projects. Track ownership, access, and progress across your workspace.",
     },
     relationships: {
       title: "Relationships",
-      description: "Manage the Companies allowed to collaborate with you.",
+      description: "Manage company relationships, shared projects, and collaboration access.",
     },
     people: {
       title: "People",
-      description: "See who can represent this Company across shared work.",
+      description: "Manage company members, roles, and collaboration across projects.",
     },
     settings: {
-      title: "Company settings",
-      description: "Profile, migration, and Company-level administration.",
+      title: "Company profile",
+      description: "The display name appears anywhere this Company represents its people and projects.",
     },
   };
   const currentViewCopy = viewCopy[visibleView];
@@ -469,7 +454,7 @@ export function CompanyHubPage({
         actingCompanyId={actingCompanyId}
         activeArea="company"
         onCompanyChange={setActingCompanyId}
-        tasksEnabled={flags.tasks}
+        tasksEnabled={false}
         companyNavigation={
           <nav aria-label="Company workspace">
             <span className="company-project-nav-label">Workspace</span>
@@ -480,7 +465,7 @@ export function CompanyHubPage({
                 ? "company-project-nav-item active"
                 : "company-project-nav-item"
             }
-            search={{ view: "overview" }}
+            search={{ view: "overview", taskFilter: undefined }}
             to="/workspace/company"
           >
             <LayoutGrid aria-hidden="true" size={14} />
@@ -494,38 +479,19 @@ export function CompanyHubPage({
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              search={{ view: "projects" }}
+              search={{ view: "projects", taskFilter: undefined }}
               to="/workspace/company"
             >
               <FolderKanban aria-hidden="true" size={14} />
               Projects
             </Link>
           ) : null}
-          {activeActingCompanyId && projects?.[0] && flags.tasks ? (
+          {activeActingCompanyId && currentUser ? (
             <Link
-              className="company-project-nav-item"
-              params={{ projectId: projects[0].project._id }}
-              search={getCompanyProjectTaskSearch({
-                actingCompanyId: activeActingCompanyId,
-                projectId: projects[0].project._id,
-                projectMemberId: projects[0].membership._id,
-              })}
-              to="/workspace/projects/$projectId/tasks"
-            >
-              <CheckSquare2 aria-hidden="true" size={14} />
-              Tasks
-            </Link>
-          ) : null}
-          {activeActingCompanyId && projects?.[0] ? (
-            <Link
-              className="company-project-nav-item"
-              params={{ projectId: projects[0].project._id }}
-              search={getCompanyProjectConversationSearch({
-                actingCompanyId: activeActingCompanyId,
-                projectId: projects[0].project._id,
-                projectMemberId: projects[0].membership._id,
-              })}
-              to="/workspace/company-projects/$projectId"
+              aria-current={visibleView === "threads" ? "page" : undefined}
+              className={visibleView === "threads" ? "company-project-nav-item active" : "company-project-nav-item"}
+              search={{ view: "threads", taskFilter: undefined }}
+              to="/workspace/company"
             >
               <MessageSquareText aria-hidden="true" size={14} />
               Threads
@@ -539,7 +505,7 @@ export function CompanyHubPage({
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              search={{ view: "relationships" }}
+              search={{ view: "relationships", taskFilter: undefined }}
               to="/workspace/company"
             >
               <Handshake aria-hidden="true" size={14} />
@@ -554,7 +520,7 @@ export function CompanyHubPage({
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              search={{ view: "people" }}
+              search={{ view: "people", taskFilter: undefined }}
               to="/workspace/company"
             >
               <UsersRound aria-hidden="true" size={14} />
@@ -569,8 +535,7 @@ export function CompanyHubPage({
                   ? "company-project-nav-item active"
                   : "company-project-nav-item"
               }
-              search={{ view: "settings" }}
-              to="/workspace/company"
+              to="/workspace/company/settings"
             >
               <Settings2 aria-hidden="true" size={14} />
               Settings
@@ -581,7 +546,7 @@ export function CompanyHubPage({
       />
 
       <section className="company-hub">
-        <header className="company-hub-header company-overview-page-header">
+        <header className={`company-hub-header company-overview-page-header ${visibleView === "overview" ? "is-overview" : "is-directory"}`}>
           <div>
             <span className="company-eyebrow">
               {actingCompany?.company?.displayName ?? "Company workspace"}
@@ -681,7 +646,7 @@ export function CompanyHubPage({
               {isCompanyAdmin ? (
                 <button
                   className="company-overview-new-project"
-                  onClick={showProjectCreator}
+                  onClick={showOverviewProjectCreator}
                   type="button"
                 >
                   <Plus aria-hidden="true" size={19} />
@@ -711,6 +676,16 @@ export function CompanyHubPage({
                 >
                   <Plus aria-hidden="true" size={18} />
                   New project
+                </button>
+              ) : visibleView === "tasks" ? (
+                <button
+                  className="company-overview-new-project"
+                  disabled={taskCreateProjects.length === 0}
+                  onClick={() => setCreateTaskOpen(true)}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={18} />
+                  New task
                 </button>
               ) : visibleView === "relationships" && isCompanyAdmin ? (
                 <button
@@ -742,7 +717,7 @@ export function CompanyHubPage({
 
         <div className="company-hub-content">
           {currentUser &&
-          (visibleView === "overview" || visibleView === "projects") ? (
+          visibleView === "projects" ? (
             <UnassignedProjects userId={currentUser._id} />
           ) : null}
           {companies.length === 0 ? (
@@ -757,6 +732,27 @@ export function CompanyHubPage({
               </p>
               <CreateCompanyForm run={run} />
             </section>
+          ) : null}
+
+          {(visibleView === "tasks" || visibleView === "threads") && activeActingCompanyId && currentUser ? (
+            <CompanyGlobalWork
+              actingCompanyId={activeActingCompanyId}
+              companyName={actingCompany?.company?.displayName ?? "Company"}
+              currentUserId={currentUser._id}
+              projects={projects ?? []}
+              searchQuery={directorySearch}
+              tasks={companyTasks ?? []}
+              initialFilter={initialTaskFilter}
+              view={visibleView}
+            />
+          ) : null}
+          {activeActingCompanyId ? (
+            <CompanyTaskCreateFlow
+              actingCompanyId={activeActingCompanyId}
+              onOpenChange={setCreateTaskOpen}
+              open={createTaskOpen}
+              projects={taskCreateProjects}
+            />
           ) : null}
 
           {(companyInvitations ?? []).length > 0 ? (
@@ -839,245 +835,25 @@ export function CompanyHubPage({
             </section>
           ) : null}
 
+
           {visibleView === "overview" &&
           actingCompanyId &&
-          actingCompany?.company &&
-          companyBasic ? (
-            <>
-              <section className="company-overview-mast">
-                <div className="company-overview-identity">
-                  <span className="company-overview-mark">
-                    <Building2 aria-hidden="true" size={32} />
-                  </span>
-                  <div>
-                    <span className="company-status-label">
-                      <i aria-hidden="true" /> Active Company
-                    </span>
-                    <h2>{actingCompany.company.displayName}</h2>
-                    <p>
-                      @{actingCompany.company.normalizedHandle} · You represent
-                      this Company as {actingCompany.membership.role}.
-                    </p>
-                  </div>
-                </div>
-                <div className="company-overview-stats">
-                  <button
-                    onClick={() => selectView("projects")}
-                    type="button"
-                  >
-                    <strong>{projects?.length ?? "–"}</strong>
-                    <span>Projects</span>
-                  </button>
-                  {isCompanyAdmin ? (
-                    <button
-                      onClick={() => selectView("relationships")}
-                      type="button"
-                    >
-                      <strong>{relationships?.length ?? "–"}</strong>
-                      <span>Relationships</span>
-                    </button>
-                  ) : null}
-                  <button
-                    onClick={() => selectView("people")}
-                    type="button"
-                  >
-                    <strong>{overviewMemberCount}</strong>
-                    <span>Active people</span>
-                  </button>
-                  <div>
-                    <strong>{openTasks?.page.length ?? "–"}</strong>
-                    <span>Open tasks</span>
-                  </div>
-                </div>
-              </section>
-
-              <div className="company-overview-grid">
-                <section className="company-workspace-section company-overview-projects">
-                  <div className="company-section-heading">
-                    <div>
-                      <span className="company-overview-section-icon">
-                        <FolderKanban aria-hidden="true" size={24} />
-                      </span>
-                      <span>
-                        <h2>Projects</h2>
-                        <p>Your Company’s projects and key initiatives.</p>
-                      </span>
-                    </div>
-                    <button
-                      className="company-section-link"
-                      onClick={() => selectView("projects")}
-                      type="button"
-                    >
-                      View all
-                      <ArrowUpRight aria-hidden="true" size={15} />
-                    </button>
-                  </div>
-                  {projects === undefined ? (
-                    <div className="company-quiet-empty" role="status">
-                      <FolderKanban aria-hidden="true" size={18} />
-                      <div>
-                        <strong>Loading Projects…</strong>
-                        <span>Checking this Company’s available work.</span>
-                      </div>
-                    </div>
-                  ) : visibleOverviewProjects.length > 0 ? (
-                    <div className="company-project-gallery">
-                      {visibleOverviewProjects.slice(0, 3).map((item, index) => (
-                        <Link
-                          className="company-project-card"
-                          key={item.membership._id}
-                          params={{ projectId: item.project._id }}
-                          search={getCompanyProjectConversationSearch({
-                            actingCompanyId,
-                            projectId: item.project._id,
-                            projectMemberId: item.membership._id,
-                          })}
-                          to="/workspace/company-projects/$projectId"
-                        >
-                          <span className={`company-project-graphic tone-${(index % 3) + 1}`}>
-                            <FolderKanban aria-hidden="true" size={22} />
-                          </span>
-                          <span className="company-project-card-copy">
-                            <span className="company-project-card-title">
-                              <strong>{item.project.name}</strong>
-                              <small>
-                                {item.participationRole === "owner"
-                                  ? "Company project"
-                                  : "Shared project"}
-                              </small>
-                            </span>
-                            <span>
-                              {item.project.description ??
-                                (item.participationRole === "owner"
-                                  ? `Owned by ${item.owningCompany?.displayName ?? "this Company"}`
-                                  : `Shared by ${item.owningCompany?.displayName ?? "a partner Company"}`)}
-                            </span>
-                            <span className="company-project-meta">
-                              <small><MessageSquareText aria-hidden="true" size={16} /> {projectSummaryById.get(item.project._id)?.groupCount ?? 0} channels</small>
-                              <small><Bell aria-hidden="true" size={16} /> {projectSummaryById.get(item.project._id)?.unreadCount ?? 0} unread</small>
-                              <small><CalendarDays aria-hidden="true" size={16} /> Updated {formatRelativeTime(item.project.updatedAt)}</small>
-                            </span>
-                          </span>
-                          <ArrowUpRight
-                            aria-hidden="true"
-                            className="company-project-card-arrow"
-                            size={18}
-                          />
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="company-quiet-empty">
-                      <FolderKanban aria-hidden="true" size={18} />
-                      <div>
-                        <strong>No Projects yet</strong>
-                        <span>
-                          Create this Company’s first Project to start working.
-                        </span>
-                        {isCompanyAdmin ? (
-                          <Button onClick={showProjectCreator}>
-                            Create first Project
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-                </section>
-
-                <div className="company-overview-side">
-                  <section className="company-workspace-section company-overview-upcoming">
-                    <div className="company-section-heading">
-                      <div>
-                        <span className="company-overview-section-icon"><CalendarDays aria-hidden="true" size={24} /></span>
-                        <span><h2>Upcoming</h2><p>Next 7 days</p></span>
-                      </div>
-                      <button className="company-section-link" onClick={() => selectView("projects")} type="button">
-                        View all <ArrowUpRight aria-hidden="true" size={15} />
-                      </button>
-                    </div>
-                    <ul className="company-overview-compact-list">
-                      {upcomingTasks.length > 0 ? upcomingTasks.map((item, index) => (
-                        <li key={item.task._id}>
-                          <i className={`tone-${(index % 3) + 1}`} />
-                          <strong>{item.task.title}</strong>
-                          <span>{formatTaskDueDate(item.task.dueDate)}</span>
-                        </li>
-                      )) : <li className="is-empty"><CalendarDays aria-hidden="true" size={14} /><strong>No tasks due in the next 7 days</strong></li>}
-                    </ul>
-                  </section>
-
-                  <section className="company-workspace-section company-overview-partners">
-                    <div className="company-section-heading">
-                      <div>
-                        <span className="company-overview-section-icon"><Handshake aria-hidden="true" size={24} /></span>
-                        <span><h2>Connected partners</h2><p>Companies approved for shared work</p></span>
-                      </div>
-                      {isCompanyAdmin ? <button className="company-section-link" onClick={() => selectView("relationships")} type="button">
-                        View all <ArrowUpRight aria-hidden="true" size={15} />
-                      </button> : null}
-                    </div>
-                    <ul className="company-overview-partner-list">
-                      {activeRelationships.length > 0 ? activeRelationships.slice(0, 4).map((item) => {
-                        const partnerNames = item.participants
-                          .filter((company) => company._id !== actingCompanyId)
-                          .map((company) => company.displayName);
-                        return <li key={item.relationship._id}>
-                          <span className="company-partner-mark"><Handshake aria-hidden="true" size={14} /></span>
-                          <span>
-                            <strong>{item.relationship.name}</strong>
-                            <small>{partnerNames.join(", ") || "Company relationship"}</small>
-                          </span>
-                          <em>Active</em>
-                        </li>;
-                      }) : <li className="is-empty">
-                        <span className="company-partner-mark"><Handshake aria-hidden="true" size={14} /></span>
-                        <span>
-                          <strong>No connected partners</strong>
-                          <small>{isCompanyAdmin ? "Create a relationship to share project work." : "An admin can connect partner Companies."}</small>
-                        </span>
-                      </li>}
-                    </ul>
-                  </section>
-
-                  <section className="company-workspace-section company-overview-activity">
-                    <div className="company-section-heading">
-                      <div>
-                        <span className="company-overview-section-icon"><Clock3 aria-hidden="true" size={24} /></span>
-                        <span><h2>Recent activity</h2><p>Latest updates across your projects, tasks, and threads.</p></span>
-                      </div>
-                      <button className="company-section-link" onClick={() => setNotificationsOpen(true)} type="button">
-                        View all <ArrowUpRight aria-hidden="true" size={15} />
-                      </button>
-                    </div>
-                    <ul className="company-overview-activity-list">
-                      {attentionItems.length > 0 ? attentionItems.map((item, index) => (
-                        <li key={`${item.kind}-${item.id}`}>
-                          <span className={`company-person-avatar tone-${(index % 4) + 1}`}>
-                            {item.kind === "message" ? getInitials(item.senderName) : item.kind === "task" ? "T" : "AI"}
-                          </span>
-                          <strong>
-                            {item.kind === "message"
-                              ? `${item.senderName} posted in ${item.projectName}`
-                              : item.kind === "task"
-                                ? item.taskTitle
-                                : item.title}
-                          </strong>
-                          <span>{formatRelativeTime(item.createdAt)}</span>
-                          <small className={item.kind}>{item.kind === "message" ? "Thread" : item.kind === "task" ? "Task" : "Review"}</small>
-                        </li>
-                      )) : visibleOverviewProjects.slice(0, 3).map((item, index) => (
-                        <li key={item.project._id}>
-                          <span className={`company-person-avatar tone-${(index % 4) + 1}`}>{getInitials(item.project.name)}</span>
-                          <strong>{item.project.name} is active</strong>
-                          <span>{formatRelativeTime(item.project.updatedAt)}</span>
-                          <small className="project">Project</small>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                </div>
-              </div>
-            </>
+          activeActingCompanyId &&
+          currentUser &&
+          actingCompany?.company ? (
+            <CompanyOverviewDashboard
+              activeCompanyId={activeActingCompanyId}
+              companyName={actingCompany.company.displayName}
+              createProjectRequest={overviewProjectCreatorRequest}
+              currentUserId={currentUser._id}
+              isAdmin={isCompanyAdmin}
+              onCreateProjectRequestHandled={() => setOverviewProjectCreatorRequest(0)}
+              onCreateTaskRequest={() => setCreateTaskOpen(true)}
+              overview={companyOverview}
+              projects={projects}
+              run={run}
+              userName={currentUser.displayName}
+            />
           ) : null}
 
           {visibleView === "projects" &&
@@ -1086,10 +862,10 @@ export function CompanyHubPage({
           actingCompany?.company ? (
             <div className="company-view-stack company-directory-view">
               <section className="company-collaboration-summary" aria-label="Project portfolio summary">
-                <div><span>Visible projects</span><strong>{projects?.length ?? 0}</strong></div>
-                <div><span>Owned</span><strong>{companyProjects.length}</strong></div>
-                <div><span>Collaborating</span><strong>{collaboratingProjects.length}</strong></div>
-                <div><span>Needs attention</span><strong>{(projectInvitations?.length ?? 0) + unassignedProjects.length}</strong></div>
+                <div><i><FolderKanban aria-hidden="true" size={20} /></i><span>Visible projects</span><strong>{projects?.length ?? 0}</strong><small>Across your Company</small></div>
+                <div><i><UserPlus aria-hidden="true" size={20} /></i><span>Owned</span><strong>{companyProjects.length}</strong><small>Managed by your Company</small></div>
+                <div><i><UsersRound aria-hidden="true" size={20} /></i><span>Collaborating</span><strong>{collaboratingProjects.length}</strong><small>Shared with partners</small></div>
+                <div><i><CircleAlert aria-hidden="true" size={20} /></i><span>Needs attention</span><strong>{(projectInvitations?.length ?? 0) + unassignedProjects.length}</strong><small>Pending decisions</small></div>
               </section>
               <nav aria-label="Filter Projects" className="company-filter-bar">
                 <span><Filter aria-hidden="true" size={14} /> View</span>
@@ -1314,10 +1090,10 @@ export function CompanyHubPage({
           {visibleView === "people" && actingCompanyId && administration ? (
             <div className="company-view-stack company-directory-view">
               <section className="company-collaboration-summary" aria-label="People and membership summary">
-                <div><span>Company people</span><strong>{administration.members.length}</strong></div>
-                <div><span>Active</span><strong>{activeMembers.length}</strong></div>
-                <div><span>Administrators</span><strong>{administration.members.filter(({ membership }) => membership.status === "active" && (membership.role === "owner" || membership.role === "admin")).length}</strong></div>
-                <div><span>Invited</span><strong>{administration.invitations.length}</strong></div>
+                <div><i><UsersRound aria-hidden="true" size={20} /></i><span>Company people</span><strong>{administration.members.length}</strong><small>Total members</small></div>
+                <div><i><UserPlus aria-hidden="true" size={20} /></i><span>Active</span><strong>{activeMembers.length}</strong><small>Currently active</small></div>
+                <div><i><ShieldCheck aria-hidden="true" size={20} /></i><span>Admin / Owners</span><strong>{administration.members.filter(({ membership }) => membership.status === "active" && (membership.role === "owner" || membership.role === "admin")).length}</strong><small>Manage workspace</small></div>
+                <div><i><Mail aria-hidden="true" size={20} /></i><span>Invited</span><strong>{administration.invitations.length}</strong><small>Pending invitations</small></div>
               </section>
               <nav aria-label="Filter people" className="company-filter-bar">
                 <span><Filter aria-hidden="true" size={14} /> View</span>
@@ -1343,7 +1119,7 @@ export function CompanyHubPage({
                   </span>
                 </div>
                 <ul className="company-people-list">
-                  <li className="company-people-list-head" aria-hidden="true"><span /><span>Person</span><span>Role</span><span>Status</span><span /></li>
+                  <li className="company-people-list-head" aria-hidden="true"><span /><span>Person</span><span>Role</span><span>Status</span><span>Last active</span><span /></li>
                   {visiblePeople.map(({ membership, user }) => {
                     const name =
                       user?.displayName ?? membership.userDisplayNameSnapshot;
@@ -1369,6 +1145,7 @@ export function CompanyHubPage({
                           <i aria-hidden="true" />
                           {membership.status}
                         </span>
+                        <time dateTime={new Date(membership.updatedAt).toISOString()}>{formatRelativeTime(membership.updatedAt)}</time>
                         {memberActions.showMenu ? (
                           <details
                             aria-busy={busy}
@@ -1486,7 +1263,7 @@ export function CompanyHubPage({
                 </section>
               ) : peopleFilter === "invited" ? <section className="company-workspace-section"><div className="company-quiet-empty"><Mail aria-hidden="true" size={18} /><div><strong>No pending invitations</strong><span>Everyone invited to this Company has responded.</span></div></div></section> : null}
               {isCompanyAdmin ? (
-                <details className="company-management-disclosure" id="invite-company-member">
+                <details className="company-management-disclosure" id="invite-company-member" open>
                   <summary>
                     <span>
                       <Plus aria-hidden="true" size={15} />
@@ -1510,10 +1287,10 @@ export function CompanyHubPage({
           isCompanyAdmin ? (
             <div className="company-view-stack company-directory-view">
               <section className="company-collaboration-summary" aria-label="Relationship summary">
-                <div><span>Relationships</span><strong>{relationships?.length ?? 0}</strong></div>
-                <div><span>Active</span><strong>{activeRelationships.length}</strong></div>
-                <div><span>Shared Projects</span><strong>{(projects ?? []).filter((item) => item.project.origin === "shared").length}</strong></div>
-                <div><span>Invitations</span><strong>{relationshipInvitations?.length ?? 0}</strong></div>
+                <div><i><Handshake aria-hidden="true" size={20} /></i><span>Relationships</span><strong>{relationships?.length ?? 0}</strong><small>Total connections</small></div>
+                <div><i><ShieldCheck aria-hidden="true" size={20} /></i><span>Active</span><strong>{activeRelationships.length}</strong><small>Currently collaborating</small></div>
+                <div><i><FolderKanban aria-hidden="true" size={20} /></i><span>Shared projects</span><strong>{(projects ?? []).filter((item) => item.project.origin === "shared").length}</strong><small>Across relationships</small></div>
+                <div><i><Clock3 aria-hidden="true" size={20} /></i><span>Invitations</span><strong>{relationshipInvitations?.length ?? 0}</strong><small>Pending invitations</small></div>
               </section>
               <nav aria-label="Filter relationships" className="company-filter-bar">
                 <span><Filter aria-hidden="true" size={14} /> View</span>
@@ -1716,7 +1493,7 @@ export function CompanyHubPage({
                 ) : null}
               </section>
 
-              <details className="company-management-disclosure" id="create-company-relationship">
+              <details className="company-management-disclosure" id="create-company-relationship" open>
                 <summary>
                   <span>
                     <Plus aria-hidden="true" size={15} />
@@ -1740,16 +1517,16 @@ export function CompanyHubPage({
           administration &&
           isCompanyAdmin ? (
             <div className="company-view-stack company-settings-view">
-              <section className="company-workspace-section">
+              <section className="company-workspace-section company-settings-profile">
                 <div className="company-section-heading">
                   <div>
-                    <span className="company-section-kicker">Identity</span>
-                    <h2>Company profile</h2>
-                    <p>
-                      The display name appears anywhere this Company represents
-                      its people.
-                    </p>
+                    <span className="company-overview-section-icon"><Building2 aria-hidden="true" size={21} /></span>
+                    <span>
+                      <h2>{administration.company.displayName} <em className="company-current-badge">Current company</em></h2>
+                      <p>@{administration.company.normalizedHandle}</p>
+                    </span>
                   </div>
+                  <p>This identity is visible to members across projects, Channels, and shared resources.</p>
                 </div>
                 <CompanyProfileForm
                   key={actingCompanyId}

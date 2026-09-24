@@ -10,7 +10,7 @@ import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '#/components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '#/components/ui/sheet'
 import { setStoredActingCompanyId } from '#/features/company/use-acting-company'
 import { ProjectMemoryImportDialog } from '#/features/workspace/components/ProjectMemoryImportDialog'
 import { ProjectSearchDialog, type ProjectSearchFilter, type ProjectSearchResult } from '#/features/workspace/search/ProjectSearchDialog'
@@ -193,7 +193,24 @@ export function ProjectEvidencePage({
 
     <ProjectSearchDialog filter={searchFilter} loading={searchOpen && debouncedSearchQuery.trim().length >= 2 && searchResults === undefined} onClose={() => setSearchOpen(false)} onFilterChange={setSearchFilter} onOpenResult={openSearchResult} onQueryChange={setSearchQuery} open={searchOpen} projectName={projectName} query={searchQuery} returnFocusRef={searchButtonRef} sections={searchSections} total={getProjectSearchTotal(searchSections)} updating={searchQuery !== debouncedSearchQuery} />
     <ProjectMemoryImportDialog actingCompanyId={actingCompanyId} actorId={actorId} groupId={firstGroup?._id ?? null} groupName={firstGroup?.name} onOpenChange={setMemoryImportOpen} open={memoryImportOpen} projectId={projectId} projectMemberId={projectMemberId} />
-    <Sheet onOpenChange={(open) => { if (!open) setSelectedEvidenceId(null) }} open={Boolean(selectedEvidence)}><SheetContent className="track-evidence-preview" side="right">{selectedEvidence ? <><SheetHeader><span className={`track-evidence-type ${selectedEvidence.reference.type}`}><EvidenceTypeIcon type={selectedEvidence.reference.type} /></span><div><p className="mono-label">Evidence preview</p><SheetTitle>{evidenceTypeLabel(selectedEvidence.reference.type)}</SheetTitle><SheetDescription>Linked to task {selectedEvidence.task.publicKey}</SheetDescription></div></SheetHeader><div className="track-evidence-preview-body"><section><span className="track-evidence-preview-label">Selected source</span><blockquote>{selectedEvidence.reference.quote ?? 'The source content is unavailable.'}</blockquote></section><section><span className="track-evidence-preview-label">Provenance</span><ol className="track-provenance-chain"><li>{projectName}</li><li>{selectedEvidence.group?.name ?? 'Project scope'}</li>{selectedEvidence.thread ? <li>{selectedEvidence.thread.name}</li> : null}<li>{evidenceTypeLabel(selectedEvidence.reference.type)}</li></ol></section><section><span className="track-evidence-preview-label">Source details</span><dl><div><dt>Author</dt><dd>{selectedEvidence.creator?.displayName ?? 'Project member'}</dd></div><div><dt>Recorded</dt><dd>{dateTimeFormatter.format(selectedEvidence.reference.createdAt)}</dd></div><div><dt>Availability</dt><dd>{selectedEvidence.reference.availability}</dd></div><div><dt>Linked task</dt><dd>{selectedEvidence.task.publicKey} · {selectedEvidence.task.title}</dd></div></dl></section></div><footer>{sourceHref(selectedEvidence) ? <a className="track-button track-button-primary" href={sourceHref(selectedEvidence) ?? undefined}><ArrowUpRight aria-hidden="true" size={15} /> Open original source</a> : <p className="track-evidence-unavailable"><CircleAlert aria-hidden="true" size={15} /> No direct source is available for this item.</p>}</footer></> : null}</SheetContent></Sheet>
+    <Sheet onOpenChange={(open) => { if (!open) setSelectedEvidenceId(null) }} open={Boolean(selectedEvidence)}>
+      <SheetContent className="track-evidence-preview" side="right">
+        {selectedEvidence ? <>
+          <SheetHeader>
+            <span className={`track-evidence-type ${selectedEvidence.reference.type}`}><EvidenceTypeIcon type={selectedEvidence.reference.type} /></span>
+            <div><p className="mono-label">Evidence preview</p><SheetTitle>{evidenceTypeLabel(selectedEvidence.reference.type)}</SheetTitle><SheetDescription>Linked to task {selectedEvidence.task.publicKey}</SheetDescription></div>
+          </SheetHeader>
+          <SheetBody className="track-evidence-preview-body">
+            <section><span className="track-evidence-preview-label">Selected source</span><blockquote>{selectedEvidence.reference.quote ?? 'The source content is unavailable.'}</blockquote></section>
+            <section><span className="track-evidence-preview-label">Provenance</span><ol className="track-provenance-chain"><li>{projectName}</li><li>{selectedEvidence.group?.name ?? 'Project scope'}</li>{selectedEvidence.thread ? <li>{selectedEvidence.thread.name}</li> : null}<li>{evidenceTypeLabel(selectedEvidence.reference.type)}</li></ol></section>
+            <section><span className="track-evidence-preview-label">Source details</span><dl><div><dt>Author</dt><dd>{selectedEvidence.creator?.displayName ?? 'Project member'}</dd></div><div><dt>Recorded</dt><dd>{dateTimeFormatter.format(selectedEvidence.reference.createdAt)}</dd></div><div><dt>Availability</dt><dd>{selectedEvidence.reference.availability}</dd></div><div><dt>Linked task</dt><dd>{selectedEvidence.task.publicKey} · {selectedEvidence.task.title}</dd></div></dl></section>
+          </SheetBody>
+          <SheetFooter>
+            {sourceHref(selectedEvidence) ? <a className="track-button track-button-primary" href={sourceHref(selectedEvidence) ?? undefined}><ArrowUpRight aria-hidden="true" size={15} /> Open original source</a> : <p className="track-evidence-unavailable"><CircleAlert aria-hidden="true" size={15} /> No direct source is available for this item.</p>}
+          </SheetFooter>
+        </> : null}
+      </SheetContent>
+    </Sheet>
   </div>
 }
 

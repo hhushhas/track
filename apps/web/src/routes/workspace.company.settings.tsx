@@ -33,19 +33,19 @@ function CompanySettingsShell({
         companyNavigation={
           <nav aria-label="Company workspace">
             <span className="company-project-nav-label">Workspace</span>
-            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'overview' }}>
+            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'overview', taskFilter: undefined }}>
               <Building2 aria-hidden="true" size={14} />
               Overview
             </Link>
-            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'projects' }}>
+            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'projects', taskFilter: undefined }}>
               <FolderKanban aria-hidden="true" size={14} />
               Projects
             </Link>
-            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'relationships' }}>
+            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'relationships', taskFilter: undefined }}>
               <Handshake aria-hidden="true" size={14} />
               Relationships
             </Link>
-            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'people' }}>
+            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'people', taskFilter: undefined }}>
               <Users aria-hidden="true" size={14} />
               People
             </Link>
@@ -110,7 +110,7 @@ function CompanySettingsPage() {
   if (releaseConfigProjection === undefined) return <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}><section className="track-guided-empty" role="status"><h1>Loading company settings…</h1><p>Checking your company role.</p></section></CompanySettingsShell>
   if (!releaseConfig.companyModel) return <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}><section className="track-guided-empty"><h1>Company settings unavailable</h1><p>Company collaboration is disabled for this environment.</p><Link to="/workspace">Back to workspace</Link></section></CompanySettingsShell>
   if (companies === undefined) return <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}><section className="track-guided-empty" role="status"><h1>Loading company settings…</h1><p>Checking your company role.</p></section></CompanySettingsShell>
-  if (!actingCompany || actingCompany.membership.role === 'member') return <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}><section className="track-guided-empty"><h1>Company settings unavailable</h1><p>Company settings are available to company owners and admins.</p><Link to="/workspace/company">Back to companies</Link></section></CompanySettingsShell>
+  if (!actingCompany || actingCompany.membership.role === 'member') return <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}><section className="track-guided-empty"><h1>Company settings unavailable</h1><p>Company settings are available to company owners and admins.</p><Link search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company">Back to companies</Link></section></CompanySettingsShell>
   if (!actingCompanyId || administration === undefined) return <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}><section className="track-guided-empty" role="status"><h1>Loading company settings…</h1><p>Loading company administration data.</p></section></CompanySettingsShell>
 
   const isOwner = administration.membership.role === 'owner'
@@ -128,7 +128,7 @@ function CompanySettingsPage() {
         </div>
         <div className="company-settings-header-actions">
           <span className={`company-settings-status ${companyStatus}`}><i aria-hidden="true" />{companyStatus}</span>
-          <Link className="company-settings-back" to="/workspace/company">Back to companies</Link>
+          <Link className="company-settings-back" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company">Back to companies</Link>
         </div>
       </header>
       {notice ? <p aria-live="polite" className="company-settings-notice"><CheckCircle2 aria-hidden="true" size={15} />{notice}</p> : null}
@@ -196,12 +196,12 @@ function CompanySettingsPage() {
               {(relationships ?? []).slice(0, 4).map(({ relationship, participants }) => <div className="company-settings-relationship-row" key={relationship._id}><span><strong>{relationship.name}</strong><small>{participants.map((company) => company.displayName).join(' · ') || 'Company relationship'}</small></span><span className={`company-settings-pill ${relationship.status}`}>{relationship.status}</span></div>)}
               {relationships?.length === 0 ? <p className="company-settings-empty">No relationships yet.</p> : null}
             </div>
-            <Link className="company-settings-secondary-link" to="/workspace/company" search={{ view: 'relationships' }}>Open relationship management <ArrowUpRight aria-hidden="true" size={13} /></Link>
+            <Link className="company-settings-secondary-link" to="/workspace/company" search={{ view: 'relationships', taskFilter: undefined }}>Open relationship management <ArrowUpRight aria-hidden="true" size={13} /></Link>
           </section>
 
           <section className="company-settings-card" id="company-recovery">
             <div className="company-settings-card-heading"><div><span className="company-settings-eyebrow">Recovery</span><h2>Archive and recovery boundaries</h2><p>Project and Channel archive requests use Company approval. Shared Project exits create a verified snapshot before access changes.</p></div><LifeBuoy aria-hidden="true" size={17} /></div>
-            <div className="company-settings-recovery-callout"><ShieldCheck aria-hidden="true" size={16} /><span><strong>Evidence stays recoverable</strong><small>Open a Project’s participation controls to review pending archive approvals, snapshot progress, retry actions, and safe cancellation.</small></span><Link to="/workspace/company">Open Project recovery <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
+            <div className="company-settings-recovery-callout"><ShieldCheck aria-hidden="true" size={16} /><span><strong>Evidence stays recoverable</strong><small>Open a Project’s participation controls to review pending archive approvals, snapshot progress, retry actions, and safe cancellation.</small></span><Link to="/workspace/company" search={{ view: 'overview', taskFilter: undefined }}>Open Project recovery <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
           </section>
 
           <section className="company-settings-card company-settings-danger" id="company-danger">

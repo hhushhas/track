@@ -155,6 +155,7 @@ export function CompanyProjectNavigation({
   const navClassName = [
     "company-project-nav",
     collapsed ? "is-collapsed" : "",
+    activeArea === "company" ? "is-company-workspace" : "",
   ].filter(Boolean).join(" ");
   const activeLinkContext: CompanyProjectLinkContext | null =
     activeActingCompanyId && activeProjectItem
@@ -172,10 +173,14 @@ export function CompanyProjectNavigation({
   }
 
   useEffect(() => {
-    setCollapsed(window.localStorage.getItem(collapseStorageKey) === "true");
+    setCollapsed(
+      activeArea === "company"
+        ? false
+        : window.localStorage.getItem(collapseStorageKey) === "true",
+    );
     setWidth(getStoredSidebarWidth(window.localStorage.getItem(widthStorageKey)));
     setPreferencesLoaded(true);
-  }, []);
+  }, [activeArea]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -186,6 +191,10 @@ export function CompanyProjectNavigation({
     if (!preferencesLoaded) return;
     window.localStorage.setItem(widthStorageKey, String(width));
   }, [preferencesLoaded, width]);
+
+  useEffect(() => {
+    if (activeArea === "company") setCollapsed(false);
+  }, [activeArea]);
 
   const renderedWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
 
@@ -288,6 +297,7 @@ export function CompanyProjectNavigation({
         <Link
           aria-label="Company workspace"
           className="company-project-nav-brand"
+          search={{ view: "overview", taskFilter: undefined }}
           to="/workspace/company"
         >
           <img alt="" height={22} src="/track-mark.svg" width={28} />
@@ -307,6 +317,7 @@ export function CompanyProjectNavigation({
             ? "company-project-nav-company active"
             : "company-project-nav-company"
         }
+        search={{ view: "overview", taskFilter: undefined }}
         title={actingCompany?.company?.displayName ?? "Companies"}
         to="/workspace/company"
       >
@@ -442,8 +453,8 @@ export function CompanyProjectNavigation({
       projects &&
       projects.length > 0 ? (
         <div className="company-project-nav-projects">
-          <details open>
-            <summary aria-label="Switch project" className="company-project-nav-projects-summary" role="button">
+          <details>
+            <summary aria-label="Switch project" className="company-project-nav-projects-summary">
               <span className="company-project-nav-projects-summary-copy">
                 <strong>Switch project</strong>
                 <small>{projects.length} available</small>

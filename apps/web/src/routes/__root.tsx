@@ -4,14 +4,15 @@ import AppProviders from '../components/AppProviders'
 import PwaInstallPrompt from '../components/PwaInstallPrompt'
 
 import appCss from '../styles.css?url'
+import professionalUiCss from '../design-system/professional-ui.css?url'
 
 const SITE_URL = 'https://track.q9labs.ai'
 const SITE_TITLE = 'Track - Conversation and Task Memory for Your Team'
 const SITE_DESCRIPTION =
   'Track keeps project conversations, tasks, evidence, shared memory, and permission-aware AI assistance in one workspace.'
 
-const THEME_COLOR_LIGHT = '#faf9f7'
-const THEME_COLOR_DARK = '#151412'
+const THEME_COLOR_LIGHT = '#f6f6f4'
+const THEME_COLOR_DARK = '#171716'
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;var themeColor=resolved==='dark'?'${THEME_COLOR_DARK}':'${THEME_COLOR_LIGHT}';var applyThemeColor=function(){var meta=document.querySelector('meta[name="theme-color"]');if(meta){meta.setAttribute('content',themeColor)}};if(document.querySelector('meta[name="theme-color"]')){applyThemeColor()}else{document.addEventListener('DOMContentLoaded',applyThemeColor,{once:true})}}catch(e){}})();`
 const enableDevtools = import.meta.env.DEV && import.meta.env.VITE_DEVTOOLS === '1'
 const enableReactGrab = import.meta.env.DEV && import.meta.env.VITE_REACT_GRAB !== '0'
@@ -124,6 +125,10 @@ export const Route = createRootRoute({
         href: appCss,
       },
       {
+        rel: 'stylesheet',
+        href: professionalUiCss,
+      },
+      {
         rel: 'canonical',
         href: SITE_URL,
       },
@@ -180,7 +185,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
-      <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(240,177,0,0.28)]" suppressHydrationWarning>
+      <body className="track-ui-v2 font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(226,168,0,0.24)]" suppressHydrationWarning>
         <AppProviders>
           {children}
           <PwaInstallPrompt />

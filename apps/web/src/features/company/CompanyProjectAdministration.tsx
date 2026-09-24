@@ -1,10 +1,11 @@
 import type { FunctionReturnType } from "convex/server";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Building2, CircleDot, ShieldCheck, UserRoundCheck } from "lucide-react";
 
 import type { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
+import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
 import { ProjectCompanyInviteForm } from "./CompanyForms";
 import { formatSnapshotError } from "./company-errors";
 import type { CompanyProjectChannel } from "./company-project-types";
@@ -61,7 +62,7 @@ export type CompanyProjectAdministrationProps = {
   projectMemberId: Id<"projectMembers">;
   projectMembers: Array<ProjectMemberRow> | undefined;
   run: RunAction;
-  onAddProjectMember: (userId: Id<"users">) => Promise<unknown>;
+  onAddProjectMember: (userId: Id<"users">, role: "manager" | "member") => Promise<unknown>;
   onApproveChannelArchive: (requestId: Id<"channelArchiveRequests">) => Promise<unknown>;
   onApproveProjectArchive: (requestId: Id<"projectArchiveRequests">) => Promise<unknown>;
   onCancelChannelArchive: (requestId: Id<"channelArchiveRequests">) => Promise<unknown>;
@@ -123,6 +124,7 @@ export function CompanyProjectAdministration({
   onRetryExitCleanup,
   onUpdateProjectMember,
 }: CompanyProjectAdministrationProps) {
+  const [newMemberRole, setNewMemberRole] = useState<"manager" | "member">("member");
   const eligibleCompanyMembers = useMemo(
     () =>
       (companyMembers?.members ?? []).filter(
@@ -242,12 +244,24 @@ export function CompanyProjectAdministration({
                   </li>
                 ))}
               </ul>
-              <h3>Add your Company members</h3>
+              <h3 id="project-member-invite">Invite people from your Company</h3>
+              <p className="company-admin-description">Add active Company members to this Project. They will keep the same Company access boundary.</p>
+              <label className="company-project-member-role-field">
+                <span>Project role for the next person</span>
+                <NativeSelect
+                  aria-label="Project role for the next person"
+                  onChange={(event) => setNewMemberRole(event.target.value as "manager" | "member")}
+                  value={newMemberRole}
+                >
+                  <NativeSelectOption value="member">Member</NativeSelectOption>
+                  <NativeSelectOption value="manager">Manager</NativeSelectOption>
+                </NativeSelect>
+              </label>
               {eligibleCompanyMembers.map(({ membership, user }) => (
                 <Button
                   key={membership._id}
                   onClick={() =>
-                    void run(() => onAddProjectMember(membership.userId))
+                    void run(() => onAddProjectMember(membership.userId, newMemberRole))
                   }
                   variant="outline"
                 >

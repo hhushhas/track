@@ -60,7 +60,7 @@ export function ConfirmDialog({
             Cancel
           </Button>
           <Button disabled={pending} onClick={() => void confirm()} type="button" variant={destructive ? 'destructive' : 'default'}>
-            {pending ? 'Working...' : confirmLabel}
+            {pending ? 'Working…' : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

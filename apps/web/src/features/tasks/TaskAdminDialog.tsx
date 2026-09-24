@@ -1,18 +1,40 @@
 import { useMutation, useQuery } from 'convex/react'
-import { Archive, ArrowDown, ArrowUp, CheckCircle2, Plus, RotateCcw, Settings2, Trash2 } from 'lucide-react'
+import {
+  Archive,
+  ArrowDown,
+  ArrowUp,
+  CheckCircle2,
+  Plus,
+  RotateCcw,
+  Settings2,
+  Trash2,
+} from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../convex/_generated/dataModel'
 import { appToast } from '#/components/ui/app-toast'
 import { Button } from '#/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
+import { ConfirmDialog } from '#/components/ui/confirm-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import type { TaskBoardView, TaskIdentity } from './task-types'
 import { taskError } from './TaskCreateDialog'
 
-const categories = ['backlog', 'unstarted', 'started', 'completed', 'canceled'] as const
+const categories = [
+  'backlog',
+  'unstarted',
+  'started',
+  'completed',
+  'canceled',
+] as const
 type WorkflowDraft = {
   stateId?: Id<'taskWorkflowStates'>
   name: string
@@ -41,7 +63,11 @@ export function TaskAdminDialog({
   const reorderBoard = useMutation(api.taskBoards.reorder)
   const createLabel = useMutation(api.taskLabels.create)
   const setLabelArchived = useMutation(api.taskLabels.setArchived)
-  const labels = useQuery(api.taskLabels.list, { projectId, includeArchived: true, ...identity })
+  const labels = useQuery(api.taskLabels.list, {
+    projectId,
+    includeArchived: true,
+    ...identity,
+  })
   const [name, setName] = useState('')
   const [labelName, setLabelName] = useState('')
   const [editing, setEditing] = useState<string>()
@@ -50,18 +76,28 @@ export function TaskAdminDialog({
   const [labelNameError, setLabelNameError] = useState('')
   const [creatingBoard, setCreatingBoard] = useState(false)
   const [creatingLabel, setCreatingLabel] = useState(false)
+  const [pendingArchive, setPendingArchive] = useState<
+    | { kind: 'board'; id: Id<'taskBoards'>; name: string }
+    | { kind: 'label'; id: Id<'taskLabels'>; name: string }
+    | null
+  >(null)
   const boardNameRef = useRef<HTMLInputElement | null>(null)
   const labelNameRef = useRef<HTMLInputElement | null>(null)
 
-  async function run(action: () => Promise<unknown>, successMessage?: string) {
+  async function run(
+    action: () => Promise<unknown>,
+    successMessage?: string,
+  ): Promise<boolean> {
     setError('')
     try {
       await action()
       if (successMessage) appToast.success(successMessage)
+      return true
     } catch (failure) {
       const message = taskError(failure)
       setError(message)
       appToast.error('Change not saved', message)
+      return false
     }
   }
 
@@ -97,7 +133,12 @@ export function TaskAdminDialog({
     setLabelNameError('')
     try {
       await run(async () => {
-        await createLabel({ projectId, name: nextLabelName, colorToken: 'blue', ...identity })
+        await createLabel({
+          projectId,
+          name: nextLabelName,
+          colorToken: 'blue',
+          ...identity,
+        })
         setLabelName('')
       })
     } finally {
@@ -105,43 +146,314 @@ export function TaskAdminDialog({
     }
   }
 
-  return <Dialog onOpenChange={onOpenChange} open={open}><DialogContent className="task-admin-dialog">
-    <DialogHeader><DialogTitle>Task administration</DialogTitle><DialogDescription>Manage Project boards and their independent workflows. Channel boards are created from their Channel task panel.</DialogDescription></DialogHeader>
-    <form className="task-inline-form" onSubmit={(event) => void submit(event)}><Input aria-describedby={boardNameError ? 'task-board-name-error' : undefined} aria-invalid={Boolean(boardNameError)} aria-label="Board name" autoComplete="off" name="boardName" onChange={(event) => { setName(event.target.value); if (boardNameError && event.target.value.trim()) setBoardNameError('') }} placeholder="New Project board…" ref={boardNameRef} value={name} /><Button disabled={creatingBoard} type="submit"><Plus aria-hidden="true" size={13} /> {creatingBoard ? 'Creating…' : 'Create board'}</Button>{boardNameError ? <span className="task-inline-error" id="task-board-name-error" role="alert">{boardNameError}</span> : null}</form>
-    <section className="task-label-admin"><strong>Project labels</strong><form className="task-inline-form" onSubmit={(event) => void submitLabel(event)}><Input aria-describedby={labelNameError ? 'task-label-name-error' : undefined} aria-invalid={Boolean(labelNameError)} aria-label="Label name" autoComplete="off" name="labelName" onChange={(event) => { setLabelName(event.target.value); if (labelNameError && event.target.value.trim()) setLabelNameError('') }} placeholder="New label…" ref={labelNameRef} value={labelName} /><Button disabled={creatingLabel} size="sm" type="submit"><Plus aria-hidden="true" size={12} /> {creatingLabel ? 'Adding…' : 'Add label'}</Button>{labelNameError ? <span className="task-inline-error" id="task-label-name-error" role="alert">{labelNameError}</span> : null}</form><div className="task-detail-actions">{labels?.map((label) => <Button key={label._id} onClick={() => void run(() => setLabelArchived({ labelId: label._id, archived: !label.archivedAt, ...identity }))} size="sm" variant="outline">{label.name}{label.archivedAt ? ' · restore' : ' · archive'}</Button>)}</div></section>
-    <div className="task-admin-board-list">
-      {boards.map((item, index) => <article className="task-admin-board" key={item.board._id}><div className="task-admin-board-summary"><div><strong>{item.board.name}</strong><span>{item.board.groupId ? 'Channel board' : 'Project board'} · {item.states.length} statuses</span></div><div>
-        <Button aria-label={`Move ${item.board.name} up`} disabled={index === 0 || Boolean(item.board.archivedAt)} onClick={() => void run(() => reorderBoard({ boardId: item.board._id, targetIndex: index - 1, ...identity }))} size="icon" variant="ghost"><ArrowUp size={12} /></Button>
-        <Button aria-label={`Move ${item.board.name} down`} disabled={index === boards.length - 1 || Boolean(item.board.archivedAt)} onClick={() => void run(() => reorderBoard({ boardId: item.board._id, targetIndex: index + 1, ...identity }))} size="icon" variant="ghost"><ArrowDown size={12} /></Button>
-        <Button onClick={() => setEditing(editing === item.board._id ? undefined : item.board._id)} size="sm" variant="ghost"><Settings2 size={12} /> Configure</Button>
-        {!item.board.isDefault && !item.board.archivedAt ? <Button onClick={() => void run(() => setDefault({ boardId: item.board._id, ...identity }))} size="sm" variant="ghost"><CheckCircle2 size={12} /> Make default</Button> : null}
-        {item.board.archivedAt ? <Button onClick={() => void run(() => restoreBoard({ boardId: item.board._id, ...identity }))} size="sm" variant="outline"><RotateCcw size={12} /> Restore</Button> : <Button onClick={() => void run(() => archiveBoard({ boardId: item.board._id, ...identity }))} size="sm" variant="outline"><Archive size={12} /> Archive</Button>}
-      </div></div>
-      {editing === item.board._id && !item.board.archivedAt ? <BoardEditor board={item} identity={identity} onError={setError} /> : null}
-      </article>)}
-    </div>
-    {error ? <p className="task-form-error" role="alert">{error}</p> : null}
-  </DialogContent></Dialog>
+  return (
+    <>
+      <Dialog onOpenChange={onOpenChange} open={open}>
+        <DialogContent className="task-admin-dialog">
+          <DialogHeader>
+            <DialogTitle>Task administration</DialogTitle>
+            <DialogDescription>
+              Manage Project boards and their independent workflows. Channel
+              boards are created from their Channel task panel.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="task-inline-form"
+            onSubmit={(event) => void submit(event)}
+          >
+            <Input
+              aria-describedby={
+                boardNameError ? 'task-board-name-error' : undefined
+              }
+              aria-invalid={Boolean(boardNameError)}
+              aria-label="Board name"
+              autoComplete="off"
+              name="boardName"
+              onChange={(event) => {
+                setName(event.target.value)
+                if (boardNameError && event.target.value.trim())
+                  setBoardNameError('')
+              }}
+              placeholder="New Project board…"
+              ref={boardNameRef}
+              value={name}
+            />
+            <Button disabled={creatingBoard} type="submit">
+              <Plus aria-hidden="true" size={13} />{' '}
+              {creatingBoard ? 'Creating…' : 'Create board'}
+            </Button>
+            {boardNameError ? (
+              <span
+                className="task-inline-error"
+                id="task-board-name-error"
+                role="alert"
+              >
+                {boardNameError}
+              </span>
+            ) : null}
+          </form>
+          <section className="task-label-admin">
+            <strong>Project labels</strong>
+            <form
+              className="task-inline-form"
+              onSubmit={(event) => void submitLabel(event)}
+            >
+              <Input
+                aria-describedby={
+                  labelNameError ? 'task-label-name-error' : undefined
+                }
+                aria-invalid={Boolean(labelNameError)}
+                aria-label="Label name"
+                autoComplete="off"
+                name="labelName"
+                onChange={(event) => {
+                  setLabelName(event.target.value)
+                  if (labelNameError && event.target.value.trim())
+                    setLabelNameError('')
+                }}
+                placeholder="New label…"
+                ref={labelNameRef}
+                value={labelName}
+              />
+              <Button disabled={creatingLabel} size="sm" type="submit">
+                <Plus aria-hidden="true" size={12} />{' '}
+                {creatingLabel ? 'Adding…' : 'Add label'}
+              </Button>
+              {labelNameError ? (
+                <span
+                  className="task-inline-error"
+                  id="task-label-name-error"
+                  role="alert"
+                >
+                  {labelNameError}
+                </span>
+              ) : null}
+            </form>
+            <div className="task-detail-actions">
+              {labels?.map((label) => (
+                <Button
+                  key={label._id}
+                  onClick={() =>
+                    label.archivedAt
+                      ? void run(() =>
+                          setLabelArchived({
+                            labelId: label._id,
+                            archived: false,
+                            ...identity,
+                          }),
+                        )
+                      : setPendingArchive({
+                          kind: 'label',
+                          id: label._id,
+                          name: label.name,
+                        })
+                  }
+                  size="sm"
+                  variant="outline"
+                >
+                  {label.name}
+                  {label.archivedAt ? ' · restore' : ' · archive'}
+                </Button>
+              ))}
+            </div>
+          </section>
+          <div className="task-admin-board-list">
+            {boards.map((item, index) => (
+              <article className="task-admin-board" key={item.board._id}>
+                <div className="task-admin-board-summary">
+                  <div>
+                    <strong>{item.board.name}</strong>
+                    <span>
+                      {item.board.groupId ? 'Channel board' : 'Project board'} ·{' '}
+                      {item.states.length} statuses
+                    </span>
+                  </div>
+                  <div>
+                    <Button
+                      aria-label={`Move ${item.board.name} up`}
+                      disabled={index === 0 || Boolean(item.board.archivedAt)}
+                      onClick={() =>
+                        void run(() =>
+                          reorderBoard({
+                            boardId: item.board._id,
+                            targetIndex: index - 1,
+                            ...identity,
+                          }),
+                        )
+                      }
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <ArrowUp size={12} />
+                    </Button>
+                    <Button
+                      aria-label={`Move ${item.board.name} down`}
+                      disabled={
+                        index === boards.length - 1 ||
+                        Boolean(item.board.archivedAt)
+                      }
+                      onClick={() =>
+                        void run(() =>
+                          reorderBoard({
+                            boardId: item.board._id,
+                            targetIndex: index + 1,
+                            ...identity,
+                          }),
+                        )
+                      }
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <ArrowDown size={12} />
+                    </Button>
+                    <Button
+                      onClick={() =>
+                        setEditing(
+                          editing === item.board._id
+                            ? undefined
+                            : item.board._id,
+                        )
+                      }
+                      size="sm"
+                      variant="ghost"
+                    >
+                      <Settings2 size={12} /> Configure
+                    </Button>
+                    {!item.board.isDefault && !item.board.archivedAt ? (
+                      <Button
+                        onClick={() =>
+                          void run(() =>
+                            setDefault({
+                              boardId: item.board._id,
+                              ...identity,
+                            }),
+                          )
+                        }
+                        size="sm"
+                        variant="ghost"
+                      >
+                        <CheckCircle2 size={12} /> Make default
+                      </Button>
+                    ) : null}
+                    {item.board.archivedAt ? (
+                      <Button
+                        onClick={() =>
+                          void run(() =>
+                            restoreBoard({
+                              boardId: item.board._id,
+                              ...identity,
+                            }),
+                          )
+                        }
+                        size="sm"
+                        variant="outline"
+                      >
+                        <RotateCcw size={12} /> Restore
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={() =>
+                          setPendingArchive({
+                            kind: 'board',
+                            id: item.board._id,
+                            name: item.board.name,
+                          })
+                        }
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Archive size={12} /> Archive
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {editing === item.board._id && !item.board.archivedAt ? (
+                  <BoardEditor
+                    board={item}
+                    identity={identity}
+                    onError={setError}
+                  />
+                ) : null}
+              </article>
+            ))}
+          </div>
+          {error ? (
+            <p className="task-form-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        confirmLabel={
+          pendingArchive?.kind === 'label' ? 'Archive label' : 'Archive board'
+        }
+        description={
+          pendingArchive?.kind === 'label'
+            ? `The “${pendingArchive.name}” label will no longer be available for active task updates.`
+            : `The “${pendingArchive?.name ?? 'selected'}” board will move out of active Project task views.`
+        }
+        onConfirm={async () => {
+          if (!pendingArchive) return false
+          const archiveTarget = pendingArchive
+          return await run(
+            () =>
+              archiveTarget.kind === 'label'
+                ? setLabelArchived({
+                    labelId: archiveTarget.id,
+                    archived: true,
+                    ...identity,
+                  })
+                : archiveBoard({ boardId: archiveTarget.id, ...identity }),
+            `${archiveTarget.kind === 'label' ? 'Label' : 'Board'} archived`,
+          )
+        }}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingArchive(null)
+        }}
+        open={Boolean(pendingArchive)}
+        title={
+          pendingArchive?.kind === 'label'
+            ? 'Archive this label?'
+            : 'Archive this board?'
+        }
+      />
+    </>
+  )
 }
 
-function BoardEditor({ board, identity, onError }: { board: TaskBoardView; identity: TaskIdentity; onError: (error: string) => void }) {
+function BoardEditor({
+  board,
+  identity,
+  onError,
+}: {
+  board: TaskBoardView
+  identity: TaskIdentity
+  onError: (error: string) => void
+}) {
   const updateBoard = useMutation(api.taskBoards.update)
   const configureWorkflow = useMutation(api.taskBoards.configureWorkflow)
   const [name, setName] = useState(board.board.name)
   const [description, setDescription] = useState(board.board.description ?? '')
-  const [states, setStates] = useState<WorkflowDraft[]>(() => board.states.map((state) => ({
-    stateId: state._id,
-    name: state.name,
-    category: state.category,
-    visualToken: state.visualToken,
-    isDefault: state.isDefault,
-  })))
+  const [states, setStates] = useState<WorkflowDraft[]>(() =>
+    board.states.map((state) => ({
+      stateId: state._id,
+      name: state.name,
+      category: state.category,
+      visualToken: state.visualToken,
+      isDefault: state.isDefault,
+    })),
+  )
   const [saving, setSaving] = useState(false)
   const boardNameRef = useRef<HTMLInputElement | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
 
   function updateState(index: number, patch: Partial<WorkflowDraft>) {
-    setStates((current) => current.map((state, candidate) => candidate === index ? { ...state, ...patch } : state))
+    setStates((current) =>
+      current.map((state, candidate) =>
+        candidate === index ? { ...state, ...patch } : state,
+      ),
+    )
   }
 
   function moveState(index: number, offset: number) {
@@ -163,20 +475,39 @@ function BoardEditor({ board, identity, onError }: { board: TaskBoardView; ident
     if (states.some((state) => !state.name.trim())) {
       onError('Enter a name for every workflow status before saving.')
       requestAnimationFrame(() => {
-        editorRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')?.focus()
+        editorRef.current
+          ?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')
+          ?.focus()
       })
       return
     }
     setSaving(true)
     try {
-      await updateBoard({ boardId: board.board._id, name: name.trim(), description: description.trim() || null, ...identity })
-      const defaultIndex = Math.max(0, states.findIndex((state) => state.isDefault))
-      const replacementStateId = states[defaultIndex]?.stateId ?? states.find((state) => state.stateId)?.stateId
+      await updateBoard({
+        boardId: board.board._id,
+        name: name.trim(),
+        description: description.trim() || null,
+        ...identity,
+      })
+      const defaultIndex = Math.max(
+        0,
+        states.findIndex((state) => state.isDefault),
+      )
+      const replacementStateId =
+        states[defaultIndex]?.stateId ??
+        states.find((state) => state.stateId)?.stateId
       await configureWorkflow({
         boardId: board.board._id,
         defaultIndex,
         replacementStateId,
-        states: states.map(({ stateId, name: stateName, category, visualToken }) => ({ stateId, name: stateName.trim(), category, visualToken })),
+        states: states.map(
+          ({ stateId, name: stateName, category, visualToken }) => ({
+            stateId,
+            name: stateName.trim(),
+            category,
+            visualToken,
+          }),
+        ),
         ...identity,
       })
       appToast.success('Board and workflow saved')
@@ -189,16 +520,134 @@ function BoardEditor({ board, identity, onError }: { board: TaskBoardView; ident
     }
   }
 
-  return <div className="task-workflow-editor" ref={editorRef}>
-    <div className="task-form-grid"><label>Board name<Input aria-invalid={!name.trim()} autoComplete="off" name="workflowBoardName" onChange={(event) => setName(event.target.value)} ref={boardNameRef} required value={name} /></label><label>Description<Input autoComplete="off" name="workflowBoardDescription" onChange={(event) => setDescription(event.target.value)} value={description} /></label></div>
-    <div className="task-workflow-state-list">{states.map((state, index) => <div className="task-workflow-state" key={state.stateId ?? `new-${index}`}>
-      <Input aria-invalid={!state.name.trim()} aria-label={`Status ${index + 1} name`} autoComplete="off" name={`workflowStatus-${index + 1}`} onChange={(event) => updateState(index, { name: event.target.value })} required value={state.name} />
-      <NativeSelect aria-label={`${state.name} category`} onChange={(event) => updateState(index, { category: event.target.value as WorkflowDraft['category'] })} value={state.category}>{categories.map((category) => <NativeSelectOption key={category} value={category}>{category}</NativeSelectOption>)}</NativeSelect>
-      <Button aria-label={`Use ${state.name} as default`} onClick={() => setStates((current) => current.map((candidate, candidateIndex) => ({ ...candidate, isDefault: candidateIndex === index })))} size="sm" variant={state.isDefault ? 'default' : 'ghost'}>{state.isDefault ? 'Default' : 'Make default'}</Button>
-      <Button aria-label={`Move ${state.name} up`} disabled={index === 0} onClick={() => moveState(index, -1)} size="icon" variant="ghost"><ArrowUp size={12} /></Button>
-      <Button aria-label={`Move ${state.name} down`} disabled={index === states.length - 1} onClick={() => moveState(index, 1)} size="icon" variant="ghost"><ArrowDown size={12} /></Button>
-      <Button aria-label={`Remove ${state.name}`} disabled={states.length <= 2} onClick={() => setStates((current) => current.filter((_, candidate) => candidate !== index))} size="icon" variant="ghost"><Trash2 size={12} /></Button>
-    </div>)}</div>
-    <div className="task-detail-actions"><Button onClick={() => setStates((current) => [...current, { name: 'New status', category: 'unstarted', visualToken: 'blue', isDefault: false }])} size="sm" variant="outline"><Plus aria-hidden="true" size={12} /> Add status</Button><Button disabled={saving} onClick={() => void save()} size="sm">{saving ? 'Saving…' : 'Save board and workflow'}</Button></div>
-  </div>
+  return (
+    <div className="task-workflow-editor" ref={editorRef}>
+      <div className="task-form-grid">
+        <label>
+          Board name
+          <Input
+            aria-invalid={!name.trim()}
+            autoComplete="off"
+            name="workflowBoardName"
+            onChange={(event) => setName(event.target.value)}
+            ref={boardNameRef}
+            required
+            value={name}
+          />
+        </label>
+        <label>
+          Description
+          <Input
+            autoComplete="off"
+            name="workflowBoardDescription"
+            onChange={(event) => setDescription(event.target.value)}
+            value={description}
+          />
+        </label>
+      </div>
+      <div className="task-workflow-state-list">
+        {states.map((state, index) => (
+          <div
+            className="task-workflow-state"
+            key={state.stateId ?? `new-${index}`}
+          >
+            <Input
+              aria-invalid={!state.name.trim()}
+              aria-label={`Status ${index + 1} name`}
+              autoComplete="off"
+              name={`workflowStatus-${index + 1}`}
+              onChange={(event) =>
+                updateState(index, { name: event.target.value })
+              }
+              required
+              value={state.name}
+            />
+            <NativeSelect
+              aria-label={`${state.name} category`}
+              onChange={(event) =>
+                updateState(index, {
+                  category: event.target.value as WorkflowDraft['category'],
+                })
+              }
+              value={state.category}
+            >
+              {categories.map((category) => (
+                <NativeSelectOption key={category} value={category}>
+                  {category}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <Button
+              aria-label={`Use ${state.name} as default`}
+              onClick={() =>
+                setStates((current) =>
+                  current.map((candidate, candidateIndex) => ({
+                    ...candidate,
+                    isDefault: candidateIndex === index,
+                  })),
+                )
+              }
+              size="sm"
+              variant={state.isDefault ? 'default' : 'ghost'}
+            >
+              {state.isDefault ? 'Default' : 'Make default'}
+            </Button>
+            <Button
+              aria-label={`Move ${state.name} up`}
+              disabled={index === 0}
+              onClick={() => moveState(index, -1)}
+              size="icon"
+              variant="ghost"
+            >
+              <ArrowUp size={12} />
+            </Button>
+            <Button
+              aria-label={`Move ${state.name} down`}
+              disabled={index === states.length - 1}
+              onClick={() => moveState(index, 1)}
+              size="icon"
+              variant="ghost"
+            >
+              <ArrowDown size={12} />
+            </Button>
+            <Button
+              aria-label={`Remove ${state.name}`}
+              disabled={states.length <= 2}
+              onClick={() =>
+                setStates((current) =>
+                  current.filter((_, candidate) => candidate !== index),
+                )
+              }
+              size="icon"
+              variant="ghost"
+            >
+              <Trash2 size={12} />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="task-detail-actions">
+        <Button
+          onClick={() =>
+            setStates((current) => [
+              ...current,
+              {
+                name: 'New status',
+                category: 'unstarted',
+                visualToken: 'blue',
+                isDefault: false,
+              },
+            ])
+          }
+          size="sm"
+          variant="outline"
+        >
+          <Plus aria-hidden="true" size={12} /> Add status
+        </Button>
+        <Button disabled={saving} onClick={() => void save()} size="sm">
+          {saving ? 'Saving…' : 'Save board and workflow'}
+        </Button>
+      </div>
+    </div>
+  )
 }

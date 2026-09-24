@@ -10,6 +10,9 @@ import {
 describe('Company view state', () => {
   it('keeps only supported Company views in the URL', () => {
     expect(resolveCompanyHubView('settings')).toBe('settings')
+    expect(resolveCompanyHubView('tasks')).toBe('tasks')
+    expect(resolveCompanyHubView('threads')).toBe('threads')
+    expect(resolveCompanyHubView('work')).toBe('tasks')
     expect(resolveCompanyHubView('unknown')).toBe('overview')
     expect(resolveCompanyHubView(undefined)).toBe('overview')
   })

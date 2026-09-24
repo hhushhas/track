@@ -201,6 +201,28 @@
   text-decoration: none;
 }
 
+/* The company workspace keeps its identity and account controls readable. */
+.company-project-nav.is-company-workspace .company-project-nav-resize-handle,
+.company-project-nav.is-company-workspace .company-project-nav-collapse {
+  display: none;
+}
+
+.company-project-nav.is-company-workspace .company-project-nav-header {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.company-project-nav.is-company-workspace .company-project-nav-company {
+  min-height: 56px;
+  gap: 11px;
+  padding: 8px 10px;
+}
+
+.company-project-nav.is-company-workspace .company-project-nav-company-icon {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+}
+
 .company-project-nav-company.active {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--hairline));
   background: var(--accent-tint);
@@ -346,6 +368,23 @@
   transform: rotate(90deg);
 }
 
+.company-project-nav-projects-summary svg {
+  transition: transform 180ms ease;
+}
+
+.company-project-nav-projects details > nav {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 220ms ease, opacity 160ms ease;
+}
+
+.company-project-nav-projects details[open] > nav {
+  max-height: min(44vh, 560px);
+  overflow-y: auto;
+  opacity: 1;
+}
+
 .company-project-nav-projects details > nav {
   padding-left: 4px;
 }
@@ -445,6 +484,18 @@
 
 .company-project-nav-channel {
   position: relative;
+}
+
+.company-project-nav-channel .company-project-nav-copy {
+  flex: 1 1 auto;
+  padding-right: 24px;
+}
+
+.company-project-nav-channel .company-project-nav-count {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
 }
 
 .company-project-nav-channel-icon {
@@ -647,6 +698,18 @@
   overflow: hidden;
 }
 
+.company-project-nav-custom nav > a > small,
+.company-project-nav-custom nav > button > small {
+  min-width: 20px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--paper-3);
+  padding: 3px 6px;
+  color: var(--ink-3);
+  font: 650 9px/1 var(--font-meta);
+  text-align: center;
+}
+
 .company-project-nav-custom nav > .company-project-nav-label {
   padding: 4px 8px;
 }
@@ -767,6 +830,10 @@
   gap: 3px;
 }
 
+.company-project-nav.is-collapsed .company-project-nav-secondary .task-route-label {
+  display: none;
+}
+
 .company-project-nav.is-collapsed .company-project-nav-custom nav > button,
 .company-project-nav.is-collapsed .company-project-nav-custom nav > a,
 .company-project-nav.is-collapsed .company-project-nav-secondary nav button,
@@ -797,6 +864,13 @@
   height: 48px;
   grid-template-columns: 28px;
   padding-block: 0;
+}
+
+.company-project-nav.is-collapsed .company-project-nav-collapse {
+  border-color: var(--hairline-strong);
+  background: var(--paper-3);
+  color: var(--ink-2);
+  box-shadow: 0 2px 8px rgba(27, 25, 23, 0.08);
 }
 
 .company-project-nav.is-collapsed .company-project-nav-brand {
@@ -913,6 +987,30 @@
     min-width: 0;
     justify-content: flex-start;
     overflow-x: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .company-project-nav.is-company-workspace .company-project-nav-custom {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .company-project-nav.is-company-workspace .company-project-nav-custom nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .company-project-nav.is-company-workspace .company-project-nav-custom nav > .company-project-nav-label {
+    grid-column: 1 / -1;
+  }
+
+  .company-project-nav.is-company-workspace .company-project-nav-custom nav > a {
+    width: 100%;
+    min-width: 0;
   }
 }
 

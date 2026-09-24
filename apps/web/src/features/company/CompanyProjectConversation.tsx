@@ -1,8 +1,9 @@
 import type { FunctionReturnType } from "convex/server";
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Hash, MessageSquareText, PanelRightClose, PanelRightOpen, Plus, Settings2 } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Hash, MessageSquareText, PanelRightClose, PanelRightOpen, Plus, Search, UsersRound } from "lucide-react";
+import { useQuery } from "convex/react";
 
-import type { api } from "../../../../../convex/_generated/api";
+import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -21,6 +22,10 @@ import {
   ProjectSnapshotNotice,
   type ProjectSnapshotState,
 } from "./ProjectSnapshotNotice";
+import { ProjectMembersDialog } from "./ProjectMembersDialog";
+import { ProjectSearchDialog, type ProjectSearchFilter, type ProjectSearchResult } from "../workspace/search/ProjectSearchDialog";
+import { buildProjectSearchSections, getProjectSearchTotal } from "../workspace/search/project-search-sections";
+import { projectSearchResultHref } from "../workspace/search/project-search-navigation";
 
 import "./company-project.css";
 
@@ -46,6 +51,11 @@ type CompanyProjectConversationProps = {
     | "LoadingMore"
     | "Exhausted";
   notice: string | null;
+  memberCount?: number;
+  projectMembers?: Array<{
+    membership: { _id: Id<"projectMembers">; role: string; status?: string };
+    user: { _id: Id<"users">; displayName: string } | null;
+  }>;
   projectId: Id<"projects">;
   projectMemberId: Id<"projectMembers">;
   readOnly: boolean;
@@ -90,6 +100,8 @@ export function CompanyProjectConversation({
   messages,
   messagePageStatus,
   notice,
+  memberCount,
+  projectMembers,
   projectId,
   projectMemberId,
   readOnly,
@@ -114,8 +126,34 @@ export function CompanyProjectConversation({
 }: CompanyProjectConversationProps) {
   const [contextRailCollapsed, setContextRailCollapsed] = useState(false);
   const [channelCreationPending, setChannelCreationPending] = useState(false);
+  const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [projectSearchOpen, setProjectSearchOpen] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const [projectSearchFilter, setProjectSearchFilter] = useState<ProjectSearchFilter>("messages");
+  const [debouncedProjectSearchQuery, setDebouncedProjectSearchQuery] = useState("");
+  const searchButtonRef = useRef<HTMLButtonElement | null>(null);
   const contextToggleRef = useRef<HTMLButtonElement | null>(null);
+  const threadSearchInputId = `project-conversation-thread-search-${projectId}`;
   const creatingChannel = channelCreationPending || busyAction === "create-channel";
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedProjectSearchQuery(projectSearchQuery), 180);
+    return () => window.clearTimeout(timeout);
+  }, [projectSearchQuery]);
+  const projectSearchResults = useQuery(
+    api.search.project,
+    projectSearchOpen && currentUser && debouncedProjectSearchQuery.trim().length >= 2
+      ? {
+          actingCompanyId,
+          filter: projectSearchFilter,
+          limit: 8,
+          projectId,
+          projectMemberId,
+          query: debouncedProjectSearchQuery,
+          userId: currentUser._id,
+        }
+      : "skip",
+  );
+  const projectSearchSections = buildProjectSearchSections(projectSearchResults);
   async function submitChannelCreation() {
     if (channelCreationPending) return;
     setChannelCreationPending(true);
@@ -131,13 +169,33 @@ export function CompanyProjectConversation({
     setContextRailCollapsed(collapsed);
     requestAnimationFrame(() => contextToggleRef.current?.focus());
   }
+  function openContext(tab: CompanyProjectContextTab, focusTargetId?: string) {
+    setContextRailCollapsed(false);
+    onContextTabChange(tab);
+    if (focusTargetId) {
+      requestAnimationFrame(() => {
+        document.getElementById(focusTargetId)?.scrollIntoView({ block: "nearest" });
+        document.getElementById(focusTargetId)?.focus({ preventScroll: true });
+      });
+    }
+  }
+  function openProjectSearchResult(result: ProjectSearchResult) {
+    const href = projectSearchResultHref(result, {
+      actingCompanyId,
+      projectId,
+      projectMemberId,
+    });
+    if (!href) return;
+    setProjectSearchOpen(false);
+    window.location.assign(href);
+  }
   const contextTabs: Array<{
     key: CompanyProjectContextTab;
     label: string;
     hint: string;
   }> = [
     ...(releaseConfig.threads ? [{ key: "threads" as const, label: "Threads", hint: "Focused discussion" }] : []),
-    { key: "management", label: contextManagementLabel, hint: "Project access and settings" },
+    { key: "management", label: contextManagementLabel, hint: "Project members and access" },
   ];
   const defaultContextTab: CompanyProjectContextTab = releaseConfig.threads ? "threads" : "management";
   const activeContextTab = contextTabs.some((tab) => tab.key === contextTab)
@@ -251,9 +309,11 @@ export function CompanyProjectConversation({
               <p>{item.project.description || "Project conversation and shared context."}</p>
             </div>
           </div>
-          {readOnly ? (
-            <span className="company-read-only">Read only</span>
-          ) : null}
+          <div className="company-conversation-actions">
+            {readOnly ? <span className="company-read-only">Read only</span> : null}
+            <Button aria-label="Search project messages" onClick={() => setProjectSearchOpen(true)} ref={searchButtonRef} size="sm" type="button" variant="outline"><Search aria-hidden="true" size={14} /><span>Search</span></Button>
+            <Button aria-label="Open Project members and access" onClick={() => setMembersDialogOpen(true)} size="sm" type="button" variant="outline"><UsersRound aria-hidden="true" size={14} /><span>Members{memberCount === undefined ? "" : ` ${memberCount}`}</span></Button>
+          </div>
         </header>
         {notice ? (
           <p aria-live="polite" className="company-notice">
@@ -302,6 +362,22 @@ export function CompanyProjectConversation({
           />
         ) : null}
       </section>
+      <ProjectMembersDialog members={projectMembers ?? []} onManageAccess={() => openContext("management")} onOpenChange={setMembersDialogOpen} open={membersDialogOpen} projectName={item.project.name} />
+      <ProjectSearchDialog
+        filter={projectSearchFilter}
+        loading={projectSearchOpen && debouncedProjectSearchQuery.trim().length >= 2 && projectSearchResults === undefined}
+        onClose={() => setProjectSearchOpen(false)}
+        onFilterChange={setProjectSearchFilter}
+        onOpenResult={openProjectSearchResult}
+        onQueryChange={setProjectSearchQuery}
+        open={projectSearchOpen}
+        projectName={item.project.name}
+        query={projectSearchQuery}
+        returnFocusRef={searchButtonRef}
+        sections={projectSearchSections}
+        total={getProjectSearchTotal(projectSearchSections)}
+        updating={projectSearchQuery !== debouncedProjectSearchQuery}
+      />
       <aside
         aria-label="Project context"
         className={contextRailCollapsed ? "company-project-context-rail is-collapsed" : "company-project-context-rail"}
@@ -338,7 +414,7 @@ export function CompanyProjectConversation({
               >
                 <PanelRightClose aria-hidden="true" size={15} />
               </button>
-              <p>Keep related work beside the conversation.</p>
+              <p>Review visible threads and Project members without leaving the Channel.</p>
             </header>
         <nav aria-label="Project context sections" aria-orientation="horizontal" className="company-project-context-tabs" role="tablist">
           {contextTabs.map((tab) => (
@@ -370,7 +446,7 @@ export function CompanyProjectConversation({
               type="button"
             >
               {tab.key === "threads" ? <MessageSquareText aria-hidden="true" size={14} /> : null}
-              {tab.key === "management" ? <Settings2 aria-hidden="true" size={14} /> : null}
+              {tab.key === "management" ? <UsersRound aria-hidden="true" size={14} /> : null}
               <strong>{tab.label}</strong>
             </button>
           ))}
@@ -388,6 +464,7 @@ export function CompanyProjectConversation({
               context={{ actingCompanyId, projectMemberId }}
               projectId={projectId}
               readOnly={readOnly}
+              searchInputId={threadSearchInputId}
               userId={currentUser._id}
             />
           ) : null}

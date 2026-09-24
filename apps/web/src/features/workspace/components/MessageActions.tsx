@@ -69,9 +69,10 @@ export function MessageActions({
           title="Reply"
           type="button"
         >
-          <CornerUpLeft size={14} />
+          <CornerUpLeft aria-hidden="true" size={14} />
         </Button>
       ) : null}
+      {canCreateTasks ? <CreateTaskFromMessage identity={identity} message={item.message} /> : null}
       <ForwardMessagePopover
         activeGroupId={activeGroupId}
         busyAction={busyAction}
@@ -80,7 +81,6 @@ export function MessageActions({
         item={item}
         onForwardMessage={onForwardMessage}
       />
-      {canCreateTasks ? <CreateTaskFromMessage identity={identity} message={item.message} /> : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -92,7 +92,7 @@ export function MessageActions({
             />
           }
         >
-          <MoreHorizontal size={14} />
+          <MoreHorizontal aria-hidden="true" size={14} />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="track-message-menu">
           <DropdownMenuGroup>
@@ -126,7 +126,7 @@ export function MessageActions({
                 onClick={() => setDeleteOpen(true)}
                 variant="destructive"
               >
-                <Trash2 />
+                <Trash2 aria-hidden="true" />
                 Delete message
               </DropdownMenuItem>
             ) : null}
@@ -210,7 +210,7 @@ function ForwardMessagePopover({
           />
         }
       >
-        <CornerUpRight size={14} />
+        <CornerUpRight aria-hidden="true" size={14} />
       </PopoverTrigger>
       <PopoverContent align="end" className="track-forward-popover" side="top" sideOffset={8}>
         <PopoverHeader>
@@ -218,7 +218,7 @@ function ForwardMessagePopover({
           <PopoverDescription>Send a copied snapshot with an optional note.</PopoverDescription>
         </PopoverHeader>
         <div className="track-forward-search">
-          <Search size={13} />
+          <Search aria-hidden="true" size={13} />
           <Input
             aria-label="Search Groups"
             autoComplete="off"
@@ -293,7 +293,7 @@ function ForwardMessagePopover({
                     <strong>{group.name}</strong>
                     <small>{group.kind.replaceAll('_', ' ')} Group</small>
                   </span>
-                  <CornerUpRight size={13} />
+                  <CornerUpRight aria-hidden="true" size={13} />
                 </button>
               )
             })
@@ -327,8 +327,8 @@ function ForwardPreview({ item }: { item: GroupMessageItem }) {
       <p>{item.message.body || 'Attachment message'}</p>
       {attachmentCount > 0 ? (
         <small>
-          <Paperclip size={12} />
-            {attachmentCount} attachment{attachmentCount === 1 ? '' : 's'} will be copied
+          <Paperclip aria-hidden="true" size={12} />
+          {attachmentCount} attachment{attachmentCount === 1 ? '' : 's'} will be copied
         </small>
       ) : null}
     </div>

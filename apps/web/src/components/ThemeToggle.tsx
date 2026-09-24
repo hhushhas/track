@@ -26,8 +26,8 @@ function getInitialMode(): ThemeMode {
   return 'auto'
 }
 
-const THEME_COLOR_LIGHT = '#faf9f7'
-const THEME_COLOR_DARK = '#151412'
+const THEME_COLOR_LIGHT = '#f6f6f4'
+const THEME_COLOR_DARK = '#171716'
 
 function applyThemeColor(resolved: 'light' | 'dark') {
   const meta = document.querySelector('meta[name="theme-color"]')

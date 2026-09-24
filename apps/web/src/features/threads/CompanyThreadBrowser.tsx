@@ -18,6 +18,8 @@ export function CompanyThreadBrowser({
   companyName,
   activeChannel,
   readOnly = false,
+  searchQuery,
+  searchInputId,
 }: {
   context?: RepresentedThreadContext
   projectId: Id<'projects'>
@@ -25,10 +27,13 @@ export function CompanyThreadBrowser({
   companyName?: string
   activeChannel?: { _id: Id<'groups'>; name: string }
   readOnly?: boolean
+  searchQuery?: string
+  searchInputId?: string
 }) {
   const releaseConfig = useReleaseConfig()
   const navigate = useNavigate()
-  const searchId = useId()
+  const generatedSearchId = useId()
+  const searchId = searchInputId ?? generatedSearchId
   const threadNameId = useId()
   const [status, setStatus] = useState<'active' | 'archived'>('active')
   const [search, setSearch] = useState('')
@@ -54,7 +59,7 @@ export function CompanyThreadBrowser({
       : 'skip',
     { initialNumItems: 40 },
   )
-  const searchTerm = search.trim()
+  const searchTerm = (searchQuery?.trim() || search.trim())
   const normalizedSearchTerm = searchTerm.toLocaleLowerCase()
   const searchResults = useQuery(
     api.search.project,

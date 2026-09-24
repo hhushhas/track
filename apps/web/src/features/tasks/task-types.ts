@@ -28,7 +28,11 @@ export function canManageTaskProject(role: Doc<'projectMembers'>['role'] | undef
 }
 
 export function canEditTaskView(
-  item: TaskView,
+  item: {
+    board: Pick<Doc<'taskBoards'>, 'archivedAt'> | null
+    capabilities?: Pick<TaskCapabilities, 'canEdit'>
+    task: Pick<Doc<'tasks'>, 'archivedAt' | 'assigneeProjectMemberId' | 'createdByProjectMemberId'>
+  },
   currentProjectMemberId: Id<'projectMembers'> | undefined,
   currentProjectRole: Doc<'projectMembers'>['role'] | undefined,
 ) {

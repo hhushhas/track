@@ -43,7 +43,7 @@ export function WorkspaceHomePage({ projects }: { projects: Array<WorkspaceProje
           <h2>Projects</h2>
           <p>Continue in a project, channel, or task without losing the conversation around it.</p>
         </div>
-        <Link className="track-workspace-directory-link" to="/workspace/company">
+        <Link className="track-workspace-directory-link" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company">
           <Building2 aria-hidden="true" size={15} /> Companies
         </Link>
       </header>

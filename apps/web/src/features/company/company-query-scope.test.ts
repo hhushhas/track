@@ -201,7 +201,7 @@ describe("Company query scope", () => {
       actingCompanyId: "active-company",
       groupId: "channel-a",
       projectMemberId: "member-a",
-      view: "board",
+      view: "list",
     });
   });
 });

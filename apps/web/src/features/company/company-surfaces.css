@@ -2221,6 +2221,30 @@
   padding-inline: 20px;
 }
 
+.company-conversation-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.company-conversation-actions [data-slot="button"] {
+  min-height: 34px;
+  gap: 6px;
+  border-color: var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink-3);
+  padding-inline: 10px;
+}
+
+.company-conversation-actions [data-slot="button"]:hover,
+.company-conversation-actions [data-slot="button"]:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
 .company-unified-shell .company-channel-mark {
   width: 32px;
   height: 32px;
@@ -2266,4 +2290,9 @@
     min-height: 52px;
     height: 52px;
   }
+}
+
+@media (max-width: 620px) {
+  .company-conversation-actions [data-slot="button"] span { display: none; }
+  .company-conversation-actions [data-slot="button"] { min-width: 34px; padding-inline: 0; }
 }

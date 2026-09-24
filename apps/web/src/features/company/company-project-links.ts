@@ -18,6 +18,15 @@ export function getCompanyProjectConversationSearch(
   };
 }
 
+export function getCompanyProjectManagementSearch(
+  context: CompanyProjectLinkContext,
+) {
+  return {
+    ...getCompanyProjectConversationSearch(context),
+    context: "management" as const,
+  };
+}
+
 export function getCompanyProjectOverviewSearch(
   context: CompanyProjectLinkContext,
 ) {
@@ -45,6 +54,6 @@ export function getCompanyProjectTaskSearch(context: CompanyProjectLinkContext) 
     actingCompanyId: context.actingCompanyId,
     groupId: context.groupId ?? "",
     projectMemberId: context.projectMemberId,
-    view: "board" as const,
+    view: "list" as const,
   };
 }

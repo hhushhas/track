@@ -507,12 +507,12 @@ export function CompanyProjectPage({
     setChannelName("");
   }
 
-  async function addProjectMemberToProject(userId: Id<"users">) {
+  async function addProjectMemberToProject(userId: Id<"users">, role: "manager" | "member") {
     return await addProjectMember({
       actingCompanyId,
       projectId,
       projectMemberId,
-      role: "member",
+      role,
       userId,
     });
   }
@@ -682,7 +682,7 @@ export function CompanyProjectPage({
                 to reactivate it if you are an owner.
               </p>
             </div>
-            <Link className="company-header-link" to="/workspace/company">
+            <Link className="company-header-link" search={{ view: "overview", taskFilter: undefined }} to="/workspace/company">
               Open Company workspace
             </Link>
           </header>
@@ -695,7 +695,7 @@ export function CompanyProjectPage({
       <main className="company-hub">
         <h1>Project unavailable</h1>
         <p>This Company representation is no longer available.</p>
-        <Link to="/workspace/company">Return to Company workspace</Link>
+        <Link search={{ view: "overview", taskFilter: undefined }} to="/workspace/company">Return to Company workspace</Link>
       </main>
     );
 
@@ -707,7 +707,7 @@ export function CompanyProjectPage({
       <main className="company-hub">
         <h1>Project unavailable</h1>
         <p>This Project link is outdated or your access has changed.</p>
-        <Link to="/workspace/company">Return to Company hub</Link>
+        <Link search={{ view: "overview", taskFilter: undefined }} to="/workspace/company">Return to Company hub</Link>
       </main>
     );
   }
@@ -717,7 +717,7 @@ export function CompanyProjectPage({
       <main className="company-hub">
         <h1>Project unavailable</h1>
         <p>This represented Project membership is no longer available.</p>
-        <Link to="/workspace/company">Return to Company hub</Link>
+        <Link search={{ view: "overview", taskFilter: undefined }} to="/workspace/company">Return to Company hub</Link>
       </main>
     );
 
@@ -819,12 +819,14 @@ export function CompanyProjectPage({
           <p>You have read-only Project access. Project managers and Company admins manage ownership and settings.</p>
           {item.participationRole === "unassigned_legacy" ? <p>Project ownership is not assigned. A Company admin who is also a Project manager must confirm the owner.</p> : null}
         </aside>}
-        contextManagementLabel={canManageActiveProject || canManageExit || canConfirmProjectOwnership ? "Manage" : "Project info"}
+        contextManagementLabel="Members"
         contextTab={contextTab}
         currentUser={currentUser}
         item={item}
         messages={messages}
         messagePageStatus={messagePageStatus}
+        memberCount={projectMembers?.length}
+        projectMembers={projectMembers}
         notice={notice}
         onBusyActionChange={setBusyAction}
         onChannelNameChange={setChannelName}

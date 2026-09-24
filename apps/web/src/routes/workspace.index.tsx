@@ -12,7 +12,7 @@ function WorkspaceHome() {
   const releaseState = useReleaseConfigState()
 
   if (releaseState.status === 'loading') return <TrackLoader label="Loading your workspace" />
-  if (releaseState.config.companyModel) return <Navigate to="/workspace/company" replace />
+  if (releaseState.config.companyModel) return <Navigate to="/workspace/company" search={{ view: 'overview', taskFilter: undefined }} replace />
 
   return <WorkspacePage />
 }

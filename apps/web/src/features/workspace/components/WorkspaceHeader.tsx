@@ -1,7 +1,7 @@
 import type { ChangeEvent, RefObject } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
-import { Columns3, Menu, MessageSquare, MessageSquarePlus, Search } from 'lucide-react'
+import { Columns3, Menu, MessageSquare, MessageSquarePlus, PanelRightOpen, Search } from 'lucide-react'
 
 import { api } from '../../../../../../convex/_generated/api'
 import type { Doc, Id } from '../../../../../../convex/_generated/dataModel'
@@ -31,6 +31,7 @@ type WorkspaceHeaderProps = {
   onCreateGroup: () => void
   onFileSelected: (event: ChangeEvent<HTMLInputElement>) => void
   onInvite: () => void
+  onMembersOpen: () => void
   onMobileNavOpen: () => void
   onMobileRailOpen?: () => void
   onSearchToggle: () => void
@@ -50,8 +51,9 @@ export function WorkspaceHeader({
   onCreateGroup,
   onFileSelected,
   onInvite,
+  onMembersOpen,
   onMobileNavOpen,
-  onMobileRailOpen: _onMobileRailOpen,
+  onMobileRailOpen,
   onSearchToggle,
   view,
 }: WorkspaceHeaderProps) {
@@ -96,7 +98,7 @@ export function WorkspaceHeader({
         onClick={onMobileNavOpen}
         type="button"
       >
-        <Menu size={16} />
+        <Menu aria-hidden="true" size={16} />
       </Button>
       <div className="track-header-title">
         <h1>
@@ -117,14 +119,14 @@ export function WorkspaceHeader({
       {view === 'group' && activeProjectId && releaseConfig.tasks ? (
         <nav aria-label="Channel views" className="track-header-view-tabs">
           <span aria-current="page" className="active">
-            <MessageSquare size={13} /> Conversation
+            <MessageSquare aria-hidden="true" size={13} /> Conversation
           </span>
           <Link
             params={{ projectId: activeProjectId }}
             search={{ board: activeChannelBoard?.board._id, view: 'board' }}
             to="/workspace/projects/$projectId/tasks"
           >
-            <Columns3 size={13} /> Board <span
+            <Columns3 aria-hidden="true" size={13} /> Board <span
               className="track-header-tab-count"
               title={channelTasks && !channelTasks.isDone ? 'Partial count. Open the board to view all tasks.' : undefined}
             >{taskCountLabel}</span>
@@ -132,7 +134,12 @@ export function WorkspaceHeader({
         </nav>
       ) : null}
       <div className="track-header-actions">
-        <div className="track-header-members" aria-label="Channel members">
+        <button
+          aria-label={`Open channel members${headerMembers.length + extraHeaderMemberCount ? ` (${headerMembers.length + extraHeaderMemberCount})` : ''}`}
+          className="track-header-members"
+          onClick={onMembersOpen}
+          type="button"
+        >
           {headerMembers.map((item) => {
             const user = item.user
             return (
@@ -165,9 +172,20 @@ export function WorkspaceHeader({
               <span className="track-member-more">+{extraHeaderMemberCount}</span>
             </AvatarNameTooltip>
           ) : null}
-        </div>
+        </button>
         {view === 'group' ? (
           <>
+            {onMobileRailOpen ? (
+              <Button
+                aria-label="Open project controls"
+                className="icon-button track-mobile-rail-button"
+                onClick={onMobileRailOpen}
+                title="Open project controls"
+                type="button"
+              >
+                <PanelRightOpen aria-hidden="true" size={15} />
+              </Button>
+            ) : null}
             <Button
               aria-label="Search this chat"
               className="icon-button"
@@ -175,7 +193,7 @@ export function WorkspaceHeader({
               title="Search this chat (/)"
               type="button"
             >
-              <Search size={15} />
+              <Search aria-hidden="true" size={15} />
             </Button>
             <Input
               className="track-file-input"
@@ -203,7 +221,7 @@ export function WorkspaceHeader({
             onClick={onCreateGroup}
             type="button"
           >
-            <MessageSquarePlus size={14} />
+            <MessageSquarePlus aria-hidden="true" size={14} />
             New Channel
           </Button>
         ) : null}

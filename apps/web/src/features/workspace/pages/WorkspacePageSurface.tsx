@@ -1,11 +1,12 @@
 import type { CSSProperties, Dispatch, RefObject, SetStateAction } from 'react'
 
 import { Link, Navigate } from '@tanstack/react-router'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '#/components/ui/sheet'
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '#/components/ui/sheet'
 
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import { GroupChatPage } from '#/features/workspace/components/GroupChatPage'
 import { WorkspaceHeader } from '#/features/workspace/components/WorkspaceHeader'
+import { WorkspaceMembersDialog } from '#/features/workspace/components/WorkspaceMembersDialog'
 import { ProjectMemoryImportDialog } from '#/features/workspace/components/ProjectMemoryImportDialog'
 import { WorkspaceRail } from '#/features/workspace/components/WorkspaceRail'
 import { WorkspaceSidebar } from '#/features/workspace/components/WorkspaceSidebar'
@@ -87,6 +88,7 @@ type WorkspacePageSurfaceModel = {
     loadingOlderMessages: boolean
     logoutConfirmOpen: boolean
     memoryImportOpen: boolean
+    membersDialogOpen: boolean
     mentionIndex: number
     mentionOptionRefs: RefObject<Array<HTMLButtonElement | null>>
     mobileNavOpen: boolean
@@ -109,6 +111,7 @@ type WorkspacePageSurfaceModel = {
     onActionError: (error: unknown) => void
     onComposerChange: (value: string, cursor: number) => void
     onMemoryImportBusyChange: (busy: boolean) => void
+    onMembersOpen: () => void
     onOpenProjectSearch: () => void
     loadOlderMessages: () => void
     onSearchClose: () => void
@@ -119,6 +122,7 @@ type WorkspacePageSurfaceModel = {
     setChatSearchQuery: Dispatch<SetStateAction<string>>
     setEmojiPickerOpen: Dispatch<SetStateAction<boolean>>
     setMemoryImportOpen: Dispatch<SetStateAction<boolean>>
+    setMembersDialogOpen: Dispatch<SetStateAction<boolean>>
     setMentionIndex: Dispatch<SetStateAction<number>>
     setMobileNavOpen: Dispatch<SetStateAction<boolean>>
     setMobileRailOpen: Dispatch<SetStateAction<boolean>>
@@ -156,6 +160,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
   } = model
   const {
     activeGroup,
+    activeChannelMembers,
     activeProject,
     activeProjectMembers,
     currentTrackUser,
@@ -239,6 +244,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           onCreateGroup={dialogState.openGroupDialog}
           onFileSelected={(event) => void attachments.handleFileSelected(event)}
           onInvite={dialogState.openInviteDialog}
+          onMembersOpen={update.onMembersOpen}
           onMobileNavOpen={() => update.setMobileNavOpen(true)}
           onMobileRailOpen={() => update.setMobileRailOpen(true)}
           onSearchToggle={update.onSearchToggle}
@@ -272,7 +278,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           <div className="track-empty" role="status">
             <p className="mono-label m-0">Project unavailable</p>
             <p>This Project link is outdated or you no longer have access.</p>
-            <Link className="track-button track-button-primary" to="/workspace/company">
+            <Link className="track-button track-button-primary" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company">
               Return to Projects
             </Link>
           </div>
@@ -414,8 +420,8 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
       {route.view === 'group' ? (
         <Sheet onOpenChange={update.setMobileRailOpen} open={state.mobileRailOpen}>
           <SheetContent className="track-mobile-controls-sheet" side="right">
-          <SheetHeader><SheetTitle>Project controls</SheetTitle><SheetDescription>Company threads, references, and notifications for this Project.</SheetDescription></SheetHeader>
-            <div className="track-mobile-controls-content">
+            <SheetHeader><SheetTitle>Project controls</SheetTitle><SheetDescription>Company threads, references, and notifications for this Project.</SheetDescription></SheetHeader>
+            <SheetBody className="track-mobile-controls-content">
               <WorkspaceRail
                 activeGroup={activeGroup}
                 activeCompanyId={activeProject?.membership.companyId}
@@ -437,7 +443,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
                 userId={auth.trackUserId}
                 visibleMessages={presentation.visibleMessages}
               />
-            </div>
+            </SheetBody>
           </SheetContent>
         </Sheet>
       ) : null}
@@ -456,6 +462,16 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         total={presentation.projectSearchTotal}
         updating={projectSearchUpdating}
       />
+      {route.view === 'group' ? (
+        <WorkspaceMembersDialog
+          channelName={activeGroup?.name}
+          members={activeChannelMembers}
+          onInvite={dialogState.openInviteDialog}
+          onOpenChange={update.setMembersDialogOpen}
+          open={state.membersDialogOpen}
+          projectMemberRoleByUserId={projectMemberRoleByUserId}
+        />
+      ) : null}
       <WorkspaceDialogs
         activeGroupId={state.activeGroupId}
         busyAction={state.busyAction}

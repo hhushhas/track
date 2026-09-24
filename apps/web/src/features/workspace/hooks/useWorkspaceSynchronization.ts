@@ -189,25 +189,27 @@ export function useWorkspaceSynchronization({
   }, [navigate, projectItems, projects, routeGroupId, routeProjectId, view])
 
   useEffect(() => {
-    if (!sessionUser?.id) {
+    if (!sessionUser?.id && !devAuthEnabled) {
       setTrackUserId(null)
       return
     }
-    const cachedTrackUserId = getResolvedTrackUserId(sessionUser.id)
-    if (cachedTrackUserId) {
-      if (trackUserId !== cachedTrackUserId) setTrackUserId(cachedTrackUserId)
-      return
+    if (!devAuthEnabled && sessionUser?.id) {
+      const cachedTrackUserId = getResolvedTrackUserId(sessionUser.id)
+      if (cachedTrackUserId) {
+        if (trackUserId !== cachedTrackUserId) setTrackUserId(cachedTrackUserId)
+        return
+      }
+      if (trackUserId) return
     }
-    if (trackUserId) return
     const syncUser = devAuthEnabled
       ? syncDevUser()
       : syncCurrentUser({
-          googleSubject: sessionUser.id,
-          email: sessionUser.email,
-          displayName: sessionUser.name,
+          googleSubject: sessionUser!.id,
+          email: sessionUser!.email,
+          displayName: sessionUser!.name,
         })
     void syncUser.then(async (userId) => {
-      setResolvedTrackUserId(sessionUser.id, userId)
+      if (sessionUser?.id) setResolvedTrackUserId(sessionUser.id, userId)
       setTrackUserId(userId)
       await acceptPendingInvitations({ userId })
     }).catch(setActionError)

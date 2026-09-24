@@ -208,7 +208,6 @@ export function WorkspaceSidebar({
           aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
           aria-valuenow={navCollapsed ? SIDEBAR_COLLAPSED_WIDTH : navWidth}
           aria-valuetext={navCollapsed ? 'Collapsed' : `${navWidth} pixels`}
-          aria-valuestep={16}
           className="track-nav-resize-handle"
           onDoubleClick={() => onNavCollapsedChange((isCollapsed) => !isCollapsed)}
           onKeyDown={(event) => {
@@ -307,7 +306,7 @@ export function WorkspaceSidebar({
           </DropdownMenu>
         </div>
 
-        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" to="/workspace/company"><Building2 aria-hidden="true" className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Back to company</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
+        {releaseConfig.companyModel ? <div className="track-nav-secondary company-nav-link"><Link className="track-nav-item" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company"><Building2 aria-hidden="true" className="track-nav-icon" size={14} /><span className="track-nav-copy"><span className="track-nav-title">Back to company</span><span className="track-nav-meta">Relationships and shared work</span></span></Link></div> : null}
 
         {activeProject ? (
           <div className="track-nav-secondary track-project-navigation">
@@ -379,7 +378,7 @@ export function WorkspaceSidebar({
                   activeProps={{ className: 'track-nav-item active' }}
                   className="track-nav-item"
                   params={{ projectId: activeProject.project._id }}
-                  search={{ view: 'board' }}
+                  search={{ view: 'list' }}
                   title={navCollapsed ? 'Tasks' : undefined}
                   to="/workspace/projects/$projectId/tasks"
                 >

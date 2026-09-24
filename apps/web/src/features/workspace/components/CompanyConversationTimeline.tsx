@@ -208,6 +208,7 @@ export function CompanyConversationTimeline({
                 groups={forwardGroups}
                 identity={context}
                 item={threadItem.item}
+                isFlashing={threadItem.item.message._id === targetMessageId}
                 mentionGroups={mentionGroups}
                 onDeleteMessage={onDeleteMessage}
                 onForwardMessage={onForwardMessage}

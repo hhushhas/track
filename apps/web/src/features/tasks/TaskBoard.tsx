@@ -1,5 +1,5 @@
 import { useMutation } from 'convex/react'
-import { ArrowLeft, ArrowRight, Plus } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Inbox, MessageCircle, MoreHorizontal, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
@@ -7,7 +7,7 @@ import type { Id } from '../../../../../convex/_generated/dataModel'
 import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Button } from '#/components/ui/button'
 import { groupTaskViewsByState, type TaskBoardView, type TaskIdentity, type TaskListItem } from './task-types'
-import { DueChip, OriginCaption, PriorityGlyph, StateRing, TaskAvatar } from './ui/TaskVisuals'
+import { formatTaskCommentCount, formatTaskDateLong, PriorityPill, StateRing, TaskAvatar, TaskLabelPill } from './ui/TaskVisuals'
 
 export function taskMoveErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
@@ -111,21 +111,21 @@ export function TaskBoard({
             <div className="task-column-list">
               {columnTasks.map((item) => (
                 <article
-                  className="task-card"
+                  className={`task-card task-card-${state.category}`}
                   draggable
                   key={item.task._id}
                   onDragEnd={() => setDraggedTask(null)}
                   onDragStart={() => setDraggedTask(item.task._id)}
                 >
                   <button className="task-card-open" onClick={() => onOpen(item.task.publicKey)} type="button">
-                    <span className="task-card-idline"><span>{item.task.publicKey}</span><StateRing category={state.category} size="dense" /></span>
+                    <span className="task-card-idline"><span>{item.task.publicKey}</span><MoreHorizontal aria-hidden="true" size={15} /></span>
                     <strong>{item.task.title}</strong>
+                    <span className="task-card-tags"><PriorityPill priority={item.task.priority} /><TaskLabelPill labels={item.labels} /></span>
                     <span className="task-card-foot">
                       <TaskAvatar member={item.assignee} />
-                      <OriginCaption boardName={board.board.name} item={item} />
                       <span className="task-card-spacer" />
-                      <DueChip dueDate={item.task.dueDate} terminal={item.state?.category === 'completed' || item.state?.category === 'canceled'} />
-                      <PriorityGlyph priority={item.task.priority} />
+                      {item.task.dueDate ? <span className="task-card-date"><CalendarDays aria-hidden="true" size={14} />{formatTaskDateLong(item.task.dueDate)}</span> : null}
+                      <span aria-label={`${item.commentCount >= 101 ? 'More than 100' : item.commentCount} comments`} className="task-comment-count"><MessageCircle aria-hidden="true" size={14} />{formatTaskCommentCount(item.commentCount)}</span>
                     </span>
                   </button>
                   <div aria-label="Keyboard move controls" className="task-card-moves">
@@ -146,7 +146,7 @@ export function TaskBoard({
                   </div>
                 </article>
               ))}
-              {!columnTasks.length ? <p className="task-column-empty">Drop tasks here</p> : null}
+              {!columnTasks.length ? state.category === 'canceled' ? <div className="task-column-empty task-column-empty-detailed"><Inbox aria-hidden="true" size={28} /><strong>No canceled tasks</strong><span>Tasks moved here will appear for future reference.</span></div> : <p className="task-column-empty">Drop tasks here</p> : null}
             </div>
           </section>
         )

@@ -13,11 +13,14 @@ describe('application toast feedback', () => {
 
     appToast.error('Task not saved', 'Your draft is still available.')
     appToast.error('Task not saved', 'Your draft is still available.')
+    appToast.warning('Thread unfollowed', 'You will no longer receive notifications for new replies.')
 
     expect((await screen.findAllByText('Task not saved')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Thread unfollowed')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Your draft is still available.').length).toBeGreaterThan(0)
     expect(screen.getAllByLabelText('Dismiss notification').length).toBeGreaterThan(0)
     expect([...document.querySelectorAll('.track-toast')].filter((toast) => toast.textContent?.includes('Task not saved'))).toHaveLength(1)
+    expect(document.querySelector('.track-toast[data-type="warning"]')).not.toBeNull()
   })
 
   it('keeps navigation feedback best-effort when browser storage is unavailable', () => {

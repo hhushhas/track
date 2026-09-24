@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
@@ -46,7 +46,11 @@ export function TaskCreateDialog({
   const [saving, setSaving] = useState(false)
   const createIntentRef = useRef(crypto.randomUUID())
   const pendingRef = useRef(false)
-  const board = boards.find((item) => item.board._id === boardId)
+  const projectBoards = useMemo(
+    () => boards.filter((item) => item.board.projectId === projectId),
+    [boards, projectId],
+  )
+  const board = projectBoards.find((item) => item.board._id === boardId)
   const assignees = useQuery(
     api.tasks.listEligibleAssignees,
     open ? { projectId, groupId: board?.board.groupId, ...identity } : 'skip',
@@ -54,22 +58,31 @@ export function TaskCreateDialog({
   const labels = useQuery(api.taskLabels.list, open ? { projectId, ...identity } : 'skip')
 
   useEffect(() => {
-    if (!open || !boards.length) return
-    const initialBoard = boards.find((item) => item.board._id === initialBoardId)
-      ?? boards.find((item) => item.board.isDefault)
-      ?? boards[0]
+    if (!open) return
+    if (!projectBoards.length) {
+      setBoardId('')
+      setWorkflowStateId('')
+      return
+    }
+    const initialBoard = projectBoards.find((item) => item.board._id === initialBoardId)
+      ?? projectBoards.find((item) => item.board.isDefault)
+      ?? projectBoards[0]
     setBoardId(initialBoard.board._id)
     const initialState = initialBoard.states.find((item) => item._id === initialWorkflowStateId)
       ?? initialBoard.states.find((item) => item.isDefault)
       ?? initialBoard.states[0]
     setWorkflowStateId(initialState?._id ?? '')
-  }, [boards, initialBoardId, initialWorkflowStateId, open])
+  }, [initialBoardId, initialWorkflowStateId, open, projectBoards])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (pendingRef.current) return
     if (!title.trim()) {
       setError('Enter a task title.')
+      return
+    }
+    if (boardId && !board) {
+      setError('The selected board is no longer available for this project.')
       return
     }
     pendingRef.current = true
@@ -115,13 +128,13 @@ export function TaskCreateDialog({
           <label>Title<Input autoComplete="off" maxLength={180} name="title" onChange={(event) => { setTitle(event.target.value); if (error && event.target.value.trim()) setError('') }} placeholder="For example, review the launch checklist…" required value={title} /></label>
           <label>Description<Textarea autoComplete="off" maxLength={20_000} name="description" onChange={(event) => setDescription(event.target.value)} placeholder="Add the outcome, context, or acceptance criteria…" value={description} /></label>
           <div className="task-form-grid">
-            <label>Board<NativeSelect autoComplete="off" disabled={!boards.length} name="boardId" onChange={(event) => {
-              const nextBoard = boards.find((item) => item.board._id === event.target.value)
+            <label>Board<NativeSelect autoComplete="off" disabled={!projectBoards.length} name="boardId" onChange={(event) => {
+              const nextBoard = projectBoards.find((item) => item.board._id === event.target.value)
               setBoardId(event.target.value)
               setWorkflowStateId(nextBoard?.states.find((item) => item.isDefault)?._id ?? nextBoard?.states[0]?._id ?? '')
             }} value={boardId}>
-              {!boards.length ? <NativeSelectOption value="">Project tasks (create automatically)</NativeSelectOption> : null}
-              {boards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}
+              {!projectBoards.length ? <NativeSelectOption value="">Project tasks (create automatically)</NativeSelectOption> : null}
+              {projectBoards.map((item) => <NativeSelectOption key={item.board._id} value={item.board._id}>{item.board.name}</NativeSelectOption>)}
             </NativeSelect></label>
             <label>Status<NativeSelect aria-label="Task status" autoComplete="off" disabled={!board?.states.length} name="workflowStateId" onChange={(event) => setWorkflowStateId(event.target.value)} value={workflowStateId}>
               {board?.states.length ? board.states.map((item) => <NativeSelectOption key={item._id} value={item._id}>{item.name}</NativeSelectOption>) : <NativeSelectOption value="">No workflow status available</NativeSelectOption>}

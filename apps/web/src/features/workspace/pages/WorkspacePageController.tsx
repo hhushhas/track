@@ -104,6 +104,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   )
   const [voiceRecordingActive, setVoiceRecordingActive] = useState(false)
   const [memoryImportOpen, setMemoryImportOpen] = useState(false)
+  const [membersDialogOpen, setMembersDialogOpen] = useState(false)
   const navigation = useWorkspaceNavigation({ activeProjectId, setActiveGroupId, setMobileNavOpen })
   const { navigateToGroup, navigateToProject, navigateToProjectSettings } = navigation
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -353,7 +354,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
       void navigate({
         to: '/workspace/projects/$projectId/tasks',
         params: { projectId: activeProjectId },
-        search: { task: result.taskKey, view: 'all' },
+        search: { task: result.taskKey, view: 'list' },
       })
       return
     }
@@ -734,6 +735,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
           loadingOlderMessages,
           logoutConfirmOpen,
           memoryImportOpen,
+          membersDialogOpen,
           mentionIndex,
           mentionOptionRefs,
           mobileNavOpen,
@@ -764,6 +766,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
             setBusyAction(busy ? 'memory-import' : null)
             if (busy) setUiError(null)
           },
+          onMembersOpen: () => setMembersDialogOpen(true),
           onOpenProjectSearch: openProjectSearch,
           onSearchClose: () => {
             setChatSearchQuery('')
@@ -780,6 +783,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
           setComposerCursor,
           setEmojiPickerOpen,
           setMemoryImportOpen,
+          setMembersDialogOpen,
           setMentionIndex,
           setMobileNavOpen,
           setMobileRailOpen,
