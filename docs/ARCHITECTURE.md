@@ -28,6 +28,17 @@ membership, Project, Channel, and thread. Raw selected files are not persisted
 as text drafts. Private image previews are generated server-side with known
 dimensions; originals remain available when a preview cannot be generated.
 
+## Company overview activity
+
+The Company overview reads only Projects visible to the represented Company
+membership. Its activity feed merges task and message activity with a small
+allowlist of meaningful Project audit actions. Audit history can contain many
+operational events, so each supported action uses the
+`auditEvents.by_project_action_created_at` index to read at most five rows per
+Project before the feed is sorted and limited. This adds an index instead of a
+new stored feed flag: existing audit rows remain readable without a backfill.
+Project and Channel visibility checks still apply before a row reaches the UI.
+
 ## Company exit archives
 
 Exit preparation captures an immutable cutoff in bounded, resumable batches.

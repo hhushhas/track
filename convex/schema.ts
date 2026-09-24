@@ -529,6 +529,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_project_created_at', ['projectId', 'createdAt'])
+    .index('by_project_action_created_at', ['projectId', 'action', 'createdAt'])
     .index('by_company_created_at', ['companyId', 'createdAt'])
     .index('by_relationship_created_at', ['relationshipId', 'createdAt'])
     .index('by_group_created_at', ['groupId', 'createdAt'])

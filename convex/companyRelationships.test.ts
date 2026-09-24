@@ -46,6 +46,12 @@ describe('Company model authorization and lifecycle', () => {
         companyId, projectId, actorId: userId, entityType: 'project', entityId: String(projectId),
         action: 'company_project.created', createdAt: now - 1_000,
       })
+      for (let index = 0; index < 4; index += 1) {
+        await ctx.db.insert('auditEvents', {
+          companyId, projectId, actorId: userId, entityType: 'project', entityId: String(projectId),
+          action: 'project.updated', createdAt: now - 900 + index * 100,
+        })
+      }
       for (let index = 0; index < 110; index += 1) {
         await ctx.db.insert('auditEvents', {
           companyId, projectId, actorId: userId, entityType: 'project', entityId: String(projectId),
@@ -64,7 +70,9 @@ describe('Company model authorization and lifecycle', () => {
     expect(overview.recentActivity).toEqual(expect.arrayContaining([
       expect.objectContaining({ action: 'Created project', preview: 'activity-owner created the project Patient Portal.' }),
     ]))
-    expect(overview.recentActivity).toHaveLength(1)
+    expect(overview.recentActivity.map((entry) => entry.action)).toEqual([
+      'Updated project', 'Updated project', 'Updated project', 'Updated project', 'Created project',
+    ])
     expect(overview.projects.map((project) => project.name)).toEqual(['Patient Portal'])
     expect(await asUser(t, userId).query(api.companyOverview.listTasks, { companyId })).toEqual([])
   })

@@ -302,11 +302,10 @@ export const get = query({
         Promise.all(['backlog', 'unstarted', 'started', 'completed', 'canceled'].map((category) => ctx.db.query('taskWorkflowStates').withIndex('by_project_category', (q) => q.eq('projectId', project._id).eq('category', category as 'backlog')).collect())).then((groups) => groups.flat()),
         ctx.db.query('taskActivities').withIndex('by_project_created_at', (q) => q.eq('projectId', project._id)).order('desc').take(100),
         ctx.db.query('messages').withIndex('by_project_created_at', (q) => q.eq('projectId', project._id)).order('desc').take(100),
-        ctx.db.query('auditEvents')
-          .withIndex('by_project_created_at', (q) => q.eq('projectId', project._id))
-          .filter((q) => q.or(...companyFeedAuditActions.map((action) => q.eq(q.field('action'), action))))
+        Promise.all(companyFeedAuditActions.map((action) => ctx.db.query('auditEvents')
+          .withIndex('by_project_action_created_at', (q) => q.eq('projectId', project._id).eq('action', action))
           .order('desc')
-          .take(5),
+          .take(5))).then((groups) => groups.flat().sort((left, right) => right.createdAt - left.createdAt).slice(0, 5)),
         ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) => q.eq('projectMemberId', representedMembership._id).eq('status', 'active')).collect(),
       ])
       const visibleGroupIds = new Set(groupMemberships.map((membership) => String(membership.groupId)))
