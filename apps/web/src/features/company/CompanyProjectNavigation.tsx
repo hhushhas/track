@@ -31,6 +31,7 @@ import "./company-project-navigation.css";
 import "./company-surfaces.css";
 import { authClient } from "#/lib/auth-client";
 import { NativeSelect, NativeSelectOption } from "#/components/ui/native-select";
+import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "#/components/ui/sheet";
 import ThemeToggle from "#/components/ThemeToggle";
 import {
   SIDEBAR_COLLAPSE_THRESHOLD,
@@ -127,6 +128,7 @@ export function CompanyProjectNavigation({
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [resizing, setResizing] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileCompanyNavigation, setMobileCompanyNavigation] = useState(false);
   const navigationRef = useRef<HTMLElement>(null);
   const session = authClient.useSession();
   const companies = useQuery(api.companies.listMine, {});
@@ -200,13 +202,15 @@ export function CompanyProjectNavigation({
   }, [activeArea]);
 
   useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileMenuOpen(false);
+    const viewport = window.matchMedia("(max-width: 860px)");
+    const update = () => {
+      setMobileCompanyNavigation(viewport.matches);
+      if (!viewport.matches) setMobileMenuOpen(false);
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileMenuOpen]);
+    update();
+    viewport.addEventListener("change", update);
+    return () => viewport.removeEventListener("change", update);
+  }, []);
 
   const renderedWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
 
@@ -251,11 +255,56 @@ export function CompanyProjectNavigation({
     };
   }, [resizing]);
 
+  const companySwitcher = companies && companies.length > 1 && onCompanyChange ? (
+    <label className="company-project-nav-switcher">
+      <span>Representing</span>
+      <NativeSelect
+        aria-label="Representing Company"
+        onChange={(event) => {
+          const selectedCompany = companies.find((item) => item.company?._id === event.target.value)?.company;
+          if (selectedCompany) {
+            onCompanyChange(selectedCompany._id);
+            setMobileMenuOpen(false);
+          }
+        }}
+        value={actingCompanyId ?? ""}
+      >
+        {companies.flatMap((item) => item.company ? [
+          <NativeSelectOption key={item.company._id} value={item.company._id}>
+            {item.company.displayName}
+          </NativeSelectOption>,
+        ] : [])}
+      </NativeSelect>
+    </label>
+  ) : null;
+  const companyLinks = companyNavigation ? (
+    <div className="company-project-nav-custom" onClickCapture={(event) => {
+      if (event.target instanceof Element && event.target.closest('a[href]')) setMobileMenuOpen(false);
+    }}>{companyNavigation}</div>
+  ) : null;
+  const companySheetEnabled = activeArea === "company" && mobileCompanyNavigation && Boolean(companyNavigation);
+  const accountControls = (
+    <footer className="company-project-nav-profile">
+      <Link aria-label="Open profile settings" className="company-project-nav-profile-link" title="Profile settings" to="/profile">
+        <span className="company-project-nav-profile-icon" aria-hidden="true"><UserRound size={14} /></span>
+        <span className="company-project-nav-copy">
+          <strong>{session.data?.user.name ?? "Your profile"}</strong>
+          <small>{session.data?.user.email ?? "Account settings"}</small>
+        </span>
+      </Link>
+      <ThemeToggle showLabel={companySheetEnabled || !collapsed} />
+      <button aria-label="Log out" className="company-project-nav-profile-logout" onClick={() => void handleSignOut()} title="Log out" type="button">
+        <LogOut aria-hidden="true" size={14} />
+        <span>Log out</span>
+      </button>
+    </footer>
+  );
+
   return (
+    <>
     <aside
       aria-label="Company and Project navigation"
       className={navClassName}
-      data-mobile-open={mobileMenuOpen}
       ref={navigationRef}
     >
       <div
@@ -359,37 +408,9 @@ export function CompanyProjectNavigation({
         </span>
       </Link>
 
-      {companies && companies.length > 1 && onCompanyChange ? (
-        <label className="company-project-nav-switcher">
-          <span>Representing</span>
-          <NativeSelect
-            aria-label="Representing Company"
-            onChange={(event) => {
-              const selectedCompany = companies.find(
-                (item) => item.company?._id === event.target.value,
-              )?.company;
-              if (selectedCompany) onCompanyChange(selectedCompany._id);
-            }}
-            value={actingCompanyId ?? ""}
-          >
-            {companies.flatMap((item) =>
-              item.company
-                ? [
-                    <NativeSelectOption key={item.company._id} value={item.company._id}>
-                      {item.company.displayName}
-                    </NativeSelectOption>,
-                  ]
-                : [],
-            )}
-          </NativeSelect>
-        </label>
-      ) : null}
+      {!companySheetEnabled ? companySwitcher : null}
 
-      {companyNavigation ? (
-        <div className="company-project-nav-custom" id="company-mobile-navigation" onClickCapture={(event) => {
-          if (event.target instanceof Element && event.target.closest('a[href]')) setMobileMenuOpen(false);
-        }}>{companyNavigation}</div>
-      ) : null}
+      {!companySheetEnabled ? companyLinks : null}
 
       {activeProject && !activeProjectItem && projects !== undefined ? (
         <p className="company-project-nav-warning">
@@ -531,33 +552,23 @@ export function CompanyProjectNavigation({
         </div>
       ) : null}
 
-      <footer className="company-project-nav-profile">
-        <Link
-          aria-label="Open profile settings"
-          className="company-project-nav-profile-link"
-          title="Profile settings"
-          to="/profile"
-        >
-          <span className="company-project-nav-profile-icon" aria-hidden="true">
-            <UserRound size={14} />
-          </span>
-          <span className="company-project-nav-copy">
-            <strong>{session.data?.user.name ?? "Your profile"}</strong>
-            <small>{session.data?.user.email ?? "Account settings"}</small>
-          </span>
-        </Link>
-        <ThemeToggle showLabel={!collapsed} />
-        <button
-          aria-label="Log out"
-          className="company-project-nav-profile-logout"
-          onClick={() => void handleSignOut()}
-          title="Log out"
-          type="button"
-        >
-          <LogOut aria-hidden="true" size={14} />
-          <span>Log out</span>
-        </button>
-      </footer>
+      {!companySheetEnabled ? accountControls : null}
     </aside>
+    {companySheetEnabled ? (
+      <Sheet onOpenChange={setMobileMenuOpen} open={mobileMenuOpen}>
+        <SheetContent className="company-mobile-navigation-sheet" id="company-mobile-navigation" side="left">
+          <SheetHeader>
+            <SheetTitle>Company workspace</SheetTitle>
+            <SheetDescription>{actingCompany?.company?.displayName ?? "Choose a Company"}</SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            {companySwitcher}
+            {companyLinks}
+          </SheetBody>
+          {accountControls}
+        </SheetContent>
+      </Sheet>
+    ) : null}
+    </>
   );
 }

@@ -1294,8 +1294,8 @@
   padding: 12px 14px;
 }
 
-/* Responsive overview composition. Desktop navigation keeps the shared system
-   styling; on smaller screens the same navigation becomes a compact top rail. */
+/* On narrow screens, the stable company context stays in the rail while the
+   workspace links and account controls move into the shared mobile sheet. */
 @media (max-width: 860px) {
   .company-reference-shell .company-project-nav,
   .company-reference-shell .company-project-nav.is-collapsed {
@@ -1304,7 +1304,7 @@
     top: 0;
     display: grid;
     width: 100%;
-    grid-template-columns: minmax(0, 1fr) minmax(150px, .8fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px 10px;
     border-bottom: 1px solid var(--hairline);
     background: var(--sidebar);
@@ -1332,7 +1332,7 @@
   .company-reference-shell .company-project-nav.is-collapsed .company-project-nav-company {
     display: grid;
     min-width: 0;
-    min-height: 42px;
+    min-height: 44px;
     grid-template-columns: 32px minmax(0, 1fr);
     gap: 8px;
     margin: 0;
@@ -2055,8 +2055,8 @@
 @media (max-width: 860px) {
   .company-reference-shell .company-project-nav-mobile-toggle {
     display: inline-flex;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     align-items: center;
     justify-content: center;
     margin-left: auto;
@@ -2072,22 +2072,10 @@
     width: 100%;
   }
 
-  .company-reference-shell .company-project-nav[data-mobile-open='false'] .company-project-nav-custom,
-  .company-reference-shell .company-project-nav[data-mobile-open='false'] .company-project-nav-switcher,
-  .company-reference-shell .company-project-nav[data-mobile-open='false'] .company-project-nav-profile {
+  .company-reference-shell .company-project-nav.is-company-workspace .company-project-nav-switcher,
+  .company-reference-shell .company-project-nav.is-company-workspace .company-project-nav-custom,
+  .company-reference-shell .company-project-nav.is-company-workspace .company-project-nav-profile {
     display: none;
   }
 
-  .company-reference-shell .company-project-nav[data-mobile-open='true'] .company-project-nav-custom nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 8px;
-    overflow: visible;
-  }
-
-  .company-reference-shell .company-project-nav[data-mobile-open='true'] .company-project-nav-custom nav > a,
-  .company-reference-shell .company-project-nav[data-mobile-open='true'] .company-project-nav-custom nav > button {
-    min-width: 0;
-    width: 100%;
-  }
 }

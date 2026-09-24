@@ -1055,3 +1055,44 @@
     transition-duration: 1ms !important;
   }
 }
+
+.company-mobile-navigation-sheet {
+  --track-drawer-width: 320px;
+  --track-drawer-body-padding: 16px;
+  --track-drawer-mobile-body-padding: 16px;
+}
+
+.company-mobile-navigation-sheet .company-project-nav-switcher {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.company-mobile-navigation-sheet .company-project-nav-custom nav {
+  display: grid;
+  gap: 5px;
+}
+
+.company-mobile-navigation-sheet .company-project-nav-custom nav > a,
+.company-mobile-navigation-sheet .company-project-nav-custom nav > button {
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.company-mobile-navigation-sheet .company-project-nav-profile {
+  flex: 0 0 auto;
+  margin-top: auto;
+  border-top: 1px solid var(--hairline);
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+}
+
+.company-mobile-navigation-sheet .company-project-nav-profile-link,
+.company-mobile-navigation-sheet .company-project-nav-profile-logout,
+.company-mobile-navigation-sheet .company-project-nav-profile .track-theme-toggle {
+  min-height: 44px;
+}
+
+.track-ui-v2 .company-mobile-navigation-sheet .track-drawer-close {
+  width: 44px;
+  height: 44px;
+}
