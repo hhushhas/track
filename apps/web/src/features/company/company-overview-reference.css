@@ -733,7 +733,8 @@
 .company-dashboard-partners li em { border-radius: 999px; background: #eaf8f1; color: #14945f; padding: 6px 9px; font-size: 10px; font-style: normal; }
 .company-dashboard-partners .company-quiet-empty button { border: 0; background: transparent; color: var(--accent-strong); cursor: pointer; font: inherit; font-size: 11px; }
 .company-dashboard-chart-panel { min-width: 0; }
-.company-dashboard-chart-scroll { min-width: 0; }
+.company-dashboard-chart-scroll { min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; scrollbar-width: thin; }
+.company-dashboard-recharts { width: 100%; height: 220px; }
 .company-dashboard-chart-filters { display: flex; gap: 6px; }
 .company-dashboard-chart-filters select { min-height: 32px; border: 1px solid var(--company-ref-border-strong); border-radius: 7px; background: var(--paper); color: var(--company-ref-text); padding: 0 8px; font: inherit; font-size: 10px; }
 .company-dashboard-chart { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(26px, 1fr)); gap: 8px; min-height: 165px; align-items: end; padding: 16px 4px 0; }
@@ -2078,4 +2079,39 @@
     display: none;
   }
 
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel .company-dashboard-panel-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel .company-dashboard-chart-filters {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel {
+  height: auto;
+  min-height: 392px;
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel:has(.company-dashboard-chart-empty) {
+  min-height: 0;
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel .company-dashboard-chart-filters [data-slot='native-select-wrapper'] {
+  width: min(144px, calc(50% - 4px));
+  flex: 0 1 144px;
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel .company-dashboard-chart-filters [data-slot='native-select'] {
+  width: 100%;
+  min-width: 0;
 }
