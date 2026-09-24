@@ -1,6 +1,6 @@
 # Company Workspace review
 
-The screenshots below show the running web app at 1600 × 900 in dark mode, using a disposable local Convex fixture. They are not the supplied design references. The fixture has one company and one new project, so screens with no tasks or relationships show real empty states.
+The screenshots show the running web app in dark mode with a disposable local Convex fixture. Desktop captures use a 1600 × 900 viewport; mobile captures use 390 × 844. They are not the supplied design references. The fixture has one company and one project, so screens without tasks or relationships show real empty states.
 
 | Screen | Screenshot |
 | --- | --- |
@@ -12,7 +12,10 @@ The screenshots below show the running web app at 1600 × 900 in dark mode, usin
 | People | [Open screenshot](assets/company-workspace/people.png) |
 | Settings | [Open screenshot](assets/company-workspace/settings.png) |
 | Mobile Overview, 390 px | [Open screenshot](assets/company-workspace/overview-mobile.png) |
+| Mobile navigation open | [Open screenshot](assets/company-workspace/overview-mobile-navigation.png) |
 
 The local Company Tasks route loaded after the `companyOverview:listTasks` function was deployed to the isolated backend. Every captured route had zero horizontal page overflow, and the browser reported zero console or page errors during this capture. This does not prove that an existing signed-in session against the shared development deployment has recovered.
 
-The visual review still shows work to do. Recent activity exposes the raw `company_project.created` event name, the empty workload and chart cards use more height than their content needs, and the mobile navigation takes a large part of the first screen. The screenshots show the current behavior so the team can review these gaps without treating fixture data as production data.
+Recent activity uses a plain-language description for the supported project audit event. With no assigned tasks, the workload card stays compact; with no task creation or completion, the chart shows an empty-state message. On narrow screens, Company navigation starts compact and opens from a labeled button. The mobile menu closes with Escape. A 320–1600 px viewport sweep found no page overflow.
+
+These checks do not prove every role, failure state, dialog, drawer, or shared-development session. The Company Workspace remains under review until those paths are exercised with representative data and permissions.

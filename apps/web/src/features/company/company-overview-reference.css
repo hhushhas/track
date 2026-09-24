@@ -1906,6 +1906,36 @@
   align-content: start;
 }
 
+.company-reference-shell .company-overview-live .company-dashboard-workload-panel:has(.company-quiet-empty) {
+  align-self: start;
+  min-height: 0;
+}
+
+.company-reference-shell .company-overview-live .company-dashboard-chart-panel:has(.company-dashboard-chart-empty) {
+  align-self: start;
+  height: auto;
+  min-height: 0;
+}
+
+.company-dashboard-chart-empty {
+  display: grid;
+  min-height: 106px;
+  align-content: center;
+  justify-items: center;
+  gap: 5px;
+  margin-top: 16px;
+  border: 1px dashed var(--company-ref-border);
+  border-radius: 8px;
+  color: var(--company-ref-muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+.company-dashboard-chart-empty strong {
+  color: var(--company-ref-text);
+  font-size: 13px;
+}
+
 .company-reference-shell .company-overview-live .company-dashboard-workload-panel > .company-dashboard-panel-heading {
   margin-bottom: 4px;
 }
@@ -2015,5 +2045,49 @@
     margin-top: 12px;
     border-top: 1px solid var(--hairline);
     padding-top: 10px;
+  }
+}
+
+.company-project-nav-mobile-toggle {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .company-reference-shell .company-project-nav-mobile-toggle {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink);
+  }
+
+  .company-reference-shell .company-project-nav-company,
+  .company-reference-shell .company-project-nav.is-collapsed .company-project-nav-company {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .company-reference-shell .company-project-nav[data-mobile-open='false'] .company-project-nav-custom,
+  .company-reference-shell .company-project-nav[data-mobile-open='false'] .company-project-nav-switcher,
+  .company-reference-shell .company-project-nav[data-mobile-open='false'] .company-project-nav-profile {
+    display: none;
+  }
+
+  .company-reference-shell .company-project-nav[data-mobile-open='true'] .company-project-nav-custom nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 8px;
+    overflow: visible;
+  }
+
+  .company-reference-shell .company-project-nav[data-mobile-open='true'] .company-project-nav-custom nav > a,
+  .company-reference-shell .company-project-nav[data-mobile-open='true'] .company-project-nav-custom nav > button {
+    min-width: 0;
+    width: 100%;
   }
 }

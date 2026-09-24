@@ -106,6 +106,7 @@ export function CompanyOverviewDashboard({ activeCompanyId, companyName, createP
   const shouldUseInitialOverview = rangeDays === 7 && chartProjectId === ''
   const rangedOverview = useQuery(api.companyOverview.get, shouldUseInitialOverview ? 'skip' : { companyId: activeCompanyId, days: rangeDays, projectId: chartProjectId || undefined })
   const trend = (shouldUseInitialOverview ? overview?.activityTrend : rangedOverview?.activityTrend) ?? []
+  const hasTaskActivity = trend.some((point) => point.created > 0 || point.completed > 0)
   const maxTrend = Math.max(1, ...trend.flatMap((point) => [point.created, point.completed]))
   const workload = overview?.workload ?? []
   const maxWorkload = Math.max(1, ...workload.map((owner) => owner.open))
@@ -165,7 +166,66 @@ export function CompanyOverviewDashboard({ activeCompanyId, companyName, createP
     <div className="company-dashboard-bottom-grid company-dashboard-bottom-grid-live">
       <section aria-label="Workload by owner" className="company-dashboard-panel company-dashboard-workload-panel"><div className="company-dashboard-panel-heading"><div><h2>Workload by owner</h2><p>Open and overdue tasks across projects</p></div><UsersRound aria-hidden="true" size={18} /></div>{!overview ? <div aria-label="Loading workload" className="company-dashboard-skeleton" role="status" /> : workload.length === 0 ? <div className="company-quiet-empty"><strong>No assigned work yet</strong><span>Workload will appear when tasks are assigned.</span></div> : <ol className="company-dashboard-workload-list">{workload.map((owner) => <li key={owner.id}><span aria-hidden="true" className="company-dashboard-workload-avatar">{owner.initials}</span><div className="company-dashboard-workload-copy"><strong>{owner.name}</strong><span>{owner.open} open · {owner.completed} completed</span><div aria-hidden="true" className="company-dashboard-workload-track"><i style={{ width: `${(owner.open / maxWorkload) * 100}%` }} /></div></div><span className="company-dashboard-workload-meta"><strong>{owner.open}</strong><small>{owner.overdue ? `${owner.overdue} overdue` : 'On track'}</small></span></li>)}</ol>}</section>
 
-      <section className="company-dashboard-panel company-dashboard-chart-panel"><div className="company-dashboard-panel-heading"><div><h2>Activity overview</h2><p>Task creation vs. completion across all projects</p></div><div className="company-dashboard-chart-filters"><NativeSelect aria-label="Activity range" id="overview-range" onChange={(event) => setRangeDays(Number(event.target.value) as 7 | 30 | 90)} value={String(rangeDays)}><NativeSelectOption value="7">Last 7 days</NativeSelectOption><NativeSelectOption value="30">Last 30 days</NativeSelectOption><NativeSelectOption value="90">Last 90 days</NativeSelectOption></NativeSelect><NativeSelect aria-label="Activity project" id="overview-project" onChange={(event) => setChartProjectId(event.target.value as Id<'projects'> | '')} value={chartProjectId}><NativeSelectOption value="">All projects</NativeSelectOption>{uniqueProjects.map((project) => <NativeSelectOption key={project.project._id} value={project.project._id}>{project.project.name}</NativeSelectOption>)}</NativeSelect></div></div><div className="company-dashboard-chart-scroll" ref={chartScrollRef}><div aria-label={`Task creation and completion by day${hoveredChartDate ? `; ${chartDateLabel(hoveredChartDate)} selected` : ''}`} className="company-dashboard-chart" data-range={rangeDays} onBlur={() => setHoveredChartDate(null)} onFocus={() => { keyboardChartNavigation.current = true; setHoveredChartDate((current) => current ?? trend.at(-1)?.date ?? null) }} onKeyDown={(event) => { if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return; event.preventDefault(); keyboardChartNavigation.current = true; const currentIndex = Math.max(0, trend.findIndex((point) => point.date === hoveredChartDate)); const nextIndex = Math.min(trend.length - 1, Math.max(0, currentIndex + (event.key === 'ArrowRight' ? 1 : -1))); setHoveredChartDate(trend[nextIndex]?.date ?? null) }} role="group" style={{ gridTemplateColumns: `repeat(${Math.max(trend.length, 1)}, minmax(0, 1fr))` }} tabIndex={0}><div className="company-dashboard-chart-grid" />{trend.map((point) => <div className="company-dashboard-chart-day" data-chart-date={point.date} key={point.date} onMouseEnter={() => { keyboardChartNavigation.current = false; setHoveredChartDate(point.date) }} onMouseLeave={() => setHoveredChartDate(null)}><div className="company-dashboard-bars"><i className="created" style={{ height: `${(point.created / maxTrend) * 100}%` }} /><i className="completed" style={{ height: `${(point.completed / maxTrend) * 100}%` }} /></div><span>{dayLabel(point.date)}</span>{hoveredChartDate === point.date ? <div className="company-dashboard-chart-tooltip" role="status"><strong>{chartDateLabel(point.date)}</strong><span><i className="created" />Created <b>{point.created}</b></span><span><i className="completed" />Completed <b>{point.completed}</b></span></div> : null}</div>)}</div></div><div className="company-dashboard-chart-legend"><span><i className="created" />Created</span><span><i className="completed" />Completed</span></div></section>
+      <section className="company-dashboard-panel company-dashboard-chart-panel">
+        <div className="company-dashboard-panel-heading">
+          <div><h2>Activity overview</h2><p>Task creation vs. completion across all projects</p></div>
+          <div className="company-dashboard-chart-filters">
+            <NativeSelect aria-label="Activity range" id="overview-range" onChange={(event) => setRangeDays(Number(event.target.value) as 7 | 30 | 90)} value={String(rangeDays)}>
+              <NativeSelectOption value="7">Last 7 days</NativeSelectOption>
+              <NativeSelectOption value="30">Last 30 days</NativeSelectOption>
+              <NativeSelectOption value="90">Last 90 days</NativeSelectOption>
+            </NativeSelect>
+            <NativeSelect aria-label="Activity project" id="overview-project" onChange={(event) => setChartProjectId(event.target.value as Id<'projects'> | '')} value={chartProjectId}>
+              <NativeSelectOption value="">All projects</NativeSelectOption>
+              {uniqueProjects.map((project) => <NativeSelectOption key={project.project._id} value={project.project._id}>{project.project.name}</NativeSelectOption>)}
+            </NativeSelect>
+          </div>
+        </div>
+        {!overview || (!shouldUseInitialOverview && !rangedOverview) ? (
+          <div aria-label="Loading activity overview" className="company-dashboard-skeleton" role="status" />
+        ) : !hasTaskActivity ? (
+          <div className="company-dashboard-chart-empty" role="status">
+            <strong>No task activity in this period</strong>
+            <span>Created and completed tasks will appear here.</span>
+          </div>
+        ) : (
+          <>
+            <div className="company-dashboard-chart-scroll" ref={chartScrollRef}>
+              <div
+                aria-label={`Task creation and completion by day${hoveredChartDate ? `; ${chartDateLabel(hoveredChartDate)} selected` : ''}`}
+                className="company-dashboard-chart"
+                data-range={rangeDays}
+                onBlur={() => setHoveredChartDate(null)}
+                onFocus={() => { keyboardChartNavigation.current = true; setHoveredChartDate((current) => current ?? trend.at(-1)?.date ?? null) }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+                  event.preventDefault()
+                  keyboardChartNavigation.current = true
+                  const currentIndex = Math.max(0, trend.findIndex((point) => point.date === hoveredChartDate))
+                  const nextIndex = Math.min(trend.length - 1, Math.max(0, currentIndex + (event.key === 'ArrowRight' ? 1 : -1)))
+                  setHoveredChartDate(trend[nextIndex]?.date ?? null)
+                }}
+                role="group"
+                style={{ gridTemplateColumns: `repeat(${Math.max(trend.length, 1)}, minmax(0, 1fr))` }}
+                tabIndex={0}
+              >
+                <div className="company-dashboard-chart-grid" />
+                {trend.map((point) => (
+                  <div className="company-dashboard-chart-day" data-chart-date={point.date} key={point.date} onMouseEnter={() => { keyboardChartNavigation.current = false; setHoveredChartDate(point.date) }} onMouseLeave={() => setHoveredChartDate(null)}>
+                    <div className="company-dashboard-bars">
+                      <i className="created" style={{ height: `${(point.created / maxTrend) * 100}%` }} />
+                      <i className="completed" style={{ height: `${(point.completed / maxTrend) * 100}%` }} />
+                    </div>
+                    <span>{dayLabel(point.date)}</span>
+                    {hoveredChartDate === point.date ? <div className="company-dashboard-chart-tooltip" role="status"><strong>{chartDateLabel(point.date)}</strong><span><i className="created" />Created <b>{point.created}</b></span><span><i className="completed" />Completed <b>{point.completed}</b></span></div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="company-dashboard-chart-legend"><span><i className="created" />Created</span><span><i className="completed" />Completed</span></div>
+          </>
+        )}
+      </section>
 
       <div className="company-dashboard-utility-column"><section className="company-dashboard-panel company-dashboard-partners"><div className="company-dashboard-panel-heading"><div><h2>Connected partners</h2><p>Active company relationships</p></div></div>{overview?.partners.length ? <ul>{overview.partners.map((partner) => <li key={partner.id}><span className="company-dashboard-partner-avatar">{partner.initials}</span><span><strong>{partner.name}</strong><small>{partner.relationshipName}</small></span><em>{partner.status}</em></li>)}</ul> : <div className="company-quiet-empty"><strong>No connected partners yet</strong>{isAdmin ? <button onClick={() => openQuickAction('partner')} type="button">Add partner</button> : null}</div>}</section>{isAdmin ? <section className="company-dashboard-panel company-dashboard-actions"><div className="company-dashboard-panel-heading"><div><h2>Quick actions</h2><p>Keep the team moving</p></div></div><div className="company-dashboard-action-grid"><button onClick={() => openQuickAction('project')} type="button"><Plus aria-hidden="true" size={20} /><span><strong>New project</strong><small>Start a new initiative</small></span></button><button onClick={() => openQuickAction('invite')} type="button"><UsersRound aria-hidden="true" size={20} /><span><strong>Invite people</strong><small>Add team members</small></span></button><button onClick={() => openQuickAction('partner')} type="button"><Handshake aria-hidden="true" size={20} /><span><strong>Add partner</strong><small>Connect a company</small></span></button>{onCreateTaskRequest ? <button onClick={() => openQuickAction('task')} type="button"><CheckSquare2 aria-hidden="true" size={20} /><span><strong>Create task</strong><small>Turn an idea into action</small></span></button> : null}</div></section> : null}</div>
     </div>

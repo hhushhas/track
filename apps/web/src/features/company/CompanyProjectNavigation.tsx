@@ -10,7 +10,9 @@ import {
   ListTodo,
   MessagesSquare,
   LogOut,
+  Menu,
   UserRound,
+  X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
@@ -124,6 +126,7 @@ export function CompanyProjectNavigation({
   const [width, setWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [resizing, setResizing] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigationRef = useRef<HTMLElement>(null);
   const session = authClient.useSession();
   const companies = useQuery(api.companies.listMine, {});
@@ -196,6 +199,15 @@ export function CompanyProjectNavigation({
     if (activeArea === "company") setCollapsed(false);
   }, [activeArea]);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileMenuOpen]);
+
   const renderedWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
 
   useLayoutEffect(() => {
@@ -243,6 +255,7 @@ export function CompanyProjectNavigation({
     <aside
       aria-label="Company and Project navigation"
       className={navClassName}
+      data-mobile-open={mobileMenuOpen}
       ref={navigationRef}
     >
       <div
@@ -303,6 +316,18 @@ export function CompanyProjectNavigation({
           <img alt="" height={22} src="/track-mark.svg" width={28} />
           <span>Track</span>
         </Link>
+        {activeArea === "company" && companyNavigation ? (
+          <button
+            aria-controls="company-mobile-navigation"
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? "Close Company navigation" : "Open Company navigation"}
+            className="company-project-nav-mobile-toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            type="button"
+          >
+            {mobileMenuOpen ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
+          </button>
+        ) : null}
       </header>
 
       <Link
@@ -361,7 +386,9 @@ export function CompanyProjectNavigation({
       ) : null}
 
       {companyNavigation ? (
-        <div className="company-project-nav-custom">{companyNavigation}</div>
+        <div className="company-project-nav-custom" id="company-mobile-navigation" onClickCapture={(event) => {
+          if (event.target instanceof Element && event.target.closest('a[href]')) setMobileMenuOpen(false);
+        }}>{companyNavigation}</div>
       ) : null}
 
       {activeProject && !activeProjectItem && projects !== undefined ? (

@@ -8,6 +8,7 @@ import { requireActiveCompanyMembership } from './lib/companyPolicy'
 import { createTaskRequestScope } from './lib/taskPolicy'
 import { requireTaskAccess } from './lib/taskPolicy'
 import { deriveProjectTaskMetrics, isCompletedWorkflowState } from './lib/projectOverviewMetrics'
+import { describeCompanyAuditActivity } from './lib/companyActivityCopy'
 
 const dashboardQuotes = [
   'Better systems build brighter tomorrows.',
@@ -569,8 +570,9 @@ export const get = query({
       for (const audit of row.audits) {
         const actor = audit.actorId ? userById.get(String(audit.actorId)) : null
         const actorName = actor?.displayName ?? 'A teammate'
-        const channelActivity = Boolean(audit.groupId)
-        feed.push({ id: String(audit._id), projectId: row.project._id, projectName: row.project.name, actorName, actorInitials: initials(actorName), action: audit.action, title: row.project.name, preview: `${actorName} ${actionLabel(audit.action)}.`, createdAt: audit.createdAt, kind: channelActivity ? 'message' : 'project', groupId: audit.groupId, threadId: audit.channelThreadId })
+        const description = describeCompanyAuditActivity(audit.action, actorName, row.project.name)
+        if (!description) continue
+        feed.push({ id: String(audit._id), projectId: row.project._id, projectName: row.project.name, actorName, actorInitials: initials(actorName), action: description.action, title: row.project.name, preview: description.preview, createdAt: audit.createdAt, kind: 'project' })
       }
     }
     feed.sort((left, right) => right.createdAt - left.createdAt)
