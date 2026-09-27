@@ -21,6 +21,11 @@ function safeErrorClass(error: unknown) {
     : 'Error'
 }
 
+export function serverRequestId(error: unknown) {
+  const message = error instanceof Error ? error.message : ''
+  return /\[Request ID: ([0-9a-f]{16,32})\]/.exec(message)?.[1]
+}
+
 function makeEvent(
   input: Omit<
     DiagnosticEvent,
@@ -111,7 +116,7 @@ export function captureUnhandled(error: unknown) {
 export function captureConvexCall(
   functionName: string,
   operation: 'query' | 'mutation' | 'action',
-  requestId: string,
+  requestId: string | undefined,
   durationMs: number,
   failed: boolean,
 ) {
@@ -142,7 +147,6 @@ export async function reportRouteFailure(error: unknown): Promise<string | undef
     const { convexClient } = await import('./convex-client')
     const message = error instanceof Error ? error.message : ''
     const operation = /\[CONVEX ([QMA])\(([a-zA-Z0-9_/-]+:[a-zA-Z0-9_]+)\)\]/.exec(message)
-    const request = /\[Request ID: ([0-9a-f]{16,32})\]/.exec(message)
     const operationType =
       operation?.[1] === 'Q' ? 'query' : operation?.[1] === 'M' ? 'mutation' : 'action'
     const event = makeEvent({
@@ -153,7 +157,7 @@ export async function reportRouteFailure(error: unknown): Promise<string | undef
       status: 'error',
       level: 'error',
       errorClass: safeErrorClass(error),
-      requestId: request?.[1],
+      requestId: serverRequestId(error),
       attributes: operation ? { function: operation[2], operation_type: operationType } : undefined,
     })
     await convexClient.mutation(api.diagnostics.ingest, { events: [event] })

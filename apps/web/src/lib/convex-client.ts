@@ -1,5 +1,5 @@
 import { ConvexReactClient } from 'convex/react'
-import type { MutationOptions } from 'convex/react'
+import type { MutationOptions, Watch, WatchQueryOptions } from 'convex/react'
 import { getFunctionName } from 'convex/server'
 import type {
   ArgsAndOptions,
@@ -8,7 +8,7 @@ import type {
   FunctionReturnType,
   OptionalRestArgs,
 } from 'convex/server'
-import { captureConvexCall } from './browser-diagnostics'
+import { captureConvexCall, serverRequestId } from './browser-diagnostics'
 
 const runtimeEnv = typeof process === 'undefined' ? undefined : process.env
 const convexUrl = import.meta.env.PROD
@@ -21,28 +21,68 @@ if (typeof convexUrl !== 'string' || !convexUrl) {
   )
 }
 
+const reportedErrors = new WeakSet<Error>()
+const reportedRequestIds = new Set<string>()
+
+function reportCall(
+  functionName: string,
+  operation: 'query' | 'mutation' | 'action',
+  started: number,
+  failed: boolean,
+  error: unknown,
+) {
+  const requestId = serverRequestId(error)
+  if (failed && requestId) {
+    if (reportedRequestIds.has(requestId)) return
+  }
+  if (failed && error instanceof Error) {
+    if (reportedErrors.has(error)) return
+    reportedErrors.add(error)
+  }
+  if (failed && requestId) {
+    if (reportedRequestIds.size >= 500) reportedRequestIds.clear()
+    reportedRequestIds.add(requestId)
+  }
+  captureConvexCall(functionName, operation, requestId, performance.now() - started, failed)
+}
+
 class TracedConvexClient extends ConvexReactClient {
+  watchQuery<Query extends FunctionReference<'query'>>(
+    query: Query,
+    ...argsAndOptions: ArgsAndOptions<Query, WatchQueryOptions>
+  ): Watch<FunctionReturnType<Query>> {
+    const watch = super.watchQuery(query, ...argsAndOptions)
+    const started = performance.now()
+    return {
+      ...watch,
+      localQueryResult: () => {
+        try {
+          // oxlint-disable-next-line typescript/no-unsafe-return -- Convex's typed Watch determines the query result type.
+          return watch.localQueryResult()
+        } catch (error) {
+          reportCall(getFunctionName(query), 'query', started, true, error)
+          throw error
+        }
+      },
+    }
+  }
+
   async mutation<Mutation extends FunctionReference<'mutation'>>(
     mutation: Mutation,
     ...args: ArgsAndOptions<Mutation, MutationOptions<FunctionArgs<Mutation>>>
   ): Promise<FunctionReturnType<Mutation>> {
     const started = performance.now()
-    const requestId = crypto.randomUUID().replaceAll('-', '')
     let failed = false
+    let failure: unknown
     try {
       // oxlint-disable-next-line typescript/no-unsafe-return -- safe because Convex's typed function reference determines the return type.
       return await super.mutation(mutation, ...args)
     } catch (error) {
       failed = true
+      failure = error
       throw error
     } finally {
-      captureConvexCall(
-        getFunctionName(mutation),
-        'mutation',
-        requestId,
-        performance.now() - started,
-        failed,
-      )
+      reportCall(getFunctionName(mutation), 'mutation', started, failed, failure)
     }
   }
 
@@ -51,22 +91,17 @@ class TracedConvexClient extends ConvexReactClient {
     ...args: OptionalRestArgs<Action>
   ): Promise<FunctionReturnType<Action>> {
     const started = performance.now()
-    const requestId = crypto.randomUUID().replaceAll('-', '')
     let failed = false
+    let failure: unknown
     try {
       // oxlint-disable-next-line typescript/no-unsafe-return -- safe because Convex's typed function reference determines the return type.
       return await super.action(action, ...args)
     } catch (error) {
       failed = true
+      failure = error
       throw error
     } finally {
-      captureConvexCall(
-        getFunctionName(action),
-        'action',
-        requestId,
-        performance.now() - started,
-        failed,
-      )
+      reportCall(getFunctionName(action), 'action', started, failed, failure)
     }
   }
 
@@ -75,22 +110,17 @@ class TracedConvexClient extends ConvexReactClient {
     ...args: OptionalRestArgs<Query>
   ): Promise<FunctionReturnType<Query>> {
     const started = performance.now()
-    const requestId = crypto.randomUUID().replaceAll('-', '')
     let failed = false
+    let failure: unknown
     try {
       // oxlint-disable-next-line typescript/no-unsafe-return -- safe because Convex's typed function reference determines the return type.
       return await super.query(query, ...args)
     } catch (error) {
       failed = true
+      failure = error
       throw error
     } finally {
-      captureConvexCall(
-        getFunctionName(query),
-        'query',
-        requestId,
-        performance.now() - started,
-        failed,
-      )
+      reportCall(getFunctionName(query), 'query', started, failed, failure)
     }
   }
 }

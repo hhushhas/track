@@ -158,10 +158,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (routeId && routeId !== '__root__') {
-      const template = routeId
-        .replace(/\$([a-zA-Z0-9_]+)/g, (_match, parameter: string) => `:${parameter.toLowerCase()}`)
-        .replace(/\/$/, '')
-      if (template) captureNavigation(template)
+      const template =
+        routeId
+          .replace(
+            /\$([a-zA-Z0-9_]+)/g,
+            (_match, parameter: string) => `:${parameter.toLowerCase()}`,
+          )
+          .replace(/\/$/, '') || '/'
+      captureNavigation(template)
     }
   }, [routeId])
   useEffect(() => {
@@ -217,9 +221,9 @@ function TrackDevtools() {
       import('@tanstack/react-router-devtools'),
     ]).then(([reactDevtools, routerDevtools]) => {
       if (!mounted) return
-      // oxlint-disable-next-line react/no-unstable-nested-components, unicorn/consistent-function-scoping -- intentional lazy devtools component after dynamic import; existing behavior.
       setDevtools(
         () =>
+          // oxlint-disable-next-line react/no-unstable-nested-components, unicorn/consistent-function-scoping -- intentional lazy devtools component after dynamic import; existing behavior.
           function TrackDevtoolsPanel() {
             return (
               <reactDevtools.TanStackDevtools
