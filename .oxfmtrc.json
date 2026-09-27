@@ -1,0 +1,17 @@
+{
+  "$schema": "https://oxc.rs/schema/oxfmtrc.json",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "sortImports": false,
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.turbo/**",
+    "**/.output/**",
+    "**/routeTree.gen.ts",
+    "scratchpad/**",
+    "pnpm-lock.yaml"
+  ]
+}
