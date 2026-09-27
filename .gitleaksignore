@@ -1,0 +1,6 @@
+# 1Password item IDs in the release manifest are not API credentials.
+7b6047a30172bd1a7e68a4c1bd2553a4debe3299:release/manifest.json:generic-api-key:18
+# "opaque task keys" in the history note is prose, not a credential (first revision).
+e3213aa5681231bc8485665b0d8c8d520c1f103f:scratchpad/history/2026-W28.md:generic-api-key:135
+# The same prose false positive appears in a later revision of that note.
+9a41ff89b368bf846fd814cf06feccf4c26f1a40:scratchpad/history/2026-W28.md:generic-api-key:135

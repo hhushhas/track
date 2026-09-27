@@ -5,6 +5,5 @@ export default defineConfig({
     environment: 'jsdom',
     fileParallelism: false,
     maxWorkers: 1,
-    passWithNoTests: true,
   },
 })

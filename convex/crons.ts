@@ -11,12 +11,7 @@ crons.daily(
   {},
 )
 
-crons.interval(
-  'memory run view cleanup',
-  { hours: 12 },
-  (internal as any).memoryActions.cleanupRunViews,
-  {},
-)
+crons.interval('memory run view cleanup', { hours: 12 }, internal.memoryActions.cleanupRunViews, {})
 crons.interval(
   'legacy push receipt expiry',
   { minutes: 5 },

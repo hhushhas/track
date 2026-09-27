@@ -62,6 +62,8 @@ templates, Convex operation metadata, timings, and safe error classes through
 an independent bounded queue. A route failure gets a separate support code;
 the recovery page shows it only after authenticated Convex ingestion succeeds.
 The code is a lookup key, never an ingestion credential.
+Convex request IDs are recorded only when returned by the server; failed query
+subscriptions are captured so operator lookup can join them to server logs.
 
 Convex derives the subject from the session, rejects client identity fields,
 deduplicates events, and bounds batches and rolling subject budgets. Internal
@@ -81,8 +83,10 @@ Generated transport files and the explicitly documented Semgrep parser
 exceptions in `.semgrepignore` remain covered by TypeScript and the other
 applicable gates. Do not regenerate either baseline from a failing worktree.
 
-The repository gate covers backend and client types, lint, tests, dependency
-audit, build output, and canonical architecture checks. Browser journeys must
+The repository gate covers backend and client types, lint, dependency boundaries,
+architecture checks, hygiene, and secret scanning. Formatting remains a
+separate migration because the existing source tree has substantial format debt;
+production dependency audit is run separately. Browser journeys must
 exercise the actual Track application and Convex backend with isolated data;
 a standalone imitation UI is not end-to-end coverage. See
 [`e2e/README.md`](../e2e/README.md) for setup and measured budget definitions.

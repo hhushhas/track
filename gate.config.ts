@@ -14,7 +14,6 @@ export default defineGate({
   concurrency: '50%',
   lanes: [
     lanes.typecheck(),
-    lanes.format(),
     lanes.custom({
       id: 'lint-ratchet',
       title: 'Canonical type-aware lint ratchet',

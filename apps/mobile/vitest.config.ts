@@ -5,6 +5,5 @@ export default defineConfig({
     environment: 'node',
     fileParallelism: false,
     maxWorkers: 1,
-    passWithNoTests: true,
   },
 })
