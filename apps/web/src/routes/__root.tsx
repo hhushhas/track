@@ -218,21 +218,24 @@ function TrackDevtools() {
     ]).then(([reactDevtools, routerDevtools]) => {
       if (!mounted) return
       // oxlint-disable-next-line react/no-unstable-nested-components, unicorn/consistent-function-scoping -- intentional lazy devtools component after dynamic import; existing behavior.
-      setDevtools(() => function TrackDevtoolsPanel() {
-        return (
-          <reactDevtools.TanStackDevtools
-            config={{
-              position: 'bottom-right',
-            }}
-            plugins={[
-              {
-                name: 'Tanstack Router',
-                render: <routerDevtools.TanStackRouterDevtoolsPanel />,
-              },
-            ]}
-          />
-        )
-      })
+      setDevtools(
+        () =>
+          function TrackDevtoolsPanel() {
+            return (
+              <reactDevtools.TanStackDevtools
+                config={{
+                  position: 'bottom-right',
+                }}
+                plugins={[
+                  {
+                    name: 'Tanstack Router',
+                    render: <routerDevtools.TanStackRouterDevtoolsPanel />,
+                  },
+                ]}
+              />
+            )
+          },
+      )
     })
     return () => {
       mounted = false

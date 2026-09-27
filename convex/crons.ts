@@ -4,9 +4,19 @@ import { internal } from './_generated/api'
 
 const crons = cronJobs()
 
-crons.daily('diagnostic event cleanup', { hourUTC: 3, minuteUTC: 0 }, internal.diagnostics.cleanupExpired, {})
+crons.daily(
+  'diagnostic event cleanup',
+  { hourUTC: 3, minuteUTC: 0 },
+  internal.diagnostics.cleanupExpired,
+  {},
+)
 
-crons.interval('memory run view cleanup', { hours: 12 }, (internal as any).memoryActions.cleanupRunViews, {})
+crons.interval(
+  'memory run view cleanup',
+  { hours: 12 },
+  (internal as any).memoryActions.cleanupRunViews,
+  {},
+)
 crons.interval(
   'legacy push receipt expiry',
   { minutes: 5 },

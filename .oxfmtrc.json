@@ -11,6 +11,7 @@
     "**/.turbo/**",
     "**/.output/**",
     "**/routeTree.gen.ts",
+    "convex/_generated/**",
     "scratchpad/**",
     "pnpm-lock.yaml"
   ]
