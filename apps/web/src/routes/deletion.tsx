@@ -37,7 +37,7 @@ function Deletion() {
         <div className="mt-8 space-y-7">
           <section>
             <h2 className="m-0 text-lg font-semibold">Delete Your Account in the App</h2>
-            <ol className="m-0 mt-3 space-y-2 pl-5 text-sm leading-6 text-[var(--ink-3)]">
+            <ol className="m-0 mt-3 space-y-2 ps-5 text-sm leading-6 text-[var(--ink-3)]">
               {deletionSteps.map((step) => (
                 <li key={step}>{step}</li>
               ))}
@@ -46,7 +46,7 @@ function Deletion() {
 
           <section>
             <h2 className="m-0 text-lg font-semibold">What Is Deleted or Retained</h2>
-            <ul className="m-0 mt-3 space-y-2 pl-5 text-sm leading-6 text-[var(--ink-3)]">
+            <ul className="m-0 mt-3 space-y-2 ps-5 text-sm leading-6 text-[var(--ink-3)]">
               {retentionItems.map((item) => (
                 <li key={item}>{item}</li>
               ))}

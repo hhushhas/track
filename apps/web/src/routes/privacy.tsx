@@ -73,7 +73,7 @@ function Privacy() {
           {sections.map((section) => (
             <section key={section.title}>
               <h2 className="m-0 text-lg font-semibold">{section.title}</h2>
-              <ul className="m-0 mt-3 space-y-2 pl-5 text-sm leading-6 text-[var(--ink-3)]">
+              <ul className="m-0 mt-3 space-y-2 ps-5 text-sm leading-6 text-[var(--ink-3)]">
                 {section.body.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
