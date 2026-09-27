@@ -161,7 +161,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       const template = routeId
         .replace(/\$([a-zA-Z0-9_]+)/g, (_match, parameter: string) => `:${parameter.toLowerCase()}`)
         .replace(/\/$/, '')
-      captureNavigation(template)
+      if (template) captureNavigation(template)
     }
   }, [routeId])
   useEffect(() => {
