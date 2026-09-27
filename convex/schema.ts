@@ -165,6 +165,32 @@ const forwardedMessageSnapshot = v.object({
 })
 
 export default defineSchema({
+  diagnosticEvents: defineTable({
+    event: v.object({
+      version: v.literal(1), traceId: v.string(), spanId: v.string(), eventId: v.string(),
+      occurredAt: v.number(), source: v.union(v.literal('browser'), v.literal('server')),
+      kind: v.union(v.literal('navigation'), v.literal('request'), v.literal('event'), v.literal('error'), v.literal('span')),
+      name: v.string(), status: v.union(v.literal('unset'), v.literal('ok'), v.literal('error')),
+      level: v.union(v.literal('info'), v.literal('warning'), v.literal('error')),
+      parentSpanId: v.optional(v.string()), journeyTraceId: v.optional(v.string()),
+      durationMs: v.optional(v.number()), requestId: v.optional(v.string()),
+      attributes: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.boolean()))),
+      errorClass: v.optional(v.string()), safeMessage: v.optional(v.string()),
+      safeStackFrames: v.optional(v.array(v.object({ file: v.string(), line: v.number(), column: v.optional(v.number()), function: v.optional(v.string()) }))),
+    }),
+    traceId: v.string(), eventId: v.string(), journeyTraceId: v.optional(v.string()),
+    occurredAt: v.number(), receivedAt: v.number(), subjectId: v.string(),
+    sourceSurface: v.literal('web'),
+  })
+    .index('by_trace_occurred_at', ['traceId', 'occurredAt'])
+    .index('by_trace_event', ['traceId', 'eventId'])
+    .index('by_journey_occurred_at', ['journeyTraceId', 'occurredAt'])
+    .index('by_subject_received_at', ['subjectId', 'receivedAt'])
+    .index('by_received_at', ['receivedAt']),
+  diagnosticIngestRequests: defineTable({
+    subjectId: v.string(), receivedAt: v.number(), acceptedCount: v.number(),
+  }).index('by_subject_received_at', ['subjectId', 'receivedAt'])
+    .index('by_received_at', ['receivedAt']),
   ...companyCoreTables,
   ...companyProjectTables,
   ...projectExitTables,

@@ -1,11 +1,43 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import type { ErrorComponentProps } from '@tanstack/react-router'
+import { reportRouteFailure } from '../lib/browser-diagnostics'
 
 export function RouteRecoveryPage({ error, reset }: ErrorComponentProps) {
-  const [online, setOnline] = useState(
-    () => typeof navigator === 'undefined' || navigator.onLine,
-  )
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const [diagnosticCode, setDiagnosticCode] = useState<string>()
+  const [copied, setCopied] = useState(false)
+
+  async function copyCode() {
+    if (!diagnosticCode) return
+    try {
+      await navigator.clipboard.writeText(diagnosticCode)
+      setCopied(true)
+    } catch {
+      const input = document.createElement('textarea')
+      input.value = diagnosticCode
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.append(input)
+      input.select()
+      const succeeded = document.execCommand('copy')
+      input.remove()
+      if (succeeded) setCopied(true)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    void reportRouteFailure(error).then((code) => {
+      if (active) {
+        setDiagnosticCode(code)
+        setCopied(false)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [error])
 
   useEffect(() => {
     const handleOnline = () => setOnline(true)
@@ -47,10 +79,28 @@ export function RouteRecoveryPage({ error, reset }: ErrorComponentProps) {
             Open workspace
           </Link>
         </div>
+        {diagnosticCode ? (
+          <output className="mt-6 block space-y-2 text-sm text-muted-foreground">
+            <p>
+              Support code: <code className="font-mono text-foreground">{diagnosticCode}</code>
+            </p>
+            <button
+              className="min-h-11 rounded-lg border border-border px-4 font-semibold text-foreground"
+              onClick={() => {
+                void copyCode()
+              }}
+              type="button"
+            >
+              {copied ? 'Copied' : 'Copy code'}
+            </button>
+          </output>
+        ) : null}
         {import.meta.env.DEV ? (
-          <details className="mt-6 text-left text-xs text-muted-foreground">
+          <details className="text-start text-xs text-muted-foreground [margin-block-start:1.5rem]">
             <summary>Technical details</summary>
-            <pre className="mt-2 whitespace-pre-wrap">{error instanceof Error ? error.message : 'Unknown route error'}</pre>
+            <pre className="whitespace-pre-wrap [margin-block-start:0.5rem]">
+              {error instanceof Error ? error.message : 'Unknown route error'}
+            </pre>
           </details>
         ) : null}
       </section>

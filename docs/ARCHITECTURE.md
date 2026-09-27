@@ -55,6 +55,21 @@ do not run either job against production without an approved migration window.
 No migration or deployment to production is implicit in a local verification
 run.
 
+## Diagnostics
+
+The web client keeps one journey ID per tab and sends only validated route
+templates, Convex operation metadata, timings, and safe error classes through
+an independent bounded queue. A route failure gets a separate support code;
+the recovery page shows it only after authenticated Convex ingestion succeeds.
+The code is a lookup key, never an ingestion credential.
+
+Convex derives the subject from the session, rejects client identity fields,
+deduplicates events, and bounds batches and rolling subject budgets. Internal
+operator lookup joins the failure with same-subject journey evidence. Indexed
+cleanup removes at most 500 events per run after 14 days from receipt and
+reschedules when full. Mobile diagnostics and server-wide function-boundary
+instrumentation are not part of this implementation.
+
 ## Verification
 
 Canonical q9 type-aware lint scans the checked TypeScript source roots in web,
