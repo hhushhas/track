@@ -6,6 +6,12 @@ const journeyTraceId = typeof window === 'undefined' ? undefined : createDiagnos
 const pending: DiagnosticEvent[] = []
 let flushing = false
 let timer: ReturnType<typeof setTimeout> | undefined
+let authenticated = false
+let authGeneration = 0
+
+function isDiagnosticAuthenticated() {
+  return authenticated
+}
 
 function eventId() {
   return crypto.randomUUID().replaceAll('-', '')
@@ -48,20 +54,39 @@ function makeEvent(
 }
 
 function schedule(delay = 250) {
-  if (timer || typeof window === 'undefined') return
+  if (timer || !authenticated || typeof window === 'undefined') return
   timer = setTimeout(() => {
     timer = undefined
     void flush()
   }, delay)
 }
 
+export function setDiagnosticAuthenticated(value: boolean) {
+  if (authenticated !== value) authGeneration += 1
+  authenticated = value
+  if (!value && timer) {
+    clearTimeout(timer)
+    timer = undefined
+  }
+  if (value && pending.length) schedule(0)
+}
+
 async function flush() {
-  if (flushing || !pending.length) return
+  if (flushing || !authenticated || !pending.length) return
   flushing = true
+  const deliveryGeneration = authGeneration
   const batch = pending.slice(0, 20)
   try {
     const { convexClient } = await import('./convex-client')
-    await convexClient.mutation(api.diagnostics.ingest, { events: batch })
+    if (!isDiagnosticAuthenticated()) return
+    const result = await convexClient.mutation(api.diagnostics.ingest, { events: batch })
+    if ('rejected' in result) {
+      if (result.rejected === 'unauthenticated') {
+        if (authGeneration === deliveryGeneration) authenticated = false
+        else schedule()
+      } else schedule(30_000)
+      return
+    }
     pending.splice(0, batch.length)
     if (pending.length) schedule()
   } catch {
@@ -141,10 +166,11 @@ export function captureConvexCall(
 }
 
 export async function reportRouteFailure(error: unknown): Promise<string | undefined> {
-  if (!journeyTraceId) return undefined
+  if (!journeyTraceId || !authenticated) return undefined
   const traceId = createDiagnosticCode()
   try {
     const { convexClient } = await import('./convex-client')
+    if (!isDiagnosticAuthenticated()) return undefined
     const message = error instanceof Error ? error.message : ''
     const operation = /\[CONVEX ([QMA])\(([a-zA-Z0-9_/-]+:[a-zA-Z0-9_]+)\)\]/.exec(message)
     const operationType =
@@ -160,7 +186,8 @@ export async function reportRouteFailure(error: unknown): Promise<string | undef
       requestId: serverRequestId(error),
       attributes: operation ? { function: operation[2], operation_type: operationType } : undefined,
     })
-    await convexClient.mutation(api.diagnostics.ingest, { events: [event] })
+    const result = await convexClient.mutation(api.diagnostics.ingest, { events: [event] })
+    if ('rejected' in result) return undefined
     return traceId
   } catch {
     return undefined

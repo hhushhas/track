@@ -59,7 +59,9 @@ run.
 
 The web client keeps one journey ID per tab and sends only validated route
 templates, Convex operation metadata, timings, and safe error classes through
-an independent bounded queue. A route failure gets a separate support code;
+an independent bounded queue. Delivery waits for Convex-confirmed authentication,
+and anonymous or not-yet-provisioned ingestion returns a safe rejection instead
+of throwing. A route failure gets a separate support code;
 the recovery page shows it only after authenticated Convex ingestion succeeds.
 The code is a lookup key, never an ingestion credential.
 Convex request IDs are recorded only when returned by the server; failed query

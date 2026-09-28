@@ -41,12 +41,14 @@ function event(traceId: string, eventId = 'event_one') {
 }
 
 describe('diagnostics', () => {
-  it('requires authentication and rejects forged identity and unsafe events', async () => {
+  it('safely rejects signed-out ingestion and rejects forged identity and unsafe events', async () => {
     const { t, actor } = await fixture()
     const valid = event(createDiagnosticCode())
-    await expect(t.mutation(api.diagnostics.ingest, { events: [valid] })).rejects.toThrow(
-      'unauthenticated',
-    )
+    expect(await t.mutation(api.diagnostics.ingest, { events: [valid] })).toEqual({
+      accepted: 0,
+      rejected: 'unauthenticated',
+    })
+    expect(await t.run((ctx) => ctx.db.query('diagnosticEvents').collect())).toEqual([])
     await expect(
       actor.mutation(api.diagnostics.ingest, { events: [{ ...valid, subjectId: 'forged' }] }),
     ).rejects.toThrow('diagnostics_invalid_event')
@@ -63,6 +65,17 @@ describe('diagnostics', () => {
     await expect(actor.mutation(api.diagnostics.ingest, { events: [unsafe] })).rejects.toThrow(
       'diagnostics_invalid_event',
     )
+  })
+
+  it('safely rejects ingestion before an authenticated user is provisioned', async () => {
+    const { t } = await fixture()
+    const unprovisioned = t.withIdentity({ subject: 'new-user' })
+    expect(
+      await unprovisioned.mutation(api.diagnostics.ingest, {
+        events: [event(createDiagnosticCode())],
+      }),
+    ).toEqual({ accepted: 0, rejected: 'actor_not_provisioned' })
+    expect(await t.run((ctx) => ctx.db.query('diagnosticEvents').collect())).toEqual([])
   })
 
   it('deduplicates and returns ordered evidence, with empty evidence for unknown codes', async () => {

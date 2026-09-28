@@ -2,7 +2,7 @@ import { diagnosticCodeSchema, diagnosticEventSchema } from '@q9labsai/diagnosti
 import { v } from 'convex/values'
 
 import { internalMutation, internalQuery, mutation } from './_generated/server'
-import { requireAuthenticatedActor } from './lib/actorContext'
+import { getOptionalAuthenticatedActor } from './lib/actorContext'
 import { internal } from './_generated/api'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -13,7 +13,16 @@ export const ingest = mutation({
   // Runtime schema validation below rejects extra identity and deployment fields.
   args: { events: v.array(v.any()) },
   handler: async (ctx, { events }) => {
-    const actor = await requireAuthenticatedActor(ctx)
+    let actor
+    try {
+      actor = await getOptionalAuthenticatedActor(ctx)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'actor_not_provisioned') {
+        return { accepted: 0, rejected: 'actor_not_provisioned' as const }
+      }
+      throw error
+    }
+    if (!actor) return { accepted: 0, rejected: 'unauthenticated' as const }
     if (events.length < 1 || events.length > 20 || JSON.stringify(events).length > 42_000) {
       throw new Error('diagnostics_invalid_batch')
     }
