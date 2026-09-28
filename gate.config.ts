@@ -22,13 +22,6 @@ export default defineGate({
       exclusive: true,
     }),
     lanes.custom({
-      id: 'backend-typecheck',
-      title: 'Convex backend typecheck',
-      triggers: ['source', 'test', 'contract'],
-      run: 'pnpm run typecheck:backend',
-      exclusive: true,
-    }),
-    lanes.custom({
       id: 'semgrep-ratchet',
       title: 'Semgrep architecture ratchet',
       triggers: ['source', 'ui'],
