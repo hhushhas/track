@@ -5,13 +5,13 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@q9labsai/cli': file:/tmp/q9-packs/v0.3-pre/q9labsai-cli-0.1.0.tgz
-  '@q9labsai/config-depcruise': file:/tmp/q9-packs/v0.3-pre/q9labsai-config-depcruise-0.1.0.tgz
-  '@q9labsai/config-oxlint': file:/tmp/q9-packs/v0.3-pre/q9labsai-config-oxlint-0.1.0.tgz
-  '@q9labsai/config-semgrep': file:/tmp/q9-packs/v0.3-pre/q9labsai-config-semgrep-0.1.0.tgz
-  '@q9labsai/config-tsconfig': file:/tmp/q9-packs/v0.3-pre/q9labsai-config-tsconfig-0.1.0.tgz
-  '@q9labsai/diagnostics': file:/tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz
-  '@q9labsai/gates': file:/tmp/q9-packs/v0.3-pre/q9labsai-gates-0.1.0.tgz
+  '@q9labsai/cli': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz
+  '@q9labsai/config-depcruise': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz
+  '@q9labsai/config-oxlint': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz
+  '@q9labsai/config-semgrep': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz
+  '@q9labsai/config-tsconfig': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz
+  '@q9labsai/diagnostics': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz
+  '@q9labsai/gates': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz
   '@xmldom/xmldom@>=0.7.0 <=0.8.14': 0.8.15
   '@xmldom/xmldom@>=0.9.0 <=0.9.11': 0.9.12
   brace-expansion@<=5.0.8: 5.0.9
@@ -93,26 +93,26 @@ importers:
         specifier: 1.63.0
         version: 1.63.0
       '@q9labsai/cli':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-cli-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-cli-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz
       '@q9labsai/config-depcruise':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-config-depcruise-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-depcruise-0.1.0.tgz(dependency-cruiser@18.2.0)
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz(dependency-cruiser@18.2.0)
       '@q9labsai/config-oxlint':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-config-oxlint-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-oxlint-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz
       '@q9labsai/config-semgrep':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-config-semgrep-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-semgrep-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz
       '@q9labsai/config-tsconfig':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-config-tsconfig-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-tsconfig-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz
       '@q9labsai/diagnostics':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz
       '@q9labsai/gates':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-gates-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-gates-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz
       '@types/node':
         specifier: ^25.9.5
         version: 25.9.5
@@ -301,8 +301,8 @@ importers:
         specifier: ^1.1.9
         version: 1.1.9(react@19.2.7)
       '@q9labsai/diagnostics':
-        specifier: file:/tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz
-        version: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz
+        specifier: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz
+        version: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@8.1.4(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))
@@ -2503,42 +2503,42 @@ packages:
   '@protobufjs/utf8@1.1.2':
     resolution: {integrity: sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug==}
 
-  '@q9labsai/cli@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-cli-0.1.0.tgz':
-    resolution: {integrity: sha512-EKDocHxMOduiAQ86hnPHbrWLCOuH2Kt2iFwh8WymXVl0Zbw3c6Te4CGJEksiNMWuoIT+z5iyRci6u8B/E8gSSg==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-cli-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/cli@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
     hasBin: true
 
-  '@q9labsai/config-depcruise@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-depcruise-0.1.0.tgz':
-    resolution: {integrity: sha512-YoYF4AMz9xFe8ucv+bYNcPpPiYyEIw1rF70QT135q2/IB6hRCb43DNz/pvCBjynu3C6n4CNN9IbcR8wvTPvaSg==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-depcruise-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/config-depcruise@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
     peerDependencies:
       dependency-cruiser: ^18.2.0
 
-  '@q9labsai/config-oxlint@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-oxlint-0.1.0.tgz':
-    resolution: {integrity: sha512-4SGrG1t3ysbatQiwxURZ36lzCpFcF4N+/nAqBEg8CqwA4Y0292rGQIwjPxzTLKwW34zdCxsFF0UkS1eYzWI2mQ==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-oxlint-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/config-oxlint@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
 
-  '@q9labsai/config-semgrep@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-semgrep-0.1.0.tgz':
-    resolution: {integrity: sha512-4fSwSOma1mtUobkkiFzgBrSJ7jdxhJppXVig9IZkz74eNljzUAnWYi8SxzvCXxXlpdr8y47Z4LHKEyvWJQ4r9Q==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-semgrep-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/config-semgrep@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
 
-  '@q9labsai/config-tsconfig@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-tsconfig-0.1.0.tgz':
-    resolution: {integrity: sha512-ASylguCykl2P0Q1soUpIcx6qgrWsbv/3hTmAYSpWcdO/4Og8cGqWD918aPs6/SDjJS3t8SAEJphmcv5JsmoMdg==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-tsconfig-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/config-tsconfig@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
 
-  '@q9labsai/diagnostics@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz':
-    resolution: {integrity: sha512-QIdz+cDJIyVRbHekldafkAsMiip1XsM7p5JKrcLth4BHKPmCHq/jinVL3RBAZ9r4CLf7a37S7gw8rgH9JvP/tw==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/diagnostics@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
 
-  '@q9labsai/gates@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-gates-0.1.0.tgz':
-    resolution: {integrity: sha512-sJ6A/Q9lUfuXtN5RLykmAz89dGVOJZn4DI0FnTUVHeHMUiq3RYRoJ0i6d2fd/6nrGEXnbF7OKE/X90rSxi+wwA==, tarball: file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-gates-0.1.0.tgz}
-    version: 0.1.0
+  '@q9labsai/gates@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz':
+    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz}
+    version: 0.3.0
     engines: {node: '>=24'}
     hasBin: true
 
@@ -10097,29 +10097,29 @@ snapshots:
   '@protobufjs/utf8@1.1.2':
     optional: true
 
-  '@q9labsai/cli@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-cli-0.1.0.tgz':
+  '@q9labsai/cli@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz':
     dependencies:
-      '@q9labsai/diagnostics': file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz
+      '@q9labsai/diagnostics': https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz
       cac: 7.0.0
       js-yaml: 5.4.2
       semver: 7.8.5
       zod: 4.6.5
 
-  '@q9labsai/config-depcruise@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-depcruise-0.1.0.tgz(dependency-cruiser@18.2.0)':
+  '@q9labsai/config-depcruise@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz(dependency-cruiser@18.2.0)':
     dependencies:
       dependency-cruiser: 18.2.0
 
-  '@q9labsai/config-oxlint@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-oxlint-0.1.0.tgz': {}
+  '@q9labsai/config-oxlint@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz': {}
 
-  '@q9labsai/config-semgrep@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-semgrep-0.1.0.tgz': {}
+  '@q9labsai/config-semgrep@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz': {}
 
-  '@q9labsai/config-tsconfig@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-config-tsconfig-0.1.0.tgz': {}
+  '@q9labsai/config-tsconfig@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz': {}
 
-  '@q9labsai/diagnostics@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-diagnostics-0.1.0.tgz':
+  '@q9labsai/diagnostics@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz':
     dependencies:
       zod: 4.6.5
 
-  '@q9labsai/gates@file:../../../../../../tmp/q9-packs/v0.3-pre/q9labsai-gates-0.1.0.tgz':
+  '@q9labsai/gates@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz':
     dependencies:
       cac: 7.0.0
       execa: 10.0.1
