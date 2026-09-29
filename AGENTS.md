@@ -50,6 +50,10 @@ pnpm dev
 The web application runs on `http://localhost:3000`. Keep development services
 bound to localhost.
 
+## Diagnostics
+
+Web and Convex diagnostics follow the [Convex diagnostics recipe](https://github.com/Q9Labs/q9stack/blob/main/recipes/diagnostics-convex.md). Use `pnpm diag check` before an operator lookup and `pnpm diag trace <code>` for a code supplied by the error page. Codes are lookup keys, not ingestion or authorization credentials. Mobile capture is not implemented.
+
 ## Required verification
 
 Run the complete gate before handing off a change:

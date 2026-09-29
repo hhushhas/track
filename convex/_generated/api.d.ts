@@ -18,6 +18,8 @@ import type * as companies from "../companies.js";
 import type * as companyMigration from "../companyMigration.js";
 import type * as crons from "../crons.js";
 import type * as demoSeed from "../demoSeed.js";
+import type * as diagnostics from "../diagnostics.js";
+import type * as diagnostics_lookup from "../diagnostics/lookup.js";
 import type * as e2eFixtures from "../e2eFixtures.js";
 import type * as foundation from "../foundation.js";
 import type * as groups from "../groups.js";
@@ -119,6 +121,8 @@ declare const fullApi: ApiFromModules<{
   companyMigration: typeof companyMigration;
   crons: typeof crons;
   demoSeed: typeof demoSeed;
+  diagnostics: typeof diagnostics;
+  "diagnostics/lookup": typeof diagnostics_lookup;
   e2eFixtures: typeof e2eFixtures;
   foundation: typeof foundation;
   groups: typeof groups;

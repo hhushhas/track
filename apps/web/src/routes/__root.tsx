@@ -1,7 +1,8 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Scripts, createRootRoute, useRouterState } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import AppProviders from '../components/AppProviders'
 import PwaInstallPrompt from '../components/PwaInstallPrompt'
+import { captureNavigation, installUnhandledCapture } from '../lib/browser-diagnostics'
 
 import appCss from '../styles.css?url'
 
@@ -151,6 +152,22 @@ export const Route = createRootRoute({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const routeId = useRouterState({ select: (state) => state.matches.at(-1)?.routeId })
+
+  useEffect(() => installUnhandledCapture(), [])
+
+  useEffect(() => {
+    if (routeId && routeId !== '__root__') {
+      const template =
+        routeId
+          .replace(
+            /\$([a-zA-Z0-9_]+)/g,
+            (_match, parameter: string) => `:${parameter.toLowerCase()}`,
+          )
+          .replace(/\/$/, '') || '/'
+      captureNavigation(template)
+    }
+  }, [routeId])
   useEffect(() => {
     if (enableReactGrab) {
       void import('react-grab')
@@ -168,7 +185,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       window.location.reload()
     }
     navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange)
-    void navigator.serviceWorker.register('/service-worker.js').then((registration) => registration.update())
+    void navigator.serviceWorker
+      .register('/service-worker.js')
+      .then((registration) => registration.update())
     return () => {
       navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange)
     }
@@ -202,21 +221,25 @@ function TrackDevtools() {
       import('@tanstack/react-router-devtools'),
     ]).then(([reactDevtools, routerDevtools]) => {
       if (!mounted) return
-      setDevtools(() => function TrackDevtoolsPanel() {
-        return (
-          <reactDevtools.TanStackDevtools
-            config={{
-              position: 'bottom-right',
-            }}
-            plugins={[
-              {
-                name: 'Tanstack Router',
-                render: <routerDevtools.TanStackRouterDevtoolsPanel />,
-              },
-            ]}
-          />
-        )
-      })
+      setDevtools(
+        () =>
+          // oxlint-disable-next-line react/no-unstable-nested-components, unicorn/consistent-function-scoping -- intentional lazy devtools component after dynamic import; existing behavior.
+          function TrackDevtoolsPanel() {
+            return (
+              <reactDevtools.TanStackDevtools
+                config={{
+                  position: 'bottom-right',
+                }}
+                plugins={[
+                  {
+                    name: 'Tanstack Router',
+                    render: <routerDevtools.TanStackRouterDevtoolsPanel />,
+                  },
+                ]}
+              />
+            )
+          },
+      )
     })
     return () => {
       mounted = false

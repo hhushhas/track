@@ -1,21 +1,17 @@
 {
   "name": "track",
-  "description": "Chat-first project collaboration with evidence-grounded AI assistance.",
   "private": true,
-  "type": "module",
+  "description": "Chat-first project collaboration with evidence-grounded AI assistance.",
+  "homepage": "https://github.com/hhushhas/track#readme",
+  "bugs": {
+    "url": "https://github.com/hhushhas/track/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hhushhas/track.git"
   },
-  "homepage": "https://github.com/hhushhas/track#readme",
-  "bugs": {
-    "url": "https://github.com/hhushhas/track/issues"
-  },
-  "engines": {
-    "node": ">=24"
-  },
-  "packageManager": "pnpm@10.19.0",
+  "type": "module",
   "scripts": {
     "dev": "turbo dev --concurrency=2",
     "build": "turbo build --concurrency=1",
@@ -30,28 +26,10 @@
     "perf:build": "node scripts/perf/measure-web-build.mjs",
     "gate": "q9gate run",
     "gate:full": "q9gate run --full",
+    "diag": "q9 diag",
     "convex:dev": "convex dev",
     "convex:deploy:dev": "convex deploy",
     "convex:deploy:prod": "convex deploy --env-file convex.prod.env"
-  },
-  "devDependencies": {
-    "@playwright/test": "1.63.0",
-    "@q9labsai/config-depcruise": "0.1.0",
-    "@q9labsai/config-oxlint": "0.1.0",
-    "@q9labsai/config-semgrep": "0.1.0",
-    "@q9labsai/config-tsconfig": "0.1.0",
-    "@q9labsai/gates": "0.1.0",
-    "@types/node": "^25.9.5",
-    "@types/web-push": "^3.6.4",
-    "convex": "^1.42.1",
-    "convex-test": "0.0.54",
-    "dependency-cruiser": "18.2.0",
-    "oxlint": "1.79.0",
-    "oxlint-tsgolint": "7.0.2001",
-    "turbo": "^2.10.4",
-    "typescript": "7.0.2",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.110.0"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.5",
@@ -63,10 +41,36 @@
     "better-auth": "1.6.25",
     "fflate": "0.8.3",
     "firebase-admin": "14.2.0",
-    "hono": "4.12.34",
+    "hono": "4.13.5",
     "jose": "6.2.5",
     "react": "19.2.7",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "web-push": "^3.6.7"
-  }
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@q9labsai/cli": "^0.3.0",
+    "@q9labsai/config-depcruise": "^0.3.0",
+    "@q9labsai/config-oxlint": "^0.3.0",
+    "@q9labsai/config-semgrep": "^0.3.0",
+    "@q9labsai/config-tsconfig": "^0.3.0",
+    "@q9labsai/diagnostics": "^0.3.0",
+    "@q9labsai/gates": "^0.3.0",
+    "@types/node": "^25.9.5",
+    "@types/web-push": "^3.6.4",
+    "convex": "^1.42.1",
+    "convex-test": "0.0.54",
+    "dependency-cruiser": "18.2.0",
+    "oxfmt": "0.70.0",
+    "oxlint": "1.79.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "turbo": "^2.10.4",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.110.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.19.0"
 }
