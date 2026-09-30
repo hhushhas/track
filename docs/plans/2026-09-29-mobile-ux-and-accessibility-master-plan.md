@@ -1,10 +1,10 @@
-# Track Mobile UX and Accessibility Master Plan
+﻿# Track Mobile UX and Accessibility Master Plan
 
-Status: Planning complete. This document records the requested end state and execution gates. It does not mark implementation or device verification complete.
+Status: Not done. The approved mobile UX changes in the current worktree pass the repository lint, typecheck, test, production dependency audit, and build gates. Device accessibility checks and a local route smoke are still unproved because no Android device is connected and the configured remote Convex deployment is not confirmed as development.
 
 Owner: Track mobile
 
-Review date: 2026-09-29
+Review date: 2026-09-30
 
 Scope: `apps/mobile`, plus shared or Convex behavior only where an approved mobile journey depends on it.
 
@@ -110,7 +110,7 @@ Keep the global create-task plus action visible and unobscured on Inbox, with an
 
 ### 3.5 Profile
 
-Profile places the user’s name, email, and role/designation in a centered vertical column, with the profile icon aligned to that identity block. Keep the column centered in the screen content and allow names, email addresses, and role text to wrap or scale without clipping.
+Profile places the profile icon above the user’s name, email, and role/designation in one centered vertical column. Keep the full identity group centered in the screen content and allow names, email addresses, and role text to wrap or scale without clipping.
 
 Retain the currently supported account, appearance, notification, timezone, Company access, membership, and sign-out actions on their existing permission-aware paths. Group them plainly, preserve clear selection states for appearance settings, and make destructive flows explicit and recoverable where possible.
 
@@ -130,7 +130,7 @@ Across Company, Project, Channel, Thread, Board, Task Detail, Inbox, Profile, au
 
 ## 4. Accessibility workstream
 
-The global accessibility rule is the acceptance bar: WCAG 2.2 AA as a design/checklist reference, adapted to native iOS and Android controls and assistive technology. The source audit already found a core chat gap: message bubbles are marked inaccessible while the primary action entry relies on long-press/swipe. It also found screen titles without header semantics and task-evidence markers whose labels are attached to non-accessible Views. These are implementation items, not claims of runtime failure.
+The global accessibility rule is the acceptance bar: WCAG 2.2 AA as a design/checklist reference, adapted to native iOS and Android controls and assistive technology. The source changes add a labeled message-action route, heading semantics, task-evidence labels, task-filter states, and reduced-transparency handling. A direct WCAG calculation of the seven statistics foreground/background token pairs in each theme measured 4.71:1 to 9.88:1. These source checks do not prove contrast for composite surfaces, badges, glass, images, focus indicators, or all component states. No Android device is connected, so VoiceOver, TalkBack, large-text, focus, gesture, and platform appearance behavior are not verified at runtime.
 
 For every screen and shared component:
 
@@ -146,7 +146,7 @@ For every screen and shared component:
 - Check high-contrast and reduced-transparency settings. Keep motion optional and confirm Reduce Motion behavior for every custom transition and looping animation.
 - Verify keyboard/switch access where applicable and use logical reading and focus order.
 
-Source inspection showed that shared touch targets and text scaling are already present in many primitives and that several animations honor Reduce Motion. Sampled foreground/background token pairs passed the normal-text contrast threshold, but this does not prove composite surfaces, badges, glass, images, focus rings, or all component states.
+Shared touch targets and text scaling are already present in many primitives, and the updated message and navigation animations honor Reduce Motion. The theme token check passes the 4.5:1 normal-text threshold for the sampled statistics pairs, but composite surfaces, badges, glass, images, focus indicators, and every component state still need device review.
 
 ## 5. Prioritized findings and success measures
 
@@ -181,6 +181,7 @@ Source inspection showed that shared touch targets and text scaling are already 
 3. Check shared button, pill, filter-sheet, modal, toast, tab, plus, and navigation behavior for label, hit target, focus, announcement, and dismissal.
 4. Establish contrast checks for both themes and composites; support or deliberately validate high-contrast and reduced-transparency platform settings.
 5. Keep the current 2× font scaling policy and correct layouts that clip or truncate essential content at large sizes.
+6. Use Impeccable’s native audit to review code-level accessibility and adaptivity after each major screen family is implemented, then run its polish pass after valid findings are fixed.
 
 **Exit gate:** core controls have non-gesture access, semantic navigation is present, and a screen-reader pass can be run end to end.
 
@@ -257,13 +258,31 @@ Source inspection showed that shared touch targets and text scaling are already 
 7. Confirm My Tasks shows no Company dropdown or generic Needs Attention section, retains Company context, and lists Boards after filters and urgent work.
 8. In Board rows, verify task totals are not called notifications, unread badges only use real unread data, and partial totals are identified.
 9. In Inbox, search and open filters using the same interaction pattern as Chats. Verify the scope remains user-global and every result opens an authorized source.
-10. On Profile, confirm icon, name, email, and role appear as one centered vertical identity group at normal and large text sizes.
+10. On Profile, confirm the icon sits above the name, email, and role in one centered vertical identity group at normal and large text sizes.
 11. On Inbox and Profile, confirm the plus action is visible, labeled, has a full target, and opens a correctly scoped task flow without covering content.
 12. Verify bottom navigation by direct tap and press-hold-slide, then repeat with Reduce Motion and screen reader enabled; all tabs remain individually reachable.
 13. Compare the lighter statistics background and jelly chat surface in light/dark appearance and confirm all text, status, icon, and focus contrasts remain readable.
 14. Repeat key flows with no data, loading, no search results, offline, slow network, partial pagination, long labels, revoked access, archived/read-only content, and failed requests.
 
 ## 8. Review artifacts and status reporting
+
+### Implementation checkpoint: 2026-09-30
+
+| Gate | Result | Evidence or remaining limit |
+| --- | --- | --- |
+| Mobile regression | Pass | The mobile suite passed 36 files and 152 tests, including task-view scoping and urgency, task filters, navigation, and message-swipe cancellation. |
+| Web and shared regression | Pass | The web suite passed 47 files and 133 tests; shared-domain tests passed 5 files and 10 tests. |
+| Root and Convex regression | Pass | The root Vitest suite passed 20 files and 100 tests. The earlier `convex/companyRelationships.test.ts` timeouts did not recur. |
+| Lint and typecheck | Pass | Root `pnpm lint` and `pnpm typecheck` completed successfully on the settled source. Mobile lint reported zero warnings or errors. |
+| Production dependency audit | Pass | `pnpm audit --prod` reported no known vulnerabilities after the workspace override and patch update. |
+| Production build | Pass | `pnpm build` completed for the web app and Expo web, Android, and iOS bundles. |
+| Device and assistive technology | Not verified | `adb devices -l` listed no device. Android and iOS VoiceOver/TalkBack, large text, gesture, focus, and current-build flows still need device evidence. |
+| Local route smoke | Not run | The Expo server was stopped without opening the app. `apps/mobile/.env` enables the development auth bypass and supplies a remote Convex URL but does not identify the target as a development deployment; keep the app disconnected until the exact target is confirmed. |
+| Scoped code review | Pending | `codex review --uncommitted` started, but its review process was interrupted before it reported findings. Rerun the review after this checkpoint update. |
+| Visual stat-card check | Source-only | The statistics palette and card surfaces were lightened. The mobile routes do not currently mount the `HomeStatsSection` or `TaskStatusSummary` components, so a visible stat-card change is not proven in a live route. |
+| Diff and repository safety | Pass | `git diff --check` passed. Existing working-tree changes were preserved; no commit, push, deployment, or native regeneration command was run. |
+
+The implementation remains not done until the scoped review completes, the exact development backend target is confirmed for a local route smoke, and the required current-device accessibility and user-path checks pass. Do not describe the app as user-validated or release-approved before those checks.
 
 For every implementation checkpoint, record:
 

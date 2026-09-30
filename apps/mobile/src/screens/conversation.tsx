@@ -1,11 +1,14 @@
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useNetworkState } from 'expo-network';
+import { BlurView } from 'expo-blur';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type FlatListProps, type ListRenderItem } from 'react-native';
+import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, StyleSheet, View, type FlatListProps, type ListRenderItem } from 'react-native';
 import { KeyboardEvents } from 'react-native-keyboard-controller';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import { ActionButton } from '@/components/action-button';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useAppToast } from '@/components/app-toast';
 import { Composer } from '@/components/composer';
@@ -20,10 +23,10 @@ import { TaskLinkBatchProvider } from '@/lib/task-link-context';
 import { DateSeparator, ThreadRow, type DetailedMessage, type GroupedThreadItem, resolveMentionIds } from '@/components/thread-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { OptionsSheet, SheetSection, SheetRow } from '@/components/options-sheet';
+import { OptionsSheet, SheetInput, SheetSection, SheetRow } from '@/components/options-sheet';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
-import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
+import { hapticLight, hapticMedium, hapticSuccess, hapticDestructive } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy, projectChannelsHref } from '@/lib/company-navigation';
@@ -41,6 +44,14 @@ import { reconcilePendingMessages, type PendingMessage } from '@/lib/pending-mes
 const FIVE_MINUTES = 5 * 60 * 1000;
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
+
+function safeGlassAvailability() {
+  try {
+    return isGlassEffectAPIAvailable();
+  } catch {
+    return false;
+  }
+}
 
 const reportReasonLabels: Record<(typeof reportReasons)[number], string> = {
   harassment: 'Harassment',
@@ -83,6 +94,7 @@ export default function ConversationScreen() {
   const forwardMessage = useMutation(api.messages.forwardMessage);
   const createTask = useMutation(api.tasks.create);
   const deleteMessage = useMutation(api.messages.remove);
+  const editMessage = useMutation(api.messages.edit);
 
   const gid = groupId as Id<'groups'> | undefined;
   const pid = projectId as Id<'projects'> | undefined;
@@ -159,6 +171,10 @@ export default function ConversationScreen() {
   const acknowledgedMessageIdRef = useRef<Id<'messages'> | null>(null);
   const acknowledgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [reduceTransparency, setReduceTransparency] = useState<boolean | null>(null);
+  const knownMessageIdsRef = useRef<Set<Id<'messages'>> | null>(null);
+  const knownAssistantStreamsRef = useRef<Map<Id<'assistantStreams'>, string> | null>(null);
+  const newestFeedTimeRef = useRef(0);
 
   const sendKey = useRef<string | null>(null);
   const sendSignatureRef = useRef<string | null>(null);
@@ -172,9 +188,32 @@ export default function ConversationScreen() {
   const [reportReason, setReportReason] = useState<(typeof reportReasons)[number]>('inaccurate');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
+  const [editTarget, setEditTarget] = useState<DetailedMessage | null>(null);
+  const [editBody, setEditBody] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<DetailedMessage | null>(null);
   const [forwardBusyGroupId, setForwardBusyGroupId] = useState<Id<'groups'> | null>(null);
   const [forwardError, setForwardError] = useState<string | null>(null);
+  const glassAvailable = Platform.OS === 'ios' && reduceTransparency === false && safeGlassAvailability();
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') {
+      setReduceTransparency(true);
+      return;
+    }
+
+    let active = true;
+    void AccessibilityInfo.isReduceTransparencyEnabled().then((enabled) => {
+      if (active) setReduceTransparency(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', (enabled) => {
+      setReduceTransparency(enabled);
+    });
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
   /**
    * Rows that render task cards below them; those cards interrupt author
    * grouping. Rows only report while mounted, so scrolling never regroups.
@@ -376,6 +415,18 @@ export default function ConversationScreen() {
         actionTarget.item.message.authorId === trackUserId &&
         (!pmid || !actionTarget.item.message.authorProjectMemberId ||
           actionTarget.item.message.authorProjectMemberId === pmid) ? [{
+        label: 'Edit message',
+        icon: 'edit' as const,
+        onPress: () => {
+          setEditTarget(actionTarget.item);
+          setEditBody(actionTarget.item.message.body);
+        },
+      }] : []),
+      ...(!readOnly &&
+        actionTarget.kind === 'message' &&
+        actionTarget.item.message.authorId === trackUserId &&
+        (!pmid || !actionTarget.item.message.authorProjectMemberId ||
+          actionTarget.item.message.authorProjectMemberId === pmid) ? [{
         label: 'Delete message',
         icon: 'trash-can-outline' as const,
         destructive: true,
@@ -415,12 +466,79 @@ export default function ConversationScreen() {
     ];
   }, [actionTarget, cid, createTask, creatingTaskKey, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, replyMessageId, router, setReplyTo, trackUserId]);
 
+  async function saveMessageEdit() {
+    const target = editTarget;
+    if (!target || !trackUserId || editBusy || (!editBody.trim() && target.attachments.length === 0)) return;
+    setEditBusy(true);
+    try {
+      await editMessage({
+        messageId: target.message._id,
+        actorId: trackUserId,
+        actingCompanyId: cid,
+        projectMemberId: pmid,
+        body: editBody.trim(),
+      });
+      setEditTarget(null);
+      showToast({ title: 'Message updated', message: 'Your changes were saved.', tone: 'success' });
+    } catch (failure) {
+      showToast({ title: 'Message not updated', message: communicationErrorMessage(failure, 'edit this message'), tone: 'error' });
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   // Reconcile optimistic rows by message ID, so duplicate message text cannot hide a new send.
   useEffect(() => {
     if (!pendingMessages.length || !messages) return;
     const receivedIds = new Set((messages as DetailedMessage[]).map((item) => item.message._id));
     setPendingMessages((prev) => reconcilePendingMessages(prev, receivedIds));
   }, [messages, pendingMessages]);
+
+  useEffect(() => {
+    if (!messages || !assistantStreams) return;
+
+    const messageItems = messages as DetailedMessage[];
+    const streams = assistantStreams as Doc<'assistantStreams'>[];
+    const previousMessageIds = knownMessageIdsRef.current;
+    const previousStreams = knownAssistantStreamsRef.current;
+    const previousNewestTime = newestFeedTimeRef.current;
+    const currentMessageIds = new Set(messageItems.map(({ message }) => message._id));
+    const currentStreams = new Map(streams.map((stream) => [stream._id, stream.status]));
+    const newestTime = Math.max(
+      previousNewestTime,
+      ...messageItems.map(({ message }) => message.createdAt),
+      ...streams.map((stream) => stream.createdAt),
+    );
+
+    if (previousMessageIds && previousStreams) {
+      const hasNewIncomingMessage = messageItems.some(({ message }) => (
+        !previousMessageIds.has(message._id) &&
+        message.authorId !== trackUserId &&
+        message.createdAt >= previousNewestTime
+      ));
+      const hasNewAssistantAnswer = streams.some((stream) => {
+        const previous = previousStreams.get(stream._id);
+        const completed = stream.status === 'completed' && Boolean(stream.answer.trim());
+        return completed && (
+          previous === 'queued' ||
+          previous === 'running' ||
+          (!previous && stream.createdAt >= previousNewestTime)
+        );
+      });
+
+      if (screenActiveRef.current) {
+        if (hasNewIncomingMessage) hapticLight();
+        if (hasNewAssistantAnswer) hapticSuccess();
+      }
+
+      knownMessageIdsRef.current = new Set([...previousMessageIds, ...currentMessageIds]);
+      knownAssistantStreamsRef.current = new Map([...previousStreams, ...currentStreams]);
+    } else {
+      knownMessageIdsRef.current = currentMessageIds;
+      knownAssistantStreamsRef.current = currentStreams;
+    }
+    newestFeedTimeRef.current = newestTime;
+  }, [assistantStreams, messages, trackUserId]);
 
   useEffect(() => () => {
     if (acknowledgeTimeoutRef.current) clearTimeout(acknowledgeTimeoutRef.current);
@@ -482,7 +600,7 @@ export default function ConversationScreen() {
 
   async function handleSendMessage(payload: ComposerSubmission): Promise<ComposerSubmissionResult> {
     if (!trackUserId || !pid || !gid) return { failedIds: payload.attachments.map((a) => a.id), messageId: null };
-    hapticMedium();
+    if (screenActiveRef.current) hapticMedium();
     const body = payload.body.trim();
     const replyToMessageId = replyTo?.message._id;
     const sendSignature = JSON.stringify({
@@ -678,6 +796,7 @@ export default function ConversationScreen() {
           messageId={item.kind === 'message' ? item.item.message._id : undefined}
           onCardsChange={trackCardRow}
           projectId={pid}
+          readOnly={readOnly}
         /> : null}
       </View>
     );
@@ -705,31 +824,47 @@ export default function ConversationScreen() {
               else router.replace(pid ? projectChannelsHref(pid, channelContext) as never : '/conversations' as never);
             }}
           />,
+          headerRight: () => !readOnly ? <IconButton
+            accessibilityLabel="Channel options"
+            appearance="plain"
+            icon="dots-horizontal"
+            onPress={() => { hapticLight(); setToolsOpen(true); }}
+          /> : null,
           headerTitle: () => (
-            <Pressable
-              accessibilityLabel={`Switch Channel: ${activeGroup?.name ?? 'Conversation'} in ${navigation?.available && navigation.project ? navigation.project.name : 'Project'}`}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
-              style={styles.headerTitle}>
-              <View style={[styles.headerMark, { backgroundColor: Platform.OS === 'ios' ? 'transparent' : theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="channel" size={18} weight="regular" /></View>
-              <View style={styles.headerTitleCopy}>
-                <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{navigation?.available && navigation.project ? navigation.project.name : 'Project'}</ThemedText>
-                <ThemedText numberOfLines={1} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+            <View style={styles.headerTitle}>
+              <View style={[styles.channelHeaderButton, { backgroundColor: glassAvailable ? 'transparent' : theme.backgroundElement, borderColor: theme.homeBorder }]}>
+                {Platform.OS === 'ios' && glassAvailable ? (
+                  <GlassContainer pointerEvents="none" spacing={Spacing.one} style={StyleSheet.absoluteFill}>
+                    <GlassView
+                      colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'}
+                      glassEffectStyle="regular"
+                      isInteractive={false}
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFill, styles.channelHeaderMaterial]}
+                      tintColor={theme.navigationGlass}
+                    />
+                  </GlassContainer>
+                ) : Platform.OS === 'ios' && reduceTransparency === false ? (
+                  <BlurView
+                    intensity={78}
+                    pointerEvents="none"
+                    style={[StyleSheet.absoluteFill, styles.channelHeaderMaterial, { backgroundColor: theme.navigationGlass }]}
+                    tint={theme.background === '#1b1917' ? 'systemMaterialDark' : 'systemMaterialLight'}
+                  />
+                ) : null}
+                <Pressable
+                  accessibilityHint="Opens the Channel picker"
+                  accessibilityLabel={`Switch Channel: ${activeGroup?.name ?? 'Conversation'}`}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
+                  style={styles.channelNameButton}
+                >
+                  <PlatformIcon color={theme.textSecondary} name="channel" size={17} />
+                  <ThemedText accessibilityRole="header" numberOfLines={1} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+                  <PlatformIcon color={theme.textSecondary} name="chevron-down" size={14} />
+                </Pressable>
               </View>
-              <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
-            </Pressable>
-          ),
-          headerRight: () => (
-            <View style={styles.headerActions}>
-              {!readOnly ? (
-                <IconButton
-                  accessibilityLabel="Channel options"
-                  appearance="plain"
-                  icon="dots-vertical"
-                  onPress={() => setToolsOpen(true)}
-                />
-              ) : null}
             </View>
           ),
         }}
@@ -792,10 +927,12 @@ export default function ConversationScreen() {
               <View>
                 {pendingMessages.map((m) => (
                   <View key={m.id} style={styles.pendingRow}>
-                    <View style={styles.pendingAvatarSpacer} />
-                    <View style={styles.pendingBody}>
-                      <PlatformIcon color={theme.textSecondary} name="clock-outline" size={12} />
-                      <ThemedText style={styles.pendingText} type="small">{m.body}</ThemedText>
+                    <View style={[styles.pendingBody, { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}>
+                      <PlatformIcon color={theme.accentStrong} name="clock-outline" size={14} />
+                      <View style={styles.pendingCopy}>
+                        <ThemedText themeColor="accentStrong" type="captionBold">Sending</ThemedText>
+                        <ThemedText style={styles.pendingText} type="small">{m.body}</ThemedText>
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -918,6 +1055,19 @@ export default function ConversationScreen() {
         onClose={() => setActionSheetOpen(false)}
         actions={messageActions}
       />
+      <OptionsSheet onClose={() => setEditTarget(null)} title="Edit message" visible={Boolean(editTarget)}>
+        <SheetInput autoFocus label="Message" maxLength={10_000} multiline onChangeText={setEditBody} value={editBody} />
+        <View style={styles.editActions}>
+          <ActionButton disabled={editBusy} label="Cancel" onPress={() => setEditTarget(null)} style={styles.editAction} variant="secondary" />
+          <ActionButton
+            disabled={editBusy || (!editBody.trim() && !editTarget?.attachments.length)}
+            label={editBusy ? 'Saving…' : 'Save changes'}
+            loading={editBusy}
+            onPress={() => void saveMessageEdit()}
+            style={styles.editAction}
+          />
+        </View>
+      </OptionsSheet>
       <ForwardMessageSheet
         busyTargetId={forwardBusyGroupId}
         currentGroupId={gid}
@@ -933,6 +1083,8 @@ export default function ConversationScreen() {
 
 const styles = StyleSheet.create({
   archiveBanner: { gap: Spacing.one, padding: Spacing.three },
+  editAction: { flex: 1 },
+  editActions: { flexDirection: 'row', gap: Spacing.two },
   empty: { alignItems: 'center', padding: Spacing.six },
   flex: { flex: 1 },
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
@@ -950,13 +1102,13 @@ const styles = StyleSheet.create({
   },
   loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  headerActions: { alignItems: 'center', flexDirection: 'row' },
-  headerTitle: { alignItems: 'center', flexDirection: 'row', gap: 4, maxWidth: 220 },
-  headerMark: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', marginRight: Spacing.one, width: 34 },
-  headerTitleCopy: { flex: 1, minWidth: 0 },
-  pendingAvatarSpacer: { width: 36 },
-  pendingBody: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0, opacity: 0.6 },
-  pendingRow: { flexDirection: 'row', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingVertical: 2 },
+  headerTitle: { backgroundColor: 'transparent', maxWidth: 280, minHeight: TouchTarget },
+  channelHeaderButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', height: TouchTarget, maxWidth: 280, minWidth: 150, overflow: 'hidden', paddingLeft: Spacing.three, paddingRight: Spacing.one },
+  channelNameButton: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'flex-start', minWidth: 0 },
+  channelHeaderMaterial: { borderRadius: Radius.pill, overflow: 'hidden' },
+  pendingBody: { alignItems: 'flex-start', alignSelf: 'flex-end', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, maxWidth: '84%', minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  pendingCopy: { flexShrink: 1, gap: 2, minWidth: 0 },
+  pendingRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   pendingText: { flex: 1 },
   reasonChip: { borderRadius: Radius.medium, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   reasonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, padding: Spacing.three },

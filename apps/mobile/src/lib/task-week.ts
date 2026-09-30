@@ -18,6 +18,20 @@ export function tasksForWeekDay<T extends WeekTask>(tasks: readonly T[], date: s
   return tasks.filter((item) => item.task.dueDate === date && item.state?.category !== 'canceled');
 }
 
+/** Returns urgent tasks inside the displayed week, optionally narrowed to one day. */
+export function tasksForMyTaskWeek<T extends WeekTask>(
+  tasks: readonly T[],
+  weekDates: readonly string[],
+  selectedDate: string | null = null,
+) {
+  if (selectedDate && !weekDates.includes(selectedDate)) return [];
+  const allowedDates = new Set(selectedDate ? [selectedDate] : weekDates);
+  return tasks.filter((item) =>
+    Boolean(item.task.dueDate && allowedDates.has(item.task.dueDate))
+    && item.task.priority === 'urgent',
+  );
+}
+
 export function needsAttention<T extends WeekTask>(tasks: readonly T[], today: string) {
   const isOpen = (task: T) => task.state?.category !== 'completed' && task.state?.category !== 'canceled';
   return tasks.filter((item) => isOpen(item) && (

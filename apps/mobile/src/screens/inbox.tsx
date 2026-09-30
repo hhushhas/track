@@ -253,7 +253,7 @@ export default function InboxScreen() {
           ListHeaderComponent={
             <View style={styles.header}>
               <View style={styles.intro}>
-                <View style={styles.titleLine}><ThemedText type="display">Inbox</ThemedText><IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} /></View>
+                <View style={styles.titleLine}><ThemedText accessibilityRole="header" type="display">Inbox</ThemedText><IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} /></View>
                 <ThemedText themeColor="textSecondary" type="small">Updates across your work</ThemedText>
               </View>
               <View style={[styles.search, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
@@ -261,7 +261,7 @@ export default function InboxScreen() {
                 <TextInput accessibilityLabel="Search inbox" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search updates" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
                 {search ? <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.clearSearch}><PlatformIcon color={theme.textSecondary} name="close" size={18} /></Pressable> : null}
               </View>
-              <ScrollView accessibilityLabel="Inbox filters" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
+              <ScrollView accessibilityLabel="Inbox filters" accessibilityRole="tablist" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
                 {(['all', 'mentions', 'replies', 'tasks'] as const).map((value) => (
                   <CompactPillButton
                     accessibilityRole="tab"

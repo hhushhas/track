@@ -1,5 +1,11 @@
 export type MessageSwipeIntent = 'actions' | 'reply' | 'close';
 
+/** Returns an interrupted gesture to its last settled tray state. */
+export function messageSwipeCancelIntent(trayAlreadyOpen: boolean): MessageSwipeIntent {
+  'worklet';
+  return trayAlreadyOpen ? 'actions' : 'close';
+}
+
 /** Maps a completed horizontal drag to the action surface it is allowed to open. */
 export function messageSwipeIntent(translationX: number, canReply: boolean, canOpenActions: boolean, trayAlreadyOpen = false): MessageSwipeIntent {
   'worklet';

@@ -1,19 +1,25 @@
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { TaskStatusPill } from '@/components/task-ui';
+import { TaskAction, TaskStatusPill } from '@/components/task-ui';
+import { OptionsSheet, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticLight } from '@/lib/haptics';
+import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { shortTaskKey } from '@/lib/task-presentation';
 import { useTaskLinkBatch } from '@/lib/task-link-context';
 import { uniqueTaskViews } from '@/lib/unique-task-views';
+import { taskErrorMessage } from '@/lib/user-facing-error';
+
+type LinkedTask = FunctionReturnType<typeof api.tasks.listForMessages>[number]['tasks'][number];
+type BoardState = FunctionReturnType<typeof api.taskBoards.list>[number]['states'][number];
 
 /** Matches the avatar column MessageBubble reserves, so cards line up with bubbles. */
 const GUTTER = 40;
@@ -30,6 +36,7 @@ type Props = {
    */
   onCardsChange?: (rowId: string, hasCards: boolean) => void;
   projectId: Id<'projects'>;
+  readOnly?: boolean;
 };
 
 export function TaskInlineCards({
@@ -39,6 +46,7 @@ export function TaskInlineCards({
   messageId,
   onCardsChange,
   projectId,
+  readOnly = false,
 }: Props) {
   const theme = useTheme();
   const router = useRouter();
@@ -60,6 +68,16 @@ export function TaskInlineCards({
     : batch?.assistantTasks.get(String(assistantStreamId)) ?? assistantTasks;
   const hasCards = Boolean(tasks?.length);
   const rowId = messageId ?? assistantStreamId;
+  const canChangeStatus = !readOnly && !identity?.archived;
+  const boards = useQuery(api.taskBoards.list, hasCards && canChangeStatus ? {
+    projectId,
+    ...queryIdentity,
+  } : 'skip');
+  const moveTask = useMutation(api.tasks.moveTask);
+  const [statusTarget, setStatusTarget] = useState<{ task: LinkedTask['task']; states: BoardState[] } | null>(null);
+  const [statusError, setStatusError] = useState('');
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [confirmState, setConfirmState] = useState<BoardState | null>(null);
 
   useEffect(() => {
     if (rowId) onCardsChange?.(rowId, hasCards);
@@ -68,6 +86,50 @@ export function TaskInlineCards({
   if (!tasks?.length) return null;
   const visibleTasks = uniqueTaskViews(tasks);
 
+  function openStatusPicker(item: LinkedTask) {
+    setStatusError('');
+    setConfirmState(null);
+    const board = boards?.find((candidate) => candidate.board._id === item.task.boardId);
+    setStatusTarget({ task: item.task, states: board?.states ?? [] });
+    if (!board && boards !== undefined) setStatusError('Task statuses are unavailable right now.');
+  }
+
+  const activeBoardStates = statusTarget
+    ? boards?.find((candidate) => candidate.board._id === statusTarget.task.boardId)?.states ?? statusTarget.states
+    : [];
+
+  async function changeStatus(state: BoardState, confirmOpenSubtasks = false) {
+    const target = statusTarget;
+    if (!target || statusBusy) return;
+    if (state._id === target.task.workflowStateId) {
+      setStatusTarget(null);
+      return;
+    }
+    setStatusBusy(true);
+    setStatusError('');
+    setConfirmState(null);
+    try {
+      await moveTask({
+        taskId: target.task._id,
+        workflowStateId: state._id,
+        expectedRevision: target.task.revision,
+        ...(confirmOpenSubtasks ? { confirmOpenSubtasks: true } : {}),
+        ...queryIdentity,
+      });
+      hapticMedium();
+      setStatusTarget(null);
+    } catch (failure) {
+      const failureCode = failure instanceof Error ? failure.message : '';
+      if (failureCode.includes('task_open_subtasks_confirmation_required')) {
+        setConfirmState(state);
+      } else {
+        setStatusError(taskErrorMessage(failure, 'The task status could not be changed. Check your connection and try again.'));
+      }
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
   return (
     <View style={[styles.row, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
       {isOwnMessage ? null : <View style={styles.gutter} />}
@@ -75,30 +137,66 @@ export function TaskInlineCards({
         {visibleTasks.map((item) => {
           const status = item.state?.name ?? 'Unknown status';
           return (
-            <Pressable
-              accessibilityHint="Opens the task"
-              accessibilityLabel={`Task ${item.task.publicKey}, ${status}, ${item.task.title}`}
-              accessibilityRole="button"
-              android_ripple={{ color: theme.backgroundSelected }}
-              key={item.task._id}
-              onPress={() => {
-                hapticLight();
-                router.push(taskDetailHref(projectId, item.task.publicKey, identity));
-              }}
-              style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+            <View key={item.task._id} style={[styles.card, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
               <View style={styles.header}>
-                <ThemedText numberOfLines={1} style={styles.key} themeColor="textSecondary" type="mono">
-                  {shortTaskKey(item.task.publicKey)}
-                </ThemedText>
-                <TaskStatusPill category={item.state?.category} label={status} />
+                <Pressable
+                  accessibilityHint="Opens the task"
+                  accessibilityLabel={`Task ${item.task.publicKey}, ${status}, ${item.task.title}`}
+                  accessibilityRole="button"
+                  android_ripple={{ color: theme.backgroundSelected }}
+                  onPress={() => {
+                    hapticLight();
+                    router.push(taskDetailHref(projectId, item.task.publicKey, identity));
+                  }}
+                  style={styles.openTask}>
+                  <ThemedText numberOfLines={1} style={styles.key} themeColor="textSecondary" type="mono">
+                    {shortTaskKey(item.task.publicKey)}
+                  </ThemedText>
+                </Pressable>
+                <TaskStatusPill category={item.state?.category} label={status} onPress={canChangeStatus ? () => openStatusPicker(item) : undefined} />
               </View>
-              <ThemedText numberOfLines={2} type="small">
-                {item.task.title}
-              </ThemedText>
-            </Pressable>
+              <Pressable
+                accessibilityHint="Opens the task"
+                accessibilityLabel={`${item.task.title}, ${status}`}
+                accessibilityRole="button"
+                android_ripple={{ color: theme.backgroundSelected }}
+                onPress={() => {
+                  hapticLight();
+                  router.push(taskDetailHref(projectId, item.task.publicKey, identity));
+                }}
+                style={styles.openTask}>
+                <ThemedText numberOfLines={2} type="small">{item.task.title}</ThemedText>
+              </Pressable>
+            </View>
           );
         })}
       </View>
+      <OptionsSheet
+        onClose={() => { setStatusTarget(null); setStatusError(''); setConfirmState(null); }}
+        title="Change status"
+        visible={Boolean(statusTarget)}>
+        {statusTarget ? <SheetNote>{statusTarget.task.title}</SheetNote> : null}
+        {activeBoardStates.length ? (
+          <SheetSection title="Status">
+            {activeBoardStates.map((state) => <SheetRow
+              disabled={statusBusy}
+              icon={state.category === 'completed' ? 'check-circle' : 'circle-outline'}
+              key={state._id}
+              label={state.name}
+              loading={statusBusy && state._id === confirmState?._id}
+              onPress={() => void changeStatus(state)}
+              selected={state._id === statusTarget?.task.workflowStateId}
+            />)}
+          </SheetSection>
+        ) : statusTarget ? <SheetNote state={statusError ? 'error' : undefined}>{statusError || (boards === undefined ? 'Loading statuses…' : 'No active statuses are available for this task.')}</SheetNote> : null}
+        {statusError && activeBoardStates.length ? <SheetNote state="error">{statusError}</SheetNote> : null}
+        {confirmState ? (
+          <>
+            <SheetNote state="error">This task has open checklist items. Complete it anyway?</SheetNote>
+            <TaskAction disabled={statusBusy} label={statusBusy ? 'Updating…' : 'Complete anyway'} onPress={() => void changeStatus(confirmState, true)} primary />
+          </>
+        ) : null}
+      </OptionsSheet>
     </View>
   );
 }
@@ -121,6 +219,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minWidth: 0,
   },
+  openTask: { flex: 1, minWidth: 0 },
   key: {
     flexShrink: 1,
     minWidth: 0,

@@ -51,6 +51,7 @@ export function ConversationProjectTabs({ projects, selectedId, onSelect, onOpen
 
     <FlatList
       accessibilityLabel="Project scope"
+      accessibilityRole="tablist"
       contentContainerStyle={styles.tabs}
       data={tabs}
       horizontal

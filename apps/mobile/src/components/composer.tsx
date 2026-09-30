@@ -148,6 +148,7 @@ export function Composer({
   /** Set for one commit after inserting a mention, to place the caret after it. */
   const [selection, setSelection] = useState<{ end: number; start: number } | null>(null);
   const [sending, setSending] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
 
   const voice = useVoiceRecorder({
     onCapture: handleCapture,
@@ -359,7 +360,7 @@ export function Composer({
         </View>
       ) : null}
 
-      <View style={[styles.row, Platform.OS === 'ios' && styles.iosComposerShell, Platform.OS === 'ios' && { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+      <View style={[styles.row, Platform.OS === 'ios' && styles.iosComposerShell]}>
         {mode !== 'idle' ? (
           <View
             accessibilityLabel={`Recording voice note, ${formatDuration(voice.durationMs)}`}
@@ -392,7 +393,7 @@ export function Composer({
             )}
           </View>
         ) : (
-          <View style={[styles.messageField, Platform.OS === 'ios' && styles.iosMessageField, { backgroundColor: Platform.OS === 'ios' ? 'transparent' : theme.backgroundElement }]}>
+          <View style={[styles.messageField, Platform.OS === 'ios' && styles.iosMessageField]}>
             {Platform.OS === 'ios' ? <GlassContainer spacing={4} style={styles.iosActionGroup}>
               <Pressable
                 accessibilityLabel="Add a photo"
@@ -421,31 +422,52 @@ export function Composer({
               style={[styles.circle, { backgroundColor: theme.backgroundElement }]}>
               <PlatformIcon color={theme.textSecondary} name="paperclip" size={20} />
             </Pressable>}
-            <TextInput
-              accessibilityLabel={`Message ${activeGroupName ?? 'channel'}`}
-              allowFontScaling
-              cursorColor={theme.accent}
-              keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
-              maxLength={10_000}
-              maxFontSizeMultiplier={MaxFontScale}
-              multiline
-              onChangeText={(next) => {
-                if (notice) setNotice(null);
-                // Typing always wins back the caret, even if no selection event lands.
-                if (selection) setSelection(null);
-                onChangeText(next);
-              }}
-              onFocus={onFocus}
-              onSelectionChange={handleSelectionChange}
-              placeholder={Platform.OS === 'ios' ? 'Message' : 'Message or ask @track'}
-              placeholderTextColor={theme.textTertiary}
-              ref={inputRef}
-              selection={selection ?? undefined}
-              selectionColor={theme.accent}
-              selectionHandleColor={theme.accent}
-              style={[styles.input, Platform.OS !== 'ios' && { backgroundColor: theme.backgroundElement }, { color: theme.text }]}
-              value={value}
-            />
+            <View style={[styles.inputPill, { borderColor: inputFocused ? theme.accentStrong : theme.homeBorder }]}>
+              {Platform.OS === 'ios' && hasLiquidGlass ? (
+                <GlassView
+                  colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'}
+                  glassEffectStyle="regular"
+                  isInteractive={false}
+                  pointerEvents="none"
+                  style={[StyleSheet.absoluteFill, styles.inputPillGlass]}
+                  tintColor={theme.backgroundElement}
+                />
+              ) : (
+                <View
+                  pointerEvents="none"
+                  style={[StyleSheet.absoluteFill, styles.inputPillFallback, { backgroundColor: theme.backgroundElement }]}
+                />
+              )}
+              <TextInput
+                accessibilityLabel={`Message ${activeGroupName ?? 'channel'}`}
+                allowFontScaling
+                cursorColor={theme.accent}
+                keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
+                maxLength={10_000}
+                maxFontSizeMultiplier={MaxFontScale}
+                multiline
+                onChangeText={(next) => {
+                  if (notice) setNotice(null);
+                  // Typing always wins back the caret, even if no selection event lands.
+                  if (selection) setSelection(null);
+                  onChangeText(next);
+                }}
+                onBlur={() => setInputFocused(false)}
+                onFocus={() => {
+                  setInputFocused(true);
+                  onFocus?.();
+                }}
+                onSelectionChange={handleSelectionChange}
+                placeholder={Platform.OS === 'ios' ? 'Message' : 'Message or ask @track'}
+                placeholderTextColor={theme.textTertiary}
+                ref={inputRef}
+                selection={selection ?? undefined}
+                selectionColor={theme.accent}
+                selectionHandleColor={theme.accent}
+                style={[styles.input, { color: theme.text }]}
+                value={value}
+              />
+            </View>
           </View>
         )}
 
@@ -549,21 +571,24 @@ const styles = StyleSheet.create({
     ...Typography.message,
     maxHeight: 120,
     minHeight: TouchTarget,
-    paddingHorizontal: Spacing.one,
+    paddingHorizontal: Spacing.three,
     paddingVertical: Platform.OS === 'ios' ? 11 : 8,
   },
-  iosComposerShell: {
-    alignItems: 'center',
+  inputPill: {
     borderCurve: 'continuous',
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    minHeight: TouchTarget,
+    overflow: 'hidden',
+  },
+  inputPillFallback: { borderRadius: Radius.pill },
+  inputPillGlass: { borderRadius: Radius.pill },
+  iosComposerShell: {
+    alignItems: 'center',
     marginHorizontal: Spacing.three,
     minHeight: 60,
     paddingHorizontal: Spacing.one,
-    shadowColor: '#1b1917',
-    shadowOffset: { height: 3, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
   },
   iosActionGroup: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   iosFallbackMaterial: { borderRadius: Radius.pill },

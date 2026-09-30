@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type AccessibilityActionEvent } from 'react-native';
 
 import { AttachmentList } from '@/components/chat/attachment-list';
 import { MessageText } from '@/components/chat/message-text';
@@ -15,6 +15,7 @@ import { displayText } from '@/lib/display-text';
 const AVATAR_SIZE = 32;
 /** Media sits nearly edge-to-edge; text sections add the rest of the inset. */
 const MEDIA_PAD = 3;
+const MESSAGE_ACCESSIBILITY_ACTIONS = [{ name: 'openMessageActions', label: 'Open message actions' }] as const;
 
 type Props = {
   isFirstInGroup: boolean;
@@ -57,6 +58,9 @@ export function MessageBubble({
     message.attachments.every(
       ({ attachment, url }) => url && isImageAttachment(attachment.contentType),
     );
+  const onAccessibilityAction = (event: AccessibilityActionEvent) => {
+    if (event.nativeEvent.actionName === 'openMessageActions') onLongPress();
+  };
 
   return (
     <View style={[styles.row, isFirstInGroup && styles.rowFirst, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
@@ -88,7 +92,14 @@ export function MessageBubble({
               </ThemedText>
             ) : null}
             {isThreadReply ? (
-              <ThemedText accessibilityLabel={`Sent at ${timeLabel}`} style={styles.threadTime} themeColor="textTertiary" type="caption">
+              <ThemedText
+                accessibilityActions={MESSAGE_ACCESSIBILITY_ACTIONS}
+                accessibilityHint="Use accessibility actions to open actions for this message."
+                accessibilityLabel={`Sent at ${timeLabel}`}
+                onAccessibilityAction={onAccessibilityAction}
+                style={styles.threadTime}
+                themeColor="textTertiary"
+                type="caption">
                 {timeLabel}
               </ThemedText>
             ) : null}
@@ -141,7 +152,10 @@ export function MessageBubble({
               <MessageText body={body} />
               {isThreadReply ? null : (
                 <ThemedText
+                  accessibilityActions={MESSAGE_ACCESSIBILITY_ACTIONS}
+                  accessibilityHint="Use accessibility actions to open actions for this message."
                   accessibilityLabel={`Sent at ${timeLabel}`}
+                  onAccessibilityAction={onAccessibilityAction}
                   style={styles.timeFooter}
                   themeColor="textTertiary"
                   type="caption">
@@ -193,7 +207,10 @@ export function MessageBubble({
         {body || isThreadReply ? null : mediaClosesBubble ? (
           <View style={[styles.timeOverlay, { backgroundColor: theme.overlay }]}>
             <ThemedText
+              accessibilityActions={MESSAGE_ACCESSIBILITY_ACTIONS}
+              accessibilityHint="Use accessibility actions to open actions for this message."
               accessibilityLabel={`Sent at ${timeLabel}`}
+              onAccessibilityAction={onAccessibilityAction}
               style={styles.timeOverlayText}
               type="caption">
               {timeLabel}
@@ -201,7 +218,10 @@ export function MessageBubble({
           </View>
         ) : (
           <ThemedText
+            accessibilityActions={MESSAGE_ACCESSIBILITY_ACTIONS}
+            accessibilityHint="Use accessibility actions to open actions for this message."
             accessibilityLabel={`Sent at ${timeLabel}`}
+            onAccessibilityAction={onAccessibilityAction}
             style={[styles.timeFooter, hasMedia && styles.inset]}
             themeColor="textTertiary"
             type="caption">

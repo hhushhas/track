@@ -8,18 +8,21 @@ import { useTheme } from '@/hooks/use-theme';
 
 export type TaskViewMode = 'board' | 'list';
 
-export function TasksToolbar({ boardName, filterActive, mode, onBoardPress, onFilterPress, onModeChange, onSearchPress, projectName, searchActive }: {
-  boardName: string; filterActive: boolean; mode: TaskViewMode; onBoardPress: () => void; onFilterPress: () => void; onModeChange: (mode: TaskViewMode) => void; onSearchPress: () => void; projectName: string; searchActive: boolean;
+export function TasksToolbar({ boardName, filterActive, mode, onBoardPress, onFilterPress, onModeChange, onSearchPress, projectName, scopeLabel, searchActive }: {
+  boardName: string; filterActive: boolean; mode: TaskViewMode; onBoardPress: () => void; onFilterPress: () => void; onModeChange: (mode: TaskViewMode) => void; onSearchPress: () => void; projectName: string; scopeLabel: 'Channels' | 'Project'; searchActive: boolean;
 }) {
   const theme = useTheme();
   return <View style={styles.toolbar}>
     <View style={styles.toolbarLine}>
       <Pressable accessibilityLabel={`Board: ${boardName}. Project: ${projectName}`} accessibilityRole="button" android_ripple={{ color: theme.backgroundSelected }} onPress={onBoardPress} style={[styles.boardSelector, { backgroundColor: theme.backgroundElement }]}>
         <PlatformIcon color={theme.accentStrong} name="view-board" size={17} />
-        <View style={styles.boardCopy}><ThemedText numberOfLines={1} style={styles.boardEyebrow} themeColor="textSecondary" type="captionBold">{boardName}</ThemedText><ThemedText numberOfLines={1} type="smallBold">{projectName}</ThemedText></View>
+        <View style={styles.boardCopy}><ThemedText numberOfLines={1} style={styles.boardEyebrow} themeColor="textSecondary" type="captionBold">{scopeLabel}</ThemedText><ThemedText numberOfLines={1} type="smallBold">{boardName}</ThemedText></View>
         <PlatformIcon color={theme.textTertiary} name="chevron-down" size={15} />
       </Pressable>
-      <View style={styles.toolbarActions}><ToolbarIcon active={searchActive} icon="search" label="Search tasks" onPress={onSearchPress} /><ToolbarIcon active={filterActive} icon="filter" label="Filter and sort tasks" onPress={onFilterPress} /></View>
+      <View style={styles.toolbarActions}>
+        <ToolbarIcon active={searchActive} icon="search" label="Search tasks" onPress={onSearchPress} />
+        <ToolbarIcon active={filterActive} icon="filter" label="Filter and sort tasks" onPress={onFilterPress} />
+      </View>
     </View>
     <ScrollView contentContainerStyle={styles.toolbarScrollRow} horizontal showsHorizontalScrollIndicator={false}>
       <View accessibilityRole="tablist" style={[styles.viewSwitch, { backgroundColor: theme.backgroundSelected }]}><ViewToggle icon="view-board" label="Board" mode="board" onPress={onModeChange} selected={mode === 'board'} /><ViewToggle icon="list" label="List" mode="list" onPress={onModeChange} selected={mode === 'list'} /></View>

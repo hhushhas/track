@@ -25,6 +25,7 @@ describe('primaryNavigationVisibleForPath', () => {
     expect(primaryNavigationVisibleForPath('/task')).toBe(false);
     expect(primaryNavigationVisibleForPath('/task?tab=discussion')).toBe(false);
     expect(primaryNavigationVisibleForPath('/notifications')).toBe(false);
+    expect(primaryNavigationVisibleForPath('/inbox')).toBe(true);
     expect(primaryNavigationVisibleForPath('/profile')).toBe(true);
     expect(primaryNavigationVisibleForPath('/company')).toBe(false);
     expect(primaryNavigationVisibleForPath('/conversations')).toBe(true);

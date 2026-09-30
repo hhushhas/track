@@ -4,12 +4,12 @@ import type { FunctionReturnType } from 'convex/server';
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Keyboard, Pressable, ScrollView, SectionList, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
-import { CompactPillButton } from '@/components/compact-pill-button';
+import { ConversationProjectTabs } from '@/components/conversation-project-tabs';
 import { DateField } from '@/components/date-field';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
@@ -25,7 +25,7 @@ import {
   type MobileSuggestionView,
   type MobileTaskView,
 } from '@/components/task-list-content';
-import { TaskAction, TaskCard, TaskStateBanner } from '@/components/task-ui';
+import { TaskAction, TaskStateBanner } from '@/components/task-ui';
 import {
   SprintFlowHeader,
   TaskCreateContext,
@@ -40,17 +40,14 @@ import { useCompany } from '@/contexts/company-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
-import { hapticLight, hapticMedium } from '@/lib/haptics';
-import { localDateKey } from '@/lib/home-feed';
-import { buildMyTaskSections } from '@/lib/my-task-sections';
+import { hapticMedium } from '@/lib/haptics';
 import { useReleaseConfig } from '@/lib/release-config';
 import { useAppToast } from '@/components/app-toast';
 import { enqueueOfflineTask } from '@/lib/offline-task-queue';
 import { groupMobileTasksByState, taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { taskPriorityLabel } from '@/lib/task-presentation';
 import { taskCoverageStatus } from '@/lib/task-coverage';
-import { matchesMyTaskFilters, matchesMyTaskSearch, type MyTaskFilters } from '@/lib/my-task-filters';
-import { weekDateKeys } from '@/lib/task-week';
+import { scopeMyTaskItems } from '@/lib/my-task-views';
 import { resolveWorkflowStateId, taskMatchesWorkflowStateFilter, visibleBoardStateIds } from '@/lib/task-workflow';
 import { taskErrorMessage } from '@/lib/user-facing-error';
 
@@ -61,7 +58,6 @@ type AssigneeView = {
 };
 
 type TaskTab = 'board' | 'inbox';
-type PersonalTaskView = 'today' | 'upcoming' | 'all' | 'done';
 type CreatePicker = 'assignee' | 'board' | 'priority' | 'status' | null;
 type BoardSort = 'manual' | 'due' | 'priority';
 type BoardFilter = 'all' | 'open' | 'completed' | 'high';
@@ -165,23 +161,8 @@ export default function TasksScreen() {
   const projectDirectory = useMemo(() => (projectDirectoryPages.results as Array<FunctionReturnType<typeof api.mobile.listTaskProjects>['page'][number]>)
     .filter((item): item is NonNullable<typeof item> => Boolean(item && item.membership.status === 'active')),
   [projectDirectoryPages.results]);
-  const [selectedWeekDate, setSelectedWeekDate] = useState<string | null>(null);
-  const [weekDaysOpen, setWeekDaysOpen] = useState(false);
-  const todayKey = localDateKey(new Date());
-  const weekDates = useMemo(() => weekDateKeys(todayKey), [todayKey]);
-  const weekTaskPages = usePaginatedQuery(api.mobile.listMyTasks, release.tasks && !projectId && trackUserId && actingCompanyId ? {
-    userId: trackUserId,
-    actingCompanyId,
-    dueDateStart: weekDates[0],
-    dueDateEnd: weekDates[6],
-  } : 'skip', { initialNumItems: 12 });
-  const [globalTaskFilters, setGlobalTaskFilters] = useState<MyTaskFilters>({ dueDate: 'all', priority: 'all', status: 'all' });
-  const [draftTaskFilters, setDraftTaskFilters] = useState<MyTaskFilters>({ dueDate: 'all', priority: 'all', status: 'all' });
-  const [personalTaskView, setPersonalTaskView] = useState<PersonalTaskView>('today');
-  const [completedExpanded, setCompletedExpanded] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
-  const [personalFilterOpen, setPersonalFilterOpen] = useState(false);
-  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [selectedMyTaskProjectId, setSelectedMyTaskProjectId] = useState<string | null>(null);
   const myTaskPages = usePaginatedQuery(api.mobile.listMyTasks, release.tasks && !projectId && trackUserId && actingCompanyId ? {
     userId: trackUserId,
     actingCompanyId,
@@ -189,43 +170,35 @@ export default function TasksScreen() {
   const myTasks = useMemo(() => {
     const seenTaskIds = new Set<string>();
     return [...myTaskPages.results as GlobalTaskView[]]
-    .filter((item) => item.companyId === actingCompanyId)
-    .filter((item) => {
-      if (seenTaskIds.has(item.task._id)) return false;
-      seenTaskIds.add(item.task._id);
-      return true;
-    })
-    .sort((left, right) =>
-      (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31') ||
-      right.task.updatedAt - left.task.updatedAt,
-    );
-  }, [actingCompanyId, myTaskPages.results]);
-  const weekTasks = useMemo(() => {
-    const seenTaskIds = new Set<string>();
-    return [...weekTaskPages.results as GlobalTaskView[]]
       .filter((item) => item.companyId === actingCompanyId)
       .filter((item) => {
         if (seenTaskIds.has(item.task._id)) return false;
         seenTaskIds.add(item.task._id);
         return true;
       })
-      .sort((left, right) => (left.task.dueDate ?? '').localeCompare(right.task.dueDate ?? '') || left.task.title.localeCompare(right.task.title));
-  }, [actingCompanyId, weekTaskPages.results]);
-  const cappedWeekProject = weekTasks.find((item) => item.hasMoreDueTasks);
-  const { loadMore: loadMoreMyTasks, status: myTaskStatus } = myTaskPages;
+      .sort((left, right) =>
+        (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31')
+        || right.task.updatedAt - left.task.updatedAt,
+      );
+  }, [actingCompanyId, myTaskPages.results]);
+  const { status: myTaskStatus } = myTaskPages;
   const cappedTaskProject = (myTaskPages.results as GlobalTaskView[])
     .find((item) => item.hasMoreAssignedTasks);
-  const taskCoverage = taskCoverageStatus(myTaskStatus, weekTaskPages.status, Boolean(cappedTaskProject), Boolean(cappedWeekProject));
-  const globalBoards = useQuery(api.taskBoards.listMine, release.tasks && !projectId ? {} : 'skip') as GlobalBoardView[] | undefined;
-  const companyBoards = useMemo(() => globalBoards?.filter((item) => String(item.companyId ?? '') === String(actingCompanyId ?? '')) ?? [], [actingCompanyId, globalBoards]);
-  const allGlobalTasks = useMemo(() => {
-    const uniqueTasks = new Map<string, GlobalTaskView>();
-    for (const item of [...myTasks, ...weekTasks]) uniqueTasks.set(item.task._id, item);
-    return [...uniqueTasks.values()].sort((left, right) =>
-      (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31')
-      || right.task.updatedAt - left.task.updatedAt,
-    );
-  }, [myTasks, weekTasks]);
+  const taskCoverage = taskCoverageStatus(myTaskStatus, 'Exhausted', Boolean(cappedTaskProject));
+  useEffect(() => {
+    setSelectedMyTaskProjectId(null);
+  }, [actingCompanyId]);
+  const globalBoards = useQuery(api.taskBoards.listMine, release.tasks && !projectId ? {
+    actingCompanyId: actingCompanyId ?? undefined,
+  } : 'skip') as GlobalBoardView[] | undefined;
+  const companyBoards = useMemo(() => scopeMyTaskItems(
+    globalBoards?.filter((item) => String(item.companyId ?? '') === String(actingCompanyId ?? '')) ?? [],
+    selectedMyTaskProjectId,
+  ), [actingCompanyId, globalBoards, selectedMyTaskProjectId]);
+  const allGlobalTasks = useMemo(() => scopeMyTaskItems([...myTasks].sort((left, right) =>
+    (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31')
+    || right.task.updatedAt - left.task.updatedAt,
+  ), selectedMyTaskProjectId), [myTasks, selectedMyTaskProjectId]);
   const boardTaskCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of allGlobalTasks) {
@@ -235,51 +208,6 @@ export default function TasksScreen() {
     return counts;
   }, [allGlobalTasks]);
   const boardTaskCountsPartial = taskCoverage !== 'complete';
-  const filteredGlobalTasks = useMemo(() => allGlobalTasks.filter((item) =>
-    matchesMyTaskSearch(item, taskSearch)
-    && matchesMyTaskFilters(item, globalTaskFilters, todayKey, weekDates[6] ?? todayKey),
-  ), [allGlobalTasks, globalTaskFilters, taskSearch, todayKey, weekDates]);
-  const viewTasks = useMemo(() => {
-    const dateFiltered = selectedWeekDate
-      ? filteredGlobalTasks.filter((item) => item.task.dueDate === selectedWeekDate && item.task.priority === 'urgent')
-      : filteredGlobalTasks;
-    if (personalTaskView === 'done') return dateFiltered.filter((item) => item.state?.category === 'completed');
-    if (personalTaskView === 'today') return dateFiltered.filter((item) =>
-      item.task.priority === 'urgent'
-      && Boolean(item.task.dueDate && item.task.dueDate <= todayKey)
-      && (globalTaskFilters.status !== 'all' || item.state?.category !== 'completed'),
-    );
-    if (personalTaskView === 'upcoming') return dateFiltered.filter((item) =>
-      Boolean(item.task.dueDate && item.task.dueDate > todayKey)
-      && (globalTaskFilters.status !== 'all' || item.state?.category !== 'completed'),
-    );
-    return dateFiltered;
-  }, [filteredGlobalTasks, globalTaskFilters.status, personalTaskView, selectedWeekDate, todayKey]);
-  const viewSections = useMemo(() => buildMyTaskSections(viewTasks, todayKey), [todayKey, viewTasks]);
-  const visibleMyTaskSections = useMemo(() => viewSections.map((section) => ({
-    ...section,
-    count: section.data.length,
-    data: section.key === 'completed' && personalTaskView === 'all' && !completedExpanded && globalTaskFilters.status !== 'completed' ? [] : section.data,
-  })), [completedExpanded, globalTaskFilters.status, personalTaskView, viewSections]);
-  const visibleSectionTaskCount = visibleMyTaskSections.reduce((count, section) => count + section.count, 0);
-  const urgentWeekTasks = weekTasks.filter((item) => item.task.priority === 'urgent');
-  const weekTaskCount = urgentWeekTasks.filter((item) =>
-    matchesMyTaskSearch(item, taskSearch)
-    && (globalTaskFilters.status !== 'all' || item.state?.category !== 'completed')
-    && matchesMyTaskFilters(item, globalTaskFilters, todayKey, weekDates[6] ?? todayKey),
-  ).length;
-  const taskViewCounts = useMemo(() => {
-    const tasks = filteredGlobalTasks;
-    return {
-      all: tasks.length,
-      done: tasks.filter((item) => item.state?.category === 'completed').length,
-      today: tasks.filter((item) => item.task.priority === 'urgent' && Boolean(item.task.dueDate && item.task.dueDate <= todayKey) && (globalTaskFilters.status !== 'all' || item.state?.category !== 'completed')).length,
-      upcoming: tasks.filter((item) => Boolean(item.task.dueDate && item.task.dueDate > todayKey) && (globalTaskFilters.status !== 'all' || item.state?.category !== 'completed')).length,
-    };
-  }, [filteredGlobalTasks, globalTaskFilters.status, todayKey]);
-  const activeFilterCount = Number(globalTaskFilters.status !== 'all')
-    + Number(globalTaskFilters.priority !== 'all')
-    + Number(globalTaskFilters.dueDate !== 'all');
   const suggestions = useQuery(api.taskSuggestions.list, release.tasks && projectId && !readOnly ? {
     projectId: project,
     ...queryIdentity,
@@ -525,75 +453,6 @@ export default function TasksScreen() {
     setStatusTarget({ identity: queryIdentity, states: board.states, task: item.task });
   }
 
-  function openGlobalTaskStatus(item: GlobalTaskView) {
-    const board = globalBoards?.find((candidate) => candidate.board._id === item.task.boardId);
-    if (!board) {
-      setError('Task statuses are unavailable right now.');
-      return;
-    }
-    setStatusTarget({
-      identity: {
-        actingCompanyId: item.companyId ?? undefined,
-        projectMemberId: item.projectMemberId,
-      },
-      states: board.states,
-      task: item.task,
-    });
-  }
-
-  function completeGlobalTask(item: GlobalTaskView) {
-    if (item.state?.category === 'completed' || item.state?.category === 'canceled') {
-      openGlobalTaskStatus(item);
-      return;
-    }
-    if (completingTaskId === item.task._id) return;
-    const completedState = globalBoards
-      ?.find((board) => board.board._id === item.task.boardId)
-      ?.states.find((state) => state.category === 'completed');
-    if (!completedState) {
-      openGlobalTaskStatus(item);
-      return;
-    }
-
-    setCompletingTaskId(item.task._id);
-    void moveTask({
-      expectedRevision: item.task.revision,
-      taskId: item.task._id,
-      workflowStateId: completedState._id,
-      actingCompanyId: item.companyId ?? undefined,
-      projectMemberId: item.projectMemberId,
-    }).then(() => {
-      hapticMedium();
-      showToast({ icon: 'check-circle', message: item.task.title, title: 'Task completed', tone: 'success' });
-    }).catch((failure) => setError(readableError(failure))).finally(() => setCompletingTaskId(null));
-  }
-
-  function renderMyTask(item: GlobalTaskView) {
-    return <TaskCard
-      assignee="You"
-      category={item.state?.category}
-      companyName={item.companyName}
-      dueDate={item.task.dueDate}
-      evidence={'references' in item && item.references.length > 0}
-      groupName={item.group?.name}
-      isCompleted={item.state?.category === 'completed'}
-      onCompletionPress={() => completeGlobalTask(item)}
-      onPress={() => router.push(taskDetailHref(item.project._id, item.task.publicKey, item.companyId ? {
-        companyId: item.companyId,
-        membershipId: item.projectMemberId,
-      } : null))}
-      onStatusPress={() => openGlobalTaskStatus(item)}
-      priority={item.task.priority}
-      publicKey={item.task.publicKey}
-      quiet
-      projectName={item.project.name}
-      showKey={false}
-      stateName={item.state?.name ?? 'Unknown'}
-      alwaysShowPriority
-      title={item.task.title}
-    />;
-  }
-
   function assigneeName(item: MobileTaskView) {
     if (!item.task.assigneeProjectMemberId) return undefined;
     return assignees?.find((candidate) => candidate.member._id === item.task.assigneeProjectMemberId)?.user.displayName
@@ -699,211 +558,66 @@ export default function TasksScreen() {
   }
 
   if (!projectId) {
+    const matchingBoards = companyBoards.filter(({ board, project: boardProject }) =>
+      (board.name + ' ' + boardProject.name).toLocaleLowerCase().includes(taskSearch.trim().toLocaleLowerCase()),
+    );
     return (
       <ThemedView style={styles.screen}>
         <Stack.Screen options={{ headerShown: false }} />
-        <SectionList
-          style={styles.screenContent}
+        <ScrollView
+          accessibilityLabel="Project boards"
           contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset, paddingTop: Spacing.four + safeAreaInsets.top, paddingLeft: Spacing.four + safeAreaInsets.left, paddingRight: Spacing.four + safeAreaInsets.right }]}
           contentInsetAdjustmentBehavior="never"
-          sections={visibleMyTaskSections}
-          keyExtractor={(item) => item.task._id}
-          ListHeaderComponent={<>
-            {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
-            {error ? <TaskStateBanner action={{ label: 'Dismiss', onPress: () => setError('') }} icon="refresh" message={error} tone="danger" /> : null}
-            <View style={styles.globalHeading}>
-              <View style={styles.globalTitleCopy}>
-                <ThemedText numberOfLines={1} style={styles.pageTitle} type="display">My Tasks</ThemedText>
-                <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{actingCompany?.company?.displayName ?? 'Assigned work across your Companies'}</ThemedText>
-              </View>
+          keyboardShouldPersistTaps="handled"
+        >
+          {offline ? <TaskStateBanner icon="cloud-off" message="Offline. Reconnect to refresh Boards." tone="offline" /> : null}
+          {error ? <TaskStateBanner action={{ label: 'Dismiss', onPress: () => setError('') }} icon="refresh" message={error} tone="danger" /> : null}
+          <View style={styles.globalHeading}>
+            <View style={styles.globalTitleCopy}>
+              <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.pageTitle} type="display">My Tasks</ThemedText>
+              <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{actingCompany?.company?.displayName ?? 'Boards in your workspace'}</ThemedText>
             </View>
-            <View style={styles.personalControls}>
-              <View style={styles.searchAndFilter}>
-              <View style={[styles.taskSearch, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
-                <PlatformIcon color={theme.textTertiary} name="search" size={19} />
-                <TextInput accessibilityLabel="Search assigned tasks" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} onChangeText={setTaskSearch} placeholder="Search tasks" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.taskSearchInput, { color: theme.text }]} value={taskSearch} />
-              </View>
-              <Pressable accessibilityLabel={activeFilterCount ? `Filters, ${activeFilterCount} applied` : 'Filter tasks'} accessibilityRole="button" onPress={() => { hapticLight(); Keyboard.dismiss(); setDraftTaskFilters(globalTaskFilters); setPersonalFilterOpen(true); }} style={({ pressed }) => [styles.filterButton, { backgroundColor: activeFilterCount ? theme.accentSoft : theme.backgroundElement, borderColor: activeFilterCount ? theme.accentStrong : theme.homeBorder, opacity: pressed ? 0.75 : 1 }]}>
-                <PlatformIcon color={activeFilterCount ? theme.accentStrong : theme.textSecondary} name="filter" size={19} />
-                {activeFilterCount ? <ThemedText themeColor="accentStrong" type="captionBold">{activeFilterCount}</ThemedText> : null}
-              </Pressable>
-              </View>
-              <ScrollView accessibilityRole="tablist" contentContainerStyle={styles.taskViewTabs} horizontal showsHorizontalScrollIndicator={false}>
-                {([
-                  ['today', 'Today', taskViewCounts.today],
-                  ['upcoming', 'Upcoming', taskViewCounts.upcoming],
-                  ['all', 'All', taskViewCounts.all],
-                  ['done', 'Done', taskViewCounts.done],
-                ] as const).map(([value, label, count]) => {
-                  const active = personalTaskView === value;
-                  return <CompactPillButton key={value} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { hapticMedium(); setPersonalTaskView(value); }} pillStyle={{ backgroundColor: active ? theme.accentSoft : theme.homeSurface, borderColor: active ? theme.accentStrong : theme.homeBorder }} pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}>
-                    <ThemedText style={{ color: active ? theme.accentStrong : theme.textSecondary }} type="captionBold">{label}</ThemedText>
-                    <ThemedText style={{ color: active ? theme.accentStrong : theme.textTertiary }} type="caption">{taskCoverage === 'loading' ? 'â€¦' : count}</ThemedText>
-                  </CompactPillButton>;
-                })}
-              </ScrollView>
-            </View>
-            <View style={styles.taskProjectSection}>
-              <View style={styles.boardDirectoryHeading}><ThemedText type="subtitle">Boards</ThemedText></View>
-              <View>
-                {globalBoards === undefined ? <SheetNote>Loading boards…</SheetNote> : companyBoards.length ? companyBoards.map((item) => {
-                  const taskCount = boardTaskCounts.get(String(item.board._id)) ?? 0;
-                  const countLabel = `${taskCount}${boardTaskCountsPartial ? '+' : ''}`;
-                  return <Pressable
-                    accessibilityHint={`Opens ${item.board.name} in ${item.project.name}`}
-                    accessibilityLabel={`${item.board.name} board, ${item.project.name} Project, ${taskCount}${boardTaskCountsPartial ? ' or more' : ''} assigned tasks`}
-                    accessibilityRole="button"
-                    key={item.board._id}
-                    onPress={() => {
-                      const identity = item.companyId ? { companyId: item.companyId, membershipId: item.projectMemberId } : null;
-                      router.push(taskListHref(item.project._id, identity, undefined, undefined, { boardId: item.board._id }) as never);
-                    }}
-                    style={({ pressed }) => [styles.boardDirectoryRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderBottomColor: theme.hairline }]}
-                  >
-                    <View style={[styles.boardDirectoryIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.textSecondary} name="view-board" size={17} /></View>
-                    <View style={styles.boardDirectoryCopy}><ThemedText numberOfLines={1} type="smallBold">{item.board.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{item.project.name}</ThemedText></View>
-                    <View style={[styles.boardCountBadge, { backgroundColor: theme.backgroundElement }]}><ThemedText themeColor="textSecondary" type="captionBold">{countLabel}</ThemedText></View>
-                    <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
-                  </Pressable>;
-                }) : <SheetNote>No boards are available in this Company yet.</SheetNote>}
-              </View>
-            </View>
-            {myTaskStatus === 'CanLoadMore' || weekTaskPages.status === 'CanLoadMore' ? <Pressable accessibilityRole="button" onPress={() => {
-              if (myTaskStatus === 'CanLoadMore') loadMoreMyTasks(50);
-              if (weekTaskPages.status === 'CanLoadMore') weekTaskPages.loadMore(50);
-            }} style={[styles.coverageHint, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
-              <View style={styles.coverageCopy}>
-                <ThemedText type="smallBold">More Company Projects</ThemedText>
-                <ThemedText themeColor="textSecondary" type="caption">Load more to check assigned work in the remaining Projects.</ThemedText>
-              </View>
-              <PlatformIcon color={theme.accentStrong} name="chevron-down" size={18} />
-            </Pressable> : taskCoverage === 'loadingMore' ? <View accessibilityRole="progressbar" style={[styles.coverageHint, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
-              <ActivityIndicator color={theme.accentStrong} size="small" />
-              <ThemedText themeColor="textSecondary" type="caption">Loading more Company tasks…</ThemedText>
-            </View> : null}
-            {cappedTaskProject ? <Pressable accessibilityRole="button" onPress={() => router.push(taskListHref(cappedTaskProject.project._id, cappedTaskProject.companyId ? {
-              companyId: cappedTaskProject.companyId,
-              membershipId: cappedTaskProject.projectMemberId,
-            } : null) as never)} style={[styles.coverageHint, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
-              <View style={styles.coverageCopy}>
-                <ThemedText type="smallBold">{cappedTaskProject.project.name} has more than 500 assigned tasks</ThemedText>
-                <ThemedText themeColor="textSecondary" type="caption">The summary is capped for speed. Open this Project board to browse its full task list.</ThemedText>
-              </View>
-              <PlatformIcon color={theme.accentStrong} name="chevron-right" size={18} />
-            </Pressable> : null}
-            <View style={styles.personalSection}>
-              <View style={styles.personalSectionHeading}><View><ThemedText type="subtitle">Due this week</ThemedText><ThemedText themeColor="textSecondary" type="caption">Urgent tasks due this week</ThemedText></View><View style={styles.weekHeadingActions}><ThemedText themeColor="textSecondary" type="captionBold">{taskCoverage === 'loading' ? 'â€¦' : weekTaskCount}</ThemedText><Pressable accessibilityLabel={weekDaysOpen ? 'Close week day picker' : 'Choose a day this week'} accessibilityRole="button" accessibilityState={{ expanded: weekDaysOpen }} hitSlop={8} onPress={() => setWeekDaysOpen((open) => !open)} style={({ pressed }) => [styles.weekPickerButton, { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name={weekDaysOpen ? 'close' : 'calendar'} size={19} /></Pressable></View></View>
-              {weekDaysOpen ? <ScrollView accessibilityLabel="Days of the selected week" contentContainerStyle={styles.weekDays} horizontal showsHorizontalScrollIndicator={false}>
-                {weekDates.map((date) => {
-                  const dayTasks = urgentWeekTasks.filter((item) => item.task.dueDate === date).filter((item) =>
-                    matchesMyTaskSearch(item, taskSearch)
-                    && (globalTaskFilters.status !== 'all' || item.state?.category !== 'completed')
-                    && matchesMyTaskFilters(item, globalTaskFilters, todayKey, weekDates[6] ?? todayKey),
-                  );
-                  const active = selectedWeekDate === date;
-                  const dayLabel = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
-                  const dateLabel = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-                  return <Pressable accessibilityHint="Filters tasks by this day. Select it again to clear the day filter." accessibilityLabel={`${dayLabel}, ${dateLabel}, ${dayTasks.length} tasks`} accessibilityRole="tab" accessibilityState={{ selected: active }} key={date} onPress={() => {
-                    hapticLight();
-                    if (active) setSelectedWeekDate(null);
-                    else {
-                      setSelectedWeekDate(date);
-                      setPersonalTaskView(date < todayKey ? 'all' : date === todayKey ? 'today' : 'upcoming');
-                    }
-                  }} style={({ pressed }) => [styles.weekDay, { backgroundColor: active ? theme.accentSoft : theme.homeSurface, borderColor: active ? theme.accentStrong : theme.homeBorder, opacity: pressed ? 0.72 : 1 }]}>
-                    <ThemedText style={{ color: active ? theme.accentStrong : theme.textSecondary }} type="captionBold">{dayLabel}</ThemedText>
-                    <ThemedText style={{ color: theme.text }} type="smallBold">{dateLabel}</ThemedText>
-                    <ThemedText style={{ color: dayTasks.length ? theme.accentStrong : theme.textTertiary }} type="caption">{dayTasks.length ? `${dayTasks.length} ${dayTasks.length === 1 ? 'task' : 'tasks'}` : 'No tasks'}</ThemedText>
-                  </Pressable>;
-                })}
-              </ScrollView> : null}
-              {selectedWeekDate ? <View style={styles.selectedDayLabel}><ThemedText themeColor="accentStrong" type="captionBold">Showing {new Date(`${selectedWeekDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</ThemedText><Pressable accessibilityLabel="Clear selected day" accessibilityRole="button" onPress={() => setSelectedWeekDate(null)}><ThemedText themeColor="textSecondary" type="captionBold">Clear</ThemedText></Pressable></View> : null}
-              {weekTaskPages.status === 'CanLoadMore' || weekTaskPages.status === 'LoadingMore' ? <Pressable accessibilityRole="button" disabled={weekTaskPages.status === 'LoadingMore'} onPress={() => weekTaskPages.loadMore(50)} style={[styles.loadWeek, { borderColor: theme.homeBorder }]}><ThemedText themeColor="textSecondary" type="captionBold">{weekTaskPages.status === 'LoadingMore' ? 'Checking more Projects…' : 'Check more Company Projects'}</ThemedText></Pressable> : null}
-            </View>
-            {cappedWeekProject ? <Pressable accessibilityRole="button" onPress={() => router.push(taskListHref(cappedWeekProject.project._id, cappedWeekProject.companyId ? { companyId: cappedWeekProject.companyId, membershipId: cappedWeekProject.projectMemberId } : null) as never)} style={[styles.loadWeek, { borderColor: theme.homeBorder }]}><ThemedText themeColor="textSecondary" type="captionBold">More tasks may be due in {cappedWeekProject.project.name}. Open its Project board to review them.</ThemedText></Pressable> : null}
-          </>}
-          ListEmptyComponent={visibleSectionTaskCount === 0 && (taskCoverage === 'loading' || taskCoverage === 'loadingMore')
-            ? <SkeletonList count={4} label="Loading My Tasks" />
-            : <EmptyState
-              actionLabel={activeFilterCount ? 'Clear filters' : undefined}
-              icon={taskSearch || activeFilterCount ? 'search' : personalTaskView === 'done' ? 'check-circle' : personalTaskView === 'upcoming' ? 'calendar' : 'check-box-outline'}
-              onAction={activeFilterCount ? () => setGlobalTaskFilters({ dueDate: 'all', priority: 'all', status: 'all' }) : undefined}
-              title={taskSearch ? 'No matching tasks' : activeFilterCount ? 'No tasks match these filters' : personalTaskView === 'done' ? 'No completed tasks yet' : personalTaskView === 'upcoming' ? 'Nothing coming up' : personalTaskView === 'today' ? 'No urgent tasks due today' : 'Nothing assigned to you'}
-              body={offline && visibleSectionTaskCount === 0
-                ? 'No saved tasks are available offline. Reconnect to load your assigned work.'
-                : taskSearch ? 'Try a shorter task, Project, or Channel name. Load more Projects to search work that has not loaded yet.'
-                  : activeFilterCount ? 'Clear the filters or choose different status, priority, or due date options.'
-                    : personalTaskView === 'done' ? 'Completed tasks will appear here so you can review finished work.'
-                      : personalTaskView === 'upcoming' ? 'Tasks with a future due date will appear here.'
-                        : personalTaskView === 'today' ? 'Urgent overdue and due-today tasks will appear here.'
-                          : 'Tasks assigned to you across your accessible Projects will appear here.'}
-            />}
-          ListFooterComponent={null}
-          onEndReached={() => { if (myTaskStatus === 'CanLoadMore') loadMoreMyTasks(50); }}
-          onEndReachedThreshold={0.4}
-          renderSectionHeader={({ section }) => section.key === 'completed' && personalTaskView === 'all' && globalTaskFilters.status !== 'completed' ? (
-            <Pressable
-              accessibilityLabel={`${section.count} completed tasks`}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: completedExpanded }}
-              onPress={() => setCompletedExpanded((current) => !current)}
-              style={styles.taskSectionHeading}
-            >
-              <ThemedText type="subtitle">{section.title}</ThemedText>
-              <View style={styles.taskSectionMeta}>
-                <ThemedText themeColor="textSecondary" type="captionBold">{section.count}</ThemedText>
-                <ThemedText themeColor="accentStrong" type="captionBold">{completedExpanded ? 'Hide' : 'Show'}</ThemedText>
-              </View>
-            </Pressable>
-          ) : (
-            <View style={styles.taskSectionHeading}>
-              <ThemedText type="subtitle">{section.title}</ThemedText>
-              <ThemedText themeColor={section.key === 'overdue' ? 'danger' : section.key === 'unscheduled' ? 'accentStrong' : 'textSecondary'} type="captionBold">{section.count}</ThemedText>
-            </View>
-          )}
-          renderItem={({ item }) => renderMyTask(item)}
-          stickySectionHeadersEnabled={false}
-        />
-        <OptionsSheet onClose={() => setPersonalFilterOpen(false)} title="Filter tasks" visible={personalFilterOpen}>
-          <SheetNote>Choose one option in each group. Changes apply after you tap Apply filters.</SheetNote>
-          <SheetSection title="Status">
-            {([
-              ['all', 'Any status'],
-              ['open', 'Open'],
-              ['completed', 'Done'],
-              ['canceled', 'Canceled'],
-            ] as const).map(([value, label]) => <SheetRow key={value} label={label} selected={draftTaskFilters.status === value} onPress={() => setDraftTaskFilters((current) => ({ ...current, status: value }))} />)}
-          </SheetSection>
-          <SheetSection title="Priority">
-            {([
-              ['all', 'Any priority'],
-              ['urgent', 'Urgent'],
-              ['high', 'High'],
-              ['medium', 'Medium'],
-              ['low', 'Low'],
-              ['none', 'No priority'],
-            ] as const).map(([value, label]) => <SheetRow icon="flag" key={value} label={label} selected={draftTaskFilters.priority === value} onPress={() => setDraftTaskFilters((current) => ({ ...current, priority: value }))} />)}
-          </SheetSection>
-          <SheetSection title="Due date">
-            {([
-              ['all', 'Any date'],
-              ['overdue', 'Overdue'],
-              ['today', 'Today'],
-              ['thisWeek', 'This week'],
-              ['later', 'Later'],
-              ['unscheduled', 'No due date'],
-            ] as const).map(([value, label]) => <SheetRow icon="calendar" key={value} label={label} selected={draftTaskFilters.dueDate === value} onPress={() => setDraftTaskFilters((current) => ({ ...current, dueDate: value }))} />)}
-          </SheetSection>
-          <View style={styles.filterSheetActions}>
-            <TaskAction label="Clear selections" onPress={() => setDraftTaskFilters({ dueDate: 'all', priority: 'all', status: 'all' })} />
-            <TaskAction label="Apply filters" onPress={() => { setGlobalTaskFilters(draftTaskFilters); setPersonalFilterOpen(false); }} primary />
           </View>
-        </OptionsSheet>
+          <View style={styles.personalControls}>
+            {projectDirectoryPages.status === 'LoadingFirstPage' ? <SheetNote>Loading Projects...</SheetNote> : <ConversationProjectTabs
+              onSelect={setSelectedMyTaskProjectId}
+              projects={projectDirectory.map(({ project: directoryProject }) => ({ id: String(directoryProject._id), name: directoryProject.name }))}
+              selectedId={selectedMyTaskProjectId}
+            />}
+            {projectDirectoryPages.status === 'CanLoadMore' || projectDirectoryPages.status === 'LoadingMore' ? <Pressable accessibilityRole="button" disabled={projectDirectoryPages.status === 'LoadingMore'} onPress={() => projectDirectoryPages.loadMore(12)} style={[styles.loadMoreProjects, { borderColor: theme.homeBorder }]}><ThemedText themeColor="textSecondary" type="captionBold">{projectDirectoryPages.status === 'LoadingMore' ? 'Loading Projects...' : 'Load more Projects'}</ThemedText></Pressable> : null}
+            <View style={[styles.taskSearch, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
+              <PlatformIcon color={theme.textTertiary} name="search" size={19} />
+              <TextInput accessibilityLabel="Search boards" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} onChangeText={setTaskSearch} placeholder="Search boards and Projects" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.taskSearchInput, { color: theme.text }]} value={taskSearch} />
+            </View>
+          </View>
+          <View style={styles.taskProjectSection}>
+            <View style={[styles.boardDirectoryHeading, { borderBottomColor: theme.hairline, borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: Spacing.two }]}><ThemedText accessibilityRole="header" type="subtitle">Boards</ThemedText></View>
+            {globalBoards === undefined ? <SkeletonList count={3} label="Loading boards" /> : matchingBoards.length ? matchingBoards.map((item) => {
+              const taskCount = boardTaskCounts.get(String(item.board._id)) ?? 0;
+              const countLabel = String(taskCount) + (boardTaskCountsPartial ? '+' : '');
+              return <Pressable
+                accessibilityHint={'Opens ' + item.board.name + ' in ' + item.project.name}
+                accessibilityLabel={item.board.name + ' board, ' + item.project.name + ' Project, ' + taskCount + (boardTaskCountsPartial ? ' or more' : '') + ' assigned tasks'}
+                accessibilityRole="button"
+                key={item.board._id}
+                onPress={() => {
+                  const identity = item.companyId ? { companyId: item.companyId, membershipId: item.projectMemberId } : null;
+                  router.push(taskListHref(item.project._id, identity, undefined, undefined, { boardId: item.board._id }) as never);
+                }}
+                style={({ pressed }) => [styles.boardDirectoryRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderBottomColor: theme.hairline }]}
+              >
+                <View style={[styles.boardDirectoryIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.textSecondary} name="view-board" size={17} /></View>
+                <View style={styles.boardDirectoryCopy}><ThemedText numberOfLines={1} type="smallBold">{item.board.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{item.project.name}</ThemedText></View>
+                <View style={[styles.boardCountBadge, { backgroundColor: theme.backgroundElement }]}><ThemedText themeColor="textSecondary" type="captionBold">{countLabel}</ThemedText></View>
+                <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
+              </Pressable>;
+            }) : <EmptyState icon="view-board" title={taskSearch ? 'No matching boards' : 'No boards yet'} body={taskSearch ? 'Try a shorter Board or Project name.' : selectedMyTaskProjectId ? 'Boards in this Project will appear here.' : 'Boards in your Projects will appear here.'} />}
+          </View>
+        </ScrollView>
         {createProjectPickerSheet}
       </ThemedView>
     );
   }
-
   const heading = (
     <>
       {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
@@ -921,6 +635,7 @@ export default function TasksScreen() {
             projectName={projectNavigation?.available && projectNavigation.project
               ? projectNavigation.project.name
               : 'Project tasks'}
+            scopeLabel={selectedBoard?.board.groupId ? 'Channels' : 'Project'}
             searchActive={Boolean(boardSearch)}
           />
           <SprintFlowHeader
@@ -1161,9 +876,14 @@ const styles = StyleSheet.create({
   fieldGridLarge: { flexDirection: 'column' },
   flex: { flex: 1, minWidth: 0 },
   boardDirectoryHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
+  boardHeadingDivider: { flex: 1, height: StyleSheet.hairlineWidth },
+  boardOwner: { flexShrink: 1, maxWidth: '58%' },
   boardDirectoryIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 38, justifyContent: 'center', width: 38 },
+  boardDirectoryIconWrap: { height: 38, position: 'relative', width: 38 },
   boardDirectoryCopy: { flex: 1, gap: 2, minWidth: 0 },
   boardDirectoryRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: 68, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  boardUnreadBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1.5, height: 18, justifyContent: 'center', minWidth: 18, paddingHorizontal: 3, position: 'absolute', right: -4, top: -4 },
+  boardUnreadCount: { fontSize: 9, lineHeight: 12 },
   boardCountBadge: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, justifyContent: 'center', minHeight: 26, minWidth: 28, paddingHorizontal: Spacing.two },
   personalEmpty: { paddingVertical: Spacing.three },
   personalSection: { gap: Spacing.two },
@@ -1175,6 +895,7 @@ const styles = StyleSheet.create({
   filterButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'center', minWidth: TouchTarget, paddingHorizontal: Spacing.two },
   taskSearch: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
   taskSearchInput: { ...Typography.body, flex: 1, minHeight: TouchTarget, paddingVertical: Spacing.two },
+  loadMoreProjects: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', minHeight: TouchTarget },
   taskViewTabs: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   taskProjectSection: { gap: Spacing.two },
   weekHeadingActions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },

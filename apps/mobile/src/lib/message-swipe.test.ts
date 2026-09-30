@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { messageSwipeIntent } from './message-swipe';
+import { messageSwipeCancelIntent, messageSwipeIntent } from './message-swipe';
 
 describe('message swipe actions', () => {
   it('opens forward and report actions after a left swipe on a message', () => {
@@ -23,5 +23,10 @@ describe('message swipe actions', () => {
     expect(messageSwipeIntent(-72, true, false)).toBe('close');
     expect(messageSwipeIntent(-32, true, true)).toBe('close');
     expect(messageSwipeIntent(72, false, true)).toBe('close');
+  });
+
+  it('returns an interrupted swipe to its last settled state', () => {
+    expect(messageSwipeCancelIntent(false)).toBe('close');
+    expect(messageSwipeCancelIntent(true)).toBe('actions');
   });
 });

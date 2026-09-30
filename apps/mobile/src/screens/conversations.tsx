@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
@@ -155,7 +155,7 @@ export default function ConversationsScreen() {
         ListHeaderComponent={<View style={styles.headerStack}>
           <View style={styles.headingRow}>
             <View style={styles.headingCopy}>
-              <ThemedText numberOfLines={1} style={styles.headingTitle} type="display">Chats</ThemedText>
+              <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.headingTitle} type="display">Chats</ThemedText>
               <ThemedText numberOfLines={1} style={styles.companyContext} themeColor="textSecondary" type="caption">{companyName}</ThemedText>
             </View>
             <Pressable accessibilityHint="Opens the Company selector" accessibilityLabel={`Switch Company. Current Company: ${companyName}`} accessibilityRole="button" onPress={() => setCompanySheetOpen(true)} style={({ pressed }) => [styles.companySwitchButton, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder }]}>
@@ -177,7 +177,7 @@ export default function ConversationsScreen() {
             <TextInput accessibilityLabel="Search conversations" autoCapitalize="none" autoCorrect={false} keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search Channels and threads" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
             {search ? <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.clearSearch}><PlatformIcon color={theme.textSecondary} name="close" size={18} weight="regular" /></Pressable> : null}
           </View>
-          <View accessibilityRole="tablist" style={styles.filters}>
+          <ScrollView accessibilityLabel="Conversation filters" accessibilityRole="tablist" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
             {([
               ['all', 'All'], ['unread', 'Unread'], ['channels', 'Channels'], ['threads', 'Threads'],
             ] as const).map(([value, label]) => {
@@ -186,7 +186,7 @@ export default function ConversationsScreen() {
                 <ThemedText style={{ color: active ? theme.text : theme.textSecondary }} type="captionBold">{label}</ThemedText>
               </CompactPillButton>;
             })}
-          </View>
+          </ScrollView>
           <ConnectivityBanner message="You are offline. Reconnect to refresh conversations." />
         </View>}
         renderItem={({ item }) => <ProjectConversationSection
@@ -293,7 +293,7 @@ function ProjectConversationSection({ companyId, filter, membershipId, onActions
         <View style={styles.rowCopy}><ThemedText numberOfLines={1} type="captionBold">{message.threadName ?? message.groupName}</ThemedText><ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{message.preview}</ThemedText><ThemedText numberOfLines={1} themeColor="textTertiary" type="caption">{message.subtitle}</ThemedText></View>
         <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} weight="regular" />
       </Pressable>)}
-      {matchingChannels.map((channel) => <Pressable accessibilityHint="Tap to open. Touch and hold for Channel actions." accessibilityRole="button" delayLongPress={360} key={`channel:${String(channel.group._id)}`} onLongPress={() => onActions(channelActionTarget(project, channel))} onPress={() => onChannel(channel)} style={({ pressed }) => [styles.channelRow, { opacity: pressed ? 0.68 : 1 }]}>
+      {matchingChannels.map((channel) => <Pressable accessibilityHint="Tap to open. Touch and hold for Channel actions." accessibilityLabel={`${channel.group.name} Channel${channel.unreadCount ? `, ${channel.unreadCount} unread` : ''}`} accessibilityRole="button" delayLongPress={360} key={`channel:${String(channel.group._id)}`} onLongPress={() => onActions(channelActionTarget(project, channel))} onPress={() => onChannel(channel)} style={({ pressed }) => [styles.channelRow, { opacity: pressed ? 0.68 : 1 }]}>
         <ChannelIcon unreadCount={channel.unreadCount} />
         <View style={styles.rowCopy}><ThemedText numberOfLines={1} type="captionBold">{channel.group.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{channel.lastMessage?.body?.trim() || 'No messages yet'}</ThemedText></View>
         <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} weight="regular" />
@@ -335,7 +335,7 @@ function ProjectConversationSection({ companyId, filter, membershipId, onActions
 
 function ConversationThreadRow({ item, onLongPress, onPress }: { item: ThreadRow; onLongPress: () => void; onPress: () => void }) {
   const theme = useTheme();
-  return <Pressable accessibilityHint="Tap to open. Touch and hold for Thread actions." accessibilityRole="button" delayLongPress={360} onLongPress={onLongPress} onPress={onPress} style={({ pressed }) => [styles.threadRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+  return <Pressable accessibilityHint="Tap to open. Touch and hold for Thread actions." accessibilityLabel={`${item.thread.name}, thread in ${item.channel?.name ?? 'Channel'}`} accessibilityRole="button" delayLongPress={360} onLongPress={onLongPress} onPress={onPress} style={({ pressed }) => [styles.threadRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
     <PlatformIcon color={theme.accentStrong} name="thread" size={17} />
     <View style={styles.rowCopy}><ThemedText numberOfLines={1} type="captionBold">{item.thread.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{item.channel?.name ?? 'Channel'} · {threadPreview(item)}</ThemedText></View>
     <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />
@@ -345,7 +345,7 @@ function ConversationThreadRow({ item, onLongPress, onPress }: { item: ThreadRow
 function Divider({ title }: { title: string }) {
   const theme = useTheme();
   return <View style={styles.divider}>
-    <View style={[styles.dividerLabel, { backgroundColor: theme.background }]}><ThemedText numberOfLines={1} style={styles.dividerTitle} themeColor="textSecondary" type="captionBold">{title}</ThemedText></View>
+    <View style={[styles.dividerLabel, { backgroundColor: theme.background }]}><ThemedText accessibilityRole="header" numberOfLines={1} style={styles.dividerTitle} themeColor="textSecondary" type="captionBold">{title}</ThemedText></View>
     <View style={[styles.dividerLine, { backgroundColor: theme.homeBorder }]} />
   </View>;
 }
@@ -398,7 +398,7 @@ function ChannelIcon({ unreadCount }: { unreadCount: number }) {
   const theme = useTheme();
   return <View style={styles.channelIconWrap}>
     <View style={[styles.channelIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.textSecondary} name="channel" size={18} weight="regular" /></View>
-    {unreadCount > 0 ? <View accessibilityLabel={`${unreadCount} unread notifications`} style={[styles.channelUnreadBadge, { backgroundColor: theme.accent, borderColor: theme.homeSurface }]}><ThemedText style={styles.channelUnreadCount} type="captionBold">{unreadCount > 99 ? '99+' : unreadCount}</ThemedText></View> : null}
+    {unreadCount > 0 ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.channelUnreadBadge, { backgroundColor: theme.accent, borderColor: theme.homeSurface }]}><ThemedText style={styles.channelUnreadCount} type="captionBold">{unreadCount > 99 ? '99+' : unreadCount}</ThemedText></View> : null}
   </View>;
 }
 
@@ -412,9 +412,9 @@ const styles = StyleSheet.create({
   channelRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: 68, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   clearSearch: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   companyContext: { maxWidth: '100%' },
-  companyMark: { alignItems: 'center', borderRadius: Radius.small, height: 30, justifyContent: 'center', width: 30 },
+  companyMark: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, height: 30, justifyContent: 'center', overflow: 'hidden', width: 30 },
   companyLogo: { borderRadius: Radius.small, height: 30, width: 30 },
-  companySwitchButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'center', paddingHorizontal: Spacing.one, width: 64 },
+  companySwitchButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'center', paddingHorizontal: Spacing.one, width: 64 },
   content: { gap: Spacing.one, paddingHorizontal: Spacing.four, paddingTop: Spacing.two },
   divider: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.two, paddingTop: Spacing.two, paddingBottom: Spacing.one },
   dividerLabel: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, maxWidth: '80%', paddingHorizontal: Spacing.one },
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
   rowTitle: { flexShrink: 1 },
   screen: { flex: 1 },
   sheetCompanyMark: { alignItems: 'center', borderRadius: Radius.medium, height: 36, justifyContent: 'center', width: 36 },
-  search: { alignItems: 'center', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
+  search: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
   searchInput: { ...Typography.body, flex: 1, minHeight: TouchTarget, paddingVertical: Spacing.two },
   scopeNote: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   selectorLabel: { letterSpacing: 0.8, paddingTop: Spacing.one },

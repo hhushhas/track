@@ -6,6 +6,7 @@ import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type FlatListPr
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
+import { ActionButton } from '@/components/action-button';
 import { Composer } from '@/components/composer';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { ConversationLoading } from '@/components/conversation-loading';
@@ -120,6 +121,7 @@ export default function ThreadScreen() {
   const createReport = useMutation(api.reports.create);
   const createTask = useMutation(api.tasks.create);
   const deleteMessage = useMutation(api.messages.remove);
+  const editMessage = useMutation(api.messages.edit);
   const sendSignatureRef = useRef<string | null>(null);
   const [replySelection, setReplySelection] = useState<{ scopeKey: string; message: DetailedMessage } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -131,6 +133,9 @@ export default function ThreadScreen() {
   const [renameValue, setRenameValue] = useState('');
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<DetailedMessage | null>(null);
+  const [editBody, setEditBody] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
   const [forwardTarget, setForwardTarget] = useState<DetailedMessage | null>(null);
   const [forwardBusyGroupId, setForwardBusyGroupId] = useState<string | null>(null);
   const [forwardError, setForwardError] = useState<string | null>(null);
@@ -489,6 +494,18 @@ export default function ThreadScreen() {
         actionTarget.item.message.authorId === trackUserId &&
         (!pmid || !actionTarget.item.message.authorProjectMemberId ||
           actionTarget.item.message.authorProjectMemberId === pmid) ? [{
+        label: 'Edit message',
+        icon: 'edit' as const,
+        onPress: () => {
+          setEditTarget(actionTarget.item);
+          setEditBody(actionTarget.item.message.body);
+        },
+      }] : []),
+      ...(!readOnly &&
+        actionTarget.kind === 'message' &&
+        actionTarget.item.message.authorId === trackUserId &&
+        (!pmid || !actionTarget.item.message.authorProjectMemberId ||
+          actionTarget.item.message.authorProjectMemberId === pmid) ? [{
         label: 'Delete message',
         icon: 'trash-can-outline' as const,
         destructive: true,
@@ -541,6 +558,27 @@ export default function ThreadScreen() {
     ];
   }, [actionTarget, cid, createReport, createTask, creatingTaskKey, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, replyMessageId, setReplyTo, showToast, trackUserId]);
 
+  async function saveMessageEdit() {
+    const target = editTarget;
+    if (!target || !trackUserId || editBusy || (!editBody.trim() && target.attachments.length === 0)) return;
+    setEditBusy(true);
+    try {
+      await editMessage({
+        messageId: target.message._id,
+        actorId: trackUserId,
+        actingCompanyId: cid,
+        projectMemberId: pmid,
+        body: editBody.trim(),
+      });
+      setEditTarget(null);
+      showToast({ title: 'Message updated', message: 'Your changes were saved.', tone: 'success' });
+    } catch (failure) {
+      showToast({ title: 'Message not updated', message: communicationErrorMessage(failure, 'edit this message'), tone: 'error' });
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
   const renderItem = useCallback<ListRenderItem<GroupedThreadItem>>(({ item }) => {
     if (item.kind === 'date-sep') return <DateSeparator label={item.label} />;
     return <>
@@ -559,6 +597,7 @@ export default function ThreadScreen() {
         identity={taskIdentity}
         messageId={item.kind === 'message' ? item.item.message._id : undefined}
         projectId={pid}
+        readOnly={readOnly}
       /> : null}
     </>;
   }, [pid, readOnly, releaseConfig.tasks, setReplyTo, submitSwipeReport, taskIdentity, trackUserId]);
@@ -780,6 +819,19 @@ export default function ThreadScreen() {
         </SheetSection>
       </OptionsSheet>
       <MessageActions actions={messageActions} onClose={() => setActionsOpen(false)} visible={actionsOpen} />
+      <OptionsSheet onClose={() => setEditTarget(null)} title="Edit message" visible={Boolean(editTarget)}>
+        <SheetInput autoFocus label="Message" maxLength={10_000} multiline onChangeText={setEditBody} value={editBody} />
+        <View style={styles.editActions}>
+          <ActionButton disabled={editBusy} label="Cancel" onPress={() => setEditTarget(null)} style={styles.editAction} variant="secondary" />
+          <ActionButton
+            disabled={editBusy || (!editBody.trim() && !editTarget?.attachments.length)}
+            label={editBusy ? 'Saving…' : 'Save changes'}
+            loading={editBusy}
+            onPress={() => void saveMessageEdit()}
+            style={styles.editAction}
+          />
+        </View>
+      </OptionsSheet>
       <ForwardMessageSheet
         busyTargetId={forwardBusyGroupId}
         currentGroupId={gid}
@@ -798,6 +850,8 @@ const styles = StyleSheet.create({
   headerMark: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', width: 34 },
   archive: { gap: 2, padding: Spacing.three },
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
+  editAction: { flex: 1 },
+  editActions: { flexDirection: 'row', gap: Spacing.two },
   error: { padding: Spacing.three },
   flex: { flex: 1 },
   headerTitle: { flexShrink: 1, minWidth: 0 },

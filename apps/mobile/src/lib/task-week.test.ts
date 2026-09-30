@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { needsAttention, tasksForWeekDay, weekDateKeys } from './task-week';
+import { needsAttention, tasksForMyTaskWeek, tasksForWeekDay, weekDateKeys } from './task-week';
 
 describe('weekDateKeys', () => {
   it('returns the complete Monday to Sunday week containing the selected day', () => {
@@ -23,6 +23,21 @@ describe('task week selections', () => {
 
   it('keeps completed work in the day view and excludes canceled work', () => {
     expect(tasksForWeekDay(tasks, '2026-09-23')).toHaveLength(2);
+  });
+
+  it('keeps the My Tasks week count and selected-day results urgent-only and inside the displayed week', () => {
+    const week = weekDateKeys('2026-09-23');
+    const weekTasks = [
+      { task: { dueDate: '2026-09-21', priority: 'urgent' }, state: { category: 'started' } },
+      { task: { dueDate: '2026-09-23', priority: 'high' }, state: { category: 'started' } },
+      { task: { dueDate: '2026-09-23', priority: 'urgent' }, state: { category: 'completed' } },
+      { task: { dueDate: '2026-09-23', priority: 'urgent' }, state: { category: 'canceled' } },
+      { task: { dueDate: '2026-09-28', priority: 'urgent' }, state: { category: 'started' } },
+    ];
+
+    expect(tasksForMyTaskWeek(weekTasks, week)).toEqual([weekTasks[0], weekTasks[2], weekTasks[3]]);
+    expect(tasksForMyTaskWeek(weekTasks, week, '2026-09-23')).toEqual([weekTasks[2], weekTasks[3]]);
+    expect(tasksForMyTaskWeek(weekTasks, week, '2026-09-28')).toEqual([]);
   });
 
   it('puts overdue and high-priority open work first in Attention Needed', () => {

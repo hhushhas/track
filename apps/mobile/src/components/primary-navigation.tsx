@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useKeyboardState } from 'react-native-keyboard-controller';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -113,6 +113,7 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const isAndroid = Platform.OS === 'android';
+  const [reduceTransparency, setReduceTransparency] = useState(false);
   const navigationHeight = isAndroid
     ? primaryNavigationHeight(fontScale, 64)
     : primaryNavigationHeight(fontScale, BottomTabInset);
@@ -122,6 +123,19 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   const dragX = useSharedValue(0);
   const dragOpacity = useSharedValue(0);
   const dragStretch = useSharedValue(1);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return undefined;
+    let active = true;
+    void AccessibilityInfo.isReduceTransparencyEnabled()
+      .then((enabled) => { if (active) setReduceTransparency(enabled); })
+      .catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduceTransparency);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     hiddenProgress.set(reducedMotion
@@ -167,9 +181,12 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
     transform: [{ translateX: dragX.get() - 28 }, { scaleX: dragStretch.get() }],
   }));
 
+  const solidSelection = isAndroid || reduceTransparency;
+  const selectionSurface = solidSelection ? theme.accentSoft : theme.navigationSelectionGlass;
+  const navigationSurface = solidSelection ? theme.homeSurface : theme.navigationGlass;
   const navigationRow = <View accessibilityRole="tablist" onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)} style={[styles.row, { height: navigationHeight }]}>
-    <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: theme.navigationSelectionGlass, borderColor: theme.accentSoft, top: (navigationHeight - 56) / 2, height: 56 }, dragStyle]} />
-    {items.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
+    <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: selectionSurface, borderColor: theme.accentSoft, top: (navigationHeight - 56) / 2, height: 56 }, dragStyle]} />
+    {items.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} solidSelection={solidSelection} />)}
   </View>;
 
   return <>
@@ -182,7 +199,7 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
         <CreateButton disabled={createDisabled} onPress={onCreate} style={{ bottom: 4, right: isAndroid ? Spacing.three : 28 }} />
       </View>
       <View style={[styles.chrome, isAndroid && styles.androidChrome, {
-        backgroundColor: theme.navigationGlass,
+        backgroundColor: navigationSurface,
         borderColor: theme.homeBorder,
         height: navigationHeight,
         boxShadow: isAndroid ? 'none' : theme.background === '#1b1917'
@@ -191,15 +208,16 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
       }]}>
         <GestureDetector gesture={drag}>{navigationRow}</GestureDetector>
       </View>
-      {isAndroid ? <View pointerEvents="none" style={[styles.androidSafeArea, { backgroundColor: theme.navigationGlass, height: Math.max(insets.bottom, Spacing.two) }]} /> : null}
+      {isAndroid ? <View pointerEvents="none" style={[styles.androidSafeArea, { backgroundColor: navigationSurface, height: Math.max(insets.bottom, Spacing.two) }]} /> : null}
     </Animated.View>
   </>;
 }
 
-function NavigationTab({ active, item, onPress }: {
+function NavigationTab({ active, item, onPress, solidSelection }: {
   active: boolean;
   item: NavigationItem | (PrimaryDestination & { href: string });
   onPress: () => void;
+  solidSelection: boolean;
 }) {
   const theme = useTheme();
   const isAndroid = Platform.OS === 'android';
@@ -212,7 +230,7 @@ function NavigationTab({ active, item, onPress }: {
     onPress={() => { hapticLight(); onPress(); }}
     style={({ pressed }) => [styles.item, { opacity: item.disabled ? 0.38 : pressed ? 0.62 : 1 }]}
   >
-    <View style={[styles.iconWell, { backgroundColor: active ? theme.navigationSelectionGlass : theme.homeSurface, borderColor: active ? theme.accentSoft : theme.homeBorder }]}>
+    <View style={[styles.iconWell, { backgroundColor: active ? solidSelection ? theme.accentSoft : theme.navigationSelectionGlass : theme.homeSurface, borderColor: active ? theme.accentSoft : theme.homeBorder }]}>
       <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={item.icon} size={isAndroid ? 24 : IconSize.large + 4} variant={active ? 'filled' : 'outline'} weight={active ? 'semibold' : 'regular'} />
     </View>
     <ThemedText numberOfLines={1} style={[styles.itemLabel, isAndroid && styles.androidItemLabel, { color: active ? theme.accentStrong : theme.textSecondary }]} type="captionBold">{item.label}</ThemedText>
@@ -239,7 +257,7 @@ function CreateButton({ disabled, onPress, style }: { disabled: boolean; onPress
 }
 
 const styles = StyleSheet.create({
-  androidChrome: { borderBottomWidth: 0, borderLeftWidth: 0, borderRightWidth: 0, borderTopLeftRadius: Radius.large, borderTopRightRadius: Radius.large, borderTopWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  androidChrome: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderRadius: 0, borderRightWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   androidItemLabel: { fontSize: 11, lineHeight: 14, marginTop: 2 },
   androidPositioner: { left: 0, paddingHorizontal: 0, paddingTop: 0, right: 0 },
   chrome: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: BottomTabInset, overflow: 'visible' },

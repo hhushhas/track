@@ -1,4 +1,4 @@
-import { Children, Fragment, useEffect, useMemo, useState } from 'react';
+import { Children, Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -26,7 +26,6 @@ import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
-import { useThemeOverride } from '@/contexts/theme-override-context';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -45,19 +44,29 @@ type Props = {
 
 export function OptionsSheet({ children, onClose, presentation = 'sheet', title, visible }: Props) {
   const theme = useTheme();
-  const { theme: themeName } = useThemeOverride();
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(0);
   const translateX = useSharedValue(0);
   const scrim = useSharedValue(0);
   const reducedMotion = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
+  const scrollMetrics = useRef({ contentHeight: 0, offsetY: 0, viewportHeight: 0 });
+  const [showScrollHint, setShowScrollHint] = useState(false);
+
+  function updateScrollMetrics(update: Partial<typeof scrollMetrics.current>) {
+    Object.assign(scrollMetrics.current, update);
+    const { contentHeight, offsetY, viewportHeight } = scrollMetrics.current;
+    const nextHint = contentHeight - viewportHeight - offsetY > Spacing.four;
+    setShowScrollHint((current) => current === nextHint ? current : nextHint);
+  }
 
   useEffect(() => {
     const distance = presentation === 'drawer' ? 440 : 520;
     let dismissTimer: ReturnType<typeof setTimeout> | undefined;
     if (visible) {
       setMounted(true);
+      scrollMetrics.current = { contentHeight: 0, offsetY: 0, viewportHeight: 0 };
+      setShowScrollHint(false);
       // A screen input may still hold the keyboard; the modal is a separate
       // window, so stale keyboard padding would float the sheet mid-screen.
       Keyboard.dismiss();
@@ -160,7 +169,7 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', title,
                   <View style={styles.grabArea}>
                     {presentation === 'sheet' ? <View style={[styles.handle, { backgroundColor: theme.textTertiary }]} /> : null}
                     <View style={styles.header}>
-                      <ThemedText style={styles.headerTitle} type="titleLarge">{title}</ThemedText>
+                      <ThemedText accessibilityRole="header" style={styles.headerTitle} type="titleLarge">{title}</ThemedText>
                       <Pressable
                         accessibilityLabel="Close"
                         accessibilityRole="button"
@@ -175,14 +184,26 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', title,
                 </GestureDetector>
                 <View style={styles.scrollFrame}>
                   <ScrollView
-                    contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}
-                    indicatorStyle={themeName === 'dark' ? 'white' : 'black'}
+                    contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, Spacing.two) + (showScrollHint ? 24 : 0) }]}
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator
+                    onContentSizeChange={(_, height) => updateScrollMetrics({ contentHeight: height })}
+                    onLayout={(event) => updateScrollMetrics({ viewportHeight: event.nativeEvent.layout.height })}
+                    onScroll={(event) => updateScrollMetrics({ offsetY: event.nativeEvent.contentOffset.y })}
+                    scrollEventThrottle={32}
+                    showsVerticalScrollIndicator={false}
                     style={styles.scroll}>
                     {children}
                   </ScrollView>
+                  {showScrollHint ? (
+                    <View
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                      pointerEvents="none"
+                      style={[styles.scrollHint, { backgroundColor: theme.homeBackground }]}>
+                      <PlatformIcon color={theme.textTertiary} name="chevron-down" size={16} />
+                    </View>
+                  ) : null}
                 </View>
               </ThemedView>
             </Animated.View>
@@ -199,7 +220,7 @@ export function SheetSection({ children, title }: { children: React.ReactNode; t
   return (
     <View style={styles.section}>
       {title ? (
-        <ThemedText style={styles.sectionTitle} themeColor="textSecondary" type="captionBold">
+        <ThemedText accessibilityRole="header" style={styles.sectionTitle} themeColor="textSecondary" type="captionBold">
           {title}
         </ThemedText>
       ) : null}
@@ -587,6 +608,15 @@ const styles = StyleSheet.create({
   scrollFrame: {
     flexShrink: 1,
     position: 'relative',
+  },
+  scrollHint: {
+    alignItems: 'center',
+    bottom: 0,
+    height: 24,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
   },
   searchBar: {
     alignItems: 'center',

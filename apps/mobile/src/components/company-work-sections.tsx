@@ -41,12 +41,12 @@ export function TaskStatusSummary({ companyName, onPress, stats }: { companyName
 function TaskStatusCard({ card, count, onPress }: { card: typeof STATUS_CARDS[number]; count: number; onPress: () => void }) {
   const theme = useTheme();
   const tones = {
-    accent: { background: theme.accentSoft, foreground: theme.accentStrong },
-    danger: { background: theme.dangerSoft, foreground: theme.danger },
-    progress: { background: theme.workflowStartedSoft, foreground: theme.workflowStartedStrong },
-    purple: { background: theme.workflowBacklogSoft, foreground: theme.workflowBacklogStrong },
-    success: { background: theme.successSoft, foreground: theme.success },
-    warning: { background: theme.backgroundElement, foreground: theme.warning },
+    accent: { background: theme.statAccentSoft, foreground: theme.accentStrong },
+    danger: { background: theme.statDangerSoft, foreground: theme.danger },
+    progress: { background: theme.statProgressSoft, foreground: theme.workflowStartedStrong },
+    purple: { background: theme.statPurpleSoft, foreground: theme.workflowBacklogStrong },
+    success: { background: theme.statSuccessSoft, foreground: theme.success },
+    warning: { background: theme.statWarningSoft, foreground: theme.warning },
   } as const;
   const tone = tones[card.tone];
   return (

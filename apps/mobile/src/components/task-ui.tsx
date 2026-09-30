@@ -162,10 +162,10 @@ export function TaskDueChip({
   const theme = useTheme();
   const due = taskDueDisplay(dueDate, undefined, category);
   if (!due && !onPress && !showNoDate) return null;
-  const color = due?.overdue ? theme.danger : theme.textSecondary;
+  const color = due?.overdue ? theme.warning : theme.textSecondary;
   const body = (
     <>
-      <PlatformIcon color={color} name={due?.overdue ? 'calendar-remove' : 'calendar'} size={14} />
+      <PlatformIcon color={color} name={due?.overdue ? 'alert-circle' : 'calendar'} size={14} />
       <ThemedText numberOfLines={1} style={{ color }} type={due?.overdue ? 'captionBold' : 'caption'}>
         {due?.label ?? (showNoDate ? 'No due date' : 'Add due date')}
       </ThemedText>
@@ -263,7 +263,7 @@ export function TaskCard({
         style={styles.quietCheckbox}
       ><PlatformIcon color={isCompleted ? theme.success : theme.textSecondary} name={isCompleted ? 'check-circle' : 'circle-outline'} size={21} /></Pressable> : null}
       <Pressable
-        accessibilityLabel={`${title}. ${taskContext}. ${stateName}${dueLabel ? `. ${dueLabel}` : ''}`}
+        accessibilityLabel={`${title}. ${taskContext}${evidence ? '. Linked to conversation evidence' : ''}. ${stateName}${dueLabel ? `. ${dueLabel}` : ''}`}
         accessibilityRole="button"
         onPress={onPress}
         style={({ pressed }) => [styles.quietPressable, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}
@@ -281,7 +281,7 @@ export function TaskCard({
   }
 
   if (!board) {
-    const context = [showKey ? shortTaskKey(publicKey) : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
+    const context = [showKey ? shortTaskKey(publicKey) : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null, evidence ? 'Linked to conversation evidence' : null]
       .filter(Boolean)
       .join(' · ');
     const due = taskDueDisplay(dueDate, undefined, category);
@@ -310,7 +310,7 @@ export function TaskCard({
                 </View>
               ) : null}
               <View style={styles.listContext}>
-                {evidence ? <View accessibilityLabel="Has evidence" style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
+                {evidence ? <View style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
                 <ThemedText numberOfLines={1} style={styles.listContextText} themeColor="textSecondary" type="caption">
                   {[showKey ? shortTaskKey(publicKey) : null, groupName ? `#${groupName.replace(/^#/, '')}` : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
                     .filter(Boolean)
@@ -352,13 +352,13 @@ export function TaskCard({
           <View style={[styles.cardKeyBadge, { backgroundColor: theme.backgroundElement }]}>
             <ThemedText themeColor="textSecondary" type="mono">{shortTaskKey(publicKey)}</ThemedText>
           </View>
-          {evidence ? <View accessibilityLabel="Has evidence" style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
+          {evidence ? <View style={[styles.originDot, { borderColor: theme.accent }]} /> : null}
         </View>
         <TaskPriorityBadge compact priority={priority} />
       </View>
       <Pressable
         accessibilityHint={onLongPress ? 'Opens the task. Touch and hold to move it.' : 'Opens the task'}
-        accessibilityLabel={`${focused ? 'Opened task. ' : ''}${title}, ${stateName}`}
+        accessibilityLabel={`${focused ? 'Opened task. ' : ''}${title}, ${stateName}${evidence ? ', linked to conversation evidence' : ''}`}
         accessibilityRole="button"
         android_ripple={{ color: theme.backgroundSelected }}
         delayLongPress={350}

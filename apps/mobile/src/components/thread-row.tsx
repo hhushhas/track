@@ -13,9 +13,9 @@ import { MessageBubble } from '@/components/chat/message-bubble';
 import type { DetailedMessage } from '@/components/chat/types';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { messageSwipeIntent } from '@/lib/message-swipe';
+import { messageSwipeCancelIntent, messageSwipeIntent } from '@/lib/message-swipe';
 
 export type { AttachmentWithUrl, DetailedMessage } from '@/components/chat/types';
 
@@ -32,7 +32,7 @@ export type ProjectMemberRow = FunctionReturnType<typeof api.mobile.listProjectM
 
 const SWIPE_LIMIT = 72;
 const SWIPE_THRESHOLD = 56;
-const SWIPE_ACTION_WIDTH = 112;
+const SWIPE_ACTION_WIDTH = TouchTarget * 2 + Spacing.four;
 
 type Props = {
   item: Exclude<GroupedThreadItem, { kind: 'date-sep' }>;
@@ -67,7 +67,8 @@ export function ThreadRow({
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const [actionsExposed, setActionsExposed] = useState(false);
-  const translateX = useSharedValue(0);
+  const actionWidth = useSharedValue(0);
+  const replyProgress = useSharedValue(0);
   const trayOpenAtStart = useSharedValue(false);
   const hasSwipeActions = item.kind === 'message' && Boolean(onSwipeForward && onSwipeReport);
 
@@ -75,46 +76,81 @@ export function ThreadRow({
     .enabled(Boolean(onSwipeReply || hasSwipeActions))
     .activeOffsetX([-10, 10])
     .onBegin(() => {
-      trayOpenAtStart.value = translateX.value <= -SWIPE_THRESHOLD;
+      trayOpenAtStart.value = actionWidth.value >= SWIPE_THRESHOLD;
     })
     .onUpdate((e) => {
       if (trayOpenAtStart.value) {
-        translateX.value = Math.min(0, -SWIPE_ACTION_WIDTH + e.translationX);
+        actionWidth.value = Math.min(SWIPE_ACTION_WIDTH, Math.max(0, SWIPE_ACTION_WIDTH - e.translationX));
+        replyProgress.value = 0;
       } else if (e.translationX > 0) {
-        translateX.value = onSwipeReply ? Math.min(e.translationX, SWIPE_LIMIT) : 0;
+        replyProgress.value = onSwipeReply ? Math.min(e.translationX, SWIPE_LIMIT) : 0;
+        actionWidth.value = 0;
       } else if (hasSwipeActions) {
-        translateX.value = Math.max(e.translationX, -SWIPE_ACTION_WIDTH);
+        actionWidth.value = Math.min(-e.translationX, SWIPE_ACTION_WIDTH);
+        replyProgress.value = 0;
       } else {
-        translateX.value = 0;
+        actionWidth.value = 0;
+        replyProgress.value = 0;
       }
     })
     .onEnd((e) => {
       const intent = messageSwipeIntent(e.translationX, Boolean(onSwipeReply), hasSwipeActions, trayOpenAtStart.value);
       if (intent === 'actions') {
         scheduleOnRN(setActionsExposed, true);
-        translateX.value = reducedMotion ? -SWIPE_ACTION_WIDTH : withSpring(-SWIPE_ACTION_WIDTH, { damping: 22, stiffness: 240 });
+        actionWidth.value = reducedMotion ? SWIPE_ACTION_WIDTH : withSpring(SWIPE_ACTION_WIDTH, { damping: 22, stiffness: 240 });
       } else if (intent === 'reply' && onSwipeReply) {
         scheduleOnRN(setActionsExposed, false);
         scheduleOnRN(onSwipeReply);
-        translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
+        actionWidth.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
       } else {
         scheduleOnRN(setActionsExposed, false);
-        translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
+        actionWidth.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
       }
+      replyProgress.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
+    })
+    .onFinalize((_, success) => {
+      if (success) return;
+      const intent = messageSwipeCancelIntent(trayOpenAtStart.value);
+      const shouldKeepActionsOpen = intent === 'actions';
+      scheduleOnRN(setActionsExposed, shouldKeepActionsOpen);
+      actionWidth.value = reducedMotion
+        ? shouldKeepActionsOpen ? SWIPE_ACTION_WIDTH : 0
+        : withSpring(shouldKeepActionsOpen ? SWIPE_ACTION_WIDTH : 0, { damping: 20 });
+      replyProgress.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
     });
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
   const replyIconStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateX.value, [0, SWIPE_THRESHOLD], [0, 1], 'clamp'),
-    transform: [{ scale: interpolate(translateX.value, [0, SWIPE_THRESHOLD], [0.7, 1], 'clamp') }],
+    opacity: interpolate(replyProgress.value, [0, SWIPE_THRESHOLD], [0, 1], 'clamp'),
+    transform: [{ scale: interpolate(replyProgress.value, [0, SWIPE_THRESHOLD], [0.7, 1], 'clamp') }],
   }));
   const actionsStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.abs(Math.min(translateX.value, 0)), [0, SWIPE_THRESHOLD], [0, 1], 'clamp'),
-    transform: [{ scale: interpolate(Math.abs(Math.min(translateX.value, 0)), [0, SWIPE_THRESHOLD], [0.88, 1], 'clamp') }],
+    height: interpolate(actionWidth.value, [0, SWIPE_ACTION_WIDTH], [0, TouchTarget], 'clamp'),
+    opacity: interpolate(actionWidth.value, [0, SWIPE_THRESHOLD], [0, 1], 'clamp'),
+    transform: [{ scale: interpolate(actionWidth.value, [0, SWIPE_THRESHOLD], [0.88, 1], 'clamp') }],
+    width: actionWidth.value,
   }));
+
+  const actionTray = hasSwipeActions ? <Animated.View
+    accessibilityElementsHidden={!actionsExposed}
+    accessibilityLabel="Message actions"
+    importantForAccessibility={actionsExposed ? 'auto' : 'no-hide-descendants'}
+    style={[styles.messageActions, isOwnMessage ? styles.messageActionsOwn : styles.messageActionsOther, actionsStyle]}
+  >
+    <Pressable accessibilityHint="Opens Channel selection to forward this message" accessibilityLabel="Forward message" accessibilityRole="button" onPress={() => {
+      setActionsExposed(false);
+      actionWidth.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
+      onSwipeForward?.();
+    }} style={({ pressed }) => [styles.swipeAction, { backgroundColor: pressed ? theme.backgroundSelected : theme.accentSoft }]}>
+      <PlatformIcon color={theme.accentStrong} name="forward" size={19} weight="regular" />
+    </Pressable>
+    <Pressable accessibilityHint="Choose a reason to report this message" accessibilityLabel="Report message" accessibilityRole="button" onPress={() => {
+      setActionsExposed(false);
+      actionWidth.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
+      onSwipeReport?.();
+    }} style={({ pressed }) => [styles.swipeAction, { backgroundColor: pressed ? theme.backgroundSelected : theme.dangerSoft }]}>
+      <PlatformIcon color={theme.danger} name="flag" size={19} weight="regular" />
+    </Pressable>
+  </Animated.View> : null;
 
   return (
     <GestureDetector gesture={gesture}>
@@ -124,25 +160,10 @@ export function ThreadRow({
             <PlatformIcon color={theme.textSecondary} name="reply" size={16} />
           </View>
         </Animated.View>
-        {hasSwipeActions ? <Animated.View accessibilityElementsHidden={!actionsExposed} importantForAccessibility={actionsExposed ? 'auto' : 'no-hide-descendants'} style={[styles.messageActions, actionsStyle]}>
-          <Pressable accessibilityHint="Opens Channel selection to forward this message" accessibilityLabel="Forward message" accessibilityRole="button" onPress={() => {
-            setActionsExposed(false);
-            translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
-            onSwipeForward?.();
-          }} style={({ pressed }) => [styles.swipeAction, { backgroundColor: pressed ? theme.backgroundSelected : theme.accentSoft }]}>
-            <PlatformIcon color={theme.accentStrong} name="forward" size={19} weight="regular" />
-          </Pressable>
-          <Pressable accessibilityHint="Choose a reason to report this message" accessibilityLabel="Report message" accessibilityRole="button" onPress={() => {
-            setActionsExposed(false);
-            translateX.value = reducedMotion ? 0 : withSpring(0, { damping: 20 });
-            onSwipeReport?.();
-          }} style={({ pressed }) => [styles.swipeAction, { backgroundColor: pressed ? theme.backgroundSelected : theme.dangerSoft }]}>
-            <PlatformIcon color={theme.danger} name="flag" size={19} weight="regular" />
-          </Pressable>
-        </Animated.View> : null}
-        <Animated.View style={[
+        <View style={styles.messageAndActions}>
+          <Animated.View style={[
+          styles.messageContent,
           isFirstInGroup ? (variant === 'thread' ? styles.threadGroupStart : styles.groupStart) : styles.grouped,
-          animatedStyle,
         ]}>
           {item.kind === 'assistant' ? (
             <AssistantMessage
@@ -164,7 +185,9 @@ export function ThreadRow({
               variant={variant}
             />
           )}
-        </Animated.View>
+          </Animated.View>
+          {actionTray}
+        </View>
       </View>
     </GestureDetector>
   );
@@ -257,26 +280,26 @@ const styles = StyleSheet.create({
   },
   messageActions: {
     alignItems: 'center',
-    bottom: 0,
     flexDirection: 'row',
     gap: Spacing.one,
-    justifyContent: 'flex-end',
-    paddingRight: Spacing.two,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    width: SWIPE_ACTION_WIDTH,
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
+  messageActionsOwn: { alignSelf: 'flex-end' },
+  messageActionsOther: { alignSelf: 'flex-start' },
+  messageAndActions: { alignItems: 'stretch', flexDirection: 'column', width: '100%' },
+  messageContent: { minWidth: 0, width: '100%' },
   swipeAction: {
     alignItems: 'center',
     borderRadius: Radius.pill,
-    height: 40,
+    height: TouchTarget,
     justifyContent: 'center',
-    width: 40,
+    width: TouchTarget,
   },
   swipeContainer: {
-    overflow: 'hidden',
+    overflow: 'visible',
     position: 'relative',
+    width: '100%',
   },
   threadGroupStart: {
     paddingTop: Spacing.two,

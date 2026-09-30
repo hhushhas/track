@@ -21,6 +21,7 @@ import { OfflineTaskSync } from '@/components/offline-task-sync';
 import { LaunchScreen } from '@/components/launch-screen';
 import { AppToastProvider } from '@/components/app-toast';
 import { TrackHeaderBackground } from '@/components/primary-stack';
+import { TouchFeedback } from '@/components/touch-feedback';
 import { Typography } from '@/constants/theme';
 
 if (Platform.OS !== 'web') {
@@ -113,39 +114,41 @@ function AppLayout() {
               <CompanyProvider>
                 <OfflineTaskSync />
                 <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
-                <View style={styles.app}>
-                  <Stack
-                  screenOptions={{
-                    animation: 'slide_from_right',
-                    gestureEnabled: true,
-                    headerShown: true,
-                    headerBackButtonDisplayMode: 'minimal',
-                    headerBackground: TrackHeaderBackground,
-                    headerShadowVisible: false,
-                    headerStyle: { backgroundColor: 'transparent' },
-                    headerTitleAlign: 'left',
-                    headerTitleStyle: Typography.navigationTitle,
-                    headerTintColor: Colors[theme].text,
-                    contentStyle: {
-                      backgroundColor: Colors[theme].homeBackground,
-                    },
-                  }}>
-                  <Stack.Screen name="index" options={{ headerShown: false }} />
-                  <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-                  <Stack.Screen name="company" options={{ title: 'Companies' }} />
-                  </Stack>
-                  {showContinuation ? (
-                    <View pointerEvents="none" style={styles.continuation}>
-                      <LaunchScreen
-                        exiting={launchExiting}
-                        onExitComplete={finishLaunch}
-                        onReady={() => setContinuationDidLayout(true)}
-                      />
-                    </View>
-                  ) : null}
-                </View>
+                <TouchFeedback>
+                  <View style={styles.app}>
+                    <Stack
+                      screenOptions={{
+                        animation: 'slide_from_right',
+                        gestureEnabled: true,
+                        headerShown: true,
+                        headerBackButtonDisplayMode: 'minimal',
+                        headerBackground: TrackHeaderBackground,
+                        headerShadowVisible: false,
+                        headerStyle: { backgroundColor: 'transparent' },
+                        headerTitleAlign: 'left',
+                        headerTitleStyle: Typography.navigationTitle,
+                        headerTintColor: Colors[theme].text,
+                        contentStyle: {
+                          backgroundColor: Colors[theme].homeBackground,
+                        },
+                      }}>
+                      <Stack.Screen name="index" options={{ headerShown: false }} />
+                      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                      <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+                      <Stack.Screen name="company" options={{ title: 'Companies' }} />
+                    </Stack>
+                    {showContinuation ? (
+                      <View pointerEvents="none" style={styles.continuation}>
+                        <LaunchScreen
+                          exiting={launchExiting}
+                          onExitComplete={finishLaunch}
+                          onReady={() => setContinuationDidLayout(true)}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                </TouchFeedback>
               </CompanyProvider>
             </PushNotificationBridge>
           </TrackUserProvider>

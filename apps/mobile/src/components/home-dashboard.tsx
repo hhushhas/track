@@ -230,17 +230,17 @@ export function CommittedWorkCard({ completed, dueToday, onPress, overdue, perce
 }
 
 export function HomeStatsSection({ stats }: { stats: HomeStat[] }) {
-  return <HomeSection title="At a glance"><View style={styles.statsGrid}>{stats.slice(0, 4).map((stat) => <HomeStatCard key={stat.label} stat={stat} />)}</View></HomeSection>;
+  return <HomeSection title="At a glance"><View style={styles.statsGrid}>{stats.slice(0, 4).map((stat) => <HomeStatCard key={stat.label} stat={stat} surface="tone" />)}</View></HomeSection>;
 }
 
 export function HomeStatCard({ stat, surface = 'standard', layout = 'stacked' }: { stat: HomeStat; surface?: 'glass' | 'standard' | 'tone'; layout?: 'horizontal' | 'stacked' }) {
   const theme = useTheme();
   const color = stat.tone === 'danger' ? theme.danger : stat.tone === 'success' ? theme.success : stat.tone === 'info' ? theme.info : theme.accentStrong;
   const toneBackground = {
-    accent: theme.accentSoft,
-    danger: theme.dangerSoft,
-    info: theme.workflowUnstartedSoft,
-    success: theme.successSoft,
+    accent: theme.statAccentSoft,
+    danger: theme.statDangerSoft,
+    info: theme.statInfoSoft,
+    success: theme.statSuccessSoft,
   }[stat.tone];
   const backgroundColor = surface === 'tone' ? toneBackground : surface === 'glass' ? theme.navigationSelectionGlass : theme.homeSurface;
   return <Pressable accessibilityLabel={`${stat.label}: ${stat.value}. ${stat.detail}`} accessibilityRole="button" onPress={stat.onPress} style={({ pressed }) => [styles.statCard, layout === 'horizontal' && styles.statCardHorizontal, { backgroundColor: pressed ? theme.backgroundSelected : backgroundColor, borderColor: theme.homeBorder }]}>

@@ -107,8 +107,7 @@ export function taskDueDisplay(
   if (days === null) return { label: dueDate, overdue: false };
   const terminal = category === 'completed' || category === 'canceled';
   if (days < 0 && !terminal) {
-    const elapsed = Math.abs(days);
-    return { label: `Overdue · ${elapsed} day${elapsed === 1 ? '' : 's'}`, overdue: true };
+    return { label: `Overdue · ${formatTaskDateLong(dueDate)}`, overdue: true };
   }
   if (days === 0) return { label: 'Today', overdue: false };
   if (days === 1) return { label: 'Tomorrow', overdue: false };
