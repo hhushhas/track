@@ -21,6 +21,7 @@ export function taskIsDueToday(dueDate: string | undefined, now = new Date()) {
 type HomeSummaryTask = {
   state?: { category: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled' } | null;
   task: {
+    _id?: string;
     dueDate?: string;
     priority: 'none' | 'urgent' | 'high' | 'medium' | 'low';
     updatedAt: number;
@@ -51,6 +52,7 @@ export function summarizeCommittedWork<T extends HomeSummaryTask>(items: readonl
 
 /** Today is a bounded preview: overdue first, then priority, due date, and recency. */
 export function todayTaskPreview<T extends HomeSummaryTask>(items: readonly T[], today: string, limit = 4) {
+  const seenTaskIds = new Set<string>();
   return items
     .filter((item) => item.state?.category !== 'completed'
       && item.state?.category !== 'canceled'
@@ -62,6 +64,12 @@ export function todayTaskPreview<T extends HomeSummaryTask>(items: readonly T[],
         || priorityOrder[left.task.priority] - priorityOrder[right.task.priority]
         || left.task.dueDate!.localeCompare(right.task.dueDate!)
         || right.task.updatedAt - left.task.updatedAt;
+    })
+    .filter((item) => {
+      if (!item.task._id) return true;
+      if (seenTaskIds.has(item.task._id)) return false;
+      seenTaskIds.add(item.task._id);
+      return true;
     })
     .slice(0, Math.max(0, limit));
 }

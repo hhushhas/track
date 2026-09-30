@@ -432,7 +432,7 @@ export function CompanyHubPage({
     },
     projects: {
       title: "Projects",
-      description: "Manage all company projects. Track ownership, access, and progress across your workspace.",
+      description: "See each Project's owner, access, status, and latest update.",
     },
     relationships: {
       title: "Relationships",
@@ -559,7 +559,7 @@ export function CompanyHubPage({
             <div className="company-overview-header-tools">
               <label className="company-overview-search">
                 <Search aria-hidden="true" size={18} />
-                <span className="sr-only">Search company projects</span>
+                <span className="sr-only">Search projects, tasks, or people</span>
                 <input
                   autoComplete="off"
                   name="companySearch"
@@ -1003,7 +1003,7 @@ export function CompanyHubPage({
                       <span className="company-overview-section-icon"><FolderKanban aria-hidden="true" size={21} /></span>
                       <span>
                         <h2>Project directory</h2>
-                        <p>Ownership, participation, lifecycle, and the next route in one scan.</p>
+                        <p>Project owner, access, status, and latest update.</p>
                       </span>
                     </div>
                     <span className="company-count-badge">{directoryProjects.length} shown</span>
@@ -1113,7 +1113,7 @@ export function CompanyHubPage({
                 <div className="company-section-heading">
                   <div>
                     <span className="company-overview-section-icon"><UsersRound aria-hidden="true" size={21} /></span>
-                    <span><h2>People directory</h2><p>Company role establishes representation. Project and Channel access remain separate.</p></span>
+                    <span><h2>People directory</h2><p>Company roles and Project access are managed separately.</p></span>
                   </div>
                   <span className="company-count-badge">
                     {visiblePeople.length} shown
@@ -1366,7 +1366,7 @@ export function CompanyHubPage({
                 <div className="company-section-heading">
                   <div>
                     <span className="company-overview-section-icon"><Handshake aria-hidden="true" size={21} /></span>
-                    <span><h2>Partner directory</h2><p>A relationship permits an invitation. Project and Channel access still require explicit grants.</p></span>
+                    <span><h2>Partner directory</h2><p>Relationships connect companies. Projects and Channels still need separate access grants.</p></span>
                   </div>
                   <span className="company-count-badge">
                     {visibleRelationships.length} shown

@@ -2,27 +2,29 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeF
 import { randomUUID } from 'node:crypto'
 import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { dirname, join, resolve } from 'node:path'
+import { get as httpGet } from 'node:http'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const isolatedRoot = join(mkdtempSync('/tmp/track-e2e-project-'), 'repo')
+const isolatedRoot = join(mkdtempSync(join(tmpdir(), 'track-e2e-project-')), 'repo')
 const isolatedRootParent = dirname(isolatedRoot)
 const namespace = process.env.TRACK_E2E_NAMESPACE ?? `pw-${process.pid.toString(36)}`
 const fixtureToken = process.env.TRACK_E2E_FIXTURE_TOKEN ?? randomUUID().replaceAll('-', '')
 const fixturePassword = process.env.VITE_DEV_AUTH_BYPASS_PASSWORD ?? 'track-e2e-local-password'
 const siteUrl = 'http://127.0.0.1:4173'
-const envFile = join(mkdtempSync('/tmp/track-e2e-env-'), 'convex.env')
-const convexEnvFile = join(mkdtempSync('/tmp/track-e2e-convex-env-'), 'fixture.env')
+const envFile = join(mkdtempSync(join(tmpdir(), 'track-e2e-env-')), 'convex.env')
+const convexEnvFile = join(mkdtempSync(join(tmpdir(), 'track-e2e-convex-env-')), 'fixture.env')
 const metadataPath = process.env.TRACK_E2E_METADATA_PATH ?? join(repoRoot, 'artifacts/e2e/local-stack.json')
 const childProcesses = []
 
 cpSync(repoRoot, isolatedRoot, {
   recursive: true,
   filter: (source) => {
-    const relativePath = source.slice(repoRoot.length + 1)
+    const relativePath = relative(repoRoot, source)
     if (!relativePath) return true
-    const segments = relativePath.split('/')
+    const segments = relativePath.split(sep)
     const excludedDirectories = new Set([
       '.convex',
       '.expo',
@@ -49,7 +51,11 @@ cpSync(repoRoot, isolatedRoot, {
   },
 })
 // The workspace packages are only needed for Convex bundling; reuse the installed dependency graph.
-symlinkSync(join(repoRoot, 'node_modules'), join(isolatedRoot, 'node_modules'), 'dir')
+symlinkSync(
+  join(repoRoot, 'node_modules'),
+  join(isolatedRoot, 'node_modules'),
+  process.platform === 'win32' ? 'junction' : 'dir',
+)
 
 writeFileSync(envFile, 'CONVEX_DEPLOYMENT=anonymous-agent\n')
 writeFileSync(convexEnvFile, [
@@ -63,12 +69,28 @@ writeFileSync(convexEnvFile, [
   'TRACK_THREADS_ENABLED=true',
 ].join('\n') + '\n')
 
-const supportedNodeDirs = [
-  ...(process.versions.node.startsWith('24.') ? [dirname(process.execPath)] : []),
-  '/opt/homebrew/opt/node@24/bin',
-]
-const supportedNodeDir = supportedNodeDirs.find((directory) => existsSync(join(directory, 'node')))
+const nodeExecutableName = process.platform === 'win32' ? 'node.exe' : 'node'
+const supportedNodeDirs = process.versions.node.startsWith('24.')
+  ? [dirname(process.execPath)]
+  : ['/opt/homebrew/opt/node@24/bin']
+const supportedNodeDir = supportedNodeDirs.find((directory) =>
+  existsSync(join(directory, nodeExecutableName)),
+)
 if (!supportedNodeDir) throw new Error('Track E2E local stack requires Node 24')
+const convexCliEntry = join(repoRoot, 'node_modules', 'convex', 'bin', 'main.js')
+if (!existsSync(convexCliEntry)) throw new Error('Track E2E local stack could not find the Convex CLI')
+const convexShortCliEntry = process.platform === 'win32'
+  ? join(repoRoot, 'scripts', 'e2e', 'convex-cli-safe-exit.mjs')
+  : convexCliEntry
+const pnpmEntry = process.platform === 'win32'
+  ? [
+      process.env.npm_execpath,
+      join(process.env.APPDATA ?? '', 'npm', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+    ].find((candidate) => candidate && existsSync(candidate))
+  : null
+if (process.platform === 'win32' && !pnpmEntry) throw new Error('Track E2E local stack could not find pnpm')
+const packageManagerCommand = pnpmEntry ? process.execPath : 'pnpm'
+const packageManagerArgs = (args) => pnpmEntry ? [pnpmEntry, ...args] : args
 
 const blockedEnvironmentKeys = new Set([
   'APNS_DEVELOPMENT_PRIVATE_KEY',
@@ -94,15 +116,16 @@ const childEnv = {
   ...inheritedEnvironment,
   CONVEX_AGENT_MODE: 'anonymous',
   CONVEX_DEPLOYMENT: 'anonymous-agent',
-  PATH: `${supportedNodeDir}:${process.env.PATH ?? ''}`,
+  PATH: `${supportedNodeDir}${delimiter}${process.env.PATH ?? ''}`,
 }
 
 function start(command, args, extraEnv = {}, cwd = isolatedRoot) {
   const child = spawn(command, args, {
     cwd,
     env: { ...childEnv, ...extraEnv },
-    detached: true,
+    detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   })
   childProcesses.push(child)
   child.stdout.on('data', (chunk) => process.stdout.write(chunk))
@@ -116,6 +139,7 @@ function run(command, args, extraEnv = {}) {
       cwd: isolatedRoot,
       env: { ...childEnv, ...extraEnv },
       maxBuffer: 8 * 1024 * 1024,
+      windowsHide: true,
     }, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`${command} ${args.join(' ')} failed: ${stderr || stdout || error.message}`))
@@ -148,8 +172,8 @@ async function waitForOutput(child, pattern, timeoutMs) {
 }
 
 async function runFixtureCommand(functionName, args) {
-  await run('pnpm', [
-    'exec', 'convex', 'run', '--deployment', 'anonymous-agent', functionName,
+  await run(process.execPath, [
+    convexShortCliEntry, 'run', '--deployment', 'anonymous-agent', functionName,
     JSON.stringify(args),
     '--identity', JSON.stringify({
       subject: 'demo:track-developer',
@@ -166,16 +190,20 @@ async function waitForHttp(url, timeoutMs) {
   let lastFailure = 'no response'
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(url, {
-        headers: { accept: 'text/html' },
-        signal: AbortSignal.timeout(5_000),
+      const status = await new Promise((resolvePromise, reject) => {
+        const request = httpGet(url, { headers: { accept: 'text/html' } }, (response) => {
+          response.resume()
+          resolvePromise(response.statusCode ?? 0)
+        })
+        request.setTimeout(5_000, () => request.destroy(new Error('request timed out')))
+        request.once('error', reject)
       })
-      response.body?.cancel().catch(() => {})
-      if (response.status >= 200 && response.status < 400) {
-        console.log(`E2E web ready: ${url} (${response.status})`)
+      if (status >= 200 && status < 400) {
+        console.log(`E2E web ready: ${url} (${status})`)
         return
       }
-      lastFailure = `HTTP ${response.status}`
+      console.log(`E2E web not ready yet: ${url} (HTTP ${status})`)
+      lastFailure = `HTTP ${status}`
     } catch (error) {
       lastFailure = error instanceof Error ? error.message : String(error)
     }
@@ -185,6 +213,19 @@ async function waitForHttp(url, timeoutMs) {
 }
 
 async function stopChild(child) {
+  if (process.platform === 'win32') {
+    if (child.exitCode === null) {
+      await new Promise((resolvePromise) => {
+        execFile(
+          'taskkill.exe',
+          ['/PID', String(child.pid), '/T', '/F'],
+          { windowsHide: true },
+          () => resolvePromise(),
+        )
+      })
+    }
+    return
+  }
   const signalGroup = (signal) => {
     try {
       process.kill(-child.pid, signal)
@@ -205,10 +246,10 @@ async function cleanup() {
   if (cleaned) return
   cleaned = true
   for (const child of childProcesses.toReversed()) await stopChild(child)
-  rmSync(metadataPath, { force: true })
-  rmSync(isolatedRootParent, { recursive: true, force: true })
-  rmSync(dirname(envFile), { recursive: true, force: true })
-  rmSync(dirname(convexEnvFile), { recursive: true, force: true })
+  rmSync(metadataPath, { force: true, maxRetries: 5, retryDelay: 200 })
+  rmSync(isolatedRootParent, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 })
+  rmSync(dirname(envFile), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  rmSync(dirname(convexEnvFile), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }
 
 // Playwright normally gives the webServer command a graceful shutdown window,
@@ -218,7 +259,8 @@ async function cleanup() {
 process.on('exit', () => {
   for (const child of childProcesses) {
     try {
-      process.kill(-child.pid, 'SIGKILL')
+      if (process.platform === 'win32') child.kill('SIGKILL')
+      else process.kill(-child.pid, 'SIGKILL')
     } catch {
       // The child group may already have been reaped by cleanup().
     }
@@ -247,8 +289,8 @@ const supervisorWatch = setInterval(() => {
 supervisorWatch.unref()
 
 async function main() {
-  const convex = start('pnpm', [
-    'exec', 'convex', 'dev',
+  const convex = start(process.execPath, [
+    convexCliEntry, 'dev',
     '--env-file', envFile,
     '--typecheck', 'disable',
     '--codegen', 'disable',
@@ -263,8 +305,8 @@ async function main() {
   const convexUrl = convexUrlMatch[0]
   const convexSiteUrl = convexUrl.replace(/:(\d+)$/, (_, port) => `:${Number.parseInt(port, 10) + 1}`)
 
-  await run('pnpm', [
-    'exec', 'convex', 'env', 'set', '--deployment', 'anonymous-agent', '--from-file', convexEnvFile, '--force',
+  await run(process.execPath, [
+    convexShortCliEntry, 'env', 'set', '--deployment', 'anonymous-agent', '--from-file', convexEnvFile, '--force',
   ])
   await runFixtureCommand('e2eFixtures:seed', { namespace, token: fixtureToken })
 
@@ -285,7 +327,7 @@ async function main() {
     },
   }, null, 2) + '\n', { mode: 0o600 })
 
-  start('pnpm', ['--filter', '@track/web', 'dev', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], {
+  start(packageManagerCommand, packageManagerArgs(['--filter', '@track/web', 'dev', '--host', '127.0.0.1', '--port', '4173', '--strictPort']), {
     VITE_CONVEX_URL: convexUrl,
     VITE_CONVEX_SITE_URL: convexSiteUrl,
     CONVEX_URL: convexUrl,
@@ -307,6 +349,10 @@ async function main() {
 try {
   await main()
 } catch (error) {
-  await cleanup()
+  try {
+    await cleanup()
+  } catch (cleanupError) {
+    console.error('E2E cleanup failed after the primary startup error:', cleanupError)
+  }
   throw error
 }

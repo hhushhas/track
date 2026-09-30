@@ -11,7 +11,10 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: process.env.CI ? [['line'], ['html', { outputFolder: 'playwright-report', open: 'never' }]] : 'list',
-  timeout: 30_000,
+  // Cold local Convex and Better Auth bootstrap can consume more than 30s on
+  // Windows before the actual journey begins. Individual assertions remain
+  // narrowly timed, while the journey budget covers that documented startup.
+  timeout: 90_000,
   expect: { timeout: 5_000 },
   use: {
     baseURL: 'http://127.0.0.1:4173',

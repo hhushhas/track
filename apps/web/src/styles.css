@@ -3337,9 +3337,9 @@ button {
 }
 
 .track-profile-appearance-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 12px;
   margin-top: 24px;
   border-top: 1px solid var(--hairline);
@@ -3349,7 +3349,16 @@ button {
 .track-profile-appearance-card > div { display: grid; gap: 4px; }
 .track-profile-appearance-card > div > span { color: var(--ink); font-size: 12px; font-weight: 650; }
 .track-profile-appearance-card small { color: var(--ink-4); font-size: 10px; }
-.track-profile-appearance-card .track-theme-toggle-labeled { flex: 0 0 auto; }
+.track-profile-appearance-card .track-theme-toggle-labeled {
+  width: 100%;
+  min-height: 36px;
+  height: auto;
+  justify-content: space-between;
+  gap: 8px;
+  border-color: var(--hairline-strong);
+  padding: 6px 8px;
+  white-space: nowrap;
+}
 
 .track-profile-preference-card {
   display: flex;
@@ -7561,6 +7570,8 @@ button:disabled:hover {
   .track-profile-shell {
     min-height: 100vh;
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: start;
     border: 0;
     border-radius: 0;
   }
@@ -7578,11 +7589,24 @@ button:disabled:hover {
 
   .track-profile-tabs {
     display: flex;
+    gap: 8px;
     overflow-x: auto;
+    padding-bottom: 2px;
   }
 
   .track-profile-tabs button {
     flex: 0 0 auto;
+    gap: 7px;
+    border-bottom: 2px solid transparent;
+    font-size: 12.5px;
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+
+  .track-profile-tabs button.active {
+    border-bottom-color: var(--accent);
+    box-shadow: none;
+    padding-left: 8px;
   }
 
   .track-profile-content {

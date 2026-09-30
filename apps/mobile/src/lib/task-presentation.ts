@@ -33,14 +33,6 @@ export function taskPriorityLabel(priority: TaskPriority) {
   return priority[0].toUpperCase() + priority.slice(1);
 }
 
-export function taskPriorityGlyph(priority: TaskPriority) {
-  if (priority === 'urgent') return '!!!';
-  if (priority === 'high') return '!!';
-  if (priority === 'medium') return '!';
-  if (priority === 'low') return '↓';
-  return '—';
-}
-
 export function taskStateTone(category?: TaskStateCategory) {
   if (category === 'completed') return 'success';
   if (category === 'canceled') return 'muted';

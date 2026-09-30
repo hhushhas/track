@@ -80,6 +80,7 @@ export const taskCoreTables = {
     .index('by_board_state_archived_rank', ['boardId', 'workflowStateId', 'archivedAt', 'rank'])
     .index('by_board_state_priority_archived_rank', ['boardId', 'workflowStateId', 'priority', 'archivedAt', 'rank'])
     .index('by_assignee_archived', ['assigneeProjectMemberId', 'archivedAt'])
+    .index('by_assignee_archived_due_date', ['assigneeProjectMemberId', 'archivedAt', 'dueDate'])
     .index('by_parent', ['parentTaskId'])
     .index('by_parent_rank', ['parentTaskId', 'rank'])
     .index('by_project_idempotency', ['projectId', 'createIdempotencyKey'])

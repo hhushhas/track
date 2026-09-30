@@ -89,8 +89,8 @@ warm paper, dark stone, and one purposeful yellow attention signal.
 | `backgroundElevated` | `#FFFFFF` | `#232019` | Cards, sheets, elevated headers |
 | `backgroundSelected` | `#EBE8E2` | `#3A3631` | Selected rows and controls |
 | `text` | `#1B1917` | `#FAF9F7` | Primary text |
-| `textSecondary` | `#6B655C` | `#C9C3B8` | Supporting text |
-| `textTertiary` | `#8B857A` | `#9A9488` | Timestamps and quiet metadata |
+| `textSecondary` | `#655F56` | `#C9C3B8` | Supporting text |
+| `textTertiary` | `#6E675D` | `#9A9488` | Timestamps and quiet metadata |
 | `accent` | `#F0B100` | `#F0B100` | Attention, selection, progress, primary action |
 | `accentStrong` | `#8A6400` | `#F5C53D` | Text on accent-soft surfaces |
 | `success` | `#15803D` | `#4ADE80` | Healthy or completed state |
@@ -137,8 +137,10 @@ Use a 4-point base grid. Allowed spacing values are 4, 8, 12, 16, 24, and 32.
 - Standard screen horizontal padding: 16.
 - Compact row gap: 8.
 - Section gap: 24.
-- Card radius: 12.
-- Small control radius: 8.
+- Compact mark radius: 6.
+- Small control and compact-card radius: 8.
+- Grouped surface and primary-card radius: 16.
+- Chat composer radius: 20.
 - Large action radius: 20 only when the control is intentionally pill-shaped.
 - Pill radius is reserved for filters, badges, status chips, and navigation
   selection.
@@ -415,7 +417,7 @@ Before accepting a generated frame, check:
 - Is this the exact named screen or overlay?
 - Does it use the same 16-point screen margins as existing frames?
 - Do all repeated rows share the same anatomy and height?
-- Do all cards share the same radius and border treatment?
+- Do surfaces with the same semantic role share their radius and border treatment?
 - Are all controls aligned to the same baselines and trailing edge?
 - Is the primary action clear within three seconds?
 - Is Company, Project, Channel, or Task context visible where needed?

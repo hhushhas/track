@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     gap: GRID_GAP,
   },
   overflow: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

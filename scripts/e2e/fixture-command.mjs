@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
+import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -15,9 +16,12 @@ if (metadata.schemaVersion !== 1 || !metadata.isolatedRoot || !metadata.namespac
   throw new Error('Invalid local E2E stack metadata')
 }
 
-const { stdout } = await execFileAsync('pnpm', [
-  'exec',
-  'convex',
+const convexCliEntry = process.platform === 'win32'
+  ? join(metadata.isolatedRoot, 'scripts', 'e2e', 'convex-cli-safe-exit.mjs')
+  : join(metadata.isolatedRoot, 'node_modules', 'convex', 'bin', 'main.js')
+
+const { stdout } = await execFileAsync(process.execPath, [
+  convexCliEntry,
   'run',
   '--deployment',
   metadata.deployment,
@@ -35,7 +39,7 @@ const { stdout } = await execFileAsync('pnpm', [
     ...process.env,
     CONVEX_AGENT_MODE: 'anonymous',
     CONVEX_DEPLOYMENT: metadata.deployment,
-    PATH: metadata.nodeDir ? `${metadata.nodeDir}:${process.env.PATH ?? ''}` : process.env.PATH,
+    PATH: metadata.nodeDir ? `${metadata.nodeDir}${delimiter}${process.env.PATH ?? ''}` : process.env.PATH,
   },
   maxBuffer: 8 * 1024 * 1024,
 })

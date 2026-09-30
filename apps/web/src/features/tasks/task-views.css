@@ -279,6 +279,31 @@
   text-transform: uppercase;
 }
 
+.task-scope-disclosure > summary {
+  color: var(--ink-4);
+  cursor: pointer;
+  font-family: var(--font-meta);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  list-style-position: inside;
+  text-transform: uppercase;
+}
+
+.task-scope-disclosure > summary:hover {
+  color: var(--ink);
+}
+
+.task-scope-disclosure > summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.task-scope-disclosure[open] > summary {
+  margin-bottom: 10px;
+}
+
 .task-notification-feed {
   width: min(430px, calc(100vw - 24px));
   max-height: min(680px, calc(100dvh - 88px));
@@ -366,6 +391,7 @@
 
 @media (max-width: 860px) {
   .task-page.company-task-shell {
+    width: 100%;
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -433,7 +459,7 @@
 
 .task-table-shell { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow: hidden; border: 1px solid var(--hairline-strong); border-bottom: 0; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--paper-2) 72%, transparent); }
 .task-table-scroll { flex: 1 1 auto; overflow-x: auto; }.task-table { width: 100%; min-width: 1100px; border-collapse: collapse; table-layout: fixed; }
-.task-table th { height: 52px; color: var(--ink-3); font-size: 10.5px; font-weight: 550; text-align: left; }.task-table th:first-child,.task-table td:first-child { width: 54px; text-align: center; }.task-table th:nth-child(2){width:25%}.task-table th:nth-child(3){width:13%}.task-table th:nth-child(4){width:11%}.task-table th:nth-child(5){width:10%}.task-table th:nth-child(6){width:15%}.task-table th:nth-child(7){width:14%}.task-table th:nth-child(8){width:9%}.task-table th:last-child{width:50px}
+.task-table th { position: relative; height: 52px; color: var(--ink-3); font-size: 10.5px; font-weight: 550; text-align: left; }.task-table th:first-child,.task-table td:first-child { width: 54px; text-align: center; }.task-table th:nth-child(2){width:25%}.task-table th:nth-child(3){width:13%}.task-table th:nth-child(4){width:11%}.task-table th:nth-child(5){width:10%}.task-table th:nth-child(6){width:15%}.task-table th:nth-child(7){width:14%}.task-table th:nth-child(8){width:9%}.task-table th:last-child{width:50px}
 .task-table td { height: 72px; border-top: 1px solid var(--hairline); color: var(--ink-2); font-size: 11.5px; }.task-table tbody tr:hover { background: color-mix(in srgb, var(--paper-3) 56%, transparent); }
 .task-table-title { display: grid; gap: 4px; text-align: left; }.task-table-title strong { overflow: hidden; color: var(--ink); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }.task-table-title span { color: var(--ink-4); font: 500 10px/1 var(--font-meta); }
 .task-state-badge { display: inline-flex; min-width: 94px; min-height: 34px; align-items: center; gap: 8px; border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 0 10px; }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Image, StyleSheet, View } from 'react-native';
 
-import splashArtwork from '../../assets/splas.png';
+import splashArtwork from '../../assets/images/splash-icon.png';
 
 const SPLASH_BACKGROUND = '#000000';
 
@@ -11,7 +11,6 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
   const didLayout = useRef(false);
   const didReportReady = useRef(false);
   const opacity = useRef(new Animated.Value(1)).current;
-  const scale = useRef(new Animated.Value(1)).current;
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
@@ -20,15 +19,12 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
 
   useEffect(() => {
     if (!exiting) return;
-    const animation = Animated.parallel([
-      Animated.timing(opacity, { duration: reduceMotion ? 0 : 240, toValue: 0, useNativeDriver: true }),
-      Animated.timing(scale, { duration: reduceMotion ? 0 : 240, toValue: 1.035, useNativeDriver: true }),
-    ]);
+    const animation = Animated.timing(opacity, { duration: reduceMotion ? 0 : 200, toValue: 0, useNativeDriver: true });
     animation.start(({ finished }) => {
       if (finished) onExitComplete?.();
     });
     return () => animation.stop();
-  }, [exiting, onExitComplete, opacity, reduceMotion, scale]);
+  }, [exiting, onExitComplete, opacity, reduceMotion]);
 
   const reportReady = useCallback(() => {
     if (didReportReady.current || !didLayout.current || !didLoadImage.current) return;
@@ -44,7 +40,7 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
       }}
       style={[styles.screen, { backgroundColor: SPLASH_BACKGROUND }]}
     >
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity, transform: [{ scale }] }]}>
+      <Animated.View style={[styles.artwork, { opacity }]}>
         <Image
           accessible={false}
           accessibilityIgnoresInvertColors
@@ -53,9 +49,9 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
             didLoadImage.current = true;
             reportReady();
           }}
-          resizeMode="cover"
+          resizeMode="contain"
           source={splashArtwork}
-          style={StyleSheet.absoluteFill}
+          style={styles.logo}
         />
       </Animated.View>
     </View>
@@ -63,5 +59,7 @@ export function LaunchScreen({ exiting = false, onExitComplete, onReady }: { exi
 }
 
 const styles = StyleSheet.create({
+  artwork: { alignItems: 'center', justifyContent: 'center' },
+  logo: { height: 200, width: 200 },
   screen: { alignItems: 'center', flex: 1, justifyContent: 'center' },
 });

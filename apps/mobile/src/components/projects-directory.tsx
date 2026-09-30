@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition, useReducedMotion } from 'react-native-reanimated';
 
 import { api } from '../../../../convex/_generated/api';
-import type { Doc } from '../../../../convex/_generated/dataModel';
+import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
@@ -15,6 +15,9 @@ export type DirectoryProject = {
   project: Pick<Doc<'projects'>, '_id' | 'name'>;
   membership: Doc<'projectMembers'>;
   groupCount: number;
+  memberCount: number;
+  memberCountTruncated: boolean;
+  members: Array<{ avatarUrl: string | null; id: Id<'users'>; name: string }>;
   unreadCount: number;
 };
 

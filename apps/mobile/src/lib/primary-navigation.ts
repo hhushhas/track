@@ -1,11 +1,19 @@
 import type { IconName } from '@/components/platform-icon';
 
 export type PrimaryDestination = {
-  key: 'home' | 'inbox' | 'tasks' | 'team';
+  key: 'conversations' | 'tasks' | 'inbox' | 'profile';
   label: string;
   icon: IconName;
   disabled?: boolean;
 };
+
+/** Expo keeps the Conversation surface in the Home route group for compatibility. */
+export const primaryRouteOrder = ['(home)', '(tasks)', '(inbox)', '(profile)'] as const;
+
+export function primaryRouteIndex(routeName: string) {
+  const index = primaryRouteOrder.indexOf(routeName as (typeof primaryRouteOrder)[number]);
+  return index === -1 ? primaryRouteOrder.length : index;
+}
 
 export type PrimaryTabGeometry = {
   cellWidth: number;
@@ -13,7 +21,13 @@ export type PrimaryTabGeometry = {
   indicatorWidth: number;
 };
 
-const immersiveRouteNames = new Set(['conversation', 'task', 'thread']);
+const immersiveRouteNames = new Set([
+  'conversation',
+  'task',
+  'thread',
+  'notifications',
+  'company',
+]);
 
 /**
  * Conversation, thread, and task detail are focused work destinations. Their
@@ -45,19 +59,10 @@ export function primaryTabGeometry(rowWidth: number, tabCount: number, tabIndex:
 
 /** Resolves a finger position to the nearest valid primary destination. */
 export function primaryTabIndexAtX(x: number, rowWidth: number, tabCount: number) {
+  'worklet';
   const safeCount = Math.max(1, tabCount);
   if (rowWidth <= 0) return 0;
   return Math.min(Math.max(Math.floor(x / (rowWidth / safeCount)), 0), safeCount - 1);
-}
-
-/** Maps the five physical slots around the center Create button to four tabs. */
-export function primaryDestinationIndexAtX(x: number, rowWidth: number) {
-  'worklet';
-  if (rowWidth <= 0) return 0;
-  const slot = Math.min(4, Math.max(0, Math.floor(x / (rowWidth / 5))));
-  if (slot < 2) return slot;
-  if (slot > 2) return slot - 1;
-  return x < rowWidth / 2 ? 1 : 2;
 }
 
 /**
@@ -87,9 +92,9 @@ export function primaryTabResetTarget(key: PrimaryDestination['key']) {
 }
 
 export function primaryDestinationForRoute(routeName: string, tasksDisabled = false): PrimaryDestination {
-  if (routeName === '(home)') return { key: 'home', label: 'Home', icon: 'home' };
+  if (routeName === '(home)') return { key: 'conversations', label: 'Chats', icon: 'message' };
   if (routeName === '(inbox)') return { key: 'inbox', label: 'Inbox', icon: 'email-outline' };
   if (routeName === '(tasks)') return { key: 'tasks', label: 'My Tasks', icon: 'task', disabled: tasksDisabled };
-  if (routeName === '(team)') return { key: 'team', label: 'Team', icon: 'account-group' };
+  if (routeName === '(profile)') return { key: 'profile', label: 'Profile', icon: 'account-circle' };
   throw new Error(`Unsupported primary tab route: ${routeName}`);
 }

@@ -8,6 +8,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { Composer } from '@/components/composer';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { ConversationLoading } from '@/components/conversation-loading';
 import { EmptyState } from '@/components/empty-state';
 import { ForwardMessageSheet } from '@/components/forward-message-sheet';
 import { IconButton } from '@/components/icon-button';
@@ -24,11 +25,12 @@ import { useAppToast } from '@/components/app-toast';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
 import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionResult } from '@/lib/attachment-upload';
-import { hapticLight } from '@/lib/haptics';
+import { hapticDestructive, hapticLight } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
 import { buildMentionCandidates } from '@/lib/mention-autocomplete';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
+import { messageTaskDraft } from '@/lib/message-task-draft';
 import { threadConversationHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
 import { useComposerDraft } from '@/hooks/use-composer-draft';
@@ -150,6 +152,7 @@ export default function ThreadScreen() {
   }, [composerDraft]);
   const sendKey = useRef<string | null>(null);
   const listRef = useRef<FlatList<GroupedThreadItem>>(null);
+  const scrollToLatestAfterSendRef = useRef(false);
   const screenActiveRef = useRef(false);
   const lastViewedSequenceRef = useRef(0);
   const lastAcknowledgedSequenceRef = useRef(0);
@@ -350,6 +353,10 @@ export default function ThreadScreen() {
       });
 
       const { parseMentions } = await import('@track/shared');
+      if (result.messageId) {
+        scrollToLatestAfterSendRef.current = true;
+        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      }
       if (result.messageId && parseMentions(body).includes('track')) {
         try {
           await askTrack({
@@ -382,6 +389,7 @@ export default function ThreadScreen() {
   async function handleForward(
     target: { group: { _id: Id<'groups'>; name: string; kind: string; status?: string }; membership: object },
     note: string,
+    audienceExpansionConfirmed = false,
   ) {
     if (!forwardTarget || !trackUserId || !pid) return;
     setForwardBusyGroupId(target.group._id);
@@ -396,15 +404,47 @@ export default function ThreadScreen() {
         projectMemberId: pmid,
         body: note.trim() || undefined,
         idempotencyKey: idempotencyKey(),
+        audienceExpansionConfirmed,
       });
       setForwardTarget(null);
       showToast({ icon: 'forward', message: `Copied to ${target.group.name}.`, title: 'Message forwarded', tone: 'success' });
     } catch (caught) {
+      if (!audienceExpansionConfirmed && String(caught).includes('audience_expansion_confirmation_required')) {
+        Alert.alert(
+          'This Channel has more members',
+          'Some people in the destination Channel may not have access to the original message. Forward it anyway?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Forward anyway', onPress: () => { void handleForward(target, note, true); } },
+          ],
+        );
+        return;
+      }
       setForwardError(communicationErrorMessage(caught, 'forward this message'));
     } finally {
       setForwardBusyGroupId(null);
     }
   }
+
+  const submitSwipeReport = useCallback(async (target: Exclude<GroupedThreadItem, { kind: 'date-sep' }>) => {
+    if (!trackUserId || !pid) return;
+    hapticDestructive();
+    try {
+      await createReport({
+        projectId: pid,
+        reporterId: trackUserId,
+        actingCompanyId: cid,
+        projectMemberId: pmid,
+        targetType: target.kind === 'assistant' ? 'assistant_answer' : 'message',
+        targetMessageId: target.kind === 'message' ? target.item.message._id : undefined,
+        targetAssistantStreamId: target.kind === 'assistant' ? target.stream._id : undefined,
+        reason: 'other',
+      });
+      showToast({ icon: 'flag', message: 'Thanks. The report was submitted for review.', title: 'Message reported', tone: 'success' });
+    } catch (caught) {
+      setError(communicationErrorMessage(caught, 'submit this report'));
+    }
+  }, [cid, createReport, pid, pmid, showToast, trackUserId]);
 
   const messageActions = useMemo(() => {
     if (!actionTarget || actionTarget.kind === 'date-sep') return [];
@@ -416,21 +456,23 @@ export default function ThreadScreen() {
         icon: 'plus' as const,
         onPress: async () => {
           if (!pid || !gid) return;
-          const source = actionTarget.kind === 'message' ? actionTarget.item.message.body : actionTarget.stream.answer;
-          const reference = actionTarget.kind === 'message'
-            ? { type: 'message' as const, messageId: actionTarget.item.message._id, isPrimary: true }
-            : { type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true };
-          const taskKey = `message-task:${actionTarget.key}`;
-          if (creatingTaskKey === taskKey) return;
-          setCreatingTaskKey(taskKey);
+          const draft = actionTarget.kind === 'message'
+            ? messageTaskDraft(actionTarget.item.message.body, actionTarget.item.message._id, actionTarget.key)
+            : {
+              idempotencyKey: `message-task:${actionTarget.key}`,
+              references: [{ type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true }],
+              title: actionTarget.stream.answer.trim().slice(0, 180) || 'Follow up',
+            };
+          if (creatingTaskKey === draft.idempotencyKey) return;
+          setCreatingTaskKey(draft.idempotencyKey);
           try {
             const task = await createTask({
               projectId: pid,
               groupId: gid,
-              title: source.trim().slice(0, 180) || 'Follow up',
+              title: draft.title,
               priority: 'none',
-              references: [reference],
-              idempotencyKey: taskKey,
+              references: draft.references,
+              idempotencyKey: draft.idempotencyKey,
               actingCompanyId: cid,
               projectMemberId: pmid,
             });
@@ -508,6 +550,8 @@ export default function ThreadScreen() {
         item={item}
         onLongPress={() => { hapticLight(); setActionTarget(item); setActionsOpen(true); }}
         onSwipeReply={readOnly || item.kind !== 'message' ? undefined : () => setReplyTo(item.item)}
+        onSwipeForward={item.kind === 'message' ? () => { hapticLight(); setForwardError(null); setForwardTarget(item.item); } : undefined}
+        onSwipeReport={() => { void submitSwipeReport(item); }}
         variant="thread"
       />
       {releaseConfig.tasks && pid ? <TaskInlineCards
@@ -517,7 +561,7 @@ export default function ThreadScreen() {
         projectId={pid}
       /> : null}
     </>;
-  }, [pid, readOnly, releaseConfig.tasks, setReplyTo, taskIdentity, trackUserId]);
+  }, [pid, readOnly, releaseConfig.tasks, setReplyTo, submitSwipeReport, taskIdentity, trackUserId]);
 
   async function changeFollowing() {
     if (!queryArgs || !thread) return;
@@ -563,17 +607,17 @@ export default function ThreadScreen() {
   if ((network.isConnected === false || network.isInternetReachable === false) && thread === undefined) {
     return <ThemedView style={styles.screen}>
       <Stack.Screen options={{ title: 'Thread unavailable' }} />
-      <EmptyState body="You're offline and this thread isn't available on this device." icon="thread" title="Offline unavailable" />
+      <EmptyState body="Connect to the internet to load this thread." icon="thread" title="Thread unavailable offline" />
       <Pressable
         accessibilityRole="button"
         onPress={() => pid && gid && tid && router.replace(threadConversationHref(pid, gid, tid, context, targetMessageId) as never)}
         style={[styles.retry, { backgroundColor: theme.accent }]}>
-        <ThemedText style={{ color: theme.background }} type="smallBold">Retry</ThemedText>
+        <ThemedText style={{ color: theme.accentInk }} type="smallBold">Retry</ThemedText>
       </Pressable>
     </ThemedView>;
   }
   if (!trackUserId || navigation === undefined || thread === undefined) {
-    return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Thread' }} /><EmptyState body="Opening the authorized conversation…" icon="thread" title="Loading thread" /></ThemedView>;
+    return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Thread' }} /><ConversationLoading label="Loading thread" variant="thread" /></ThemedView>;
   }
   const source = thread.source
   const sourceDate = source && !('unavailable' in source) ? source.createdAt : null;
@@ -624,12 +668,16 @@ export default function ThreadScreen() {
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
-        headerTitle: () => <View style={styles.headerTitle}>
-          <ThemedText numberOfLines={1} type="subtitle">{thread.thread.name}</ThemedText>
-          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">#{channelName}</ThemedText>
+        headerTitle: () => <View style={styles.headerIdentity}>
+          <View style={[styles.headerMark, { backgroundColor: Platform.OS === 'ios' ? 'transparent' : theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="thread" size={18} /></View>
+          <View style={styles.headerTitle}>
+            <ThemedText numberOfLines={1} type="title">{thread.thread.name}</ThemedText>
+            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">#{channelName}</ThemedText>
+          </View>
         </View>,
         headerLeft: () => <IconButton
           accessibilityLabel="Back to Channel"
+          appearance="plain"
           icon="arrow-left"
           onPress={() => {
             if (router.canGoBack()) {
@@ -639,7 +687,7 @@ export default function ThreadScreen() {
             }
           }}
         />,
-        headerRight: () => <IconButton accessibilityLabel="Thread options" icon="dots-horizontal" onPress={() => setToolsOpen(true)} />,
+        headerRight: () => <IconButton accessibilityLabel="Thread options" appearance="plain" icon="dots-horizontal" onPress={() => setToolsOpen(true)} />,
       }} />
       <ConnectivityBanner message="You’re offline. Cached replies stay available; sending will retry when you reconnect." style={styles.connection} />
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={[styles.notice, { color: theme.success }]} type="small">{notice}</ThemedText> : null}
@@ -676,6 +724,11 @@ export default function ThreadScreen() {
           </>}
           onScrollToIndexFailed={({ index }) => requestAnimationFrame(() => listRef.current?.scrollToIndex({ animated: false, index, viewPosition: 0.5 }))}
           onViewableItemsChanged={onViewableItemsChanged}
+          onContentSizeChange={() => {
+            if (!scrollToLatestAfterSendRef.current) return;
+            scrollToLatestAfterSendRef.current = false;
+            requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+          }}
           ref={listRef}
           // Matches conversation.tsx: Android cell clipping leaves stale colors after a theme change.
           removeClippedSubviews={false}
@@ -741,6 +794,8 @@ export default function ThreadScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerIdentity: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, maxWidth: 230 },
+  headerMark: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', width: 34 },
   archive: { gap: 2, padding: Spacing.three },
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
   error: { padding: Spacing.three },

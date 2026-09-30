@@ -293,6 +293,8 @@ export function taskArchiveSummary(
     board: taskSummaryBoard(board),
     state: taskSummaryState(state),
     assignee: null,
+    labels: [],
+    commentCount: 0,
     hasEvidence,
   }
 }
@@ -429,14 +431,23 @@ export async function taskSummaryPage(
   const stateIds = Array.from(new Set(tasks.map((task) => task.workflowStateId)))
   const assigneeIds = Array.from(new Set(tasks.flatMap((task) =>
     task.assigneeProjectMemberId ? [task.assigneeProjectMemberId] : [])))
-  const [boards, states, assignees, evidence] = await Promise.all([
+  const [boards, states, assignees, evidence, labelLinks, commentRows] = await Promise.all([
     Promise.all(boardIds.map((boardId) => ctx.db.get(boardId))),
     Promise.all(stateIds.map((stateId) => ctx.db.get(stateId))),
     Promise.all(assigneeIds.map((memberId) => ctx.db.get(memberId))),
     Promise.all(tasks.map((task) => ctx.db.query('taskReferences')
       .withIndex('by_task_rank', (q) => q.eq('taskId', task._id))
       .first())),
+    Promise.all(tasks.map((task) => ctx.db.query('taskLabelLinks')
+      .withIndex('by_task', (q) => q.eq('taskId', task._id))
+      .collect())),
+    Promise.all(tasks.map((task) => ctx.db.query('taskComments')
+      .withIndex('by_task_created_at', (q) => q.eq('taskId', task._id))
+      .take(101))),
   ])
+  const labelIds = Array.from(new Set(labelLinks.flat().map((link) => link.labelId)))
+  const labels = await Promise.all(labelIds.map((labelId) => ctx.db.get(labelId)))
+  const labelById = new Map(labels.flatMap((label, index) => label ? [[labelIds[index], label] as const] : []))
   const boardById = new Map<Id<'taskBoards'>, Doc<'taskBoards'>>()
   for (const [index, board] of boards.entries()) {
     if (board) boardById.set(boardIds[index], board)
@@ -456,6 +467,11 @@ export async function taskSummaryPage(
     assignee: task.assigneeProjectMemberId
       ? taskSummaryAssignee(assigneeById.get(task.assigneeProjectMemberId) ?? null)
       : null,
+    labels: labelLinks[index].flatMap((link) => {
+      const label = labelById.get(link.labelId)
+      return label && !label.archivedAt ? [label] : []
+    }),
+    commentCount: commentRows[index].filter((comment) => !comment.archivedAt).length,
     hasEvidence: Boolean(evidence[index]),
   }))
 }

@@ -135,17 +135,35 @@ async function ensureBusyProject(ctx: MutationCtx, project: Doc<'projects'>, now
         mentions: [],
         mentionedProjectMemberIds: [],
         attachmentIds: [],
-        createdAt: now - 20 * 60_000 * (replyIndex + 1),
+        createdAt: thread.createdAt + 60_000 * (replyIndex + 1),
       })
       if (replyId) messages += 1
     }
+    const replies = await ctx.db.query('messages')
+      .withIndex('by_thread_created_at', (q) => q.eq('channelThreadId', thread!._id))
+      .collect()
+    const orderedReplies = [...replies].sort(
+      (left, right) => (left.channelSequence ?? 0) - (right.channelSequence ?? 0),
+    )
+    for (const [replyIndex, reply] of orderedReplies.entries()) {
+      const createdAt = thread.createdAt + 60_000 * (replyIndex + 1)
+      if (reply.createdAt !== createdAt) await ctx.db.patch(reply._id, { createdAt })
+    }
+    const latestReply = orderedReplies.at(-1)
+    const latestChannelSequence = latestReply?.channelSequence ?? sequence
+    const latestReplyAt = latestReply
+      ? thread.createdAt + 60_000 * orderedReplies.length
+      : thread.createdAt
     await ctx.db.patch(thread._id, {
-      replyCount: 3,
-      latestChannelSequence: sequence,
-      latestReplyAt: now,
+      replyCount: orderedReplies.length,
+      latestChannelSequence,
+      latestReplyAt,
+      updatedAt: latestReplyAt,
+    })
+    await ctx.db.patch(group._id, {
+      nextChannelSequence: Math.max(sequence, latestChannelSequence),
       updatedAt: now,
     })
-    await ctx.db.patch(group._id, { nextChannelSequence: sequence, updatedAt: now })
   }
 
   const taskStates = states.filter((state) => state.category !== 'canceled')

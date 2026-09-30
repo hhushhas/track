@@ -159,8 +159,9 @@ export function CompanyProjectNavigation({
     [];
   const navClassName = [
     "company-project-nav",
-    collapsed ? "is-collapsed" : "",
+    collapsed && !mobileCompanyNavigation ? "is-collapsed" : "",
     activeArea === "company" ? "is-company-workspace" : "",
+    activeArea !== "company" && mobileMenuOpen ? "is-project-mobile-open" : "",
   ].filter(Boolean).join(" ");
   const activeLinkContext: CompanyProjectLinkContext | null =
     activeActingCompanyId && activeProjectItem
@@ -211,6 +212,15 @@ export function CompanyProjectNavigation({
     viewport.addEventListener("change", update);
     return () => viewport.removeEventListener("change", update);
   }, []);
+
+  useEffect(() => {
+    if (activeArea === "company" || !mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [activeArea, mobileMenuOpen]);
 
   const renderedWidth = collapsed ? SIDEBAR_COLLAPSED_WIDTH : width;
 
@@ -292,7 +302,7 @@ export function CompanyProjectNavigation({
           <small>{session.data?.user.email ?? "Account settings"}</small>
         </span>
       </Link>
-      <ThemeToggle showLabel={companySheetEnabled || !collapsed} />
+      <ThemeToggle showLabel={companySheetEnabled || mobileCompanyNavigation || !collapsed} />
       <button aria-label="Log out" className="company-project-nav-profile-logout" onClick={() => void handleSignOut()} title="Log out" type="button">
         <LogOut aria-hidden="true" size={14} />
         <span>Log out</span>
@@ -305,6 +315,9 @@ export function CompanyProjectNavigation({
     <aside
       aria-label="Company and Project navigation"
       className={navClassName}
+      onClickCapture={(event) => {
+        if (activeArea !== "company" && mobileCompanyNavigation && event.target instanceof Element && event.target.closest('a[href]')) setMobileMenuOpen(false);
+      }}
       ref={navigationRef}
     >
       <div
@@ -370,6 +383,17 @@ export function CompanyProjectNavigation({
             aria-controls="company-mobile-navigation"
             aria-expanded={mobileMenuOpen}
             aria-label={mobileMenuOpen ? "Close Company navigation" : "Open Company navigation"}
+            className="company-project-nav-mobile-toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            type="button"
+          >
+            {mobileMenuOpen ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
+          </button>
+        ) : null}
+        {activeArea !== "company" ? (
+          <button
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? "Close Project navigation" : "Open Project navigation"}
             className="company-project-nav-mobile-toggle"
             onClick={() => setMobileMenuOpen((open) => !open)}
             type="button"

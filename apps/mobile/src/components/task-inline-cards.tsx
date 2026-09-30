@@ -13,6 +13,7 @@ import { hapticLight } from '@/lib/haptics';
 import { taskDetailHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { shortTaskKey } from '@/lib/task-presentation';
 import { useTaskLinkBatch } from '@/lib/task-link-context';
+import { uniqueTaskViews } from '@/lib/unique-task-views';
 
 /** Matches the avatar column MessageBubble reserves, so cards line up with bubbles. */
 const GUTTER = 40;
@@ -65,12 +66,13 @@ export function TaskInlineCards({
   }, [hasCards, onCardsChange, rowId]);
 
   if (!tasks?.length) return null;
+  const visibleTasks = uniqueTaskViews(tasks);
 
   return (
     <View style={[styles.row, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
       {isOwnMessage ? null : <View style={styles.gutter} />}
       <View style={styles.stack}>
-        {tasks.map((item) => {
+        {visibleTasks.map((item) => {
           const status = item.state?.name ?? 'Unknown status';
           return (
             <Pressable

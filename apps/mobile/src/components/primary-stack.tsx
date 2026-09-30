@@ -30,7 +30,7 @@ export function PrimaryStack({ initialRouteName }: { initialRouteName: string })
         headerShadowVisible: false,
         headerStyle: { backgroundColor: 'transparent' },
         headerTitleAlign: 'left',
-        headerTitleStyle: Typography.display,
+        headerTitleStyle: Typography.navigationTitle,
         headerTintColor: Colors[theme].text,
         contentStyle: { backgroundColor: Colors[theme].homeBackground },
       }}

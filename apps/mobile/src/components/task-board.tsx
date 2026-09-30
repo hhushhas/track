@@ -19,6 +19,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { isCompactTaskBoard, taskBoardColumnIndex } from '@/lib/task-board-layout';
 import { taskStatePalette } from '@/lib/task-state-palette';
 import { taskErrorMessage } from '@/lib/user-facing-error';
+import { uniqueTaskViews } from '@/lib/unique-task-views';
 
 const ColumnWidth = 280;
 const ColumnGap = Spacing.three;
@@ -96,7 +97,7 @@ export function TaskBoard({
   // The board is a focus canvas. Its height is measured from the space left by
   // the real header, flow rail, bottom inset, and device orientation instead
   // of being guessed from the window height.
-  const measuredBoardHeight = boardHeight > 0 ? boardHeight : 320;
+  const measuredBoardHeight = boardHeight > 0 ? boardHeight : 480;
   const columnWidth = compactBoard ? Math.min(282, Math.max(272, windowWidth - 108)) : ColumnWidth;
   const columnStride = columnWidth + ColumnGap;
   const horizontalScrollRef = useRef<ScrollView>(null);
@@ -106,7 +107,7 @@ export function TaskBoard({
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
 
   const display = useMemo(() => {
-    const sorted = columns.map((column) => ({ ...column, tasks: [...column.tasks].sort(byRank) }));
+    const sorted = columns.map((column) => ({ ...column, tasks: uniqueTaskViews(column.tasks).sort(byRank) }));
     const moved = pending && sorted.flatMap((column) => column.tasks)
       .find((item) => item.task._id === pending.taskId);
     if (!pending || !moved) return sorted;
@@ -350,6 +351,7 @@ function BoardColumn({
 }) {
   const theme = useTheme();
   const palette = taskStatePalette(theme, column.state.category);
+  const visibleTasks = uniqueTaskViews(column.tasks);
 
   return (
     <View style={[styles.column, { backgroundColor: theme.background, borderColor: theme.background, height: boardHeight, width: columnWidth }]}>
@@ -369,7 +371,7 @@ function BoardColumn({
         contentContainerStyle={styles.columnBody}
         showsVerticalScrollIndicator={false}
         style={styles.columnScroller}>
-        {column.tasks.map((item) => (
+        {visibleTasks.map((item) => (
           <BoardCard
             assigneeName={assigneeName}
             item={item}
@@ -381,7 +383,7 @@ function BoardColumn({
             focused={item.task._id === focusedTaskId}
           />
         ))}
-        {!column.tasks.length ? (
+        {!visibleTasks.length ? (
           <View style={[styles.columnEmpty, { backgroundColor: palette.background, borderColor: palette.foreground }]}>
             <PlatformIcon color={palette.foreground} name="view-column" size={20} />
             <ThemedText style={{ color: palette.foreground }} type="caption">No tasks in this status</ThemedText>
@@ -441,7 +443,7 @@ function BoardCard({
 
 const styles = StyleSheet.create({
   boardScroller: { flex: 1 },
-  boardViewport: { flex: 1, minHeight: 0 },
+  boardViewport: { flex: 1, minHeight: 520 },
   column: { minHeight: 0, overflow: 'visible', width: ColumnWidth },
   columnBody: { flexGrow: 1, gap: CardGap, paddingBottom: Spacing.four },
   columnScroller: { flex: 1 },

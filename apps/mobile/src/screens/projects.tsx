@@ -171,7 +171,7 @@ export default function ProjectsScreen() {
             </View>
           </View>}
           ListEmptyComponent={<EmptyState
-            body={actingCompanyId ? 'Accepted shared Projects and retained archives will appear here.' : 'Projects created on the web will appear here. Choose a Company to browse its shared work.'}
+            body={actingCompanyId ? 'Projects you can access will appear here.' : 'Choose a Company to see its Projects and shared work.'}
             icon="project"
             title="No Projects yet"
           />}
@@ -194,7 +194,7 @@ export default function ProjectsScreen() {
         <SheetSection title="Workspace scope">
           <SheetRow icon="office-building" label="All Companies" onPress={() => { setActingCompanyId(null); setCompanySheetOpen(false); }} selected={!actingCompanyId} />
           {(companies ?? []).filter(({ company }) => company?.status === 'active').map(({ company }) => company ? (
-            <SheetRow icon="office-building" key={company._id} label={company.displayName} onPress={() => { setActingCompanyId(company._id); setCompanySheetOpen(false); }} selected={company._id === actingCompanyId} />
+            <SheetRow detail={`@${company.normalizedHandle}`} icon="office-building" key={company._id} label={company.displayName} onPress={() => { setActingCompanyId(company._id); setCompanySheetOpen(false); }} selected={company._id === actingCompanyId} />
           ) : null)}
         </SheetSection>
       </OptionsSheet>
@@ -210,7 +210,7 @@ export default function ProjectsScreen() {
           onPress={() => void submitProject()}
           style={[styles.createProjectButton, { backgroundColor: theme.accent, opacity: creating || !projectName.trim() ? 0.45 : 1 }]}
         >
-          <ThemedText style={{ color: theme.background }} type="title">{creating ? 'Creating…' : 'Create Project'}</ThemedText>
+          <ThemedText style={{ color: theme.accentInk }} type="title">{creating ? 'Creating…' : 'Create Project'}</ThemedText>
         </Pressable>
       </OptionsSheet>
 

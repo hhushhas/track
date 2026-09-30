@@ -476,6 +476,25 @@
   }
 }
 
+@media (max-width: 620px) {
+  .track-company-thread-workspace .track-thread-route-header {
+    grid-template-columns: 34px minmax(0, 1fr);
+    column-gap: 10px;
+    row-gap: 12px;
+  }
+
+  .track-company-thread-workspace .track-thread-back {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .track-thread-title .mono-label,
+  .track-thread-title h1,
+  .track-thread-title p {
+    max-width: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .track-thread-back,
   .track-thread-source-link,

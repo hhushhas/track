@@ -49,7 +49,7 @@ export default function Index() {
   // Only a settled, empty session sends anyone to sign-in.
   if (!hasAccess) return <Redirect href="/sign-in" />;
 
-  if (isAuthReady && trackUserId) return <Redirect href="/today" />;
+  if (isAuthReady && trackUserId) return <Redirect href="/conversations" />;
 
   return <LaunchScreen />;
 }

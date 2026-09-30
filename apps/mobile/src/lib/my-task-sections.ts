@@ -1,8 +1,8 @@
-export type MyTaskSectionKey = 'overdue' | 'today' | 'upcoming' | 'unscheduled' | 'completed';
+export type MyTaskSectionKey = 'overdue' | 'today' | 'upcoming' | 'unscheduled' | 'completed' | 'canceled';
 
 export type SectionableTask = {
   state?: { category: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled' } | null;
-  task: { dueDate?: string; updatedAt: number };
+  task: { dueDate?: string; priority?: string; updatedAt: number };
 };
 
 export type MyTaskSection<T> = {
@@ -11,8 +11,11 @@ export type MyTaskSection<T> = {
   title: string;
 };
 
+const priorityRank: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
+
 function byDueDate<T extends SectionableTask>(left: T, right: T) {
   return (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31')
+    || (priorityRank[left.task.priority ?? 'none'] ?? 4) - (priorityRank[right.task.priority ?? 'none'] ?? 4)
     || right.task.updatedAt - left.task.updatedAt;
 }
 
@@ -46,6 +49,13 @@ export function buildMyTaskSections<T extends SectionableTask>(tasks: readonly T
         .sort((left, right) => right.task.updatedAt - left.task.updatedAt),
       key: 'completed',
       title: 'Completed',
+    },
+    {
+      data: tasks
+        .filter((item) => item.state?.category === 'canceled')
+        .sort((left, right) => right.task.updatedAt - left.task.updatedAt),
+      key: 'canceled',
+      title: 'Canceled',
     },
   ];
   return sections.filter((section) => section.data.length > 0);

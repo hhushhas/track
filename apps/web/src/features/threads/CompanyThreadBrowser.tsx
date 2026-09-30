@@ -132,11 +132,13 @@ export function CompanyThreadBrowser({
         <span aria-label={`${visibleCount} ${status} threads`} className="track-rail-section-count">{visibleCount}</span>
       </header>
       <div className="track-rail-thread-toolbar">
-        <label className="sr-only" htmlFor={searchId}>Search company threads</label>
-        <div className="track-rail-thread-search">
-          <Search aria-hidden="true" size={13} />
-          <Input id={searchId} onChange={(event) => setSearch(event.target.value)} placeholder="Search threads…" value={search} />
-        </div>
+        {searchQuery === undefined ? <>
+          <label className="sr-only" htmlFor={searchId}>Search company threads</label>
+          <div className="track-rail-thread-search">
+            <Search aria-hidden="true" size={13} />
+            <Input id={searchId} onChange={(event) => setSearch(event.target.value)} placeholder="Search threads…" value={search} />
+          </div>
+        </> : null}
         <div aria-label="Thread status" className="track-thread-tabs" role="group">
           {(['active', 'archived'] as const).map((value) => (
             <button

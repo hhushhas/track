@@ -24,6 +24,9 @@ supportedArchitectures:
     - x64
 
 overrides:
+  # Keep the workspace on one React version; React Native 0.86 accepts ^19.2.3.
+  react: 19.2.7
+  react-dom: 19.2.7
   '@xmldom/xmldom@>=0.7.0 <=0.8.14': 0.8.15
   '@xmldom/xmldom@>=0.9.0 <=0.9.11': 0.9.12
   brace-expansion@<=5.0.8: 5.0.9
@@ -38,13 +41,12 @@ overrides:
   nanoid@>=3.0.0 <3.3.18: 3.3.18
   postcss@>=8.0.0 <=8.5.22: 8.5.23
   sharp@<0.35.4: 0.35.4
-  undici@>=7.0.0 <7.29.0: 7.29.0
+  undici@>=7.0.0 <7.29.1: 7.29.1
   uuid@<11.1.1: 11.1.1
 
 patchedDependencies:
   brace-expansion@5.0.9: patches/brace-expansion@5.0.9.patch
-  expo-modules-core@55.0.26: patches/expo-modules-core@55.0.26.patch
-  react-native-reanimated@4.2.1: patches/react-native-reanimated@4.2.1.patch
+  expo-modules-core@57.0.19: patches/expo-modules-core@57.0.19.patch
 
 # dependency-cruiser 18 parses TypeScript through the compiler API and does not
 # support TypeScript 7 yet. Keep its parser-only TypeScript isolated from the

@@ -132,6 +132,7 @@ export type VoiceRecorderMode = 'idle' | 'recording' | 'locked';
 export function useVoiceRecorder(handlers: {
   onCapture: (file: UploadableFile) => void;
   onNotice: (message: string) => void;
+  onPermissionDenied: (canAskAgain: boolean) => void;
 }) {
   const recorder = useAudioRecorder(VoicePreset);
   const state = useAudioRecorderState(recorder, 120);
@@ -139,6 +140,8 @@ export function useVoiceRecorder(handlers: {
   const modeRef = useRef<VoiceRecorderMode>('idle');
   const durationRef = useRef(0);
   const hold = useRef({ aborted: false, holding: false });
+  const startPending = useRef(false);
+  const stopPending = useRef<Promise<void> | null>(null);
   const level = useSharedValue(0.2);
 
   useEffect(() => {
@@ -152,10 +155,17 @@ export function useVoiceRecorder(handlers: {
   }
 
   async function stopRecorder() {
+    if (stopPending.current) {
+      await stopPending.current;
+      return;
+    }
+
+    const stopping = recorder.stop().catch(() => undefined);
+    stopPending.current = stopping;
     try {
-      await recorder.stop();
-    } catch {
-      /* the recorder was already released */
+      await stopping;
+    } finally {
+      if (stopPending.current === stopping) stopPending.current = null;
     }
   }
 
@@ -173,19 +183,41 @@ export function useVoiceRecorder(handlers: {
   }
 
   async function start(locked: boolean) {
-    if (modeRef.current !== 'idle') return;
-    hold.current = { aborted: false, holding: !locked };
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) {
-      handlers.onNotice('Microphone access is off. Enable it in Settings to record a voice note.');
-      return;
+    if (modeRef.current !== 'idle' || startPending.current || stopPending.current) return;
+    const attempt = { aborted: false, holding: !locked };
+    hold.current = attempt;
+    startPending.current = true;
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        if (hold.current === attempt && !attempt.aborted) {
+          handlers.onPermissionDenied(permission.canAskAgain);
+        }
+        return;
+      }
+      if (hold.current !== attempt || attempt.aborted) return;
+
+      await recorder.prepareToRecordAsync();
+      if (hold.current !== attempt || attempt.aborted) {
+        await stopRecorder();
+        return;
+      }
+
+      recorder.record();
+      hapticMedium();
+      switchMode(locked ? 'locked' : 'recording');
+      if (!locked && !attempt.holding) void finish();
+    } catch {
+      await stopRecorder();
+      if (hold.current === attempt) {
+        attempt.aborted = true;
+        switchMode('idle');
+        handlers.onNotice('Could not start recording. Please try again.');
+      }
+    } finally {
+      startPending.current = false;
     }
-    if (hold.current.aborted) return;
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-    hapticMedium();
-    switchMode(locked ? 'locked' : 'recording');
-    if (!locked && !hold.current.holding) void finish();
   }
 
   function lock() {

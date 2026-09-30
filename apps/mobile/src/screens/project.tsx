@@ -22,7 +22,7 @@ import { Spacing } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
-import { channelHref, projectChannelsHref, representedContextQuery } from '@/lib/company-navigation';
+import { channelHref, projectChannelsHref, projectSettingsHref } from '@/lib/company-navigation';
 import { attentionTitle, type MobileAttentionItem } from '@/lib/mobile-attention';
 import { projectRoleLabel } from '@/lib/role-label';
 import { useReleaseConfig } from '@/lib/release-config';
@@ -67,10 +67,6 @@ export default function ProjectOverviewScreen() {
   const attentionPages = usePaginatedQuery(api.mobile.listAttention, trackUserId ? {
     userId: trackUserId, actingCompanyId: companyId,
   } : 'skip', { initialNumItems: 10 });
-  const evidencePages = usePaginatedQuery(api.evidence.listProjectPage, trackUserId && projectId && navigation?.available ? {
-    projectId, actingCompanyId: companyId, projectMemberId: membershipId,
-  } : 'skip', { initialNumItems: 50 });
-
   useEffect(() => {
     if (attentionPages.status === 'CanLoadMore') attentionPages.loadMore(10);
   }, [attentionPages.loadMore, attentionPages.status]);
@@ -85,7 +81,6 @@ export default function ProjectOverviewScreen() {
   const totalTaskCount = tasks?.filter((item) => item.state?.category !== 'canceled').length ?? 0;
   const channelCount = groups?.length ?? 0;
   const unreadCount = groups?.reduce((count, group) => count + group.unreadCount, 0) ?? 0;
-  const evidenceCount = `${evidencePages.results.length}${evidencePages.status === 'CanLoadMore' ? '+' : ''}`;
   const today = new Date();
   const sevenDaysFromNow = new Date(today);
   sevenDaysFromNow.setDate(today.getDate() + 7);
@@ -95,7 +90,12 @@ export default function ProjectOverviewScreen() {
   const projectCompany = project?.membership.companyDisplayNameSnapshot ?? 'Independent Project';
   const projectRole = projectRoleLabel(project?.membership.role);
   const memberCount = `${members.results.length}${members.status === 'CanLoadMore' ? '+' : ''}`;
-  const loading = !projectId || navigation === undefined;
+  // Navigation resolves before the dependent counts. Keep the dashboard in its
+  // loading state until those queries finish so it never announces false zeros.
+  const loading = !projectId || navigation === undefined || (navigation.available && (
+    groups === undefined || (release.tasks && tasks === undefined)
+    || members.status === 'LoadingFirstPage'
+  ));
 
   function openBoard() {
     if (projectId && release.tasks) router.push(`${taskListHref(projectId, context)}&view=board` as never);
@@ -105,9 +105,6 @@ export default function ProjectOverviewScreen() {
   }
   function openChannels() {
     if (projectId) router.push(projectChannelsHref(projectId, context));
-  }
-  function openEvidence() {
-    if (projectId) router.push(`/search?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}`);
   }
   function openAttention(item: MobileAttentionItem) {
     const identity: MobileTaskIdentity | null = item.companyId && item.membershipId ? { companyId: item.companyId, membershipId: item.membershipId } : null;
@@ -122,29 +119,32 @@ export default function ProjectOverviewScreen() {
 
   return <ThemedView style={styles.screen}>
     <Stack.Screen options={{
-      headerBackVisible: false,
+      headerLeft: () => <IconButton accessibilityLabel="Back" appearance="plain" icon="arrow-left" onPress={() => {
+        if (router.canGoBack()) router.back();
+        else router.replace('/');
+      }} />,
       headerRight: () => <View style={styles.headerActions}>
         <IconButton accessibilityLabel="Project options" icon="tune" onPress={() => setOptionsOpen(true)} />
       </View>,
-      title: projectName,
+      title: 'Project',
     }} />
     <ConnectivityBanner style={styles.connection} />
     {loading ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading Project" /></ScreenEntrance> : navigation && !navigation.available ? (
-      <View style={styles.centered}><EmptyState body="This Project is not available for the represented membership." icon="shield-lock-outline" title="Project unavailable" /></View>
+      <View style={styles.centered}><EmptyState body="This Project isn’t available with your current Company access." icon="shield-lock-outline" title="Project unavailable" /></View>
     ) : projectId && project ? (
       <ScreenEntrance style={styles.screenContent}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
-        <ProjectHero archived={navigation.archived} company={project.project.clientLabel ?? projectCompany} description={project.project.description} memberCount={memberCount} name={projectName} onBack={() => router.back()} role={projectRole} />
+        <ProjectHero archived={navigation.archived} company={project.project.clientLabel ?? projectCompany} description={project.project.description} memberCount={memberCount} name={projectName} role={projectRole} />
         {release.tasks ? <ProjectProgress completed={completedTaskCount} latestUpdate={projectAttention[0] ? attentionTitle(projectAttention[0]) : undefined} total={totalTaskCount} /> : null}
-        <ProjectWorkHub channelCount={channelCount} dueSoonCount={dueSoonCount} evidenceCount={evidenceCount} onBoard={openBoard} onChannels={openChannels} onEvidence={openEvidence} onTasks={openTasks} openTaskCount={openTaskCount} tasksEnabled={release.tasks} unreadCount={unreadCount} />
+        <ProjectWorkHub channelCount={channelCount} dueSoonCount={dueSoonCount} onBoard={openBoard} onChannels={openChannels} onTasks={openTasks} openTaskCount={openTaskCount} tasksEnabled={release.tasks} unreadCount={unreadCount} />
         <ProjectAttention items={projectAttention} onOpen={openAttention} />
       </ScrollView></ScreenEntrance>
-    ) : <View style={styles.centered}><EmptyState body="Select a Project from Projects to see its work hub." icon="project" title="Choose a Project" /></View>}
+    ) : <View style={styles.centered}><EmptyState body="Open a Project to see its Channels, tasks, and recent work." icon="project" title="Choose a Project" /></View>}
     <OptionsSheet onClose={() => setOptionsOpen(false)} title="Project options" visible={optionsOpen}>
       <SheetSection title={projectName}>
         <SheetRow icon="channel" label="Open Channels" onPress={() => { setOptionsOpen(false); openChannels(); }} />
         {release.tasks ? <SheetRow icon="task" label="Open Tasks" onPress={() => { setOptionsOpen(false); openTasks(); }} /> : null}
         {release.tasks ? <SheetRow icon="view-board" label="Open Board" onPress={() => { setOptionsOpen(false); openBoard(); }} /> : null}
-        <SheetRow icon="shield-check" label="Open Evidence" onPress={() => { setOptionsOpen(false); openEvidence(); }} />
+        {projectId ? <SheetRow icon="tune" label="Project settings" onPress={() => { setOptionsOpen(false); router.push(projectSettingsHref(projectId, context)); }} /> : null}
       </SheetSection>
     </OptionsSheet>
   </ThemedView>;

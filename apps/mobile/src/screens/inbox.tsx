@@ -1,20 +1,20 @@
 import { useMutation, usePaginatedQuery } from 'convex/react';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useMemo, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
-import { AdaptiveListRow } from '@/components/adaptive-list-row';
 import { ActionButton } from '@/components/action-button';
 import { useAppToast } from '@/components/app-toast';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { CompactPillButton } from '@/components/compact-pill-button';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
-import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -24,7 +24,8 @@ import { channelHref, type RepresentedProjectContext } from '@/lib/company-navig
 import { uniqueAttentionIdentities } from '@/lib/mobile-attention';
 import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { sortInboxItems } from '@/lib/inbox-feed';
+import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 
 type AttentionItem = {
@@ -89,7 +90,7 @@ const emptyCopy: Record<AttentionFilter, { body: string; title: string }> = {
   all: { title: "You're clear", body: 'New assignments, mentions, replies, suggestions, and invitations will appear here.' },
   invitations: { title: 'No invitations', body: 'New company invitations will appear here.' },
   mentions: { title: 'No mentions', body: 'Messages that mention you will appear here.' },
-  replies: { title: 'No replies', body: 'Direct replies to your conversations will appear here.' },
+  replies: { title: 'No replies', body: 'Replies to your messages and threads will appear here.' },
   suggestions: { title: 'No suggestions', body: 'Grounded task suggestions from your conversations will appear here.' },
   tasks: { title: 'No task updates', body: 'Assignments, due work, and task mentions will appear here.' },
 };
@@ -128,6 +129,7 @@ function dayLabel(createdAt: number, now = new Date()) {
 export default function InboxScreen() {
   const { showToast } = useAppToast();
   const theme = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const params = useLocalSearchParams<{ filter?: string; invitationId?: string }>();
@@ -140,33 +142,29 @@ export default function InboxScreen() {
   const decideInvitation = useMutation(api.companies.decideInvitation);
   const markTaskRead = useMutation(api.taskNotifications.markTaskRead);
   const [filter, setFilter] = useState<AttentionFilter>(params.filter === 'invitations' ? 'invitations' : 'all');
+  const [search, setSearch] = useState('');
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [invitationBusy, setInvitationBusy] = useState<string | null>(null);
   const visibleItems = useMemo(() => {
-    return uniqueAttentionIdentities(items).filter((item) => {
+    const filtered = uniqueAttentionIdentities(items).filter((item) => {
       return filter === 'all'
         || (filter === 'tasks' && item.kind === 'task')
         || (filter === 'mentions' && item.kind === 'message' && item.eventType === 'mention')
         || (filter === 'replies' && item.kind === 'message' && item.eventType === 'direct_reply')
         || (filter === 'suggestions' && item.kind === 'suggestion')
         || (filter === 'invitations' && item.kind === 'invitation');
-    })
-      .sort((a, b) => {
-        const pinnedInvitation = Number(b.kind === 'invitation' && b.invitationId === params.invitationId) -
-          Number(a.kind === 'invitation' && a.invitationId === params.invitationId);
-        if (pinnedInvitation) return pinnedInvitation;
-        const priority = (item: AttentionItem) => item.eventType === 'mention'
-          ? 0
-          : item.eventType === 'direct_reply'
-            ? 1
-            : item.kind === 'task'
-              ? 2
-              : item.kind === 'message'
-                ? 3
-                : 4;
-        return priority(a) - priority(b) || b.createdAt - a.createdAt;
       });
-  }, [filter, items, params.invitationId]);
+    const query = search.trim().toLocaleLowerCase();
+    const searched = query ? filtered.filter((item) => {
+      const searchable = item.kind === 'task'
+        ? `${item.taskTitle} ${item.projectName} ${item.companyName ?? ''} ${eventCopy(item.eventType)}`
+        : item.kind === 'message'
+          ? `${item.senderName} ${item.preview} ${item.projectName} ${item.groupName} ${item.threadName ?? ''} ${item.companyName ?? ''}`
+          : `${item.title} ${item.preview} ${item.projectName} ${item.companyName ?? ''}`;
+      return searchable.toLocaleLowerCase().includes(query);
+    }) : filtered;
+    return sortInboxItems(searched, (item) => item.kind === 'invitation' && item.invitationId === params.invitationId);
+  }, [filter, items, params.invitationId, search]);
 
   function openItem(item: AttentionItem) {
     hapticLight();
@@ -207,17 +205,16 @@ export default function InboxScreen() {
   }
 
   return (
-    <ThemedView style={styles.screen}>
+    <ThemedView style={[styles.screen, { paddingTop: safeAreaInsets.top, paddingLeft: safeAreaInsets.left, paddingRight: safeAreaInsets.right }]}>
       <Stack.Screen options={{
         title: 'Inbox',
-        headerLargeTitle: false,
-        headerTransparent: false,
-        headerRight: () => <IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} />,
+        headerShown: false,
       }} />
       <ConnectivityBanner style={styles.connection} />
-      {itemStatus === 'LoadingFirstPage' ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading attention" /></ScreenEntrance> : (
-        <ScreenEntrance style={styles.screenContent}><FlatList
-          contentInsetAdjustmentBehavior="automatic"
+      {itemStatus === 'LoadingFirstPage' ? <SkeletonList label="Loading attention" /> : (
+        <FlatList
+          style={styles.screenContent}
+          contentInsetAdjustmentBehavior="never"
           contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
           data={visibleItems}
           keyExtractor={(item) => `${item.kind}:${item.id}`}
@@ -256,42 +253,57 @@ export default function InboxScreen() {
           ListHeaderComponent={
             <View style={styles.header}>
               <View style={styles.intro}>
-                <ThemedText themeColor="textSecondary">Mentions, replies, and assigned work across every Company and Project.</ThemedText>
+                <View style={styles.titleLine}><ThemedText type="display">Inbox</ThemedText><IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} /></View>
+                <ThemedText themeColor="textSecondary" type="small">Updates across your work</ThemedText>
               </View>
-              <View accessibilityRole="tablist" style={styles.filters}>
+              <View style={[styles.search, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
+                <PlatformIcon color={theme.textTertiary} name="search" size={19} />
+                <TextInput accessibilityLabel="Search inbox" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search updates" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
+                {search ? <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.clearSearch}><PlatformIcon color={theme.textSecondary} name="close" size={18} /></Pressable> : null}
+              </View>
+              <ScrollView accessibilityLabel="Inbox filters" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
                 {(['all', 'mentions', 'replies', 'tasks'] as const).map((value) => (
-                  <Pressable
+                  <CompactPillButton
                     accessibilityRole="tab"
                     accessibilityState={{ selected: filter === value }}
+                    accessibilityLabel={value === 'all' ? 'All' : value === 'mentions' ? 'Mentions' : value === 'replies' ? 'Replies' : 'Tasks'}
                     key={value}
                     onPress={() => setFilter(value)}
-                    style={[styles.filter, filter === value && { backgroundColor: theme.accentSoft }]}
+                    pillStyle={{
+                      backgroundColor: filter === value ? theme.accentSoft : theme.homeSurface,
+                      borderColor: filter === value ? theme.accentStrong : theme.homeBorder,
+                    }}
+                    pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}
                   >
-                    <ThemedText themeColor={filter === value ? 'accentStrong' : 'text'} type="captionBold">{value === 'all' ? 'All' : value === 'mentions' ? 'Mentions' : value === 'replies' ? 'Replies' : 'Tasks'}</ThemedText>
-                  </Pressable>
+                    <ThemedText style={{ color: filter === value ? theme.text : theme.textSecondary }} type="captionBold">{value === 'all' ? 'All' : value === 'mentions' ? 'Mentions' : value === 'replies' ? 'Replies' : 'Tasks'}</ThemedText>
+                  </CompactPillButton>
                 ))}
-                <Pressable
+                <CompactPillButton
                   accessibilityLabel="More Inbox filters"
                   accessibilityRole="button"
                   onPress={() => setFilterSheetOpen(true)}
-                  style={[styles.filter, (filter === 'suggestions' || filter === 'invitations') && { backgroundColor: theme.accentSoft }]}
+                  pillStyle={{
+                    backgroundColor: filter === 'suggestions' || filter === 'invitations' ? theme.accentSoft : theme.homeSurface,
+                    borderColor: filter === 'suggestions' || filter === 'invitations' ? theme.accentStrong : theme.homeBorder,
+                  }}
+                  pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}
                 >
-                  <ThemedText themeColor={filter === 'suggestions' || filter === 'invitations' ? 'accentStrong' : 'text'} type="captionBold">{filter === 'suggestions' ? 'Suggestions' : filter === 'invitations' ? 'Invitations' : 'More'}</ThemedText>
-                </Pressable>
-              </View>
+                  <ThemedText style={{ color: filter === 'suggestions' || filter === 'invitations' ? theme.text : theme.textSecondary }} type="captionBold">{filter === 'suggestions' ? 'Suggestions' : filter === 'invitations' ? 'Invitations' : 'More'}</ThemedText>
+                </CompactPillButton>
+              </ScrollView>
             </View>
           }
           ListEmptyComponent={
             <EmptyState
-              icon="check-circle"
-              title={emptyCopy[filter].title}
-              body={emptyCopy[filter].body}
+              icon={search ? 'search' : 'check-circle'}
+              title={search ? 'No matching updates' : emptyCopy[filter].title}
+              body={search ? 'Try a different name, Project, Channel, or update.' : emptyCopy[filter].body}
             />
           }
           ListFooterComponent={itemStatus === 'LoadingMore' ? <View style={styles.footer}><ActivityIndicator color={theme.accentStrong} /></View> : null}
           onEndReached={() => { if (itemStatus === 'CanLoadMore') loadMoreItems(10); }}
           onEndReachedThreshold={0.6}
-        /></ScreenEntrance>
+        />
       )}
       <OptionsSheet onClose={() => setFilterSheetOpen(false)} title="Filter Inbox" visible={filterSheetOpen}>
         <SheetSection title="Show">
@@ -345,35 +357,31 @@ function AttentionRow({ invitationBusy, item, onInvitationDecision, onPress }: {
     const context = [
       item.companyName,
       item.projectName,
-      item.kind === 'task' ? 'Task' : item.kind === 'message' ? `#${item.groupName}` : 'Suggestion',
+      item.kind === 'task' ? null : item.kind === 'message' ? `#${item.groupName}` : 'Suggestion',
     ].filter((part, index, parts) => Boolean(part) && parts.indexOf(part) === index).join(' · ');
     const direct = item.kind === 'message' && (item.eventType === 'mention' || item.eventType === 'direct_reply');
     const threadId = item.kind === 'message' ? item.threadId : undefined;
-    const sourceLabel = item.kind === 'message' ? threadId ? 'Thread reply' : 'Channel message' : null;
+    const sourceLabel = item.kind === 'message' ? threadId ? 'Thread' : 'Channel' : null;
     return (
-      <AdaptiveListRow
+      <Pressable
         accessibilityHint={item.kind === 'message' ? item.threadId ? 'Opens the conversation thread' : 'Opens the Channel message' : 'Opens the attention item'}
         accessibilityLabel={`${title}. ${context}. ${sourceLabel ? `${sourceLabel}. ` : ''}${state}`}
-        emphasized={direct}
-        leading={(
-          <View style={[styles.iconWrap, { backgroundColor: notificationTone.background }]}>
-            <PlatformIcon color={notificationTone.foreground} name={item.kind === 'task' ? 'task' : item.kind === 'message' ? 'message' : 'inbox'} size={20} />
-          </View>
-        )}
+        accessibilityRole="button"
         onPress={onPress}
-        subtitle={(
-          <View style={styles.sourceMeta}>
-            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{context}</ThemedText>
-            {sourceLabel ? <View style={[styles.sourcePill, { backgroundColor: threadId ? theme.accentSoft : theme.backgroundElement, borderColor: theme.hairline }]}>
-              <PlatformIcon color={threadId ? theme.accentStrong : theme.textSecondary} name={threadId ? 'thread' : 'channel'} size={13} />
-              <ThemedText themeColor={threadId ? 'accentStrong' : 'textSecondary'} type="captionBold">{sourceLabel}</ThemedText>
-            </View> : null}
+        style={({ pressed }) => [styles.activityRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderBottomColor: theme.hairline }]}
+      >
+        <View style={[styles.iconWrap, { backgroundColor: notificationTone.background }]}>
+          <PlatformIcon color={notificationTone.foreground} name={item.kind === 'task' ? 'task' : item.kind === 'message' ? 'message' : 'inbox'} size={20} />
+        </View>
+        <View style={styles.activityCopy}>
+          <View style={styles.activityTitleLine}>
+            <ThemedText numberOfLines={2} style={styles.activityTitle} type={direct ? 'smallBold' : 'small'}>{title}</ThemedText>
+            <ThemedText themeColor="textTertiary" type="caption">{relativeTime(item.createdAt)}</ThemedText>
           </View>
-        )}
-        title={title}
-        trailingBottom={<ThemedText style={{ color: notificationTone.foreground }} type="captionBold">{state}</ThemedText>}
-        trailingTop={<ThemedText themeColor="textTertiary" type="caption">{relativeTime(item.createdAt)}</ThemedText>}
-      />
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{context}</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="textTertiary" type="caption">{state}{sourceLabel ? ` · ${sourceLabel}` : ''}</ThemedText>
+        </View>
+      </Pressable>
     );
   }
   return (
@@ -423,25 +431,34 @@ function AttentionRow({ invitationBusy, item, onInvitationDecision, onPress }: {
 }
 
 const styles = StyleSheet.create({
+  activityCopy: { flex: 1, gap: 3, minWidth: 0 },
+  activityRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: 78, paddingVertical: Spacing.three },
+  activityTitle: { flex: 1 },
+  activityTitleLine: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.two },
   connection: { marginHorizontal: Spacing.four, marginTop: Spacing.two },
   dayHeading: { marginBottom: Spacing.one, marginTop: Spacing.two },
   daySection: { gap: Spacing.one },
   body: { flex: 1, gap: 2, minWidth: 0 },
   card: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   cardPressable: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 76, padding: Spacing.three },
-  filter: { alignItems: 'center', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  filters: { flexDirection: 'row', gap: Spacing.one, paddingRight: Spacing.two },
   footer: { alignItems: 'center', minHeight: TouchTarget, paddingVertical: Spacing.two },
-  header: { gap: Spacing.two },
+  header: { gap: Spacing.three, paddingBottom: Spacing.two },
   iconWrap: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 },
   invitationActions: { borderTopColor: 'rgba(128,128,128,0.18)', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, justifyContent: 'flex-end', padding: Spacing.two },
   invitationButton: { flex: 1, paddingHorizontal: Spacing.three },
   intro: { gap: Spacing.one, paddingBottom: Spacing.two },
-  list: { gap: Spacing.two, padding: Spacing.four, paddingTop: Spacing.two },
+  list: { paddingHorizontal: Spacing.four, paddingTop: Spacing.four },
   metaRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   project: { flex: 1 },
+  rowDetails: { gap: Spacing.one, minWidth: 0 },
+  rowStatusMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, justifyContent: 'space-between' },
   screen: { flex: 1 },
   screenContent: { flex: 1 },
-  sourceMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
-  sourcePill: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 4, paddingHorizontal: Spacing.two, paddingVertical: 3 },
+  search: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
+  searchInput: { ...Typography.body, flex: 1, minHeight: TouchTarget, paddingVertical: Spacing.two },
+  clearSearch: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  sourceMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, minWidth: 0 },
+  sourcePill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', flexShrink: 0, gap: 4, minHeight: 24, paddingHorizontal: Spacing.two, paddingVertical: 3 },
+  titleLine: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
 });

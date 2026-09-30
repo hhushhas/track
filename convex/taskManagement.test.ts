@@ -139,6 +139,38 @@ describe('task management authorization and invariants', () => {
     })).rejects.toThrow('task_board_manage_forbidden')
   })
 
+  it('rejects a stale board from another Project as an invalid destination', async () => {
+    const fixture = await seedLegacyProject()
+    const owner = fixture.t.withIdentity({ subject: 'owner' })
+    const foreignBoardId = await fixture.t.run(async (ctx) => {
+      const now = Date.now()
+      const foreignProjectId = await ctx.db.insert('projects', {
+        name: 'Foreign Project',
+        accessProfile: 'legacy',
+        createdBy: fixture.ownerId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return await ctx.db.insert('taskBoards', {
+        projectId: foreignProjectId,
+        name: 'Foreign board',
+        rank: '00000001',
+        isDefault: true,
+        createdByProjectMemberId: fixture.ownerMemberId,
+        createdAt: now,
+        updatedAt: now,
+      })
+    })
+
+    await expect(owner.mutation(api.tasks.create, {
+      projectId: fixture.projectId,
+      boardId: foreignBoardId,
+      title: 'Must stay in the selected Project',
+      priority: 'none',
+      idempotencyKey: 'stale-cross-project-board',
+    })).rejects.toThrow('task_destination_invalid')
+  })
+
   it('returns bounded task pages, child pages, and history pages', async () => {
     const fixture = await seedLegacyProject()
     const owner = fixture.t.withIdentity({ subject: 'owner' })

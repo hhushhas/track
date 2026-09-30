@@ -783,8 +783,8 @@ export function TaskDetailDrawer({
 
               {detail.capabilities.canChangeScope &&
               !detail.task.parentTaskId ? (
-                <section className="task-detail-section">
-                  <h3>Change visibility scope</h3>
+                <details className="task-detail-section task-scope-disclosure">
+                  <summary>Change visibility scope</summary>
                   <p>
                     Scope changes include this task and every subtask. Earlier
                     evidence, comments, and activity keep their original access
@@ -849,7 +849,7 @@ export function TaskDetailDrawer({
                   >
                     Change task scope
                   </Button>
-                </section>
+                </details>
               ) : null}
 
               <section className="task-detail-section">

@@ -752,10 +752,11 @@
 .company-dashboard-chart-legend i.completed { background: #10b981; }
 .company-dashboard-skeleton { height: 190px; border-radius: 8px; background: linear-gradient(90deg, color-mix(in srgb, var(--paper-3) 70%, transparent), var(--paper-2), color-mix(in srgb, var(--paper-3) 70%, transparent)); background-size: 220% 100%; animation: company-dashboard-skeleton 1.4s ease-in-out infinite; }
 @keyframes company-dashboard-skeleton { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-.company-dashboard-dialog { max-width: 480px; }
-.company-dashboard-dialog .company-inline-form { display: grid; gap: 14px; }
+.company-dashboard-dialog { max-width: min(480px, calc(100vw - 24px)); }
+.company-dashboard-dialog .company-inline-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .company-dashboard-dialog .company-inline-form > div { display: grid; gap: 6px; }
 .company-dashboard-dialog .company-inline-form label { color: var(--company-ref-text); font-size: 12px; font-weight: 650; }
+.company-dashboard-dialog .company-inline-form > button[type="submit"] { min-width: 140px; justify-self: end; }
 @media (max-width: 1180px) { .company-reference-shell .company-overview-live .company-dashboard-bottom-grid-live { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }.company-reference-shell .company-overview-live .company-dashboard-utility-column { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .company-reference-shell .company-overview-live .company-dashboard-bottom-grid-live, .company-reference-shell .company-overview-live .company-dashboard-utility-column { grid-template-columns: 1fr; }.company-reference-shell .company-overview-live .company-dashboard-utility-column { grid-column: auto; }.company-reference-shell .company-overview-live .company-dashboard-project-row { grid-template-columns: 40px minmax(0, 1fr) 24px; }.company-reference-shell .company-overview-live .company-dashboard-health, .company-reference-shell .company-overview-live .company-dashboard-percent { display: none; }.company-reference-shell .company-overview-live .company-dashboard-chart-filters { flex-wrap: wrap; }.company-reference-shell .company-overview-live .company-dashboard-chart-filters select { max-width: 120px; } }
 
@@ -2119,5 +2120,34 @@
 @media (min-width: 761px) and (max-width: 1399px) {
   .company-reference-shell .company-overview-live .company-dashboard-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .company-reference-shell .company-overview-search kbd {
+    display: none;
+  }
+
+  .company-reference-shell .company-overview-live .company-dashboard-activity-row {
+    min-height: 72px;
+  }
+
+  .company-reference-shell .company-overview-live .company-dashboard-activity-row strong {
+    font-size: 12.5px;
+    line-height: 1.35;
+  }
+
+  .company-reference-shell .company-overview-live .company-dashboard-activity-row div span {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 420px) {
+  .company-reference-shell .company-overview-live .company-dashboard-action-grid button {
+    min-height: 52px;
+  }
+
+  .company-reference-shell .company-overview-live .company-dashboard-action-grid small {
+    display: none;
   }
 }

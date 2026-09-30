@@ -33,6 +33,34 @@ afterEach(async () => {
 })
 
 describe('Company model authorization and lifecycle', () => {
+  it('shows one workload row per person across Company Projects', async () => {
+    const t = convexTest(schema, modules)
+    const owner = await seedUser(t, 'workload-owner')
+    const companyId = await createCompany(t, owner, 'Workload Company', 'workload-company')
+    const firstProject = await seedCompanyProject(t, owner, companyId, 'First Project')
+    const secondProject = await seedCompanyProject(t, owner, companyId, 'Second Project')
+    const actor = asUser(t, owner)
+    for (const [index, projectId] of [firstProject, secondProject].entries()) {
+      const member = await t.run(async (ctx) => ctx.db.query('projectMembers')
+        .withIndex('by_project', (q) => q.eq('projectId', projectId)).first())
+      expect(member).not.toBeNull()
+      await actor.mutation(api.tasks.create, {
+        actingCompanyId: companyId,
+        assigneeProjectMemberId: member!._id,
+        idempotencyKey: `workload-${index}`,
+        priority: 'none',
+        projectId,
+        projectMemberId: member!._id,
+        title: `Project task ${index}`,
+      })
+    }
+
+    const overview = await actor.query(api.companyOverview.get, { companyId })
+    expect(overview.workload).toEqual([
+      expect.objectContaining({ id: String(owner), name: 'workload-owner', projects: ['First Project', 'Second Project'], total: 2, open: 2 }),
+    ])
+  })
+
   it('keeps meaningful project activity visible beyond newer internal audit events', async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t, 'activity-owner')

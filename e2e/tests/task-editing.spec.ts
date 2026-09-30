@@ -1,13 +1,16 @@
 import { execFile } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 const execFileAsync = promisify(execFile)
-const fixtureCommand = new URL('../../scripts/e2e/fixture-command.mjs', import.meta.url)
+const fixtureCommand = fileURLToPath(
+  new URL('../../scripts/e2e/fixture-command.mjs', import.meta.url),
+)
 
 async function resetFixture() {
-  await execFileAsync(process.execPath, [fixtureCommand.pathname, 'reset'], {
+  await execFileAsync(process.execPath, [fixtureCommand, 'reset'], {
     env: process.env,
     maxBuffer: 8 * 1024 * 1024,
     timeout: 120_000,
@@ -33,6 +36,8 @@ async function openTaskBoard(page: Page) {
   await expect(tasksLink).toBeVisible()
   await tasksLink.click()
   await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/\/tasks\?/)
+  await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('list')
+  await page.getByRole('navigation', { name: 'Task workspace view' }).getByRole('link', { name: 'Board', exact: true }).click()
   await expect(
     page.locator('button.task-card-open').filter({ hasText: 'E2E source-linked task' }),
   ).toBeVisible({ timeout: 30_000 })
@@ -82,4 +87,22 @@ test('task board moves the seeded task to the next workflow state', async ({ pag
     has: page.getByRole('heading', { name: 'In progress' }),
   })
   await expect(inProgress.getByText('E2E source-linked task', { exact: true })).toBeVisible({ timeout: 30_000 })
+})
+
+test('task calendar schedules an undated task by drag and drop', async ({ page }) => {
+  await openTaskBoard(page)
+
+  await page.getByRole('navigation', { name: 'Task workspace view' })
+    .getByRole('link', { name: 'Calendar', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'September 2026' })).toBeVisible()
+
+  const task = page.getByRole('button', { name: /E2E source-linked task/ })
+  const targetDate = page.getByRole('group', { name: 'Sunday, September 20, 2026' })
+  await expect(task).toHaveAttribute('draggable', 'true')
+  await task.dragTo(targetDate)
+
+  await expect(targetDate.getByText('E2E source-linked task', { exact: true })).toBeVisible({ timeout: 30_000 })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('group', { name: 'Sunday, September 20, 2026' })
+    .getByText('E2E source-linked task', { exact: true })).toBeVisible({ timeout: 30_000 })
 })

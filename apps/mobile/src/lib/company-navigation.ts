@@ -13,7 +13,7 @@ export function representedContextQuery(context: RepresentedProjectContext | nul
 }
 
 export function projectChannelsHref(projectId: Id<'projects'>, context: RepresentedProjectContext | null) {
-  return `/groups?projectId=${encodeURIComponent(projectId)}${representedContextQuery(context)}` as Href;
+  return `/conversations?projectId=${encodeURIComponent(projectId)}${context ? `&companyId=${encodeURIComponent(context.companyId)}&membershipId=${encodeURIComponent(context.membershipId)}${context.archived ? '&archive=1' : ''}` : ''}` as Href;
 }
 
 export function projectOverviewHref(projectId: Id<'projects'>, context: RepresentedProjectContext | null) {
@@ -36,6 +36,6 @@ export function channelHref(
 
 export function navigationUnavailableCopy(hasCompanyContext: boolean) {
   return hasCompanyContext
-    ? 'This link is not available for the represented Company, or access has ended.'
-    : 'This link is unavailable, or Project access has ended.';
+    ? 'This item isn’t available from the selected Company, or your access has ended.'
+    : 'This item isn’t available, or your Project access has ended.';
 }

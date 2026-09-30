@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AssistantMark } from '@/components/chat/assistant-mark';
+import { CompactPillButton } from '@/components/compact-pill-button';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
@@ -7,8 +8,8 @@ import { useTheme } from '@/hooks/use-theme';
 
 export type TaskViewMode = 'board' | 'list';
 
-export function TasksToolbar({ boardName, filterActive, mode, onBoardPress, onFilterPress, onModeChange, onSearchPress, onSuggestionsPress, projectName, searchActive, suggestionCount }: {
-  boardName: string; filterActive: boolean; mode: TaskViewMode; onBoardPress: () => void; onFilterPress: () => void; onModeChange: (mode: TaskViewMode) => void; onSearchPress: () => void; onSuggestionsPress: () => void; projectName: string; searchActive: boolean; suggestionCount: number;
+export function TasksToolbar({ boardName, filterActive, mode, onBoardPress, onFilterPress, onModeChange, onSearchPress, projectName, searchActive }: {
+  boardName: string; filterActive: boolean; mode: TaskViewMode; onBoardPress: () => void; onFilterPress: () => void; onModeChange: (mode: TaskViewMode) => void; onSearchPress: () => void; projectName: string; searchActive: boolean;
 }) {
   const theme = useTheme();
   return <View style={styles.toolbar}>
@@ -22,9 +23,6 @@ export function TasksToolbar({ boardName, filterActive, mode, onBoardPress, onFi
     </View>
     <ScrollView contentContainerStyle={styles.toolbarScrollRow} horizontal showsHorizontalScrollIndicator={false}>
       <View accessibilityRole="tablist" style={[styles.viewSwitch, { backgroundColor: theme.backgroundSelected }]}><ViewToggle icon="view-board" label="Board" mode="board" onPress={onModeChange} selected={mode === 'board'} /><ViewToggle icon="list" label="List" mode="list" onPress={onModeChange} selected={mode === 'list'} /></View>
-      <Pressable accessibilityLabel={suggestionCount ? `${suggestionCount} task ${suggestionCount === 1 ? 'suggestion' : 'suggestions'}` : 'Task suggestion inbox'} accessibilityRole="button" android_ripple={{ color: theme.accentSoft }} onPress={onSuggestionsPress} style={[styles.suggestionPill, { backgroundColor: theme.accentSoft }]}>
-        <PlatformIcon color={theme.accentStrong} name="lightbulb-outline" size={16} /><ThemedText themeColor="accentStrong" type="captionBold">{suggestionCount ? `${suggestionCount} ${suggestionCount === 1 ? 'suggestion' : 'suggestions'}` : 'Inbox'}</ThemedText>
-      </Pressable>
     </ScrollView>
   </View>;
 }
@@ -36,7 +34,7 @@ function ToolbarIcon({ active, icon, label, onPress }: { active: boolean; icon: 
 
 function ViewToggle({ icon, label, mode, onPress, selected }: { icon: 'list' | 'view-board'; label: string; mode: TaskViewMode; onPress: (mode: TaskViewMode) => void; selected: boolean }) {
   const theme = useTheme();
-  return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => onPress(mode)} style={[styles.viewToggle, selected && { backgroundColor: theme.backgroundElevated }]}><PlatformIcon color={selected ? theme.text : theme.textSecondary} name={icon} size={15} /><ThemedText themeColor={selected ? 'text' : 'textSecondary'} type="captionBold">{label}</ThemedText></Pressable>;
+  return <CompactPillButton accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => onPress(mode)} pillStyle={{ backgroundColor: selected ? theme.backgroundElevated : 'transparent', borderColor: 'transparent' }} pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}><PlatformIcon color={selected ? theme.text : theme.textSecondary} name={icon} size={15} /><ThemedText themeColor={selected ? 'text' : 'textSecondary'} type="captionBold">{label}</ThemedText></CompactPillButton>;
 }
 
 export function TaskSuggestionBanner({ channelName, onDismiss, onReview, title }: { channelName?: string; onDismiss?: () => void; onReview: () => void; title: string }) {
@@ -62,29 +60,36 @@ export function SprintFlowHeader({ activeStateId, columnCount, onStatePress, sta
   const flowStates = states?.length ? states : Array.from({ length: Math.max(1, columnCount) }, (_, index) => ({ _id: String(index), name: `Status ${index + 1}` }));
   return <View style={styles.flowHeader}>
     <View style={styles.flowCopy}><ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">Sprint flow</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">{taskCount} {taskCount === 1 ? 'task' : 'tasks'}</ThemedText></View>
-    <ScrollView accessibilityRole="tablist" contentContainerStyle={styles.flowDots} horizontal showsHorizontalScrollIndicator={false}>{flowStates.map((state, index) => {
+    <ScrollView accessibilityRole="tablist" contentContainerStyle={styles.flowDots} horizontal showsHorizontalScrollIndicator={false} style={styles.flowDotsScroll}>{flowStates.map((state, index) => {
       const selected = activeStateId ? activeStateId === state._id : index === 0;
-      return <Pressable accessibilityLabel={`Show ${state.name}`} accessibilityRole="tab" accessibilityState={{ selected }} hitSlop={8} key={state._id} onPress={() => onStatePress?.(state._id)} style={[styles.flowDotButton, { backgroundColor: selected ? theme.accentStrong : theme.hairline }]} />;
+      return <Pressable accessibilityLabel={`Show ${state.name}`} accessibilityRole="tab" accessibilityState={{ selected }} key={state._id} onPress={() => onStatePress?.(state._id)} style={styles.flowDotButton}><View style={[styles.flowDot, { backgroundColor: selected ? theme.accentStrong : theme.hairline }]} /></Pressable>;
     })}</ScrollView>
   </View>;
 }
 
 export function TaskCreateContext({ boardName, projectName }: { boardName?: string; projectName: string }) {
   const theme = useTheme();
-  return <View style={styles.createContext}><ThemedText themeColor="accentStrong" type="captionBold">{projectName}</ThemedText><View style={[styles.evidenceNote, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.accentStrong} name="message" size={18} /><View style={styles.boardCopy}><ThemedText themeColor="textSecondary" type="caption">Evidence-aware task</ThemedText><ThemedText numberOfLines={2} type="small">Conversation references stay attached when this task comes from a Channel.</ThemedText></View></View>{boardName ? <ThemedText themeColor="textTertiary" type="caption">Creating in {boardName}</ThemedText> : null}</View>;
+  return <View style={[styles.createContext, { backgroundColor: theme.backgroundElement }]}>
+    <PlatformIcon color={theme.accentStrong} name="project" size={20} />
+    <View style={styles.boardCopy}>
+      <ThemedText numberOfLines={1} type="smallBold">{projectName}</ThemedText>
+      {boardName ? <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">Board · {boardName}</ThemedText> : null}
+    </View>
+  </View>;
 }
 
 const styles = StyleSheet.create({
   boardCopy: { flex: 1, minWidth: 0 },
   boardEyebrow: { fontSize: 9.5, lineHeight: 12, textTransform: 'uppercase' },
   boardSelector: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, flex: 1, flexDirection: 'row', gap: Spacing.two, maxWidth: 250, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
-  createContext: { gap: Spacing.two },
+  createContext: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, padding: Spacing.three },
   dismissButton: { alignItems: 'center', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.two },
-  evidenceNote: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: 58, padding: Spacing.three },
-  flowCopy: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  flowDotButton: { borderRadius: Radius.pill, height: 8, width: 8 },
+  flowCopy: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: Spacing.two },
+  flowDot: { borderRadius: Radius.pill, height: 8, width: 8 },
+  flowDotButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   flowDots: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
-  flowHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 30 },
+  flowDotsScroll: { flexGrow: 0, marginLeft: Spacing.three },
+  flowHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
   reviewButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   suggestionActions: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, paddingTop: Spacing.one },
   suggestionBanner: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, overflow: 'hidden', padding: Spacing.three },
@@ -98,5 +103,4 @@ const styles = StyleSheet.create({
   toolbarLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
   toolbarScrollRow: { alignItems: 'center', gap: Spacing.two, minWidth: '100%' },
   viewSwitch: { borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', padding: 2 },
-  viewToggle: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
 });

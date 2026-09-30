@@ -98,8 +98,8 @@ const styles = StyleSheet.create({
   },
   orbitLarge: { height: 560, position: 'absolute', right: -200, top: -230, width: 560 },
   orbitSmall: { bottom: -140, height: 300, left: -150, position: 'absolute', width: 300 },
-  ringLarge: { ...StyleSheet.absoluteFillObject, borderRadius: 9999, borderWidth: 26 },
-  ringSmall: { ...StyleSheet.absoluteFillObject, borderRadius: 9999, borderWidth: 18 },
+  ringLarge: { ...StyleSheet.absoluteFill, borderRadius: 9999, borderWidth: 26 },
+  ringSmall: { ...StyleSheet.absoluteFill, borderRadius: 9999, borderWidth: 18 },
   station: { borderRadius: 6, height: 12, position: 'absolute', width: 12 },
   name: {
     fontSize: 38,

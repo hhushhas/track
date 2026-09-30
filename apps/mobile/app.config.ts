@@ -69,16 +69,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     plugins: [
       'expo-router',
+      'expo-image',
+      'expo-sharing',
+      'expo-status-bar',
       [
         'expo-splash-screen',
         {
           backgroundColor: '#000000',
-          image: './assets/splas.png',
-          imageWidth: 360,
-          resizeMode: 'cover',
+          image: './assets/images/splash-icon.png',
+          imageWidth: 200,
+          resizeMode: 'contain',
           dark: {
             backgroundColor: '#000000',
-            image: './assets/splas.png',
+            image: './assets/images/splash-icon.png',
           },
         },
       ],
@@ -91,7 +94,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
               colorControlActivated: { light: '#f0b100', dark: '#f0b100' },
               colorControlHighlight: { light: '#fef3c7', dark: '#4a3800' },
               textColorPrimary: { light: '#1b1917', dark: '#faf9f7' },
-              textColorSecondary: { light: '#6b655c', dark: '#c9c3b8' },
+              textColorSecondary: { light: '#655f56', dark: '#c9c3b8' },
               windowBackground: { light: '#ffffff', dark: '#292522' },
             },
           },

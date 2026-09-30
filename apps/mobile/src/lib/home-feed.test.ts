@@ -59,6 +59,21 @@ describe('Home feed', () => {
       .toEqual(['overdue-low', 'today-urgent', 'today-high', 'today-medium']);
   });
 
+  it('removes duplicate task records before building the Today preview', () => {
+    const duplicate = {
+      _id: 'task-1',
+      dueDate: '2026-09-18',
+      priority: 'high' as const,
+      updatedAt: 3,
+    };
+    const tasks = [
+      { id: 'first', state: { category: 'unstarted' as const }, task: duplicate },
+      { id: 'duplicate', state: { category: 'unstarted' as const }, task: { ...duplicate, updatedAt: 2 } },
+    ];
+
+    expect(todayTaskPreview(tasks, '2026-09-18').map((task) => task.id)).toEqual(['first']);
+  });
+
   it('uses the saved timezone for the Home calendar key', () => {
     const instant = new Date('2026-09-18T01:00:00.000Z');
     expect(localDateKey(instant, 'America/Los_Angeles')).toBe('2026-09-17');

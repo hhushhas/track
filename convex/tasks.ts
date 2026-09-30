@@ -110,6 +110,7 @@ type TaskListFilters = {
   boardId?: Id<'taskBoards'>
   groupId?: Id<'groups'>
   assigneeProjectMemberId?: Id<'projectMembers'>
+  unassignedOnly?: boolean
   creatorProjectMemberId?: Id<'projectMembers'>
   workflowStateId?: Id<'taskWorkflowStates'>
   stateCategory?: 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled'
@@ -345,6 +346,8 @@ async function filterTaskRows(
     if (!filters.includeArchived && task.archivedAt) continue
     if (filters.boardId && task.boardId !== filters.boardId) continue
     if (filters.groupId && task.groupId !== filters.groupId) continue
+    if (filters.assigneeProjectMemberId && task.assigneeProjectMemberId !== filters.assigneeProjectMemberId) continue
+    if (filters.unassignedOnly && task.assigneeProjectMemberId) continue
     if (filters.creatorProjectMemberId && task.createdByProjectMemberId !== filters.creatorProjectMemberId) continue
     if (filters.workflowStateId && task.workflowStateId !== filters.workflowStateId) continue
     if (filters.priority && task.priority !== filters.priority) continue
@@ -426,6 +429,7 @@ async function archivedTaskListPage(
       if (filters.boardId && task.boardId !== filters.boardId) continue
       if (filters.groupId && task.groupId !== filters.groupId) continue
       if (filters.assigneeProjectMemberId && task.assigneeProjectMemberId !== filters.assigneeProjectMemberId) continue
+      if (filters.unassignedOnly && task.assigneeProjectMemberId) continue
       if (filters.creatorProjectMemberId && task.createdByProjectMemberId !== filters.creatorProjectMemberId) continue
       if (filters.workflowStateId && task.workflowStateId !== filters.workflowStateId) continue
       if (filters.priority && task.priority !== filters.priority) continue
@@ -462,6 +466,7 @@ export const listPage = query({
     boardId: v.optional(v.id('taskBoards')),
     groupId: v.optional(v.id('groups')),
     assigneeProjectMemberId: v.optional(v.id('projectMembers')),
+    unassignedOnly: v.optional(v.boolean()),
     creatorProjectMemberId: v.optional(v.id('projectMembers')),
     workflowStateId: v.optional(v.id('taskWorkflowStates')),
     stateCategory: v.optional(taskStateCategory),
@@ -1126,7 +1131,13 @@ export const create = mutation({
     let initialAccess
     let board: Doc<'taskBoards'>
     if (args.boardId) {
-      const boardAccess = await requireTaskBoardAccess(ctx, actor, args.boardId, args)
+      const boardAccess = await requireTaskBoardAccess(
+        ctx,
+        actor,
+        args.boardId,
+        args,
+        args.projectId,
+      )
       initialAccess = boardAccess
       board = boardAccess.board
     } else {

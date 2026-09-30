@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   primaryDestinationForRoute,
-  primaryDestinationIndexAtX,
   primaryNavigationHeight,
   primaryNavigationVisibleForPath,
+  primaryRouteOrder,
   primaryTabGeometry,
   primaryTabIndexAtX,
   primaryTabRubberBand,
@@ -24,7 +24,10 @@ describe('primaryNavigationVisibleForPath', () => {
     expect(primaryNavigationVisibleForPath('/thread')).toBe(false);
     expect(primaryNavigationVisibleForPath('/task')).toBe(false);
     expect(primaryNavigationVisibleForPath('/task?tab=discussion')).toBe(false);
-    expect(primaryNavigationVisibleForPath('/today')).toBe(true);
+    expect(primaryNavigationVisibleForPath('/notifications')).toBe(false);
+    expect(primaryNavigationVisibleForPath('/profile')).toBe(true);
+    expect(primaryNavigationVisibleForPath('/company')).toBe(false);
+    expect(primaryNavigationVisibleForPath('/conversations')).toBe(true);
   });
 });
 
@@ -39,12 +42,19 @@ describe('primaryNavigationHeight', () => {
 
 describe('primary tab route model', () => {
   it('maps each route group to one stable peer destination', () => {
-    const destinations = ['(home)', '(inbox)', '(tasks)', '(team)']
+    const destinations = ['(home)', '(inbox)', '(tasks)', '(profile)']
       .map((route) => primaryDestinationForRoute(route));
 
-    expect(destinations.map(({ key }) => key)).toEqual(['home', 'inbox', 'tasks', 'team']);
-    expect(destinations.map(({ label }) => label)).toEqual(['Home', 'Inbox', 'My Tasks', 'Team']);
-    expect(destinations.map(({ icon }) => icon)).toEqual(['home', 'email-outline', 'task', 'account-group']);
+    expect(destinations.map(({ key }) => key)).toEqual(['conversations', 'inbox', 'tasks', 'profile']);
+    expect(destinations.map(({ label }) => label)).toEqual(['Chats', 'Inbox', 'My Tasks', 'Profile']);
+    expect(destinations.map(({ icon }) => icon)).toEqual(['message', 'email-outline', 'task', 'account-circle']);
+  });
+
+  it('keeps the app bar in Conversations, My Tasks, Inbox, Profile order', () => {
+    const destinations = primaryRouteOrder.map((route) => primaryDestinationForRoute(route));
+
+    expect(destinations.map(({ key }) => key)).toEqual(['conversations', 'tasks', 'inbox', 'profile']);
+    expect(destinations.map(({ label }) => label)).toEqual(['Chats', 'My Tasks', 'Inbox', 'Profile']);
   });
 
   it('keeps a disabled Tasks destination visible while the release is gated', () => {
@@ -53,7 +63,7 @@ describe('primary tab route model', () => {
 
   it('resets every primary Tasks press to global My Tasks', () => {
     expect(primaryTabResetTarget('tasks')).toEqual({ params: {}, screen: 'tasks' });
-    expect(primaryTabResetTarget('team')).toBeNull();
+    expect(primaryTabResetTarget('profile')).toBeNull();
   });
 
   it('rejects an unregistered route instead of silently selecting the wrong tab', () => {
@@ -75,12 +85,15 @@ describe('primary tab route model', () => {
     expect(primaryTabIndexAtX(900, 352, 4)).toBe(3);
   });
 
-  it('skips the physical Create slot during a held tab drag', () => {
-    expect(primaryDestinationIndexAtX(20, 350)).toBe(0);
-    expect(primaryDestinationIndexAtX(110, 350)).toBe(1);
-    expect(primaryDestinationIndexAtX(170, 350)).toBe(1);
-    expect(primaryDestinationIndexAtX(180, 350)).toBe(2);
-    expect(primaryDestinationIndexAtX(330, 350)).toBe(3);
+  it('maps a destination-only row evenly across its four cells', () => {
+    expect(primaryTabIndexAtX(20, 352, 4)).toBe(0);
+    expect(primaryTabIndexAtX(110, 352, 4)).toBe(1);
+    expect(primaryTabIndexAtX(210, 352, 4)).toBe(2);
+    expect(primaryTabIndexAtX(330, 352, 4)).toBe(3);
+  });
+
+  it('keeps all four destinations evenly reachable with Create outside the navigation row', () => {
+    expect([0, 1, 2, 3].map((slot) => primaryTabIndexAtX((slot + 0.5) * 88, 352, 4))).toEqual([0, 1, 2, 3]);
   });
 
   it('tracks inside the glass bar and resists overshoot equally on every edge', () => {

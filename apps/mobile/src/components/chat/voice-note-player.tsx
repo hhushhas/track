@@ -130,12 +130,12 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
         style={[styles.playButton, { backgroundColor: theme.accent }]}>
         {status.isLoaded ? (
           <PlatformIcon
-            color={theme.background}
+            color={theme.accentInk}
             name={status.playing ? 'pause' : 'play'}
             size={20}
           />
         ) : (
-          <ActivityIndicator color={theme.background} size="small" />
+          <ActivityIndicator color={theme.accentInk} size="small" />
         )}
       </Pressable>
 

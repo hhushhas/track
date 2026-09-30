@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { useKeyboardState, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Animated, {
   cancelAnimation,
@@ -16,6 +18,7 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -27,10 +30,11 @@ import {
   type PendingAttachment,
 } from '@/components/chat-attach-menu';
 import { MentionSuggestions } from '@/components/chat/mention-suggestions';
+import { OptionsSheet, SheetNote, SheetRow } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import type { DetailedMessage } from '@/components/thread-row';
-import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDuration } from '@/lib/attachment-presentation';
@@ -47,6 +51,7 @@ import {
   type MentionCandidate,
 } from '@/lib/mention-autocomplete';
 import { useVoiceRecorder } from '@/lib/media-capture';
+import { pickDocuments } from '@/lib/media-capture';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
 export type ComposerProps = {
@@ -70,6 +75,7 @@ export type ComposerProps = {
    */
   onSendMessage: (submission: ComposerSubmission) => Promise<ComposerSubmissionResult>;
   replyTo: DetailedMessage | null;
+  surfaceColor?: string;
   value: string;
 };
 
@@ -77,6 +83,14 @@ const HoldDelay = 220;
 const CancelDistance = -90;
 const LockDistance = -64;
 const BarFactors = [0.5, 0.85, 1, 0.7, 0.45];
+
+function safeGlassAvailable() {
+  try {
+    return isGlassEffectAPIAvailable();
+  } catch {
+    return false;
+  }
+}
 
 function RecordingDot({ color }: { color: string }) {
   const reducedMotion = useReducedMotion();
@@ -113,29 +127,39 @@ export function Composer({
   onLoadMoreMentionCandidates,
   onSendMessage,
   replyTo,
+  surfaceColor,
   value,
 }: ComposerProps) {
   const theme = useTheme();
+  const isIOS = Platform.OS === 'ios';
   const bottomTabBarInset = useBottomTabBarInset();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboard = useReanimatedKeyboardAnimation();
+  const reducedMotion = useReducedMotion();
   const inputRef = useRef<TextInput>(null);
+  const hasLiquidGlass = isIOS && safeGlassAvailable();
 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [caret, setCaret] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [microphoneCanAskAgain, setMicrophoneCanAskAgain] = useState<boolean | null>(null);
   const [retryMessageId, setRetryMessageId] = useState<Id<'messages'> | null>(null);
   /** Set for one commit after inserting a mention, to place the caret after it. */
   const [selection, setSelection] = useState<{ end: number; start: number } | null>(null);
   const [sending, setSending] = useState(false);
 
-  const voice = useVoiceRecorder({ onCapture: handleCapture, onNotice: setNotice });
+  const voice = useVoiceRecorder({
+    onCapture: handleCapture,
+    onNotice: setNotice,
+    onPermissionDenied: setMicrophoneCanAskAgain,
+  });
   const mode = voice.mode;
 
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
   const outcome = useSharedValue(0);
+  const micScale = useSharedValue(1);
 
   const hasContent = Boolean(value.trim()) || attachments.length > 0;
   const canSend = hasContent && !sending && !busy;
@@ -158,6 +182,7 @@ export function Composer({
     opacity: Math.min(1, dragY.value / LockDistance + 0.4),
     transform: [{ translateY: dragY.value / 2 }],
   }));
+  const micPressStyle = useAnimatedStyle(() => ({ transform: [{ scale: micScale.value }] }));
 
   function reportProgress(id: string, progress: number) {
     setAttachments((prev) => prev.map((item) => (item.id === id ? { ...item, progress } : item)));
@@ -222,10 +247,28 @@ export function Composer({
     if (!busy && !sending) void submit(next, value.trim());
   }
 
+  function openMicrophoneSettings() {
+    setMicrophoneCanAskAgain(null);
+    void Linking.openSettings().catch(() => {
+      setNotice('Could not open device settings. Enable microphone access for Track in Settings.');
+    });
+  }
+
+  async function chooseDocuments() {
+    hapticLight();
+    try {
+      const files = await pickDocuments();
+      if (files.length) setAttachments((previous) => [...previous, ...files]);
+    } catch {
+      setNotice('Could not open Documents. Try again.');
+    }
+  }
+
   const micPan = Gesture.Pan()
     .activateAfterLongPress(HoldDelay)
     .onStart(() => {
       outcome.value = 0;
+      if (isIOS) micScale.value = withSpring(0.96, { dampingRatio: 0.7, duration: reducedMotion ? 0 : 150 });
       scheduleOnRN(voice.start, false);
     })
     .onUpdate((event) => {
@@ -243,20 +286,25 @@ export function Composer({
     .onFinalize(() => {
       dragX.value = withTiming(0, { duration: 140 });
       dragY.value = withTiming(0, { duration: 140 });
+      if (isIOS) micScale.value = withSpring(1, { dampingRatio: 0.8, duration: reducedMotion ? 0 : 200 });
       scheduleOnRN(voice.release, outcome.value);
     });
 
-  const micTap = Gesture.Tap().onEnd(() => {
-    outcome.value = 2;
-    scheduleOnRN(voice.start, true);
-  });
+  const micTap = Gesture.Tap()
+    .onBegin(() => { if (isIOS) micScale.value = withSpring(0.96, { dampingRatio: 0.7, duration: reducedMotion ? 0 : 150 }); })
+    .onEnd(() => {
+      outcome.value = 2;
+      scheduleOnRN(voice.start, true);
+    })
+    .onFinalize(() => { if (isIOS) micScale.value = withSpring(1, { dampingRatio: 0.8, duration: reducedMotion ? 0 : 200 }); });
 
   return (
     <Animated.View
       style={[
         styles.surface,
+        Platform.OS === 'ios' && styles.iosSurface,
         {
-          backgroundColor: theme.background,
+          backgroundColor: surfaceColor ?? theme.background,
           borderTopColor: theme.hairline,
           marginBottom: keyboardVisible ? 0 : bottomTabBarInset,
         },
@@ -311,7 +359,7 @@ export function Composer({
         </View>
       ) : null}
 
-      <View style={styles.row}>
+      <View style={[styles.row, Platform.OS === 'ios' && styles.iosComposerShell, Platform.OS === 'ios' && { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
         {mode !== 'idle' ? (
           <View
             accessibilityLabel={`Recording voice note, ${formatDuration(voice.durationMs)}`}
@@ -344,23 +392,40 @@ export function Composer({
             )}
           </View>
         ) : (
-          <>
-            <Pressable
-              accessibilityLabel="Add an attachment"
+          <View style={[styles.messageField, Platform.OS === 'ios' && styles.iosMessageField, { backgroundColor: Platform.OS === 'ios' ? 'transparent' : theme.backgroundElement }]}>
+            {Platform.OS === 'ios' ? <GlassContainer spacing={4} style={styles.iosActionGroup}>
+              <Pressable
+                accessibilityLabel="Add a photo"
+                accessibilityRole="button"
+                hitSlop={6}
+                onPress={() => { hapticLight(); setMenuOpen(true); }}
+                style={({ pressed }) => [styles.iosGlassButton, { opacity: pressed ? 0.78 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+                {hasLiquidGlass ? <GlassView colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'} glassEffectStyle="regular" isInteractive={false} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosGlassMaterial]} tintColor={theme.backgroundElement} /> : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosFallbackMaterial, { backgroundColor: theme.backgroundSelected }]} />}
+                <PlatformIcon color={theme.textSecondary} name="plus" size={19} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Attach a document"
+                accessibilityRole="button"
+                hitSlop={6}
+                onPress={() => void chooseDocuments()}
+                style={({ pressed }) => [styles.iosGlassButton, { opacity: pressed ? 0.78 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
+                {hasLiquidGlass ? <GlassView colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'} glassEffectStyle="regular" isInteractive={false} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosGlassMaterial]} tintColor={theme.backgroundElement} /> : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosFallbackMaterial, { backgroundColor: theme.backgroundSelected }]} />}
+                <PlatformIcon color={theme.textSecondary} name="file-document-outline" size={18} />
+              </Pressable>
+            </GlassContainer> : <Pressable
+              accessibilityLabel="Add a photo or document"
               accessibilityRole="button"
               android_ripple={{ borderless: true, color: theme.backgroundSelected }}
               hitSlop={6}
-              onPress={() => {
-                hapticLight();
-                setMenuOpen(true);
-              }}
+              onPress={() => { hapticLight(); setMenuOpen(true); }}
               style={[styles.circle, { backgroundColor: theme.backgroundElement }]}>
               <PlatformIcon color={theme.textSecondary} name="paperclip" size={20} />
-            </Pressable>
+            </Pressable>}
             <TextInput
               accessibilityLabel={`Message ${activeGroupName ?? 'channel'}`}
               allowFontScaling
               cursorColor={theme.accent}
+              keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
               maxLength={10_000}
               maxFontSizeMultiplier={MaxFontScale}
               multiline
@@ -372,16 +437,16 @@ export function Composer({
               }}
               onFocus={onFocus}
               onSelectionChange={handleSelectionChange}
-              placeholder="Message or ask @track"
+              placeholder={Platform.OS === 'ios' ? 'Message' : 'Message or ask @track'}
               placeholderTextColor={theme.textTertiary}
               ref={inputRef}
               selection={selection ?? undefined}
               selectionColor={theme.accent}
               selectionHandleColor={theme.accent}
-              style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text }]}
+              style={[styles.input, Platform.OS !== 'ios' && { backgroundColor: theme.backgroundElement }, { color: theme.text }]}
               value={value}
             />
-          </>
+          </View>
         )}
 
         {showSend ? (
@@ -393,11 +458,10 @@ export function Composer({
             disabled={mode !== 'locked' && !canSend}
             hitSlop={6}
             onPress={() => (mode === 'locked' ? void voice.finish() : handleSend())}
-            style={[
-              styles.circle,
-              { backgroundColor: theme.accent, opacity: mode !== 'locked' && !canSend ? 0.5 : 1 },
-            ]}>
-            <PlatformIcon color={theme.background} name="send" size={19} />
+            style={({ pressed }) => Platform.OS === 'ios'
+              ? [styles.circle, { backgroundColor: theme.accent, opacity: mode !== 'locked' && !canSend ? 0.5 : pressed ? 0.82 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]
+              : [styles.circle, { backgroundColor: theme.accent, opacity: mode !== 'locked' && !canSend ? 0.5 : 1 }]}>
+            <PlatformIcon color={theme.accentInk} name="send" size={19} />
           </Pressable>
         ) : (
           <View>
@@ -409,20 +473,20 @@ export function Composer({
               </Animated.View>
             ) : null}
             <GestureDetector gesture={Gesture.Exclusive(micPan, micTap)}>
-              <View
+              <Animated.View
                 accessibilityHint="Hold to record, slide up to lock, slide left to cancel. Tap to record hands-free."
                 accessibilityLabel="Record a voice note"
                 accessibilityRole="button"
-                style={[
-                  styles.circle,
+                style={[styles.circle, Platform.OS === 'ios' && styles.iosMicButton, Platform.OS === 'ios' && micPressStyle,
                   { backgroundColor: mode === 'recording' ? theme.dangerSoft : theme.backgroundElement },
                 ]}>
+                {Platform.OS === 'ios' ? hasLiquidGlass ? <GlassView colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'} glassEffectStyle="regular" isInteractive={false} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosGlassMaterial]} tintColor={mode === 'recording' ? theme.dangerSoft : theme.backgroundElement} /> : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosFallbackMaterial, { backgroundColor: mode === 'recording' ? theme.dangerSoft : theme.backgroundSelected }]} /> : null}
                 <PlatformIcon
                   color={mode === 'recording' ? theme.danger : theme.textSecondary}
                   name="microphone-outline"
                   size={20}
                 />
-              </View>
+              </Animated.View>
             </GestureDetector>
           </View>
         )}
@@ -433,6 +497,39 @@ export function Composer({
         onPicked={(files: UploadableFile[]) => setAttachments((prev) => [...prev, ...files])}
         visible={menuOpen}
       />
+
+      <OptionsSheet
+        onClose={() => setMicrophoneCanAskAgain(null)}
+        title="Microphone access needed"
+        visible={microphoneCanAskAgain !== null}
+      >
+        <SheetNote state="error">
+          Track isn’t allowed to use the microphone, so voice messages can’t record.
+        </SheetNote>
+        {microphoneCanAskAgain ? (
+          <SheetRow
+            detail="Allow microphone access to record a voice message."
+            icon="microphone-outline"
+            label="Try again"
+            onPress={() => {
+              setMicrophoneCanAskAgain(null);
+              void voice.start(true);
+            }}
+          />
+        ) : (
+          <SheetRow
+            detail="Enable microphone access for Track in your device settings, then try again."
+            icon="tune"
+            label="Open device settings"
+            onPress={openMicrophoneSettings}
+          />
+        )}
+        <SheetRow
+          icon="close"
+          label="Not now"
+          onPress={() => setMicrophoneCanAskAgain(null)}
+        />
+      </OptionsSheet>
     </Animated.View>
   );
 }
@@ -448,14 +545,44 @@ const styles = StyleSheet.create({
   },
   dot: { borderRadius: Radius.pill, height: 9, width: 9 },
   input: {
-    borderRadius: Radius.xlarge,
     flex: 1,
-    fontSize: 16,
-    lineHeight: 21,
+    ...Typography.message,
     maxHeight: 120,
     minHeight: TouchTarget,
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.one,
     paddingVertical: Platform.OS === 'ios' ? 11 : 8,
+  },
+  iosComposerShell: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: Spacing.three,
+    minHeight: 60,
+    paddingHorizontal: Spacing.one,
+    shadowColor: '#1b1917',
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  iosActionGroup: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  iosFallbackMaterial: { borderRadius: Radius.pill },
+  iosGlassButton: { alignItems: 'center', borderRadius: Radius.pill, height: 42, justifyContent: 'center', overflow: 'hidden', width: 42 },
+  iosGlassMaterial: { borderRadius: Radius.pill },
+  iosInlineAttach: { height: TouchTarget - Spacing.two, width: TouchTarget - Spacing.two },
+  iosMicButton: { overflow: 'hidden' },
+  iosMessageField: { borderRadius: 0, paddingHorizontal: 0 },
+  iosSurface: { borderTopWidth: 0 },
+  inlineAttach: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  messageField: {
+    alignItems: 'center',
+    borderCurve: 'continuous',
+    borderRadius: Radius.xlarge,
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: TouchTarget,
+    paddingLeft: Spacing.one,
+    paddingRight: Spacing.one,
   },
   lockChip: {
     alignItems: 'center',

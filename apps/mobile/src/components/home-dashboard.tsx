@@ -3,8 +3,9 @@ import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
+import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getHomeGreeting } from '@/lib/home-greeting';
 import { attentionContext, attentionTitle, relativeAttentionTime, type MobileAttentionItem } from '@/lib/mobile-attention';
@@ -51,7 +52,7 @@ export type HomeStat = {
   icon: IconName;
   label: string;
   tone: 'accent' | 'danger' | 'success' | 'info';
-  value: number;
+  value: number | string;
   onPress: () => void;
 };
 
@@ -110,12 +111,12 @@ export function HomeHeader({
             accessibilityLabel={notificationCount ? `${notificationCount} notifications in ${companyLabel}` : `No notifications in ${companyLabel}`}
             accessibilityRole="button"
             onPress={onNotifications}
-            style={({ pressed }) => [styles.headerIconButton, { borderColor: theme.homeBorder, opacity: pressed ? 0.65 : 1 }]}
+            style={({ pressed }) => [styles.headerIconButton, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder, opacity: pressed ? 0.65 : 1 }]}
           >
             <PlatformIcon color={theme.textSecondary} name="bell-outline" size={23} />
             {notificationCount > 0 ? (
-              <View style={[styles.notificationBadge, { backgroundColor: theme.accent, borderColor: theme.homeBackground }]}>
-                <ThemedText style={[styles.notificationBadgeText, { color: theme.background }]} type="captionBold">{notificationCount > 99 ? '99+' : notificationCount}</ThemedText>
+              <View style={[styles.notificationBadge, { backgroundColor: theme.accent, borderColor: theme.homeSurface }]}>
+                <ThemedText style={[styles.notificationBadgeText, { color: theme.accentInk }]} type="captionBold">{notificationCount > 99 ? '99+' : notificationCount}</ThemedText>
               </View>
             ) : null}
           </Pressable>
@@ -123,7 +124,7 @@ export function HomeHeader({
             accessibilityLabel="Open account"
             accessibilityRole="button"
             onPress={onProfile}
-            style={({ pressed }) => [styles.profileButton, { borderColor: theme.homeBorder, opacity: pressed ? 0.65 : 1 }]}
+            style={({ pressed }) => [styles.profileButton, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder, opacity: pressed ? 0.65 : 1 }]}
           >
             <ColoredAvatar label={displayName} seed={profileSeed} size={40} />
           </Pressable>
@@ -139,11 +140,11 @@ export function HomeHeader({
   );
 }
 
-export function AttentionSection({ items, onOpen, onSeeAll }: { items: MobileAttentionItem[]; onOpen: (item: MobileAttentionItem) => void; onSeeAll: () => void }) {
+export function AttentionSection({ items, loading = false, onOpen, onSeeAll }: { items: MobileAttentionItem[]; loading?: boolean; onOpen: (item: MobileAttentionItem) => void; onSeeAll: () => void }) {
   return (
     <HomeSection title="Needs your attention">
       <GroupedSurface>
-        {items.length ? items.map((item, index) => (
+        {loading ? <SkeletonList count={2} label="Loading attention" /> : items.length ? items.map((item, index) => (
           <View key={`${item.kind}:${item.id}`}>
             {index > 0 ? <Divider /> : null}
             <AttentionRow item={item} onPress={() => onOpen(item)} />
@@ -199,9 +200,9 @@ export function CommittedWorkCard({ completed, dueToday, onPress, overdue, perce
   const { fontScale, width } = useWindowDimensions();
   const stacked = width < 370 || fontScale > 1.25;
   return (
-    <HomeSection title="My committed work">
+    <HomeSection title="My task progress">
       <Pressable
-        accessibilityLabel={total ? `${completed} of ${total} complete, ${percent} percent. ${dueToday} due today, ${overdue} overdue. View breakdown.` : 'No committed tasks right now. View tasks.'}
+        accessibilityLabel={total ? `${completed} of ${total} tasks complete, ${percent} percent. ${dueToday} due today, ${overdue} overdue. View task progress.` : 'No tasks to track yet. View tasks.'}
         accessibilityRole="button"
         onPress={onPress}
         style={({ pressed }) => [styles.committedCard, stacked && styles.committedCardStacked, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder }]}
@@ -222,7 +223,7 @@ export function CommittedWorkCard({ completed, dueToday, onPress, overdue, perce
             </View>
             <View style={styles.breakdownLink}><ThemedText themeColor="textSecondary">View breakdown</ThemedText><PlatformIcon color={theme.textSecondary} name="chevron-right" size={16} /></View>
           </View>
-        </> : <View style={styles.zeroStateRow}><ThemedText themeColor="textSecondary">No committed tasks right now.</ThemedText><View style={styles.breakdownLink}><ThemedText themeColor="textSecondary">View tasks</ThemedText><PlatformIcon color={theme.textSecondary} name="chevron-right" size={16} /></View></View>}
+        </> : <View style={styles.zeroStateRow}><ThemedText themeColor="textSecondary">No tasks to track yet.</ThemedText><View style={styles.breakdownLink}><ThemedText themeColor="textSecondary">View tasks</ThemedText><PlatformIcon color={theme.textSecondary} name="chevron-right" size={16} /></View></View>}
       </Pressable>
     </HomeSection>
   );
@@ -232,14 +233,29 @@ export function HomeStatsSection({ stats }: { stats: HomeStat[] }) {
   return <HomeSection title="At a glance"><View style={styles.statsGrid}>{stats.slice(0, 4).map((stat) => <HomeStatCard key={stat.label} stat={stat} />)}</View></HomeSection>;
 }
 
-function HomeStatCard({ stat }: { stat: HomeStat }) {
+export function HomeStatCard({ stat, surface = 'standard', layout = 'stacked' }: { stat: HomeStat; surface?: 'glass' | 'standard' | 'tone'; layout?: 'horizontal' | 'stacked' }) {
   const theme = useTheme();
   const color = stat.tone === 'danger' ? theme.danger : stat.tone === 'success' ? theme.success : stat.tone === 'info' ? theme.info : theme.accentStrong;
-  return <Pressable accessibilityLabel={`${stat.label}: ${stat.value}. ${stat.detail}`} accessibilityRole="button" onPress={stat.onPress} style={({ pressed }) => [styles.statCard, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder }]}>
-    <View style={[styles.statIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={color} name={stat.icon} size={19} /></View>
-    <ThemedText style={styles.statValue} type="titleLarge">{stat.value}</ThemedText>
-    <ThemedText numberOfLines={1} type="smallBold">{stat.label}</ThemedText>
-    <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{stat.detail}</ThemedText>
+  const toneBackground = {
+    accent: theme.accentSoft,
+    danger: theme.dangerSoft,
+    info: theme.workflowUnstartedSoft,
+    success: theme.successSoft,
+  }[stat.tone];
+  const backgroundColor = surface === 'tone' ? toneBackground : surface === 'glass' ? theme.navigationSelectionGlass : theme.homeSurface;
+  return <Pressable accessibilityLabel={`${stat.label}: ${stat.value}. ${stat.detail}`} accessibilityRole="button" onPress={stat.onPress} style={({ pressed }) => [styles.statCard, layout === 'horizontal' && styles.statCardHorizontal, { backgroundColor: pressed ? theme.backgroundSelected : backgroundColor, borderColor: theme.homeBorder }]}>
+    {layout === 'horizontal' ? <>
+      <ThemedText style={[styles.statValue, styles.statValueLarge, { color }]} type="titleLarge">{stat.value}</ThemedText>
+      <View style={styles.statCopy}>
+        <View style={styles.statLabelRow}><PlatformIcon color={color} name={stat.icon} size={16} /><ThemedText numberOfLines={1} style={styles.statLabel} type="smallBold">{stat.label}</ThemedText></View>
+        <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{stat.detail}</ThemedText>
+      </View>
+    </> : <>
+      <View style={[styles.statIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={color} name={stat.icon} size={19} /></View>
+      <ThemedText style={styles.statValue} type="titleLarge">{stat.value}</ThemedText>
+      <ThemedText numberOfLines={1} type="smallBold">{stat.label}</ThemedText>
+      <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{stat.detail}</ThemedText>
+    </>}
   </Pressable>;
 }
 
@@ -339,9 +355,9 @@ const styles = StyleSheet.create({
   errorState: { alignItems: 'center', borderRadius: Radius.homeSurface, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', justifyContent: 'space-between', minHeight: 72, paddingHorizontal: Spacing.four },
   footerLink: { alignItems: 'center', alignSelf: 'stretch', flexDirection: 'row', gap: Spacing.two, justifyContent: 'flex-end', minHeight: 52, paddingHorizontal: Spacing.four },
   greeting: { gap: Spacing.one },
-  greetingSupport: { fontSize: 16, lineHeight: 22 },
-  greetingTitle: { fontSize: 32, fontWeight: '700', lineHeight: 38 },
-  greetingTitleSmall: { fontSize: 28, lineHeight: 34 },
+  greetingSupport: Typography.subtitle,
+  greetingTitle: Typography.display,
+  greetingTitleSmall: Typography.display,
   groupedSurface: { borderCurve: 'continuous', borderRadius: Radius.homeSurface, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   header: { gap: Spacing.five },
   headerActions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three },
@@ -351,7 +367,7 @@ const styles = StyleSheet.create({
   loading: { gap: Spacing.five },
   loadingSection: { gap: Spacing.two },
   loadingSurface: { borderRadius: Radius.homeSurface, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  notificationBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 2, justifyContent: 'center', minHeight: 20, minWidth: 20, paddingHorizontal: 4, position: 'absolute', right: -4, top: -4 },
+  notificationBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 2, height: 20, justifyContent: 'center', minWidth: 20, paddingHorizontal: 4, position: 'absolute', right: 1, top: 1 },
   notificationBadgeText: { fontSize: 10, lineHeight: 14 },
   profileButton: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 48, justifyContent: 'center', width: 48 },
   progressColumn: { flex: 1.05, minWidth: 0 },
@@ -361,11 +377,16 @@ const styles = StyleSheet.create({
   progressTrack: { borderRadius: Radius.pill, flex: 1, height: 9, overflow: 'hidden' },
   retry: { alignItems: 'center', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   rowAction: { alignItems: 'center', borderRadius: Radius.large, justifyContent: 'center', minHeight: 40, minWidth: 64, paddingHorizontal: Spacing.two },
-  rowCopy: { flex: 1, gap: 2, minWidth: 0 },
-  rowTitle: { fontSize: 15.5, lineHeight: 21 },
+  rowCopy: { flex: 1, gap: Spacing.one, minWidth: 0 },
+  rowTitle: Typography.bodyBold,
   section: { gap: Spacing.two },
-  sectionTitle: { fontSize: 21, lineHeight: 27 },
+  sectionTitle: Typography.titleLarge,
   statCard: { borderCurve: 'continuous', borderRadius: Radius.homeSurface, borderWidth: StyleSheet.hairlineWidth, flexBasis: '47%', flexGrow: 1, gap: Spacing.one, minHeight: 132, minWidth: 132, padding: Spacing.three },
+  statCardHorizontal: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: 72, minWidth: 0, padding: Spacing.two },
+  statCopy: { flex: 1, gap: Spacing.half, minWidth: 0 },
+  statLabel: { flexShrink: 1 },
+  statLabelRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
+  statValueLarge: { fontSize: 24, lineHeight: 28, minWidth: 30 },
   statIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 36, justifyContent: 'center', width: 36 },
   statValue: { fontVariant: ['tabular-nums'] },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three },

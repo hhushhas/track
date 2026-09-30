@@ -7,7 +7,7 @@ function task(dueDate: string | undefined, category: NonNullable<SectionableTask
 }
 
 describe('mobile My Tasks sections', () => {
-  it('groups open work by the next decision and keeps completed work separate', () => {
+  it('groups open work by the next decision and keeps finished work separate', () => {
     const sections = buildMyTaskSections([
       task('2026-09-17', 'started', 1),
       task('2026-09-18', 'unstarted', 2),
@@ -17,8 +17,8 @@ describe('mobile My Tasks sections', () => {
       task('2026-09-15', 'canceled', 6),
     ], '2026-09-18');
 
-    expect(sections.map(({ key }) => key)).toEqual(['overdue', 'today', 'upcoming', 'unscheduled', 'completed']);
-    expect(sections.map(({ data }) => data.length)).toEqual([1, 1, 1, 1, 1]);
+    expect(sections.map(({ key }) => key)).toEqual(['overdue', 'today', 'upcoming', 'unscheduled', 'completed', 'canceled']);
+    expect(sections.map(({ data }) => data.length)).toEqual([1, 1, 1, 1, 1, 1]);
   });
 
   it('omits empty sections and sorts undated work after dated work', () => {

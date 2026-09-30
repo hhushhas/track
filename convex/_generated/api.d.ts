@@ -36,6 +36,7 @@ import type * as lib_audit from "../lib/audit.js";
 import type * as lib_box from "../lib/box.js";
 import type * as lib_channelMembership from "../lib/channelMembership.js";
 import type * as lib_channelThreadPolicy from "../lib/channelThreadPolicy.js";
+import type * as lib_companyActivityCopy from "../lib/companyActivityCopy.js";
 import type * as lib_companyInvitations from "../lib/companyInvitations.js";
 import type * as lib_companyPolicy from "../lib/companyPolicy.js";
 import type * as lib_companyProjectLifecycle from "../lib/companyProjectLifecycle.js";
@@ -143,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "lib/box": typeof lib_box;
   "lib/channelMembership": typeof lib_channelMembership;
   "lib/channelThreadPolicy": typeof lib_channelThreadPolicy;
+  "lib/companyActivityCopy": typeof lib_companyActivityCopy;
   "lib/companyInvitations": typeof lib_companyInvitations;
   "lib/companyPolicy": typeof lib_companyPolicy;
   "lib/companyProjectLifecycle": typeof lib_companyProjectLifecycle;

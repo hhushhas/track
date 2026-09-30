@@ -4,24 +4,29 @@ import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptySurface, SectionHeader } from '@/components/company-project-carousel';
 import type { HomeActivity, HomeStats, HomeTask } from '@/components/home-workspace-types';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
+import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { IconSize, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { relativeAttentionTime } from '@/lib/mobile-attention';
+import { uniqueTaskViews } from '@/lib/unique-task-views';
 
 type StatTone = 'accent' | 'danger' | 'progress' | 'purple' | 'success' | 'warning';
 
 const STATUS_CARDS: Array<{ icon: IconName; key: keyof HomeStats; label: string; tone: StatTone }> = [
-  { icon: 'calendar-today', key: 'dailyTasks', label: 'Daily Task', tone: 'purple' },
-  { icon: 'clock-outline', key: 'inProgressTasks', label: 'In Progress', tone: 'progress' },
+  { icon: 'calendar-today', key: 'dailyTasks', label: 'Due today', tone: 'purple' },
+  { icon: 'play', key: 'inProgressTasks', label: 'In Progress', tone: 'progress' },
   { icon: 'check-circle', key: 'completedTasks', label: 'Completed', tone: 'success' },
-  { icon: 'calendar-clock', key: 'upcomingTasks', label: 'Upcoming', tone: 'warning' },
+  { icon: 'calendar-clock', key: 'upcomingTasks', label: 'Next up', tone: 'warning' },
 ];
 
-export function TaskStatusSummary({ onPress, stats }: { onPress: (key: keyof HomeStats) => void; stats: HomeStats }) {
+export function TaskStatusSummary({ companyName, onPress, stats }: { companyName: string; onPress: (key: keyof HomeStats) => void; stats: HomeStats }) {
   return (
     <View style={styles.section}>
-      <SectionHeader label="Task status" onPress={() => onPress('dailyTasks')} />
+      <View style={styles.statusHeading}>
+        <ThemedText type="titleLarge">Task status</ThemedText>
+        <ThemedText numberOfLines={1} themeColor="textSecondary" type="captionBold">{companyName}</ThemedText>
+      </View>
       <View accessibilityLabel="Company task status" style={styles.statsGrid}>
         {[STATUS_CARDS.slice(0, 2), STATUS_CARDS.slice(2, 4)].map((row, rowIndex) => (
           <View key={`status-row-${rowIndex}`} style={styles.statsRow}>
@@ -64,19 +69,21 @@ function TaskStatusCard({ card, count, onPress }: { card: typeof STATUS_CARDS[nu
   );
 }
 
-export function TodayTasksSection({ companyDueCount = 0, onOpen, onRoute, onSeeAll, tasks }: {
+export function TodayTasksSection({ companyDueCount = 0, loading = false, onOpen, onRoute, onSeeAll, tasks }: {
   companyDueCount?: number;
+  loading?: boolean;
   onOpen: (task: HomeTask) => void;
   onRoute: (task: HomeTask) => void;
   onSeeAll: () => void;
   tasks: HomeTask[];
 }) {
   const { width } = useWindowDimensions();
-  const cardWidth = Math.max(280, width - Spacing.four * 2);
+  const cardWidth = Math.min(width - Spacing.six, Math.max(240, width * 0.74));
+  const visibleTasks = uniqueTaskViews(tasks);
   return (
     <View style={styles.section}>
-      <SectionHeader label="Today’s Tasks" onPress={onSeeAll} />
-      {tasks.length ? (
+      <SectionHeader label="Due today" onPress={onSeeAll} />
+      {loading ? <SkeletonList count={2} label="Loading today's tasks" /> : visibleTasks.length ? (
         <ScrollView
           accessibilityLabel="Today’s tasks"
           contentContainerStyle={styles.taskCarouselContent}
@@ -85,27 +92,19 @@ export function TodayTasksSection({ companyDueCount = 0, onOpen, onRoute, onSeeA
           showsHorizontalScrollIndicator={false}
           snapToAlignment="start"
           snapToInterval={cardWidth + Spacing.three}>
-          {tasks.map((task) => <TodayTaskCard cardWidth={cardWidth} key={task.task._id} onOpen={() => onOpen(task)} onRoute={() => onRoute(task)} task={task} />)}
+          {visibleTasks.map((task) => <TodayTaskCard cardWidth={cardWidth} key={task.task._id} onOpen={() => onOpen(task)} onRoute={() => onRoute(task)} task={task} />)}
         </ScrollView>
       ) : <EmptySurface copy={companyDueCount > 0
-        ? `${companyDueCount} company task${companyDueCount === 1 ? '' : 's'} are due today, but none match your personal task list.`
-        : 'Nothing is due today.'} />}
+        ? `${companyDueCount} Company task${companyDueCount === 1 ? '' : 's'} are due today, but none are assigned to you.`
+        : 'You have no tasks due today.'} />}
     </View>
   );
-}
-
-function taskProgress(task: HomeTask) {
-  if (task.state?.category === 'completed') return 100;
-  if (task.state?.category === 'started') return 60;
-  if (task.state?.category === 'unstarted') return 25;
-  return 0;
 }
 
 function TodayTaskCard({ cardWidth, onOpen, onRoute, task }: { cardWidth: number; onOpen: () => void; onRoute: () => void; task: HomeTask }) {
   const theme = useTheme();
   const assigneeLabel = task.assigneeName || 'Assigned to you';
-  const progress = taskProgress(task);
-  const progressColor = task.state?.category === 'completed'
+  const statusColor = task.state?.category === 'completed'
     ? theme.success
     : task.state?.category === 'started'
       ? theme.workflowStartedStrong
@@ -114,31 +113,12 @@ function TodayTaskCard({ cardWidth, onOpen, onRoute, task }: { cardWidth: number
         : theme.accent;
   return (
     <Pressable
-      accessibilityLabel={`${task.task.title}. ${task.state?.name ?? 'To do'}. ${progress} percent.`}
+      accessibilityLabel={`${task.task.title}. ${task.state?.name ?? 'To do'}. ${formatTaskDate(task.task.dueDate)}.`}
       accessibilityRole="button"
       onPress={onOpen}
       style={({ pressed }) => [styles.taskCard, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder, width: cardWidth }]}>
-      <View style={styles.taskCopy}>
+      <View style={styles.taskTopRow}>
         <ThemedText numberOfLines={2} style={styles.taskTitle} type="title">{task.task.title}</ThemedText>
-        <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
-          {task.group ? `#${task.group.name.replace(/^#/, '')}` : task.project.name}
-        </ThemedText>
-      </View>
-      <View style={styles.taskMetaRow}>
-        <View style={styles.taskMetaItem}><PlatformIcon color={theme.textSecondary} name="calendar-today" size={IconSize.small} /><ThemedText themeColor="textSecondary" type="caption">{formatTaskDate(task.task.dueDate)}</ThemedText></View>
-        <View style={styles.taskMetaItem}><PlatformIcon color={theme.textSecondary} name="message" size={IconSize.small} /><ThemedText themeColor="textSecondary" type="caption">{task.commentCount ?? 0}</ThemedText></View>
-        <View style={styles.taskMetaItem}><PlatformIcon color={theme.textSecondary} name="person" size={IconSize.small} /><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{assigneeLabel}</ThemedText></View>
-      </View>
-      <View accessibilityLabel={`${progress} percent complete`} accessibilityRole="progressbar" accessibilityValue={{ max: 100, min: 0, now: progress }} style={styles.progressRow}>
-        <View style={[styles.progressTrack, { backgroundColor: theme.backgroundElement }]}>
-          <View style={[styles.progressFill, { backgroundColor: progressColor, width: `${progress}%` }]} />
-        </View>
-        <ThemedText type="captionBold">{progress}%</ThemedText>
-      </View>
-      <View style={styles.taskFooter}>
-        <View style={[styles.statusPill, { backgroundColor: taskStatusBackground(task, theme), borderColor: progressColor }]}>
-          <ThemedText numberOfLines={1} style={{ color: progressColor }} type="captionBold">{task.state?.name ?? 'To do'}</ThemedText>
-        </View>
         <Pressable
           accessibilityLabel={`Open ${task.task.title} on its board`}
           accessibilityRole="button"
@@ -147,6 +127,22 @@ function TodayTaskCard({ cardWidth, onOpen, onRoute, task }: { cardWidth: number
           style={({ pressed }) => [styles.routeButton, { borderColor: theme.homeBorder, opacity: pressed ? 0.6 : 1 }]}>
           <PlatformIcon color={theme.text} name="chevron-right" size={IconSize.medium} weight="semibold" />
         </Pressable>
+      </View>
+      <View style={styles.taskContextRow}>
+        {task.group ? (
+          <View style={[styles.channelPill, { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}>
+            <PlatformIcon color={theme.accentStrong} name="channel" size={IconSize.small} />
+            <ThemedText numberOfLines={1} style={styles.channelPillText} themeColor="accentStrong" type="captionBold">#{task.group.name.replace(/^#/, '')}</ThemedText>
+          </View>
+        ) : <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{task.project.name}</ThemedText>}
+        <View style={[styles.statusPill, { backgroundColor: taskStatusBackground(task, theme), borderColor: statusColor }]}>
+          <ThemedText numberOfLines={1} style={{ color: statusColor }} type="captionBold">{task.state?.name ?? 'To do'}</ThemedText>
+        </View>
+      </View>
+      <View style={styles.taskMetaRow}>
+        <View style={styles.taskMetaItem}><PlatformIcon color={theme.textSecondary} name="calendar-today" size={IconSize.small} /><ThemedText themeColor="textSecondary" type="caption">{formatTaskDate(task.task.dueDate)}</ThemedText></View>
+        <View style={styles.taskMetaItem}><PlatformIcon color={theme.textSecondary} name="message" size={IconSize.small} /><ThemedText themeColor="textSecondary" type="caption">{task.commentCount ?? 0}</ThemedText></View>
+        <View style={styles.taskMetaItem}><PlatformIcon color={theme.textSecondary} name="person" size={IconSize.small} /><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{assigneeLabel}</ThemedText></View>
       </View>
     </Pressable>
   );
@@ -241,9 +237,6 @@ const styles = StyleSheet.create({
   activityRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 76, paddingHorizontal: Spacing.three, paddingVertical: Spacing.three },
   activitySurface: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 60 },
-  progressFill: { borderRadius: Radius.pill, height: '100%' },
-  progressRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  progressTrack: { borderRadius: Radius.pill, flex: 1, height: 6, overflow: 'hidden' },
   routeButton: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   section: { gap: Spacing.three },
   statCard: {
@@ -256,12 +249,15 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: Spacing.three },
   statValue: { fontSize: 28, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 31 },
   statValueRow: { alignItems: 'baseline', flexDirection: 'row', gap: Spacing.one },
-  taskCard: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three, minHeight: 204, padding: Spacing.three },
-  taskCopy: { flex: 1, gap: Spacing.one },
-  taskFooter: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  statusHeading: { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'space-between' },
+  taskCard: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, justifyContent: 'space-between', minHeight: 136, padding: Spacing.three },
+  taskContextRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minWidth: 0 },
+  taskTopRow: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minWidth: 0 },
   taskCarouselContent: { gap: Spacing.three, paddingRight: Spacing.four },
   taskMetaItem: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
   taskMetaRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three },
-  taskTitle: { fontSize: 14, lineHeight: 19 },
-  statusPill: { borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  taskTitle: { flex: 1, fontSize: 14, lineHeight: 19, minWidth: 0 },
+  channelPill: { alignItems: 'center', alignSelf: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, maxWidth: '100%', paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  channelPillText: { flexShrink: 1 },
+  statusPill: { borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexShrink: 0, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
 });

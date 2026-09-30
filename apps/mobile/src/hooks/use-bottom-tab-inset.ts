@@ -2,7 +2,7 @@ import { usePathname } from 'expo-router';
 import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomTabInset, Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing, TouchTarget } from '@/constants/theme';
 import { primaryNavigationHeight, primaryNavigationVisibleForPath } from '@/lib/primary-navigation';
 
 /** Exact floating navigation height on both platforms. */
@@ -16,5 +16,5 @@ export function useBottomTabBarInset() {
 
 /** Keeps the final row reachable above the floating glass navigation. */
 export function useBottomTabContentInset(extra: number = Spacing.four) {
-  return useBottomTabBarInset() + extra;
+  return useBottomTabBarInset() + TouchTarget + extra;
 }

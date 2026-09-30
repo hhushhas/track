@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { AlertTriangle, ArrowLeft, Building2, FolderKanban, Handshake, Plus, ShieldCheck, Users } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Building2, FolderKanban, Handshake, LayoutGrid, MessageSquareText, Plus, ShieldCheck, Users } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
+import type { Id } from '../../../../convex/_generated/dataModel'
 import { Button } from '#/components/ui/button'
 import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
@@ -17,9 +18,10 @@ import '#/features/company/company-settings.css'
 
 export const Route = createFileRoute('/workspace/company/settings')({ component: CompanySettingsPage })
 
-function CompanySettingsShell({ actingCompanyId, children, tasksEnabled }: {
+function CompanySettingsShell({ actingCompanyId, children, onCompanyChange, tasksEnabled }: {
   actingCompanyId: NonNullable<ReturnType<typeof useActingCompany>['actingCompanyId']> | null
   children: ReactNode
+  onCompanyChange: (companyId: Id<'companies'>) => void
   tasksEnabled: boolean
 }) {
   return (
@@ -27,11 +29,13 @@ function CompanySettingsShell({ actingCompanyId, children, tasksEnabled }: {
       <CompanyProjectNavigation
         activeArea="company"
         actingCompanyId={actingCompanyId}
+        onCompanyChange={onCompanyChange}
         companyNavigation={
           <nav aria-label="Company workspace">
             <span className="company-project-nav-label">Workspace</span>
-            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'overview', taskFilter: undefined }}><Building2 aria-hidden="true" size={14} />Overview</Link>
+            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'overview', taskFilter: undefined }}><LayoutGrid aria-hidden="true" size={14} />Overview</Link>
             <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'projects', taskFilter: undefined }}><FolderKanban aria-hidden="true" size={14} />Projects</Link>
+            <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'threads', taskFilter: undefined }}><MessageSquareText aria-hidden="true" size={14} />Threads</Link>
             <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'relationships', taskFilter: undefined }}><Handshake aria-hidden="true" size={14} />Relationships</Link>
             <Link className="company-project-nav-item" to="/workspace/company" search={{ view: 'people', taskFilter: undefined }}><Users aria-hidden="true" size={14} />People</Link>
             <Link aria-current="page" className="company-project-nav-item active" to="/workspace/company/settings"><ShieldCheck aria-hidden="true" size={14} />Settings</Link>
@@ -53,7 +57,7 @@ function CompanySettingsPage() {
     () => (companies ?? []).flatMap((item) => item.company && item.company.status !== 'closed' ? [item.company._id] : []),
     [companies],
   )
-  const { actingCompanyId } = useActingCompany(availableCompanyIds)
+  const { actingCompanyId, setActingCompanyId } = useActingCompany(availableCompanyIds)
   const actingCompany = companies?.find((item) => item.company?._id === actingCompanyId)
   const canAdminister = Boolean(actingCompany && actingCompany.membership.role !== 'member')
   const administration = useQuery(api.companies.getAdministration, actingCompanyId && canAdminister ? { companyId: actingCompanyId } : 'skip')
@@ -82,7 +86,7 @@ function CompanySettingsPage() {
     }
   }
 
-  const shell = (content: ReactNode) => <CompanySettingsShell actingCompanyId={actingCompanyId} tasksEnabled={releaseConfig.tasks}>{content}</CompanySettingsShell>
+  const shell = (content: ReactNode) => <CompanySettingsShell actingCompanyId={actingCompanyId} onCompanyChange={setActingCompanyId} tasksEnabled={releaseConfig.tasks}>{content}</CompanySettingsShell>
   if (releaseConfigProjection === undefined || companies === undefined || currentUser === undefined) {
     return shell(<section className="track-guided-empty" role="status"><h1>Loading company settings…</h1><p>Checking your company access.</p></section>)
   }
@@ -108,7 +112,7 @@ function CompanySettingsPage() {
     <div className="company-settings-content">
       <header className="company-settings-header">
         <div>
-          <Link aria-label="Back to companies" className="company-settings-back" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company"><ArrowLeft aria-hidden="true" size={14} />Settings</Link>
+          <Link aria-label="Back to company overview" className="company-settings-back" search={{ view: 'overview', taskFilter: undefined }} to="/workspace/company"><ArrowLeft aria-hidden="true" size={14} />Company overview</Link>
           <h1>Company profile</h1>
           <p>Manage the identity people see across Projects and shared work.</p>
         </div>

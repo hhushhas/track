@@ -18,7 +18,7 @@ export function getCompanyProjectConversationSearch(
   };
 }
 
-export function getCompanyProjectManagementSearch(
+export function getCompanyProjectMembersSearch(
   context: CompanyProjectLinkContext,
 ) {
   return {

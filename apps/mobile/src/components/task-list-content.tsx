@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { shortTaskKey } from '@/lib/task-presentation';
+import { uniqueTaskViews } from '@/lib/unique-task-views';
 
 export type { MobileBoardView, MobileSuggestionView, MobileTaskView };
 
@@ -55,7 +56,7 @@ export function TaskCollection({
   if (!selectedBoard && tab === 'board') {
     return (
       <TaskEmptyState
-        body="Create the first task to initialize this Project board."
+        body="Add a task to start tracking work on this board."
         buttonLabel={readOnly ? undefined : 'Create task'}
         icon="view-board"
         onPress={onCreate}
@@ -99,10 +100,12 @@ export function TaskCollection({
     );
   }
 
+  const visibleTasks = uniqueTaskViews(tasks);
+
   return (
     <>
       <View style={styles.list}>
-        {tasks.map((item) => (
+        {visibleTasks.map((item) => (
         <TaskCard
           assignee={assigneeName(item)}
           category={item.state?.category}

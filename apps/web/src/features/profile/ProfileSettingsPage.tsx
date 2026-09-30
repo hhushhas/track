@@ -812,8 +812,8 @@ export function ProfileSettingsPage({ initialPanel = 'profile', mode, onPanelCha
                 <div>
                   <h2>Two-factor authentication</h2>
                   <p className="track-profile-muted">
-                    Normal sign-in can use one factor. Protected actions require a fresh step-up and stay trusted for 10 minutes.
-                    Trusted devices last 30 days.
+                    Sign in normally with one factor. Protected actions ask you to verify again.
+                    That check lasts 10 minutes, and trusted devices last 30 days.
                   </p>
                 </div>
                 <span className={twoFactorEnabled ? 'track-profile-status' : 'track-profile-status muted'}>
@@ -940,7 +940,7 @@ export function ProfileSettingsPage({ initialPanel = 'profile', mode, onPanelCha
               <div className="track-profile-section-header">
                 <div>
                   <h2>Login methods</h2>
-                  <p className="track-profile-muted">Connected methods are shown here for reference. Password changes are managed during sign-in.</p>
+                  <p className="track-profile-muted">See how you sign in. To change your password, open Security.</p>
                 </div>
               </div>
               <div className="track-profile-method-list">

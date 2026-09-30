@@ -253,7 +253,7 @@ export function ImageViewer({ image, onClose }: Props) {
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: viewer.background,
   },
   error: {

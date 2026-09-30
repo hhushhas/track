@@ -59,7 +59,7 @@ export function MessageBubble({
     );
 
   return (
-    <View style={[styles.row, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
+    <View style={[styles.row, isFirstInGroup && styles.rowFirst, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
       {isOwnMessage ? null : isFirstInGroup ? (
         <ColoredAvatar label={name} seed={authorId} size={AVATAR_SIZE} />
       ) : (
@@ -73,7 +73,6 @@ export function MessageBubble({
           isThreadReply && styles.threadBubble,
           hasMedia ? styles.bubbleMedia : styles.bubbleText,
           { backgroundColor: isOwnMessage ? theme.bubbleOwn : theme.bubbleOther },
-          isThreadReply && { borderColor: theme.hairline },
           isFirstInGroup && (isOwnMessage ? styles.tailOwn : styles.tailOther),
         ]}>
         {showHeader || isThreadReply ? (
@@ -144,7 +143,7 @@ export function MessageBubble({
                 <ThemedText
                   accessibilityLabel={`Sent at ${timeLabel}`}
                   style={styles.timeFooter}
-                  themeColor="textSecondary"
+                  themeColor="textTertiary"
                   type="caption">
                   {timeLabel}
                 </ThemedText>
@@ -204,7 +203,7 @@ export function MessageBubble({
           <ThemedText
             accessibilityLabel={`Sent at ${timeLabel}`}
             style={[styles.timeFooter, hasMedia && styles.inset]}
-            themeColor="textSecondary"
+            themeColor="textTertiary"
             type="caption">
             {timeLabel}
           </ThemedText>
@@ -336,6 +335,7 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
   },
+  rowFirst: { marginTop: Spacing.three },
   rowOther: {
     justifyContent: 'flex-start',
   },
@@ -349,8 +349,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: Radius.small,
   },
   threadBubble: {
-    borderWidth: StyleSheet.hairlineWidth,
-    maxWidth: '88%',
+    maxWidth: '84%',
   },
   threadTime: {
     marginLeft: 'auto',

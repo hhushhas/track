@@ -1,4 +1,6 @@
 import type { Id } from '../../../../convex/_generated/dataModel';
+import { channelHref } from './company-navigation';
+import { threadConversationHref } from './thread-navigation';
 
 type AttentionContext = {
   companyId?: Id<'companies'>;
@@ -102,6 +104,43 @@ export function uniqueAttentionItems(items: MobileAttentionItem[]) {
     seen.add(key);
     return true;
   }).sort((left, right) => attentionPriority(left) - attentionPriority(right) || right.createdAt - left.createdAt);
+}
+
+export function recentConversationNotifications(items: MobileAttentionItem[], limit = 12) {
+  return uniqueAttentionIdentities(items)
+    .filter((item): item is Extract<MobileAttentionItem, { kind: 'message' }> => item.kind === 'message')
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, Math.max(0, limit));
+}
+
+export type ConversationNotificationSheetState =
+  | { kind: 'loading' }
+  | { kind: 'empty' }
+  | { kind: 'items'; items: Extract<MobileAttentionItem, { kind: 'message' }>[] };
+
+export function conversationNotificationSheetState(
+  loadingFirstPage: boolean,
+  items: Extract<MobileAttentionItem, { kind: 'message' }>[],
+): ConversationNotificationSheetState {
+  if (loadingFirstPage) return { kind: 'loading' };
+  return items.length ? { kind: 'items', items } : { kind: 'empty' };
+}
+
+export function conversationNotificationContext(item: Extract<MobileAttentionItem, { kind: 'message' }>) {
+  return [
+    item.projectName,
+    `#${item.groupName}`,
+    item.threadId ? `Thread: ${item.threadName ?? 'activity'}` : null,
+  ].filter((part): part is string => Boolean(part)).join(' · ');
+}
+
+export function conversationNotificationHref(item: Extract<MobileAttentionItem, { kind: 'message' }>) {
+  const context = item.companyId
+    ? { companyId: item.companyId, membershipId: item.membershipId, archived: false }
+    : null;
+  return item.threadId
+    ? threadConversationHref(item.projectId, item.groupId, item.threadId, context, item.messageId)
+    : channelHref(item.projectId, item.groupId, context, item.messageId);
 }
 
 function attentionPriority(item: MobileAttentionItem) {

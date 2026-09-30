@@ -6,7 +6,7 @@ import type { Id } from './_generated/dataModel'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { requireActiveCompanyMembership } from './lib/companyPolicy'
 import { createTaskRequestScope } from './lib/taskPolicy'
-import { requireTaskAccess } from './lib/taskPolicy'
+import { getTaskCapabilitiesInScope } from './lib/taskPolicy'
 import { deriveProjectTaskMetrics, isCompletedWorkflowState } from './lib/projectOverviewMetrics'
 import { companyFeedAuditActions, describeCompanyAuditActivity } from './lib/companyActivityCopy'
 
@@ -430,7 +430,7 @@ export const get = query({
     const users = await Promise.all([...userIds].map((userId) => ctx.db.get(userId)))
     const userById = new Map(users.filter((user): user is NonNullable<typeof user> => Boolean(user)).map((user) => [String(user._id), user]))
 
-    const workloadByOwner = new Map<string, { id: string; name: string; initials: string; total: number; open: number; completed: number; overdue: number }>()
+    const workloadByOwner = new Map<string, { id: string; name: string; initials: string; projects: string[]; total: number; open: number; completed: number; overdue: number }>()
     for (const row of perProject) {
       for (const task of row.tasks) {
         const state = row.stateById.get(task.workflowStateId)
@@ -439,17 +439,19 @@ export const get = query({
         const completed = isCompletedWorkflowState(state ? { category: state.category, stateName: state.name } : undefined)
         const member = task.assigneeProjectMemberId ? memberById.get(String(task.assigneeProjectMemberId)) : null
         const user = member ? userById.get(String(member.userId)) : null
-        const ownerId = member && user && task.assigneeProjectMemberId ? String(task.assigneeProjectMemberId) : 'unassigned'
+        const ownerId = user ? String(user._id) : 'unassigned'
         const existing = workloadByOwner.get(ownerId) ?? {
           id: ownerId,
           name: user?.displayName ?? 'Unassigned',
           initials: user ? initials(user.displayName) : '—',
+          projects: [],
           total: 0,
           open: 0,
           completed: 0,
           overdue: 0,
         }
         existing.total += 1
+        if (!existing.projects.includes(row.project.name)) existing.projects.push(row.project.name)
         if (completed) existing.completed += 1
         else {
           existing.open += 1
@@ -637,23 +639,33 @@ export const listTasks = query({
     const rows = (await Promise.all(projectMemberships.map(async (membership) => {
       const project = await ctx.db.get(membership.projectId)
       if (!project || project.status !== 'active') return []
+      const scope = await createTaskRequestScope(ctx, actor, project._id, {
+        actingCompanyId: company._id,
+        projectMemberId: membership._id,
+      }).catch(() => null)
+      if (!scope) return []
       const tasks = await ctx.db
         .query('tasks')
         .withIndex('by_project_archived', (q) => q.eq('projectId', project._id).eq('archivedAt', undefined))
         .order('desc')
         .take(500)
+      const [boards, states, assignees] = await Promise.all([
+        Promise.all([...new Set(tasks.map((task) => task.boardId))].map((id) => ctx.db.get(id))),
+        Promise.all([...new Set(tasks.map((task) => task.workflowStateId))].map((id) => ctx.db.get(id))),
+        Promise.all([...new Set(tasks.flatMap((task) => task.assigneeProjectMemberId ? [task.assigneeProjectMemberId] : []))].map((id) => ctx.db.get(id))),
+      ])
+      const boardById = new Map(boards.filter((board): board is NonNullable<typeof board> => Boolean(board)).map((board) => [String(board._id), board]))
+      const stateById = new Map(states.filter((state): state is NonNullable<typeof state> => Boolean(state)).map((state) => [String(state._id), state]))
+      const assigneeById = new Map(assignees.filter((assignee): assignee is NonNullable<typeof assignee> => Boolean(assignee)).map((assignee) => [String(assignee._id), assignee]))
       const visibleRows = []
       for (const task of tasks) {
         try {
-          const access = await requireTaskAccess(ctx, actor, task._id, {
-            actingCompanyId: company._id,
-            projectMemberId: membership._id,
-          })
-          if (!access.taskCapabilities.canView) continue
-          const [state, assignee] = await Promise.all([
-            ctx.db.get(task.workflowStateId),
-            task.assigneeProjectMemberId ? ctx.db.get(task.assigneeProjectMemberId) : null,
-          ])
+          const board = boardById.get(String(task.boardId))
+          const state = stateById.get(String(task.workflowStateId))
+          if (!board || !state) continue
+          const access = task.groupId ? await scope.forGroup(task.groupId) : scope.project
+          if (!getTaskCapabilitiesInScope(task, board, access).canView) continue
+          const assignee = task.assigneeProjectMemberId ? assigneeById.get(String(task.assigneeProjectMemberId)) : null
           if (!state || (args.openOnly && isTerminalTaskState(state.category))) continue
           visibleRows.push({
             task: {

@@ -27,16 +27,15 @@ import {
 } from './lib/legacyArchiveSnapshot'
 
 const platform = v.union(v.literal('web'), v.literal('ios'), v.literal('android'))
-
 function attentionPriority(item: { eventType: string }) {
   switch (item.eventType) {
-    case 'mention': return 0
-    case 'direct_reply': return 1
-    case 'overdue': return 2
-    case 'due_soon': return 3
-    case 'assignment': return 4
-    case 'task_suggestion': return 5
-    case 'company_invitation': return 6
+    case 'company_invitation': return 0
+    case 'overdue': return 1
+    case 'mention': return 2
+    case 'direct_reply': return 3
+    case 'due_soon': return 4
+    case 'assignment': return 5
+    case 'task_suggestion': return 6
     default: return 7
   }
 }
@@ -275,6 +274,21 @@ export const listProjects = query({
       ).map(async (membership) => {
         const project = await ctx.db.get(membership.projectId)
         if (!project) return null
+        const memberRows = membership.status === 'archived'
+          ? []
+          : await ctx.db.query('projectMembers')
+            .withIndex('by_project_status', (q) => q.eq('projectId', project._id).eq('status', 'active'))
+            .take(4)
+        const memberPreviews = memberRows.slice(0, 3)
+        const members = await Promise.all(memberPreviews.map(async (projectMember) => {
+          const user = await ctx.db.get(projectMember.userId)
+          if (!user) return null
+          return {
+            id: user._id,
+            name: projectMember.userDisplayNameSnapshot ?? user.displayName,
+            avatarUrl: user.avatarStorageId ? await ctx.storage.getUrl(user.avatarStorageId) : null,
+          }
+        }))
         const groupMemberships = membership.companyId
           ? membership.status === 'archived'
             ? []
@@ -314,12 +328,61 @@ export const listProjects = query({
           },
           membership,
           groupCount: entitlement?.channelCount ?? projectGroupMemberships.length,
+          memberCount: memberRows.length,
+          memberCountTruncated: memberRows.length > 3,
+          members: members.filter((member): member is NonNullable<typeof member> => Boolean(member)),
           unreadCount,
         }
       }),
     )
 
     return { ...memberships, page: rows.filter((row) => row !== null) }
+  },
+})
+
+/** Project strip data for My Tasks without conversation unread-count fan-out. */
+export const listTaskProjects = query({
+  args: {
+    userId: v.id('users'),
+    actingCompanyId: v.id('companies'),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
+    requireCompanyModelEnabled()
+    await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
+
+    const memberships = await ctx.db.query('projectMembers')
+      .withIndex('by_user_company_status', (q) => q.eq('userId', args.userId).eq('companyId', args.actingCompanyId).eq('status', 'active'))
+      .paginate(args.paginationOpts)
+    const page = await Promise.all(memberships.page.map(async (membership) => {
+      const project = await ctx.db.get(membership.projectId)
+      if (!project) return null
+      const [memberRows, channelRows] = await Promise.all([
+        ctx.db.query('projectMembers').withIndex('by_project_status', (q) => q.eq('projectId', project._id).eq('status', 'active')).take(4),
+        ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) => q.eq('projectMemberId', membership._id).eq('status', 'active')).take(101),
+      ])
+      const members = await Promise.all(memberRows.slice(0, 3).map(async (projectMember) => {
+        const user = await ctx.db.get(projectMember.userId)
+        if (!user) return null
+        return {
+          id: user._id,
+          name: projectMember.userDisplayNameSnapshot ?? user.displayName,
+          avatarUrl: user.avatarStorageId ? await ctx.storage.getUrl(user.avatarStorageId) : null,
+        }
+      }))
+      return {
+        project: { _id: project._id, name: project.name },
+        membership,
+        groupCount: Math.min(channelRows.length, 100),
+        groupCountTruncated: channelRows.length > 100,
+        memberCount: memberRows.length,
+        memberCountTruncated: memberRows.length > 3,
+        members: members.filter((member): member is NonNullable<typeof member> => Boolean(member)),
+      }
+    }))
+    return { ...memberships, page: page.filter((item) => item !== null) }
   },
 })
 
@@ -380,6 +443,7 @@ export const listAttention = query({
       ? await ctx.db.query('companyInvitations').withIndex('by_email_status', (q) => q.eq('normalizedEmail', normalizeEmail(actor.user.email)).eq('status', 'pending')).collect()
       : []
     const invitationRows = (await Promise.all(pendingInvitations.map(async (invitation) => {
+      if (args.actingCompanyId && invitation.companyId !== args.actingCompanyId) return null
       const company = await ctx.db.get(invitation.companyId)
       if (!company || company.status !== 'active') return null
       return {
@@ -477,25 +541,76 @@ export const listMyTasks = query({
     userId: v.id('users'),
     actingCompanyId: v.optional(v.id('companies')),
     openOnly: v.optional(v.boolean()),
+    dueDateStart: v.optional(v.string()),
+    dueDateEnd: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     assertActorMatches(actor, args.userId)
-    const memberships = await ctx.db.query('projectMembers').withIndex('by_user', (q) => q.eq('userId', args.userId)).filter((q) => q.eq(q.field('status'), 'active')).order('desc').paginate(args.paginationOpts)
+    const assigneeNameCache = new Map<string, string | null>([
+      [String(args.userId), (await ctx.db.get(args.userId))?.displayName ?? null],
+    ])
+    if (args.dueDateStart && args.dueDateEnd && args.dueDateStart > args.dueDateEnd) {
+      throw new Error('invalid_due_date_range')
+    }
+    const dueDateStart = args.dueDateStart
+    const dueDateEnd = args.dueDateEnd
+    if (args.actingCompanyId) {
+      requireCompanyModelEnabled()
+      await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
+    }
+    const memberships = args.actingCompanyId
+      ? await ctx.db.query('projectMembers').withIndex('by_user_company_status', (q) =>
+          q.eq('userId', args.userId).eq('companyId', args.actingCompanyId).eq('status', 'active'),
+        ).order('desc').paginate(args.paginationOpts)
+      : await ctx.db.query('projectMembers').withIndex('by_user', (q) => q.eq('userId', args.userId)).filter((q) => q.eq(q.field('status'), 'active')).order('desc').paginate(args.paginationOpts)
     const rows = []
+    const groupById = new Map<string, Doc<'groups'> | null>()
     for (const membership of memberships.page) {
       if (args.actingCompanyId && membership.companyId !== args.actingCompanyId) continue
       const project = await ctx.db.get(membership.projectId)
       if (!project) continue
-      const tasks = await ctx.db.query('tasks').withIndex('by_assignee_archived', (q) => q.eq('assigneeProjectMemberId', membership._id).eq('archivedAt', undefined)).order('desc').take(500)
-      for (const task of tasks) {
+      const taskCandidates = dueDateStart && dueDateEnd
+        ? await ctx.db.query('tasks').withIndex('by_assignee_archived_due_date', (q) =>
+            q.eq('assigneeProjectMemberId', membership._id)
+              .eq('archivedAt', undefined)
+              .gte('dueDate', dueDateStart)
+              .lte('dueDate', dueDateEnd),
+          ).take(501)
+        : await ctx.db.query('tasks').withIndex('by_assignee_archived', (q) => q.eq('assigneeProjectMemberId', membership._id).eq('archivedAt', undefined)).order('desc').take(501)
+      const hasMoreAssignedTasks = !dueDateStart && !dueDateEnd && taskCandidates.length > 500
+      const hasMoreDueTasks = Boolean(dueDateStart && dueDateEnd && taskCandidates.length > 500)
+      for (const task of taskCandidates.slice(0, 500)) {
         try {
           const access = await requireTaskAccess(ctx, actor, task._id, membership.companyId ? { actingCompanyId: membership.companyId, projectMemberId: membership._id } : {})
           if (!access.taskCapabilities.canView) continue
           const view = await taskView(ctx, task)
           if (args.openOnly && (!view.state || isTerminalTaskState(view.state.category))) continue
-          rows.push({ ...view, project: { _id: project._id, name: project.name }, companyId: membership.companyId, companyName: membership.companyDisplayNameSnapshot, projectMemberId: membership._id })
+          let group: Doc<'groups'> | null = null
+          if (task.groupId) {
+            const cached = groupById.get(String(task.groupId))
+            group = cached === undefined ? await ctx.db.get(task.groupId) : cached
+            groupById.set(String(task.groupId), group)
+          }
+          const taskAssignee = view.assignee
+          const assigneeUserId = taskAssignee ? String(taskAssignee.userId) : null
+          let assigneeName = assigneeUserId ? assigneeNameCache.get(assigneeUserId) : null
+          if (taskAssignee && assigneeUserId && !assigneeNameCache.has(assigneeUserId)) {
+            assigneeName = (await ctx.db.get(taskAssignee.userId))?.displayName ?? null
+            assigneeNameCache.set(assigneeUserId, assigneeName)
+          }
+          rows.push({
+            ...view,
+            assigneeName: assigneeName ?? null,
+            group: group ? { _id: group._id, name: group.name } : null,
+            project: { _id: project._id, name: project.name },
+            companyId: membership.companyId,
+            companyName: membership.companyDisplayNameSnapshot,
+            projectMemberId: membership._id,
+            hasMoreAssignedTasks,
+            hasMoreDueTasks,
+          })
         } catch { /* stale memberships are skipped */ }
       }
     }

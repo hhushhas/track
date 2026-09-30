@@ -43,9 +43,9 @@ export function ActionButton({
       : filled
         ? theme.accent
         : theme.backgroundElement;
-  // Resolve the ink from the active appearance so filled actions stay
-  // legible when the user switches between light and dark mode.
-  const foregroundColor = filled ? theme.background : theme.text;
+  const foregroundColor = variant === 'primary' && state !== 'success' && !destructive
+    ? theme.accentInk
+    : filled ? theme.background : theme.text;
 
   return (
     <Pressable

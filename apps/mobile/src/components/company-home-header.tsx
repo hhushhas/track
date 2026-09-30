@@ -4,8 +4,9 @@ import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { IconSize, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { IconSize, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { companyMarkColors } from '@/lib/company-brand';
 import { getHomeGreeting } from '@/lib/home-greeting';
 
 export function CompanyHomeHeader({
@@ -40,14 +41,7 @@ export function CompanyHomeHeader({
 
   const firstName = displayName.trim().split(/\s+/)[0] || 'there';
   const countLabel = notificationCount > 99 ? '99+' : String(notificationCount);
-  const companyTones = [
-    { background: theme.successSoft, foreground: theme.success },
-    { background: theme.workflowUnstartedSoft, foreground: theme.workflowUnstartedStrong },
-    { background: theme.workflowBacklogSoft, foreground: theme.workflowBacklogStrong },
-    { background: theme.accentSoft, foreground: theme.accentStrong },
-  ];
-  const toneIndex = [...companySeed].reduce((value, character) => value + character.charCodeAt(0), 0) % companyTones.length;
-  const companyTone = companyTones[toneIndex]!;
+  const companyTone = companyMarkColors(companySeed, theme);
 
   return (
     <View style={styles.root}>
@@ -69,7 +63,7 @@ export function CompanyHomeHeader({
               <ThemedText numberOfLines={1} style={styles.companyTitle} type="title">{companyName}</ThemedText>
               <PlatformIcon color={theme.textSecondary} name="chevron-down" size={IconSize.small} weight="semibold" />
             </View>
-            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">Company workspace</ThemedText>
+            <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">Active Company</ThemedText>
           </View>
         </Pressable>
 
@@ -82,7 +76,7 @@ export function CompanyHomeHeader({
             <PlatformIcon color={theme.text} name="bell-outline" size={IconSize.large} />
             {notificationCount > 0 ? (
               <View style={[styles.badge, { backgroundColor: theme.accent, borderColor: theme.homeBackground }]}>
-                <ThemedText style={[styles.badgeText, { color: theme.background }]} type="captionBold">{countLabel}</ThemedText>
+                <ThemedText style={[styles.badgeText, { color: theme.accentInk }]} type="captionBold">{countLabel}</ThemedText>
               </View>
             ) : null}
           </Pressable>
@@ -104,9 +98,6 @@ export function CompanyHomeHeader({
           style={[styles.greetingTitle, width < 375 && styles.greetingTitleSmall]}
           type="display">
           {getHomeGreeting(now, timeZone)}, {firstName}
-        </ThemedText>
-        <ThemedText numberOfLines={2} style={styles.support} themeColor="textSecondary">
-          Here&apos;s how work is progressing across {companyName}.
         </ThemedText>
       </View>
     </View>
@@ -136,9 +127,8 @@ const styles = StyleSheet.create({
   companyTitle: { flexShrink: 1 },
   companyTitleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   greeting: { gap: Spacing.one },
-  greetingTitle: { fontSize: 30, lineHeight: 36 },
-  greetingTitleSmall: { fontSize: 27, lineHeight: 33 },
+  greetingTitle: Typography.display,
+  greetingTitleSmall: Typography.display,
   root: { gap: Spacing.five },
-  support: { lineHeight: 20 },
   toolbar: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, justifyContent: 'space-between' },
 });

@@ -10,7 +10,6 @@ import { hapticLight } from '@/lib/haptics';
 import {
   shortTaskKey,
   taskDueDisplay,
-  taskPriorityGlyph,
   taskPriorityLabel,
 } from '@/lib/task-presentation';
 import { taskStatePalette } from '@/lib/task-state-palette';
@@ -122,9 +121,7 @@ export function TaskPriorityBadge({
   const backgroundColor = priority === 'urgent' ? theme.dangerSoft : priority === 'high' ? theme.accentSoft : theme.backgroundElement;
   const body = (
     <>
-      <ThemedText style={[styles.priorityGlyph, { color }]} type="captionBold">
-        {taskPriorityGlyph(priority)}
-      </ThemedText>
+      <PlatformIcon color={color} name={priority === 'urgent' ? 'alert-circle' : 'flag'} size={14} weight="medium" />
       <ThemedText style={{ color }} type="caption">{taskPriorityLabel(priority)}</ThemedText>
     </>
   );
@@ -155,21 +152,24 @@ export function TaskDueChip({
   category,
   dueDate,
   onPress,
+  showNoDate = false,
 }: {
   category?: TaskStateCategory;
   dueDate?: string;
   onPress?: () => void;
+  showNoDate?: boolean;
 }) {
   const theme = useTheme();
   const due = taskDueDisplay(dueDate, undefined, category);
-  if (!due && !onPress) return null;
+  if (!due && !onPress && !showNoDate) return null;
   const color = due?.overdue ? theme.danger : theme.textSecondary;
   const body = (
     <>
       <PlatformIcon color={color} name={due?.overdue ? 'calendar-remove' : 'calendar'} size={14} />
       <ThemedText numberOfLines={1} style={{ color }} type={due?.overdue ? 'captionBold' : 'caption'}>
-        {due?.label ?? 'Add due date'}
+        {due?.label ?? (showNoDate ? 'No due date' : 'Add due date')}
       </ThemedText>
+      {onPress ? <PlatformIcon color={color} name="selector" size={13} /> : null}
     </>
   );
   if (!onPress) return <View style={styles.inlineMeta}>{body}</View>;
@@ -200,16 +200,21 @@ export function TaskCard({
   focused = false,
   onLongPress,
   onPress,
+  onCompletionPress,
   onStatusPress,
   priority,
   publicKey,
+  glass = false,
+  quiet = false,
   groupName,
   projectName,
   referenceCount = 0,
   showKey = true,
+  alwaysShowPriority = false,
   stateName,
   title,
   variant = 'list',
+  isCompleted = false,
 }: {
   assignee?: string;
   category?: TaskStateCategory;
@@ -221,20 +226,59 @@ export function TaskCard({
   focused?: boolean;
   onLongPress?: () => void;
   onPress: () => void;
+  onCompletionPress?: () => void;
   onStatusPress?: () => void;
   priority: TaskPriority;
   publicKey: string;
+  glass?: boolean;
+  quiet?: boolean;
   groupName?: string;
   projectName?: string;
   referenceCount?: number;
   showKey?: boolean;
+  alwaysShowPriority?: boolean;
   stateName: string;
   title: string;
   variant?: 'list' | 'board';
+  isCompleted?: boolean;
 }) {
   const theme = useTheme();
   const board = variant === 'board';
   const statePalette = taskStatePalette(theme, category);
+
+  if (quiet && !board) {
+    const due = taskDueDisplay(dueDate, undefined, category);
+    const taskContext = [projectName, companyName, groupName ? `Channel ${groupName.replace(/^#/, '')}` : null, taskPriorityLabel(priority)]
+      .filter(Boolean)
+      .join('. ');
+    const dueLabel = due?.label ?? (alwaysShowPriority ? 'No due date' : undefined);
+    return <View style={[styles.quietRow, glass && styles.quietGlassRow, { backgroundColor: glass ? theme.navigationSelectionGlass : 'transparent', borderColor: glass ? theme.homeBorder : theme.hairline }]}>
+      {onCompletionPress ? <Pressable
+        accessibilityHint={isCompleted ? 'Opens status choices so you can reopen this task' : 'Marks this task complete'}
+        accessibilityLabel={`${isCompleted ? 'Completed' : 'Mark complete'}: ${title}`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: isCompleted }}
+        hitSlop={8}
+        onPress={() => { hapticLight(); onCompletionPress(); }}
+        style={styles.quietCheckbox}
+      ><PlatformIcon color={isCompleted ? theme.success : theme.textSecondary} name={isCompleted ? 'check-circle' : 'circle-outline'} size={21} /></Pressable> : null}
+      <Pressable
+        accessibilityLabel={`${title}. ${taskContext}. ${stateName}${dueLabel ? `. ${dueLabel}` : ''}`}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={({ pressed }) => [styles.quietPressable, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}
+      >
+        {assignee ? <ColoredAvatar label={assignee} seed={assignee} size={28} /> : null}
+        <View style={styles.quietCopy}>
+          <ThemedText numberOfLines={2} type="smallBold">{title}</ThemedText>
+          <View style={styles.quietProjectContext}><PlatformIcon color={theme.accentStrong} name="project" size={13} /><ThemedText numberOfLines={1} style={styles.quietProjectName} type="captionBold">{[projectName, companyName].filter(Boolean).join(' · ')}</ThemedText></View>
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{[groupName ? `#${groupName.replace(/^#/, '')}` : null, alwaysShowPriority || priority === 'urgent' || priority === 'high' ? taskPriorityLabel(priority) : null].filter(Boolean).join(' · ')}</ThemedText>
+          <TaskDueChip category={category} dueDate={dueDate} showNoDate={alwaysShowPriority} />
+        </View>
+      </Pressable>
+      <View style={styles.quietAction}><TaskStatusPill category={category} label={stateName} onPress={onStatusPress} /></View>
+    </View>;
+  }
 
   if (!board) {
     const context = [showKey ? shortTaskKey(publicKey) : null, contextLabel, priority !== 'none' ? taskPriorityLabel(priority) : null]
@@ -440,12 +484,22 @@ export function TaskAction({
         backgroundColor: primary ? theme.accent : theme.backgroundSelected,
         opacity: disabled ? 0.5 : 1,
       }]}>
-      <ThemedText style={primary ? { color: theme.background } : undefined} type="smallBold">{label}</ThemedText>
+      <ThemedText style={primary ? { color: theme.accentInk } : undefined} type="smallBold">{label}</ThemedText>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  quietAction: { alignItems: 'flex-end', paddingBottom: Spacing.two, paddingRight: Spacing.three },
+  quietCopy: { flex: 1, gap: 3, minWidth: 0 },
+  quietProjectContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
+  quietProjectName: { flex: 1, minWidth: 0 },
+  quietDue: { maxWidth: 92, textAlign: 'right' },
+  quietPressable: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.three, minHeight: 62, minWidth: 0, paddingHorizontal: Spacing.two, paddingTop: Spacing.two },
+  quietGlassRow: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, marginBottom: Spacing.two, overflow: 'hidden' },
+  quietRow: { borderBottomWidth: StyleSheet.hairlineWidth },
+  quietStatus: { borderRadius: Radius.pill, borderWidth: 1.5, height: 18, width: 18 },
+  quietCheckbox: { alignItems: 'center', alignSelf: 'stretch', justifyContent: 'center', minHeight: 52, paddingLeft: Spacing.two, width: 42 },
   action: { alignItems: 'center', alignSelf: 'stretch', borderCurve: 'continuous', borderRadius: Radius.medium, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.four },
   banner: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   bannerText: { flex: 1 },
@@ -484,7 +538,6 @@ const styles = StyleSheet.create({
   pillLabel: { flexShrink: 1 },
   priority: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   priorityBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.two, paddingVertical: 2 },
-  priorityGlyph: { fontWeight: '800' },
   segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexGrow: 0, justifyContent: 'center', minHeight: TouchTarget, minWidth: 104, paddingHorizontal: Spacing.three },
   segmented: { borderCurve: 'continuous', borderRadius: Radius.pill, flexGrow: 0 },
   segmentedContent: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, padding: Spacing.one },

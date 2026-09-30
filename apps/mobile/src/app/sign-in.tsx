@@ -26,7 +26,7 @@ import { IconButton } from '@/components/icon-button';
 import { SignInHero } from '@/components/sign-in-hero';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxFontScale, Radius, Spacing } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { accountErrorMessage } from '@/lib/user-facing-error';
 
@@ -230,10 +230,11 @@ export default function SignInScreen() {
                         autoCapitalize="words"
                         autoComplete="name"
                         editable={!busy}
+                        keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
                         maxLength={100}
                         maxFontSizeMultiplier={MaxFontScale}
                         onChangeText={setName}
-                        placeholder="Zohaib Raja"
+                        placeholder="e.g. Alex Morgan"
                         placeholderTextColor={theme.textTertiary}
                         returnKeyType="next"
                         style={[styles.input, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline, color: theme.text }]}
@@ -250,6 +251,7 @@ export default function SignInScreen() {
                       autoComplete="email"
                       editable={!busy}
                       keyboardType="email-address"
+                      keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
                       maxLength={254}
                       maxFontSizeMultiplier={MaxFontScale}
                       onChangeText={setEmail}
@@ -269,6 +271,7 @@ export default function SignInScreen() {
                         autoCapitalize="none"
                         autoComplete={emailIntent === 'signUp' ? 'new-password' : 'current-password'}
                         editable={!busy}
+                        keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
                         maxLength={128}
                         maxFontSizeMultiplier={MaxFontScale}
                         onChangeText={setPassword}
@@ -486,7 +489,7 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 16,
+    ...Typography.message,
     minHeight: 52,
     paddingHorizontal: Spacing.four,
   },
@@ -500,7 +503,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingLeft: Spacing.four,
   },
-  passwordInput: { flex: 1, fontSize: 16, minWidth: 0, paddingVertical: Spacing.two },
+  passwordInput: { ...Typography.message, flex: 1, minWidth: 0, paddingVertical: Spacing.two },
   keyboard: {
     flex: 1,
   },

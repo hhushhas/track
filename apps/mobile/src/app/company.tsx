@@ -16,7 +16,6 @@ import {
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
-import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import { SkeletonList } from '@/components/skeleton-row';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -82,7 +81,7 @@ export default function CompanyScreen() {
 
   if (!companyModelEnabled) return <ThemedView style={styles.screen}>
     <Stack.Screen options={{ title: 'Companies' }} />
-    <EmptyState body="This server has not enabled the Company release." icon="office-building" title="Company collaboration is disabled" />
+    <EmptyState body="Company workspaces aren’t available here yet." icon="office-building" title="Company workspace unavailable" />
   </ThemedView>;
 
   return <ThemedView style={styles.screen}>
@@ -107,13 +106,13 @@ export default function CompanyScreen() {
             <View style={styles.projectCopy}><ThemedText numberOfLines={1} type="title">{item.project.name}</ThemedText><ThemedText themeColor="textSecondary" type="caption">{item.groupCount} {item.groupCount === 1 ? 'Channel' : 'Channels'}{item.unreadCount ? ` · ${item.unreadCount} unread` : ''}</ThemedText></View>
             <PlatformIcon color={theme.textTertiary} name="chevron-right" size={17} />
           </Pressable>
-        )) : <ThemedText themeColor="textSecondary" type="caption">No active Projects are available in this Company.</ThemedText>}
+        )) : <ThemedText themeColor="textSecondary" type="caption">No active Projects are available in this Company yet.</ThemedText>}
         {activeProjects.length ? <Pressable accessibilityRole="button" onPress={() => router.replace('/projects')} style={styles.allProjects}><ThemedText themeColor="accentStrong" type="captionBold">View all Projects</ThemedText><PlatformIcon color={theme.accentStrong} name="chevron-right" size={15} /></Pressable> : null}
       </View>
 
       <View style={styles.section}>
-        <CompanySectionHeading meta={`${companies?.length ?? 0} available`} title="ACT AS" />
-        <ThemedText themeColor="textSecondary" type="small">Choose the identity represented by Project actions. Company membership alone never grants content access.</ThemedText>
+        <CompanySectionHeading meta={`${companies?.length ?? 0} available`} title="REPRESENTING" />
+        <ThemedText themeColor="textSecondary" type="small">Choose which Company identity appears when you act in a Project. Membership alone does not grant access to a Project or Channel.</ThemedText>
         {companies === undefined ? <SkeletonList count={3} label="Loading your Companies" /> : <>
           {sortedCompanies.map(({ company, membership }) => company ? <CompanyChoice detail={company.status === 'active' ? companyRoleLabel(membership.role) : `${companyRoleLabel(membership.role)} · Contact workspace admin`} key={company._id} label={company.displayName} onPress={() => company.status === 'active' ? setActingCompanyId(company._id) : undefined} selected={company._id === actingCompanyId} suspended={company.status !== 'active'} /> : null)}
           <CompanyChoice detail={`${profile?.user?.displayName || 'Track member'} · Individual workspace`} label="Personal Projects" onPress={() => setActingCompanyId(null)} personal selected={!actingCompanyId} />
@@ -145,7 +144,6 @@ export default function CompanyScreen() {
       </View> : null}
 
     </ScrollView>
-    <StandalonePrimaryNavigation active="team" />
   </ThemedView>;
 }
 

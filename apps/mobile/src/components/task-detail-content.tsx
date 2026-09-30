@@ -1,10 +1,12 @@
 import type { TaskActivityAction } from '@track/shared/tasks';
 import { useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type LayoutChangeEvent } from 'react-native';
-import { useKeyboardState } from 'react-native-keyboard-controller';
+import { useKeyboardState, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 
 import type { Doc } from '../../../../convex/_generated/dataModel';
 import { ColoredAvatar } from '@/components/colored-avatar';
+import { CompactPillButton } from '@/components/compact-pill-button';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import type {
@@ -14,23 +16,83 @@ import type {
   TaskEditField,
 } from '@/components/task-detail-types';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticMedium } from '@/lib/haptics';
 import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
 import {
   taskActivityLabel,
-  taskDueDisplay,
   taskLabelColor,
-  taskPriorityLabel,
   taskReferenceBlockedReason,
   taskReferenceLabel,
 } from '@/lib/task-presentation';
+import { uniqueTaskViews } from '@/lib/unique-task-views';
+import { formatTaskUpdateDate, mergeTaskUpdates, taskUpdateDayLabel } from '@/lib/task-updates';
+
+type TaskUpdate = ReturnType<typeof mergeTaskUpdates<Doc<'taskComments'>, Doc<'taskActivities'>>>[number];
+
+export function TaskUpdatesFeed({ assignees, loading, loadingEarlier, onLoadEarlier, updates, workflowStates }: {
+  assignees?: MobileTaskAssignee[];
+  loading: boolean;
+  loadingEarlier: boolean;
+  onLoadEarlier?: () => void;
+  updates: TaskUpdate[];
+  workflowStates?: Array<{ _id: string; name: string }>;
+}) {
+  const theme = useTheme();
+  const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
+  let previousDay = '';
+  return <View style={styles.updatesFeed}>
+    {onLoadEarlier || loadingEarlier ? <LoadMoreButton label="earlier updates" loading={loadingEarlier} onPress={onLoadEarlier} /> : null}
+    {updates.length ? updates.map(({ kind, item }) => {
+      const day = taskUpdateDayLabel(item.createdAt);
+      const showDay = day !== previousDay;
+      previousDay = day;
+      if (kind === 'comment') {
+        const author = assignees?.find((candidate) => candidate.member._id === item.authorProjectMemberId)?.user.displayName ?? 'Project member';
+        return <View key={'comment:' + item._id} style={styles.updateEntry}>
+          {showDay ? <ThemedText style={styles.dayLabel} themeColor="textSecondary" type="captionBold">{day}</ThemedText> : null}
+          <View style={styles.comment}>
+            <ColoredAvatar label={author} seed={item.authorProjectMemberId} size={32} />
+            <View style={[styles.commentBubble, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+              <View style={styles.commentMeta}>
+                <ThemedText type="smallBold">{author}</ThemedText>
+                <ThemedText themeColor="textSecondary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
+              </View>
+              <ThemedText type="small">{item.body}</ThemedText>
+            </View>
+          </View>
+        </View>;
+      }
+      const presentation = activityPresentation(item, { assignees, workflowStates });
+      const expanded = expandedActivityId === item._id;
+      const actor = assignees?.find((candidate) => candidate.member._id === item.actorProjectMemberId)?.user.displayName ?? 'A member';
+      const canExpand = Boolean(presentation.before || presentation.after);
+      return <View key={'activity:' + item._id} style={styles.updateEntry}>
+        {showDay ? <ThemedText style={styles.dayLabel} themeColor="textSecondary" type="captionBold">{day}</ThemedText> : null}
+        <Pressable accessibilityLabel={actor + ' ' + presentation.title + '. ' + formatTimestamp(item.createdAt)} accessibilityRole={canExpand ? 'button' : 'text'} accessibilityState={canExpand ? { expanded } : undefined} disabled={!canExpand} onPress={() => setExpandedActivityId(expanded ? null : item._id)} style={styles.timelineRow}>
+          <View style={styles.timelineRail}>
+            <View style={[styles.timelineMarker, { backgroundColor: theme.backgroundElement }]}>
+              <PlatformIcon color={theme.textSecondary} name={activityIcon(item.action)} size={15} />
+            </View>
+          </View>
+          <View style={styles.timelineBody}>
+            <ThemedText themeColor="textSecondary" type="small">{actor} {presentation.title.charAt(0).toLowerCase() + presentation.title.slice(1)}</ThemedText>
+            <ThemedText themeColor="textTertiary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
+            {expanded && (presentation.before || presentation.after) ? <View style={[styles.activityChange, { backgroundColor: theme.backgroundElement }]}>
+              {presentation.before ? <ThemedText themeColor="textSecondary" type="caption">{presentation.before}</ThemedText> : null}
+              {presentation.before && presentation.after ? <PlatformIcon color={theme.textTertiary} name="chevron-right" size={13} /> : null}
+              {presentation.after ? <ThemedText themeColor="accentStrong" type="captionBold">{presentation.after}</ThemedText> : null}
+            </View> : null}
+          </View>
+        </Pressable>
+      </View>;
+    }) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading updates…</ThemedText> : <EmptyState icon="message" title="No updates yet" body="Comments and task changes will appear here." />}
+  </View>;
+}
 
 export function TaskDetailsTab({
-  assigneeName,
   busy,
-  completedSubtasks,
   detail,
   highlightSubtaskId,
   onAddSubtask,
@@ -50,9 +112,7 @@ export function TaskDetailsTab({
   onLoadMoreSubtasks,
   subtasksLoadingMore,
 }: {
-  assigneeName: string;
   busy: boolean;
-  completedSubtasks: number;
   detail: MobileTaskDetail;
   highlightSubtaskId?: string;
   onAddSubtask: () => void;
@@ -74,83 +134,58 @@ export function TaskDetailsTab({
 }) {
   const theme = useTheme();
   const [expandedSubtaskId, setExpandedSubtaskId] = useState<string | null>(null);
-  const due = taskDueDisplay(detail.task.dueDate, undefined, detail.state?.category);
-  const labels = detail.labels.filter((label): label is NonNullable<typeof label> => label !== null);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [checklistExpanded, setChecklistExpanded] = useState(false);
+  const visibleSubtasks = uniqueTaskViews(subtasks);
+  const incompleteSubtasks = visibleSubtasks.filter((item) => item.state?.category !== 'completed' && item.state?.category !== 'canceled');
+  const displayedSubtasks = checklistExpanded || visibleSubtasks.length <= 5
+    ? visibleSubtasks
+    : incompleteSubtasks.length ? incompleteSubtasks.slice(0, 3) : visibleSubtasks.slice(0, 3);
+  const completedSubtasks = visibleSubtasks.filter((item) =>
+    item.state?.category === 'completed' || item.state?.category === 'canceled',
+  ).length;
+  const labels = detail.labels.flatMap((label) => label ? [label] : []);
   return (
     <>
-      <Surface title="Overview">
-        <MetadataRow
-          icon="person"
-          label="Assignee"
-          onPress={readOnly ? undefined : () => onEditField('assignee')}
-          value={assigneeName}
-        />
-        <MetadataRow
-          icon="calendar"
-          label="Due date"
-          onPress={readOnly ? undefined : () => onEditField('dueDate')}
-          tone={due?.overdue ? 'danger' : undefined}
-          value={due?.label ?? 'No due date'}
-        />
-        <MetadataRow
-          icon="flag"
-          label="Priority"
-          onPress={readOnly ? undefined : () => onEditField('priority')}
-          value={taskPriorityLabel(detail.task.priority)}
-        />
-        <MetadataRow icon="view-board" label="Board" value={detail.board?.name ?? 'Archived board'} />
-      </Surface>
-
-      <TaskSection title="Description">
+      {detail.task.description || !readOnly ? <TaskSection title="Description">
         <Pressable
           accessibilityHint={readOnly ? undefined : 'Opens the description editor'}
           accessibilityRole={readOnly ? 'text' : 'button'}
           disabled={readOnly}
           onPress={() => onEditField('description')}
-          style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-          <ThemedText themeColor={detail.task.description ? 'text' : 'textSecondary'} type="small">
+          style={[styles.description, { borderColor: theme.hairline }]}>
+          <ThemedText numberOfLines={!descriptionExpanded && (detail.task.description?.length ?? 0) > 180 ? 4 : undefined} themeColor={detail.task.description ? 'text' : 'textSecondary'} type="small">
             {detail.task.description || (readOnly ? 'No description.' : 'Add a description…')}
           </ThemedText>
         </Pressable>
-      </TaskSection>
+        {detail.task.description && detail.task.description.length > 180 ? <Pressable accessibilityRole="button" onPress={() => setDescriptionExpanded((current) => !current)} style={styles.textAction}>
+          <ThemedText themeColor="accentStrong" type="smallBold">{descriptionExpanded ? 'Show less' : 'Show more'}</ThemedText>
+        </Pressable> : null}
+      </TaskSection> : null}
 
-      {labels.length ? (
-        <TaskSection title="Labels">
-          <View style={styles.chips}>
-            {labels.map((label) => label && (
-              <View key={label._id} style={[styles.label, { backgroundColor: theme.backgroundElement }]}>
-                <View style={[styles.labelDot, { backgroundColor: taskLabelColor(label.colorToken, theme.accent) }]} />
-                <ThemedText type="smallBold">{label.name}</ThemedText>
-              </View>
-            ))}
-            {!readOnly ? (
-              <Pressable
-                accessibilityLabel="Edit labels"
-                accessibilityRole="button"
-                onPress={() => onEditField('labels')}
-                style={[styles.label, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-                <PlatformIcon color={theme.textSecondary} name="tag" size={15} />
-                <ThemedText themeColor="textSecondary" type="smallBold">
-                  Edit
-                </ThemedText>
-              </Pressable>
-            ) : null}
+      {references.length || referencesLoading || onLoadMoreReferences || referencesLoadingMore ? <TaskSection title="Source conversation">
+        {references.length ? references.map((reference) => (
+          <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
+        )) : referencesLoading ? <ThemedText themeColor="textSecondary" type="small">Loading linked conversation…</ThemedText> : (
+          <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
+            <ThemedText themeColor="textSecondary" type="small">No linked source conversation.</ThemedText>
           </View>
-        </TaskSection>
-      ) : null}
+        )}
+        {onLoadMoreReferences || referencesLoadingMore ? <LoadMoreButton label="source conversation" loading={referencesLoadingMore} onPress={onLoadMoreReferences} /> : null}
+      </TaskSection> : null}
 
-      <View onLayout={onChecklistLayout}>
-        <TaskSection title="Checklist" trailing={subtasks.length ? `${completedSubtasks}/${subtasks.length}` : undefined}>
-          {subtasks.length ? (
+      {visibleSubtasks.length || (!readOnly && !detail.task.parentTaskId) ? <View onLayout={onChecklistLayout}>
+        <TaskSection title="Checklist" trailing={visibleSubtasks.length ? `${completedSubtasks}/${visibleSubtasks.length}` : undefined}>
+          {visibleSubtasks.length ? (
             <>
               <View style={[styles.progressTrack, { backgroundColor: theme.backgroundElement }]}>
                 <View style={[styles.progressValue, {
                   backgroundColor: theme.accent,
-                  width: `${(completedSubtasks / subtasks.length) * 100}%`,
+                  width: `${(completedSubtasks / visibleSubtasks.length) * 100}%`,
                 }]} />
               </View>
               <View style={[styles.checklist, { backgroundColor: theme.backgroundElement }]}>
-                {subtasks.map((item, index) => {
+                {displayedSubtasks.map((item, index) => {
                   const complete = item.state?.category === 'completed' || item.state?.category === 'canceled';
                   const description = item.task.description?.trim();
                   const expanded = expandedSubtaskId === item.task._id;
@@ -169,7 +204,7 @@ export function TaskDetailsTab({
                           disabled={readOnly || busy}
                           onPress={() => onToggleSubtask(item)}
                           style={styles.checkToggle}>
-                          <PlatformIcon color={complete ? theme.accent : theme.textSecondary} name={complete ? 'check-box' : 'check-box-outline'} size={22} />
+                          <PlatformIcon color={complete ? theme.accent : theme.textSecondary} name={complete ? 'check-box' : 'check-box-outline'} size={22} weight="medium" />
                         </Pressable>
                         <Pressable
                           accessibilityHint={description ? 'Expands the checklist item description' : 'Opens the checklist item details'}
@@ -201,24 +236,18 @@ export function TaskDetailsTab({
                   );
                 })}
               </View>
+              {visibleSubtasks.length > 5 ? <Pressable accessibilityRole="button" onPress={() => setChecklistExpanded((current) => !current)} style={styles.textAction}>
+                <ThemedText themeColor="accentStrong" type="smallBold">{checklistExpanded ? 'Show fewer' : `Show all ${visibleSubtasks.length}`}</ThemedText>
+              </Pressable> : null}
             </>
-          ) : (
-            <View style={[styles.emptyBlock, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-              <PlatformIcon color={theme.textTertiary} name="check-box-outline" size={20} />
-              <View style={styles.emptyBlockCopy}>
-                <ThemedText type="smallBold">No checklist items yet</ThemedText>
-                <ThemedText themeColor="textSecondary" type="caption">
-                  Break this task into smaller steps when the work needs a clear handoff.
-                </ThemedText>
-              </View>
-            </View>
-          )}
+          ) : null}
           {onLoadMoreSubtasks || subtasksLoadingMore ? <LoadMoreButton label="checklist items" loading={subtasksLoadingMore} onPress={onLoadMoreSubtasks} /> : null}
           {!readOnly && !detail.task.parentTaskId ? (
             <View style={styles.addSubtask}>
               <TextInput
                 accessibilityLabel="New checklist item"
                 allowFontScaling
+                keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
                 onChangeText={onSubtaskChange}
                 placeholder="Add a checklist item"
                 placeholderTextColor={theme.textSecondary}
@@ -242,18 +271,20 @@ export function TaskDetailsTab({
             </View>
           ) : null}
         </TaskSection>
-      </View>
+      </View> : null}
 
-      <TaskSection title="Linked context">
-        {references.length ? references.map((reference) => (
-          <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
-        )) : referencesLoading ? <ThemedText themeColor="textSecondary" type="small">Loading linked context…</ThemedText> : (
-          <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-            <ThemedText themeColor="textSecondary" type="small">No linked conversation or evidence.</ThemedText>
-          </View>
-        )}
-        {onLoadMoreReferences || referencesLoadingMore ? <LoadMoreButton label="linked context" loading={referencesLoadingMore} onPress={onLoadMoreReferences} /> : null}
-      </TaskSection>
+      {labels.length || !readOnly ? <TaskSection title="Labels">
+        <View style={styles.chips}>
+          {labels.map((label) => <View key={label._id} style={[styles.label, { backgroundColor: theme.backgroundElement }]}>
+            <View style={[styles.labelDot, { backgroundColor: taskLabelColor(label.colorToken, theme.accent) }]} />
+            <ThemedText type="smallBold">{label.name}</ThemedText>
+          </View>)}
+          {!readOnly ? <CompactPillButton accessibilityLabel={labels.length ? 'Edit labels' : 'Add labels'} accessibilityRole="button" onPress={() => onEditField('labels')} pillStyle={{ backgroundColor: theme.backgroundElement, borderColor: theme.hairline }}>
+            <PlatformIcon color={theme.textSecondary} name="tag" size={16} weight="medium" />
+            <ThemedText themeColor="textSecondary" type="smallBold">{labels.length ? 'Edit' : 'Add labels'}</ThemedText>
+          </CompactPillButton> : null}
+        </View>
+      </TaskSection> : null}
     </>
   );
 }
@@ -303,94 +334,6 @@ function ReferenceRow({
   );
 }
 
-export function TaskDiscussionTab({
-  assignees,
-  comments,
-  loading,
-  loadingMore,
-  onLoadMore,
-}: {
-  assignees?: MobileTaskAssignee[];
-  comments: Array<Doc<'taskComments'>>;
-  loading: boolean;
-  loadingMore: boolean;
-  onLoadMore?: () => void;
-}) {
-  const theme = useTheme();
-  const visibleComments = comments.filter((item) => !item.archivedAt);
-  return (
-    <TaskSection title="Comments" trailing={`${visibleComments.length} ${visibleComments.length === 1 ? 'comment' : 'comments'}`}>
-      <View style={[styles.discussionNote, { backgroundColor: theme.backgroundElement }]}>
-        <PlatformIcon color={theme.accentStrong} name="message" size={17} />
-        <ThemedText style={styles.discussionNoteCopy} themeColor="textSecondary" type="caption">
-          Comments stay attached to this task. Use the Project Channel for a broader Thread.
-        </ThemedText>
-      </View>
-      {visibleComments.length ? visibleComments.map((item) => {
-        const author = assignees?.find((candidate) => candidate.member._id === item.authorProjectMemberId)?.user.displayName
-          ?? 'Project member';
-        return (
-          <View key={item._id} style={styles.comment}>
-            <ColoredAvatar label={author} seed={item.authorProjectMemberId} size={32} />
-            <View style={[styles.commentBubble, { backgroundColor: theme.backgroundElement }]}>
-              <View style={styles.commentMeta}>
-                <ThemedText type="smallBold">{author}</ThemedText>
-                <ThemedText themeColor="textSecondary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
-              </View>
-              <ThemedText type="small">{item.body}</ThemedText>
-            </View>
-          </View>
-        );
-      }) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading discussion…</ThemedText> : <EmptyState icon="message" title="Start the discussion" body="Keep decisions and implementation notes attached to the task." />}
-      {onLoadMore || loadingMore ? <LoadMoreButton label="comments" loading={loadingMore} onPress={onLoadMore} /> : null}
-    </TaskSection>
-  );
-}
-
-export function TaskActivityTab({ activities, assignees, loading, loadingMore, onLoadMore, workflowStates }: {
-  assignees?: MobileTaskAssignee[];
-  activities: Array<Doc<'taskActivities'>>;
-  loading: boolean;
-  loadingMore: boolean;
-  onLoadMore?: () => void;
-  workflowStates?: Array<{ _id: string; name: string }>;
-}) {
-  const theme = useTheme();
-  return (
-    <TaskSection
-      title="Activity"
-      trailing={`${activities.length} ${activities.length === 1 ? 'event' : 'events'}`}>
-      {activities.length ? activities.map((item, index) => (
-        <View key={item._id} style={styles.timelineRow}>
-          <View style={styles.timelineRail}>
-            <View style={[styles.timelineMarker, { backgroundColor: activityTone(item.action, theme).background }]}>
-              <PlatformIcon color={activityTone(item.action, theme).foreground} name={activityIcon(item.action)} size={16} />
-            </View>
-            {index < activities.length - 1 ? <View style={[styles.timelineLine, { backgroundColor: theme.hairline }]} /> : null}
-          </View>
-          <View style={[styles.timelineBody, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-            <View style={styles.activityMeta}>
-              <ThemedText numberOfLines={1} style={styles.activityActor} type="smallBold">
-                {assignees?.find((candidate) => candidate.member._id === item.actorProjectMemberId)?.user.displayName ?? 'Track activity'}
-              </ThemedText>
-              <ThemedText themeColor="textTertiary" type="caption">{formatRelativeActivityTime(item.createdAt)}</ThemedText>
-            </View>
-            <ThemedText type="smallBold">{activityPresentation(item, { assignees, workflowStates }).title}</ThemedText>
-            {activityPresentation(item, { assignees, workflowStates }).detail ? <ThemedText themeColor="textSecondary" type="small">{activityPresentation(item, { assignees, workflowStates }).detail}</ThemedText> : null}
-            {activityPresentation(item, { assignees, workflowStates }).before || activityPresentation(item, { assignees, workflowStates }).after ? (
-              <View style={[styles.activityChange, { backgroundColor: theme.backgroundElevated }]}>
-                {activityPresentation(item, { assignees, workflowStates }).before ? <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{activityPresentation(item, { assignees, workflowStates }).before}</ThemedText> : null}
-                {activityPresentation(item, { assignees, workflowStates }).before && activityPresentation(item, { assignees, workflowStates }).after ? <PlatformIcon color={theme.textTertiary} name="chevron-right" size={13} /> : null}
-                {activityPresentation(item, { assignees, workflowStates }).after ? <ThemedText numberOfLines={1} themeColor="accentStrong" type="captionBold">{activityPresentation(item, { assignees, workflowStates }).after}</ThemedText> : null}
-              </View>
-            ) : null}
-          </View>
-        </View>
-      )) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading activity…</ThemedText> : <ThemedText themeColor="textSecondary" type="small">No activity recorded yet.</ThemedText>}
-      {onLoadMore || loadingMore ? <LoadMoreButton label="activity" loading={loadingMore} onPress={onLoadMore} /> : null}
-    </TaskSection>
-  );
-}
 
 function activityIcon(action: TaskActivityAction): IconName {
   if (action === 'created' || action === 'restored') return 'check-circle';
@@ -401,12 +344,6 @@ function activityIcon(action: TaskActivityAction): IconName {
   if (action === 'archived') return 'archive';
   if (action === 'due_date_changed') return 'calendar';
   return 'edit';
-}
-
-function activityTone(action: TaskActivityAction, theme: ReturnType<typeof useTheme>) {
-  if (action === 'priority_changed' || action === 'archived') return { background: theme.dangerSoft, foreground: theme.danger };
-  if (action === 'state_changed' || action === 'assignee_changed') return { background: theme.accentSoft, foreground: theme.accentStrong };
-  return { background: theme.backgroundElevated, foreground: theme.textSecondary };
 }
 
 function activityValue(value: unknown, options: { assignees?: MobileTaskAssignee[]; workflowStates?: Array<{ _id: string; name: string }> }): string | undefined {
@@ -443,7 +380,11 @@ function activityPresentation(item: Doc<'taskActivities'>, options: { assignees?
     case 'state_changed': return { title: `Moved status${after ? ` to ${after}` : ''}`, detail: undefined, before, after };
     case 'priority_changed': return { title: `Changed priority${after ? ` to ${after}` : ''}`, detail: undefined, before, after };
     case 'assignee_changed': return { title: after ? `Assigned task to ${after}` : 'Removed task assignee', detail: undefined, before, after };
-    case 'due_date_changed': return { title: after ? `Set due date to ${after}` : 'Removed due date', detail: undefined, before, after };
+    case 'due_date_changed': {
+      const readableBefore = before ? formatTaskUpdateDate(before) : undefined;
+      const readableAfter = after ? formatTaskUpdateDate(after) : undefined;
+      return { title: readableAfter ? `Set due date to ${readableAfter}` : 'Removed due date', detail: undefined, before: readableBefore, after: readableAfter };
+    }
     case 'title_changed': return { title: 'Renamed task', detail: undefined, before, after };
     case 'description_changed': return { title: 'Updated task description', detail: 'The task context changed.' };
     case 'labels_changed': return { title: 'Updated labels', detail: undefined, before, after };
@@ -456,22 +397,11 @@ function activityPresentation(item: Doc<'taskActivities'>, options: { assignees?
   }
 }
 
-function formatRelativeActivityTime(timestamp: number) {
-  const elapsed = Math.max(0, Date.now() - timestamp);
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return formatTimestamp(timestamp);
-}
-
 export function TaskCommentComposer({
   assignees,
   busy,
   mentionIds,
+  onCancel,
   onChangeText,
   onMentionToggle,
   onSend,
@@ -480,6 +410,7 @@ export function TaskCommentComposer({
   assignees?: MobileTaskAssignee[];
   busy: boolean;
   mentionIds: Array<string>;
+  onCancel: () => void;
   onChangeText: (value: string) => void;
   onMentionToggle: (memberId: string) => void;
   onSend: () => void;
@@ -488,29 +419,37 @@ export function TaskCommentComposer({
   const theme = useTheme();
   const bottomTabBarInset = useBottomTabBarInset();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const keyboard = useReanimatedKeyboardAnimation();
+  const keyboardStyle = useAnimatedStyle(() => ({ paddingBottom: Math.max(Spacing.three, -keyboard.height.value) }));
   const canSend = value.trim().length > 0 && !busy;
+  const mentionQuery = value.match(/@([^\s@]*)$/)?.[1];
+  const matchingAssignees = mentionQuery === undefined ? [] : (assignees ?? [])
+    .filter((item) => item.user.displayName.toLowerCase().includes(mentionQuery.toLowerCase()))
+    .slice(0, 5);
 
   return (
-    <View style={[styles.composer, {
+    <Animated.View style={[styles.composer, keyboardStyle, {
       backgroundColor: theme.background,
       borderTopColor: theme.hairline,
       marginBottom: keyboardVisible ? 0 : bottomTabBarInset,
-      paddingBottom: Spacing.three,
     }]}>
-      {assignees?.length ? (
+      {matchingAssignees.length ? (
         <ScrollView
           contentContainerStyle={styles.mentionRow}
           horizontal
           keyboardShouldPersistTaps="handled"
           showsHorizontalScrollIndicator={false}>
-          {assignees.map((item) => {
+          {matchingAssignees.map((item) => {
             const selected = mentionIds.includes(item.member._id);
             return (
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: selected }}
                 key={item.member._id}
-                onPress={() => onMentionToggle(item.member._id)}
+                onPress={() => {
+                  if (!selected) onMentionToggle(item.member._id);
+                  onChangeText(value.replace(/@[^\s@]*$/, `@${item.user.displayName} `));
+                }}
                 style={[styles.mentionChip, {
                   backgroundColor: selected ? theme.accentSoft : theme.backgroundElement,
                   borderColor: selected ? theme.accent : theme.hairline,
@@ -524,28 +463,33 @@ export function TaskCommentComposer({
         </ScrollView>
       ) : null}
       <View style={styles.composerRow}>
+        <Pressable accessibilityLabel="Close update editor" accessibilityRole="button" onPress={onCancel} style={styles.composerClose}>
+          <PlatformIcon color={theme.textSecondary} name="close" size={18} />
+        </Pressable>
         <TextInput
-          accessibilityLabel="Add a task comment"
+          accessibilityLabel="Write an update"
           allowFontScaling
+          autoFocus
+          keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
           multiline
           onChangeText={onChangeText}
-          placeholder="Add a comment…"
+          placeholder="Write an update…"
           placeholderTextColor={theme.textSecondary}
           style={[styles.composerInput, { backgroundColor: theme.backgroundElement, color: theme.text }]}
           value={value}
         />
         <Pressable
-          accessibilityLabel="Send comment"
+          accessibilityLabel="Send update"
           disabled={!canSend}
           onPress={() => {
             hapticMedium();
             onSend();
           }}
           style={[styles.sendButton, { backgroundColor: theme.accent, opacity: canSend ? 1 : 0.45 }]}>
-          <PlatformIcon color={theme.background} name="send" size={19} />
+          <PlatformIcon color={theme.accentInk} name="send" size={19} />
         </Pressable>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -569,15 +513,6 @@ function LoadMoreButton({
   );
 }
 
-function Surface({ children, title }: { children: React.ReactNode; title: string }) {
-  const theme = useTheme();
-  return (
-    <TaskSection title={title}>
-      <View style={[styles.surface, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>{children}</View>
-    </TaskSection>
-  );
-}
-
 function TaskSection({
   children,
   title,
@@ -597,46 +532,6 @@ function TaskSection({
       </View>
       {children}
     </View>
-  );
-}
-
-/** A field is edited where it is read: the row itself opens its own picker. */
-function MetadataRow({
-  icon,
-  label,
-  onPress,
-  tone,
-  value,
-}: {
-  icon: React.ComponentProps<typeof PlatformIcon>['name'];
-  label: string;
-  onPress?: () => void;
-  tone?: 'danger';
-  value: string;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityHint={onPress ? `Changes the ${label.toLowerCase()}` : undefined}
-      accessibilityLabel={`${label}: ${value}`}
-      accessibilityRole={onPress ? 'button' : 'text'}
-      disabled={!onPress}
-      onPress={onPress}
-      style={({ pressed }) => [styles.metadataRow, {
-        backgroundColor: pressed ? theme.backgroundSelected : 'transparent',
-        borderBottomColor: theme.hairline,
-      }]}>
-      <PlatformIcon color={theme.textSecondary} name={icon} size={18} />
-      <ThemedText style={styles.metadataLabel} themeColor="textSecondary" type="small">{label}</ThemedText>
-      <ThemedText
-        numberOfLines={1}
-        style={styles.metadataValue}
-        themeColor={tone === 'danger' ? 'danger' : 'text'}
-        type="smallBold">
-        {value}
-      </ThemedText>
-      {onPress ? <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} /> : null}
-    </Pressable>
   );
 }
 
@@ -663,12 +558,12 @@ const styles = StyleSheet.create({
   checklist: { borderCurve: 'continuous', borderRadius: Radius.large, overflow: 'hidden' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   comment: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.two },
-  commentBubble: { borderCurve: 'continuous', borderRadius: Radius.large, borderTopLeftRadius: 4, flex: 1, gap: Spacing.one, padding: Spacing.three },
+  commentBubble: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flex: 1, gap: Spacing.one, padding: Spacing.three },
   commentMeta: { alignItems: 'baseline', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
-  discussionNote: { alignItems: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, padding: Spacing.three },
-  discussionNoteCopy: { flex: 1 },
+  dayLabel: { alignSelf: 'center', paddingVertical: Spacing.two },
   composer: { borderTopWidth: StyleSheet.hairlineWidth, gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
-  composerInput: { borderRadius: Radius.xlarge, flex: 1, fontSize: 14, lineHeight: 20, maxHeight: 112, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Platform.OS === 'ios' ? 11 : 8 },
+  composerClose: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  composerInput: { ...Typography.message, borderRadius: Radius.xlarge, flex: 1, maxHeight: 112, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Platform.OS === 'ios' ? 11 : 8 },
   composerRow: { alignItems: 'flex-end', flexDirection: 'row', gap: Spacing.two },
   description: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, minHeight: 72, padding: Spacing.three },
   emptyBlock: { alignItems: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, padding: Spacing.three },
@@ -676,13 +571,10 @@ const styles = StyleSheet.create({
   evidence: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, padding: Spacing.three },
   evidenceHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   evidenceTitle: { flex: 1 },
-  inlineInput: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, fontSize: 14, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  inlineInput: { ...Typography.body, borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   label: { alignItems: 'center', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   labelDot: { borderRadius: 4, height: 8, width: 8 },
   loadMoreButton: { alignItems: 'center', borderRadius: Radius.medium, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  metadataLabel: { flex: 1 },
-  metadataRow: { alignItems: 'center', borderCurve: 'continuous', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  metadataValue: { maxWidth: '48%' },
   mentionChip: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   mentionRow: { gap: Spacing.two },
   progressTrack: { borderRadius: Radius.small, height: 6, overflow: 'hidden' },
@@ -691,14 +583,13 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.two },
   sectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   sectionTrailing: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, maxWidth: '58%' },
+  textAction: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.one },
   sendButton: { alignItems: 'center', borderRadius: TouchTarget / 2, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  surface: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  activityActor: { flex: 1 },
-  activityChange: { alignItems: 'center', borderRadius: Radius.small, flexDirection: 'row', gap: Spacing.one, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
-  activityMeta: { alignItems: 'baseline', flexDirection: 'row', gap: Spacing.two },
-  timelineBody: { borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, gap: Spacing.one, padding: Spacing.three },
-  timelineLine: { flex: 1, marginBottom: -5, marginTop: Spacing.one, width: 2 },
-  timelineMarker: { alignItems: 'center', borderRadius: Radius.pill, height: 30, justifyContent: 'center', width: 30 },
+  activityChange: { alignItems: 'center', borderRadius: Radius.small, flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },
+  timelineBody: { flex: 1, gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget },
+  timelineMarker: { alignItems: 'center', borderRadius: Radius.pill, height: 28, justifyContent: 'center', width: 28 },
   timelineRail: { alignItems: 'center', width: 32 },
-  timelineRow: { flexDirection: 'row', gap: Spacing.two, minHeight: 58 },
+  timelineRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget },
+  updateEntry: { gap: Spacing.one },
+  updatesFeed: { gap: Spacing.three },
 });

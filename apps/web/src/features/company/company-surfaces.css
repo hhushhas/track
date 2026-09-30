@@ -1240,7 +1240,7 @@
   color: var(--accent-strong);
 }
 
-.company-relationship-card > header > span:last-child {
+.company-relationship-card > header > span:nth-child(2) {
   display: grid;
   min-width: 0;
   gap: 1px;
@@ -1285,8 +1285,29 @@
   cursor: pointer;
   color: var(--ink-3);
   padding: 10px 14px;
-  font-size: 10.5px;
+  font-size: 12px;
   list-style: none;
+}
+
+.company-card-management > summary::after {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  float: right;
+  margin-top: 3px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  content: '';
+  transform: rotate(45deg);
+}
+
+.company-card-management[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+.company-card-management > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .company-card-management > div {

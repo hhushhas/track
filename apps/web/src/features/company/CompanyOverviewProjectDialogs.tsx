@@ -11,7 +11,7 @@ import { Button } from '#/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
 import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
-import { getCompanyProjectManagementSearch } from './company-project-links'
+import { getCompanyProjectMembersSearch } from './company-project-links'
 
 type Overview = FunctionReturnType<typeof api.companyOverview.get>
 type ProjectSummary = NonNullable<Overview>['projects'][number]
@@ -154,7 +154,7 @@ export function CompanyOverviewProjectDialogs({
           </section>
           {!projectData.permissions.canManageProject ? <p className="company-project-settings-note">You can review these settings, but only a project manager can change project details.</p> : null}
           <footer className="company-project-settings-actions">
-            {settingsContext ? <Link params={{ projectId: settingsContext.projectId }} search={getCompanyProjectManagementSearch(settingsContext)} to="/workspace/company-projects/$projectId">Open advanced settings</Link> : null}
+            {settingsContext ? <Link params={{ projectId: settingsContext.projectId }} search={getCompanyProjectMembersSearch(settingsContext)} to="/workspace/company-projects/$projectId">Open project members</Link> : null}
             {saved ? <span role="status">Changes saved</span> : null}
             <Button onClick={() => onSettingsOpenChange(false)} type="button" variant="outline">Close</Button>
             {projectData.permissions.canManageProject ? <Button disabled={!name.trim()} onClick={() => void saveSettings()} type="button">Save changes</Button> : null}

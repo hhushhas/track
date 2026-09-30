@@ -185,7 +185,7 @@ const SYMBOLS: Record<IconName, SymbolDefinition> = {
   person: { android: 'person', ios: 'person', iosFilled: 'person.fill' },
   play: { android: 'play_arrow', ios: 'play.fill' },
   plus: { android: 'add', ios: 'plus' },
-  project: { android: 'folder_open', androidFilled: 'folder', ios: 'folder', iosFilled: 'folder.fill' },
+  project: { android: 'folder', ios: 'folder', iosFilled: 'folder.fill' },
   refresh: { android: 'refresh', ios: 'arrow.clockwise' },
   reply: { android: 'reply', ios: 'arrowshape.turn.up.left', iosFilled: 'arrowshape.turn.up.left.fill' },
   search: { android: 'search', ios: 'magnifyingglass' },
@@ -198,12 +198,12 @@ const SYMBOLS: Record<IconName, SymbolDefinition> = {
   stop: { android: 'stop', ios: 'stop.fill' },
   subtask: { android: 'subdirectory_arrow_right', ios: 'arrow.turn.down.right' },
   tag: { android: 'sell', ios: 'tag', iosFilled: 'tag.fill' },
-  task: { android: 'task_alt', androidFilled: 'check_circle', ios: 'checkmark.circle', iosFilled: 'checkmark.circle.fill' },
+  task: { android: 'checklist', ios: 'checklist', iosFilled: 'checklist.checked' },
   'theme-light-dark': { android: 'contrast', ios: 'circle.lefthalf.filled' },
   thread: { android: 'forum', ios: 'bubble.left.and.bubble.right', iosFilled: 'bubble.left.and.bubble.right.fill' },
   'trash-can-outline': { android: 'delete', ios: 'trash', iosFilled: 'trash.fill' },
   tune: { android: 'tune', ios: 'slider.horizontal.3' },
-  'view-board': { android: 'view_kanban', ios: 'square.grid.2x2', iosFilled: 'square.grid.2x2.fill' },
+  'view-board': { android: 'view_kanban', ios: 'rectangle.3.group', iosFilled: 'rectangle.3.group.fill' },
   'view-column': { android: 'view_column', ios: 'rectangle.split.3x1' },
   waveform: { android: 'graphic_eq', ios: 'waveform' },
   'white-balance-sunny': { android: 'light_mode', ios: 'sun.max', iosFilled: 'sun.max.fill' },
@@ -222,14 +222,14 @@ type Props = {
 
 const ANDROID_WEIGHTS = { medium, regular, semibold } as const;
 
-/** Platform-native semantic symbol. Outline is default; fill marks active state. */
+/** Platform-native semantic symbol. Medium weight keeps icons legible beside app text; fill marks active state. */
 export function PlatformIcon({
   animationSpec,
   color,
   name,
   size,
   variant = 'outline',
-  weight = 'regular',
+  weight = 'medium',
 }: Props) {
   const symbol = SYMBOLS[name];
   const filled = variant === 'filled';

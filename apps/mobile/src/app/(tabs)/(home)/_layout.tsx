@@ -1,7 +1,7 @@
 import { PrimaryStack } from '@/components/primary-stack';
 
-export const unstable_settings = { initialRouteName: 'today' };
+export const unstable_settings = { initialRouteName: 'conversations' };
 
 export default function HomeStackLayout() {
-  return <PrimaryStack initialRouteName="today" />;
+  return <PrimaryStack initialRouteName="conversations" />;
 }

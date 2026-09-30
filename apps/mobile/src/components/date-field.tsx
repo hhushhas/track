@@ -115,14 +115,20 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
 
   return (
     <View style={styles.wrap}>
-      <SheetFieldButton
-        icon="calendar"
-        label={label}
-        onClear={value ? () => commit(null) : undefined}
-        onPress={openPicker}
-        placeholder="No due date"
-        value={display?.label}
-      />
+      {Platform.OS !== 'android' || !autoOpen ? (
+        <SheetFieldButton
+          icon="calendar"
+          label={label}
+          onClear={value ? () => commit(null) : undefined}
+          onPress={openPicker}
+          placeholder="No due date"
+          value={display?.label}
+        />
+      ) : (
+        <ThemedText themeColor="textSecondary" type="caption">
+          Current: {display?.label ?? 'No due date'}
+        </ThemedText>
+      )}
       {open && !disabled && Platform.OS !== 'android' ? (
         <View style={styles.panel}>
           <View style={styles.chips}>
@@ -190,6 +196,79 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
           )}
         </View>
       ) : null}
+      {open && !disabled && Platform.OS === 'android' && autoOpen ? (
+        <View style={styles.embeddedCalendar}>
+          <View style={styles.chips}>
+            {quickChoices.map((choice) => {
+              const target = taskDateFromOffset(choice.offset);
+              const active = androidDraft === target;
+              return (
+                <Pressable
+                  accessibilityLabel={`${choice.label} due date`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  key={choice.label}
+                  onPress={() => { hapticLight(); setAndroidDraft(target); }}
+                  style={[styles.chip, {
+                    backgroundColor: active ? theme.accentSoft : theme.backgroundElement,
+                    borderColor: active ? theme.accent : theme.hairline,
+                  }]}>
+                  <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={choice.icon} size={16} />
+                  <ThemedText themeColor={active ? 'accentStrong' : 'text'} type="label">{choice.label}</ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={[styles.calendar, styles.androidCalendar, {
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.hairline,
+          }]}>
+            <Calendar
+              accessibilityLabel="Due date calendar"
+              current={androidCalendarDate}
+              dayComponent={renderAndroidDay}
+              enableSwipeMonths
+              hideExtraDays
+              key={androidCalendarDate.slice(0, 7)}
+              renderArrow={(direction) => (
+                <View style={styles.calendarArrow}>
+                  <PlatformIcon color={theme.accentStrong} name={direction === 'left' ? 'chevron-left' : 'chevron-right'} size={20} />
+                </View>
+              )}
+              style={styles.calendarSurface}
+              theme={{
+                arrowColor: theme.accentStrong,
+                backgroundColor: theme.backgroundElement,
+                calendarBackground: theme.backgroundElement,
+                dayTextColor: theme.text,
+                monthTextColor: theme.text,
+                selectedDayBackgroundColor: theme.accent,
+                selectedDayTextColor: theme.background,
+                textDayFontFamily: Fonts?.sans,
+                textDayFontSize: Typography.body.fontSize,
+                textDayFontWeight: '500',
+                textDayHeaderFontFamily: Fonts?.sans,
+                textDayHeaderFontSize: Typography.caption.fontSize,
+                textDayHeaderFontWeight: '600',
+                textDisabledColor: theme.textTertiary,
+                textMonthFontFamily: Fonts?.sans,
+                textMonthFontSize: Typography.subtitle.fontSize,
+                textMonthFontWeight: '600',
+                textSectionTitleColor: theme.textSecondary,
+                todayTextColor: theme.accentStrong,
+              }}
+            />
+          </View>
+          <View style={styles.modalActions}>
+            <Pressable accessibilityRole="button" onPress={() => setAndroidDraft(null)} style={[styles.actionButton, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="label">Clear</ThemedText>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={applyAndroidDate} style={[styles.actionButton, styles.applyButton, { backgroundColor: theme.accent }]}>
+              <ThemedText style={{ color: theme.accentInk }} type="label">Apply</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
       {Platform.OS === 'android' ? (
         <Modal
           animationType="fade"
@@ -197,7 +276,7 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
           onRequestClose={closeAndroidPicker}
           statusBarTranslucent
           transparent
-          visible={open && !disabled}>
+          visible={open && !disabled && !autoOpen}>
           <View style={styles.modalRoot}>
             <Pressable
               accessibilityLabel="Dismiss due date calendar"
@@ -318,7 +397,7 @@ export function DateField({ autoOpen, disabled, label = 'Due date', onChange, va
                   accessibilityRole="button"
                   onPress={applyAndroidDate}
                   style={[styles.actionButton, styles.applyButton, { backgroundColor: theme.accent }]}>
-                  <ThemedText style={{ color: theme.background }} type="label">Apply</ThemedText>
+                  <ThemedText style={{ color: theme.accentInk }} type="label">Apply</ThemedText>
                 </Pressable>
               </View>
             </View>
@@ -406,6 +485,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.six,
   },
   modalScroll: { flexShrink: 1 },
+  embeddedCalendar: { gap: Spacing.three },
   panel: { gap: Spacing.three, paddingTop: Spacing.one },
   picker: {
     alignItems: 'center',

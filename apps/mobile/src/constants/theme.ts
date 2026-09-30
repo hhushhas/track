@@ -14,10 +14,11 @@ export const Colors = {
     homeBorder: '#ddd9d1',
     navigationGlass: 'rgba(255,255,255,0.36)',
     navigationSelectionGlass: 'rgba(254,243,199,0.74)',
-    textSecondary: '#6b655c',
-    textTertiary: '#8b857a',
+    textSecondary: '#655f56',
+    textTertiary: '#6e675d',
     hairline: '#e3dfd7',
     accent: '#f0b100',
+    accentInk: '#1b1917',
     accentSoft: '#fef3c7',
     accentStrong: '#8a6400',
     danger: '#b91c1c',
@@ -41,7 +42,7 @@ export const Colors = {
     workflowCanceled: '#b91c1c',
     workflowCanceledSoft: '#fee2e2',
     workflowCanceledStrong: '#991b1b',
-    bubbleOwn: '#fdf0c8',
+    bubbleOwn: '#e7edf5',
     bubbleOther: '#f3f1ed',
     overlay: 'rgba(27,25,23,0.45)',
     skeleton: '#e9e5dd',
@@ -61,6 +62,7 @@ export const Colors = {
     textTertiary: '#9a9488',
     hairline: '#3a3631',
     accent: '#f0b100',
+    accentInk: '#1b1917',
     accentSoft: '#4a3800',
     accentStrong: '#f5c53d',
     danger: '#fca5a5',
@@ -84,7 +86,7 @@ export const Colors = {
     workflowCanceled: '#fca5a5',
     workflowCanceledSoft: '#4b2222',
     workflowCanceledStrong: '#fecaca',
-    bubbleOwn: '#4a3d16',
+    bubbleOwn: '#334155',
     bubbleOther: '#292522',
     overlay: 'rgba(0,0,0,0.6)',
     skeleton: '#332f2a',
@@ -113,6 +115,13 @@ export const Fonts = Platform.select({
  * identifiers (task keys, codes) — never for timestamps, names, or labels.
  */
 export const Typography = {
+  // Platform-sized navigation titles keep drill-in screens calm and familiar.
+  navigationTitle: {
+    fontFamily: Fonts?.sans,
+    fontSize: Platform.OS === 'ios' ? 17 : 20,
+    lineHeight: Platform.OS === 'ios' ? 22 : 26,
+    fontWeight: '600' as const,
+  },
   // Prose
   message: {
     fontFamily: Fonts?.sans,

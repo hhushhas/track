@@ -1,5 +1,7 @@
 .company-global-work-layout { display: grid; gap: 20px; width: 100%; }
 .company-task-project-field { display: grid; gap: 8px; margin-top: 6px; }
+.company-task-project-field [data-slot="native-select-wrapper"],
+.company-task-project-field [data-slot="native-select"] { width: 100%; }
 .company-task-project-field > span { color: var(--foreground); font-size: 13px; font-weight: 600; }
 .company-task-project-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .company-work-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -46,11 +48,15 @@
 .company-global-thread-project-heading > span:last-child { color: var(--company-ref-faint); font-size: 9.5px; }
 .company-global-thread-project .track-rail-company-thread-section { border: 0; background: transparent; padding: 0; }
 .company-global-thread-project .track-rail-company-thread-section > header { display: none; }
-.company-global-work-threads-only .company-global-thread-projects { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 2px; }
+.company-global-thread-project .track-rail-thread-section > ul a { min-height: 44px; }
+.company-global-thread-project .track-rail-thread-section > ul a > span { font-size: 12px; }
+.company-global-thread-project .track-rail-thread-section > ul a > span small { font-size: 10.5px; }
+.company-global-work-threads-only .company-global-thread-projects { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding-top: 2px; }
 .company-global-work-threads-only .company-global-thread-project { min-width: 0; border: 1px solid var(--company-ref-border); border-radius: 10px; padding: 4px 14px 14px; }
 .company-global-work-threads-only .company-global-thread-project + .company-global-thread-project { margin: 0; }
 
 @media (max-width: 1260px) { .company-work-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1600px) { .company-global-work-threads-only .company-global-thread-projects { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1180px) { .company-global-work, .company-global-work.company-global-work-threads-only { grid-template-columns: minmax(0, 1fr); }.company-global-work-threads-only .company-global-thread-projects { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .company-work-summary { grid-template-columns: 1fr; }.company-global-work-panel { padding: 14px; }.company-global-task-list li { grid-template-columns: 20px minmax(0, 1fr) 34px; }.company-task-due { display: none; } }
 @media (prefers-reduced-motion: reduce) { .company-global-work * { scroll-behavior: auto !important; transition-duration: .01ms !important; } }

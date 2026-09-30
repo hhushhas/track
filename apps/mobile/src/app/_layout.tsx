@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type ComponentProps } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { authClient } from '@/lib/auth-client';
 import { convexClient } from '@/lib/convex-client';
@@ -53,13 +54,15 @@ const NAV_THEME_DARK = {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardProvider>
-        <ThemeOverrideProvider>
-          <AppLayout />
-        </ThemeOverrideProvider>
-      </KeyboardProvider>
-    </GestureHandlerRootView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <KeyboardProvider>
+          <ThemeOverrideProvider>
+            <AppLayout />
+          </ThemeOverrideProvider>
+        </KeyboardProvider>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
@@ -121,7 +124,7 @@ function AppLayout() {
                     headerShadowVisible: false,
                     headerStyle: { backgroundColor: 'transparent' },
                     headerTitleAlign: 'left',
-                    headerTitleStyle: Typography.display,
+                    headerTitleStyle: Typography.navigationTitle,
                     headerTintColor: Colors[theme].text,
                     contentStyle: {
                       backgroundColor: Colors[theme].homeBackground,
@@ -131,7 +134,6 @@ function AppLayout() {
                   <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                   <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                   <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
-                  <Stack.Screen name="profile" options={{ title: 'Profile' }} />
                   <Stack.Screen name="company" options={{ title: 'Companies' }} />
                   </Stack>
                   {showContinuation ? (
@@ -155,5 +157,5 @@ function AppLayout() {
 
 const styles = StyleSheet.create({
   app: { flex: 1 },
-  continuation: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
+  continuation: { ...StyleSheet.absoluteFill, zIndex: 1 },
 });

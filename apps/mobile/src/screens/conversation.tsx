@@ -10,8 +10,10 @@ import { useTrackUser } from '@/contexts/track-user-context';
 import { useAppToast } from '@/components/app-toast';
 import { Composer } from '@/components/composer';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
+import { ConversationLoading } from '@/components/conversation-loading';
 import { IconButton } from '@/components/icon-button';
 import { MessageActions } from '@/components/message-actions';
+import { ForwardMessageSheet } from '@/components/forward-message-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { TaskInlineCards } from '@/components/task-inline-cards';
 import { TaskLinkBatchProvider } from '@/lib/task-link-context';
@@ -24,14 +26,16 @@ import { sendComposerMessage, type ComposerSubmission, type ComposerSubmissionRe
 import { hapticLight, hapticMedium, hapticDestructive } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
 import { useTheme } from '@/hooks/use-theme';
-import { channelHref, navigationUnavailableCopy } from '@/lib/company-navigation';
+import { channelHref, navigationUnavailableCopy, projectChannelsHref } from '@/lib/company-navigation';
 import { buildMentionCandidates } from '@/lib/mention-autocomplete';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
-import { threadConversationHref, threadListHref } from '@/lib/thread-navigation';
+import { messageTaskDraft } from '@/lib/message-task-draft';
+import { threadConversationHref } from '@/lib/thread-navigation';
 import { setActivePushContext } from '@/lib/push-presentation';
-import { taskErrorMessage } from '@/lib/user-facing-error';
+import { communicationErrorMessage, taskErrorMessage } from '@/lib/user-facing-error';
 import { useComposerDraft } from '@/hooks/use-composer-draft';
+import { reconcilePendingMessages, type PendingMessage } from '@/lib/pending-messages';
 
 /** WhatsApp-style grouping gap: a longer pause re-states who is speaking. */
 const FIVE_MINUTES = 5 * 60 * 1000;
@@ -46,8 +50,6 @@ const reportReasonLabels: Record<(typeof reportReasons)[number], string> = {
   spam: 'Spam',
   unsafe: 'Unsafe',
 };
-
-type PendingMessage = { id: string; body: string; at: number };
 
 function dateSepLabel(ts: number) {
   const d = new Date(ts);
@@ -78,6 +80,7 @@ export default function ConversationScreen() {
   const setGlobalNotif = useMutation(api.notifications.setGlobalMode);
   const setGroupNotif = useMutation(api.notifications.setGroupMode);
   const createReport = useMutation(api.reports.create);
+  const forwardMessage = useMutation(api.messages.forwardMessage);
   const createTask = useMutation(api.tasks.create);
   const deleteMessage = useMutation(api.messages.remove);
 
@@ -92,6 +95,7 @@ export default function ConversationScreen() {
   }, [gid, pid]));
   const navigation = useQuery(api.mobile.resolveNavigation, trackUserId && pid && gid ? { userId: trackUserId, projectId: pid, groupId: gid, actingCompanyId: cid, projectMemberId: pmid } : 'skip');
   const readOnly = archive === '1' || navigation?.archived === true;
+  const channelContext = cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null;
   // Memoised so composing a message does not rebuild every row's identity props.
   const taskIdentity = useMemo<MobileTaskIdentity | null>(() => cid && pmid ? {
     archived: readOnly,
@@ -168,6 +172,9 @@ export default function ConversationScreen() {
   const [reportReason, setReportReason] = useState<(typeof reportReasons)[number]>('inaccurate');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
+  const [forwardTarget, setForwardTarget] = useState<DetailedMessage | null>(null);
+  const [forwardBusyGroupId, setForwardBusyGroupId] = useState<Id<'groups'> | null>(null);
+  const [forwardError, setForwardError] = useState<string | null>(null);
   /**
    * Rows that render task cards below them; those cards interrupt author
    * grouping. Rows only report while mounted, so scrolling never regroups.
@@ -204,10 +211,16 @@ export default function ConversationScreen() {
   const groupMode = notifSettings?.groups?.find((g) => g.groupId === gid)?.mode ?? 'inherit';
 
   const threadItems = useMemo<GroupedThreadItem[]>(() => {
-    const msgs = [...((messages ?? []) as DetailedMessage[]).reverse()].map((item) => ({
+    const uniqueMessages = [...new Map(
+      ((messages ?? []) as DetailedMessage[]).map((item) => [item.message._id, item] as const),
+    ).values()];
+    const msgs = uniqueMessages.reverse().map((item) => ({
       kind: 'message' as const, key: item.message._id, at: item.message.createdAt, item, isFirstInGroup: true,
     }));
-    const streams = ((assistantStreams ?? []) as Doc<'assistantStreams'>[]).map((stream) => ({
+    const uniqueStreams = [...new Map(
+      ((assistantStreams ?? []) as Doc<'assistantStreams'>[]).map((stream) => [stream._id, stream] as const),
+    ).values()];
+    const streams = uniqueStreams.map((stream) => ({
       kind: 'assistant' as const, key: stream._id, at: stream.createdAt, stream, isFirstInGroup: true,
     }));
     const sorted: Array<{ kind: 'message'; key: string; at: number; item: DetailedMessage; isFirstInGroup: boolean } | { kind: 'assistant'; key: string; at: number; stream: Doc<'assistantStreams'>; isFirstInGroup: boolean }> =
@@ -276,6 +289,11 @@ export default function ConversationScreen() {
     if (!atBottomRef.current) return;
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
+  const scrollToLatest = useCallback(() => {
+    atBottomRef.current = true;
+    setShowJumpToLatest(false);
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
 
   useEffect(() => {
     const subscriptions = [
@@ -324,22 +342,24 @@ export default function ConversationScreen() {
         label: 'Create task',
         icon: 'plus' as const,
         onPress: async () => {
-          const source = actionTarget.kind === 'message' ? actionTarget.item.message.body : actionTarget.stream.answer;
-          const reference = actionTarget.kind === 'message'
-            ? { type: 'message' as const, messageId: actionTarget.item.message._id, isPrimary: true }
-            : { type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true };
           if (!pid || !gid) return;
-          const taskKey = `message-task:${actionTarget.key}`;
-          if (creatingTaskKey === taskKey) return;
-          setCreatingTaskKey(taskKey);
+          const draft = actionTarget.kind === 'message'
+            ? messageTaskDraft(actionTarget.item.message.body, actionTarget.item.message._id, actionTarget.key)
+            : {
+              idempotencyKey: `message-task:${actionTarget.key}`,
+              references: [{ type: 'assistant_answer' as const, assistantStreamId: actionTarget.stream._id, isPrimary: true }],
+              title: actionTarget.stream.answer.trim().slice(0, 180) || 'Follow up',
+            };
+          if (creatingTaskKey === draft.idempotencyKey) return;
+          setCreatingTaskKey(draft.idempotencyKey);
           try {
             const task = await createTask({
               projectId: pid,
               groupId: gid,
-              title: source.trim().slice(0, 180) || 'Follow up',
+              title: draft.title,
               priority: 'none',
-              references: [reference],
-              idempotencyKey: taskKey,
+              references: draft.references,
+              idempotencyKey: draft.idempotencyKey,
               actingCompanyId: cid,
               projectMemberId: pmid,
             });
@@ -395,17 +415,12 @@ export default function ConversationScreen() {
     ];
   }, [actionTarget, cid, createTask, creatingTaskKey, deleteMessage, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, replyMessageId, router, setReplyTo, trackUserId]);
 
-  // Clear pending messages when the real message arrives from the server
+  // Reconcile optimistic rows by message ID, so duplicate message text cannot hide a new send.
   useEffect(() => {
     if (!pendingMessages.length || !messages) return;
-    const now = Date.now();
-    const recentBodies = new Set(
-      (messages as DetailedMessage[])
-        .filter((m) => now - m.message.createdAt < 30_000)
-        .map((m) => m.message.body),
-    );
-    setPendingMessages((prev) => prev.filter((p) => !recentBodies.has(p.body)));
-  }, [messages, pendingMessages.length]);
+    const receivedIds = new Set((messages as DetailedMessage[]).map((item) => item.message._id));
+    setPendingMessages((prev) => reconcilePendingMessages(prev, receivedIds));
+  }, [messages, pendingMessages]);
 
   useEffect(() => () => {
     if (acknowledgeTimeoutRef.current) clearTimeout(acknowledgeTimeoutRef.current);
@@ -481,7 +496,10 @@ export default function ConversationScreen() {
     }
     // Only text-only sends get an optimistic row; attachment sends show their own progress.
     const pendingId = body && payload.attachments.length === 0 ? Date.now().toString() : null;
-    if (pendingId) setPendingMessages((prev) => [...prev, { id: pendingId, body, at: Date.now() }]);
+    if (pendingId) {
+      setPendingMessages((prev) => [...prev, { id: pendingId, body, at: Date.now() }]);
+      scrollToLatest();
+    }
 
     setBusy('send');
     try {
@@ -524,6 +542,12 @@ export default function ConversationScreen() {
           }),
         },
       });
+
+      const sentMessageId = result.messageId;
+      if (sentMessageId) {
+        if (pendingId) setPendingMessages((prev) => prev.map((pending) => pending.id === pendingId ? { ...pending, messageId: sentMessageId } : pending));
+        scrollToLatest();
+      }
 
       const { parseMentions } = await import('@track/shared');
       if (result.messageId && parseMentions(body).includes('track')) {
@@ -571,6 +595,46 @@ export default function ConversationScreen() {
     });
   }
 
+  async function handleForward(
+    target: { group: { _id: Id<'groups'>; name: string } },
+    note: string,
+    audienceExpansionConfirmed = false,
+  ) {
+    if (!forwardTarget || !trackUserId || !pid) return;
+    setForwardBusyGroupId(target.group._id);
+    setForwardError(null);
+    try {
+      await forwardMessage({
+        projectId: pid,
+        sourceMessageId: forwardTarget.message._id,
+        targetGroupId: target.group._id,
+        actorId: trackUserId,
+        actingCompanyId: cid,
+        projectMemberId: pmid,
+        body: note.trim() || undefined,
+        idempotencyKey: idempotencyKey(),
+        audienceExpansionConfirmed,
+      });
+      setForwardTarget(null);
+      showToast({ icon: 'forward', message: `Copied to ${target.group.name}.`, title: 'Message forwarded', tone: 'success' });
+    } catch (caught) {
+      if (!audienceExpansionConfirmed && String(caught).includes('audience_expansion_confirmation_required')) {
+        Alert.alert(
+          'This Channel has more members',
+          'Some people in the destination Channel may not have access to the original message. Forward it anyway?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Forward anyway', onPress: () => { void handleForward(target, note, true); } },
+          ],
+        );
+        return;
+      }
+      setForwardError(communicationErrorMessage(caught, 'forward this message'));
+    } finally {
+      setForwardBusyGroupId(null);
+    }
+  }
+
   const renderItem = useCallback<ListRenderItem<GroupedThreadItem>>(({ item }) => {
     if (item.kind === 'date-sep') return <DateSeparator label={item.label} />;
     const isOwnMessage = item.kind === 'message' && item.item.author?._id === trackUserId;
@@ -588,6 +652,15 @@ export default function ConversationScreen() {
           onSwipeReply={readOnly ? undefined : () => {
             hapticLight();
             if (item.kind === 'message') setReplyTo(item.item);
+          }}
+          onSwipeForward={item.kind === 'message' ? () => {
+            hapticLight();
+            setForwardError(null);
+            setForwardTarget(item.item);
+          } : undefined}
+          onSwipeReport={() => {
+            hapticLight();
+            setReportTarget(item);
           }}
           onOpenThread={releaseConfig.threads && pid && gid && item.kind === 'message' && item.item.channelThread ? () => {
             router.push(threadConversationHref(pid, gid, item.item.channelThread!.threadId, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
@@ -611,33 +684,54 @@ export default function ConversationScreen() {
   }, [cid, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, setReplyTo, taskIdentity, trackCardRow, trackUserId]);
 
   if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
-  if ((network.isConnected === false || network.isInternetReachable === false) && messages === undefined) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Offline</ThemedText><ThemedText style={{ color: theme.textSecondary }}>This Channel is not available on the device yet.</ThemedText><Pressable accessibilityRole="button" onPress={() => pid && gid && router.replace(channelHref(pid, gid, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null))} style={[styles.retry, { backgroundColor: theme.accent }]}><ThemedText style={{ color: theme.background }} type="smallBold">Retry</ThemedText></Pressable></View></ThemedView>;
-  if (navigation === undefined || (navigation.available && messages === undefined)) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Conversation' }} /><View style={styles.empty}><ThemedText style={{ color: theme.textSecondary }} type="small">Opening authorized conversation…</ThemedText></View></ThemedView>;
+  if ((network.isConnected === false || network.isInternetReachable === false) && messages === undefined) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable offline</ThemedText><ThemedText style={{ color: theme.textSecondary }}>Connect to the internet to load this Channel.</ThemedText><Pressable accessibilityRole="button" onPress={() => pid && gid && router.replace(channelHref(pid, gid, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null))} style={[styles.retry, { backgroundColor: theme.accent }]}><ThemedText style={{ color: theme.accentInk }} type="smallBold">Try again</ThemedText></Pressable></View></ThemedView>;
+  if (navigation === undefined || (navigation.available && messages === undefined)) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Conversation' }} /><ConversationLoading label="Loading conversation" /></ThemedView>;
 
   const taskLinkMessageIds = threadItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : []);
   const taskLinkAssistantStreamIds = threadItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.stream._id] : []);
 
   return (
-    <ThemedView style={styles.screen}>
+    <ThemedView style={[styles.screen, { backgroundColor: 'transparent' }]}>
       <Stack.Screen
         options={{
+          contentStyle: { backgroundColor: 'transparent' },
           headerTransparent: false,
+          headerLeft: () => <IconButton
+            accessibilityLabel="Back to conversations"
+            appearance="plain"
+            icon="arrow-left"
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace(pid ? projectChannelsHref(pid, channelContext) as never : '/conversations' as never);
+            }}
+          />,
           headerTitle: () => (
             <Pressable
+              accessibilityLabel={`Switch Channel: ${activeGroup?.name ?? 'Conversation'} in ${navigation?.available && navigation.project ? navigation.project.name : 'Project'}`}
+              accessibilityRole="button"
               hitSlop={8}
               onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
               style={styles.headerTitle}>
-              <ThemedText numberOfLines={1} type="titleLarge">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+              <View style={[styles.headerMark, { backgroundColor: Platform.OS === 'ios' ? 'transparent' : theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="channel" size={18} weight="regular" /></View>
+              <View style={styles.headerTitleCopy}>
+                <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{navigation?.available && navigation.project ? navigation.project.name : 'Project'}</ThemedText>
+                <ThemedText numberOfLines={1} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+              </View>
               <PlatformIcon color={theme.textSecondary} name="chevron-down" size={16} />
             </Pressable>
           ),
-          headerRight: () => !readOnly ? (
-            <IconButton
-              accessibilityLabel="Notifications"
-              icon="dots-horizontal"
-              onPress={() => setToolsOpen(true)}
-            />
-          ) : null,
+          headerRight: () => (
+            <View style={styles.headerActions}>
+              {!readOnly ? (
+                <IconButton
+                  accessibilityLabel="Channel options"
+                  appearance="plain"
+                  icon="dots-vertical"
+                  onPress={() => setToolsOpen(true)}
+                />
+              ) : null}
+            </View>
+          ),
         }}
       />
 
@@ -716,9 +810,7 @@ export default function ConversationScreen() {
           accessibilityRole="button"
           onPress={() => {
             hapticLight();
-            atBottomRef.current = true;
-            setShowJumpToLatest(false);
-            listRef.current?.scrollToEnd({ animated: true });
+            scrollToLatest();
           }}
           style={[styles.jumpToLatest, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
           <PlatformIcon color={theme.text} name="chevron-down" size={22} />
@@ -729,15 +821,13 @@ export default function ConversationScreen() {
       {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
         activeGroupName={activeGroup?.name ?? null}
         busy={busy === 'send'}
+        surfaceColor="transparent"
         mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
         mentionCandidatesLoading={projectMembersPage.status === 'LoadingMore'}
         mentionCandidates={mentionCandidates}
         onCancelReply={() => setReplyTo(null)}
         onChangeText={setComposer}
-        onFocus={() => {
-          atBottomRef.current = true;
-          requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-        }}
+        onFocus={scrollToLatest}
         onLoadMoreMentionCandidates={() => {
           if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
         }}
@@ -769,7 +859,7 @@ export default function ConversationScreen() {
         </SheetSection>
       </OptionsSheet>
 
-      <OptionsSheet onClose={() => setToolsOpen(false)} title="Notifications" visible={toolsOpen}>
+      <OptionsSheet onClose={() => setToolsOpen(false)} title={activeGroup?.name ? `#${activeGroup.name} notifications` : 'Notifications'} visible={toolsOpen}>
         <SheetSection>
           <SheetRow
             icon="bell-outline"
@@ -780,16 +870,6 @@ export default function ConversationScreen() {
             }}
           />
         </SheetSection>
-        {releaseConfig.threads && pid && gid ? <SheetSection title="Conversation">
-          <SheetRow
-            icon="thread"
-            label="Threads"
-            onPress={() => {
-              setToolsOpen(false);
-              router.push(threadListHref(pid, gid, cid && pmid ? { companyId: cid, membershipId: pmid, archived: readOnly } : null) as never);
-            }}
-          />
-        </SheetSection> : null}
         <SheetSection title="Global">
           {(['all', 'mentions', 'none'] as const).map((mode) => (
             <SheetRow
@@ -838,6 +918,15 @@ export default function ConversationScreen() {
         onClose={() => setActionSheetOpen(false)}
         actions={messageActions}
       />
+      <ForwardMessageSheet
+        busyTargetId={forwardBusyGroupId}
+        currentGroupId={gid}
+        error={forwardError}
+        groups={groupItems}
+        message={forwardTarget}
+        onClose={() => { if (!forwardBusyGroupId) setForwardTarget(null); }}
+        onForward={(target, note) => { void handleForward(target, note); }}
+      />
     </ThemedView>
   );
 }
@@ -861,7 +950,10 @@ const styles = StyleSheet.create({
   },
   loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  headerTitle: { alignItems: 'center', flexDirection: 'row', gap: 4 },
+  headerActions: { alignItems: 'center', flexDirection: 'row' },
+  headerTitle: { alignItems: 'center', flexDirection: 'row', gap: 4, maxWidth: 220 },
+  headerMark: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', marginRight: Spacing.one, width: 34 },
+  headerTitleCopy: { flex: 1, minWidth: 0 },
   pendingAvatarSpacer: { width: 36 },
   pendingBody: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0, opacity: 0.6 },
   pendingRow: { flexDirection: 'row', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingVertical: 2 },

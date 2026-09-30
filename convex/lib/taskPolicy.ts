@@ -112,6 +112,31 @@ async function resolveTaskRequestContextForProject(
 
 export type ResolvedTaskRequestContext = Awaited<ReturnType<typeof resolveTaskRequestContext>>
 
+/** Applies the task-level rules using already-loaded task, board, and request scope data. */
+export function getTaskCapabilitiesInScope(
+  task: Doc<'tasks'>,
+  board: Doc<'taskBoards'>,
+  access: ResolvedTaskRequestContext,
+) {
+  const channelMember = task.groupId
+    ? access.capabilities.canReadChannel
+    : access.capabilities.canReadProject
+  const resolvedCapabilities = resolveTaskCapabilities({
+    collaboration: access.capabilities.taskCollaboration,
+    activeScope: access.capabilities.accessMode === 'active' && !board.archivedAt && !task.archivedAt,
+    channelMember,
+    createdByActor: task.createdByProjectMemberId === access.projectMember._id,
+    assignedToActor: task.assigneeProjectMemberId === access.projectMember._id,
+  })
+  const canRestore = Boolean(task.archivedAt) && !board.archivedAt && channelMember &&
+    access.capabilities.accessMode === 'active' &&
+    access.capabilities.taskCollaboration === 'admin'
+  return {
+    ...resolvedCapabilities,
+    canArchive: resolvedCapabilities.canArchive || canRestore,
+  }
+}
+
 /**
  * Resolves the project once and memoizes each Channel scope for the lifetime
  * of one request. Permission decisions are deliberately not shared across
@@ -170,24 +195,9 @@ export async function requireTaskAccess(
   if (!task) throw new Error('task_access_changed')
   const board = await ctx.db.get(task.boardId)
   if (!board) throw new Error('task_access_changed')
-  const access = await resolveTaskRequestContext(ctx, actor, task.projectId, identity, task.groupId)
-  const channelMember = task.groupId
-    ? access.capabilities.canReadChannel
-    : access.capabilities.canReadProject
-  const resolvedCapabilities = resolveTaskCapabilities({
-    collaboration: access.capabilities.taskCollaboration,
-    activeScope: access.capabilities.accessMode === 'active' && !board.archivedAt && !task.archivedAt,
-    channelMember,
-    createdByActor: task.createdByProjectMemberId === access.projectMember._id,
-    assignedToActor: task.assigneeProjectMemberId === access.projectMember._id,
-  })
-  const canRestore = Boolean(task.archivedAt) && !board.archivedAt && channelMember &&
-    access.capabilities.accessMode === 'active' &&
-    access.capabilities.taskCollaboration === 'admin'
-  const taskCapabilities = {
-    ...resolvedCapabilities,
-    canArchive: resolvedCapabilities.canArchive || canRestore,
-  }
+  const scope = await createTaskRequestScope(ctx, actor, task.projectId, identity)
+  const access = task.groupId ? await scope.forGroup(task.groupId) : scope.project
+  const taskCapabilities = getTaskCapabilitiesInScope(task, board, access)
   if (!taskCapabilities.canView) throw new Error('task_access_changed')
   return { ...access, board, task, taskCapabilities }
 }

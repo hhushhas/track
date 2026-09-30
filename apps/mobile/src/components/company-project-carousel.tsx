@@ -22,8 +22,8 @@ export function ProjectsSection({
   onSeeAll: () => void;
   projects: HomeProject[];
 }) {
-  const { width } = useWindowDimensions();
-  const cardWidth = Math.max(280, width - Spacing.four * 2);
+  const { fontScale, width } = useWindowDimensions();
+  const cardWidth = width - Spacing.four * 2;
   const [expandedProjectId, setExpandedProjectId] = useState<HomeProject['id'] | null>(null);
 
   return (
@@ -47,6 +47,7 @@ export function ProjectsSection({
               onToggleChannels={() => setExpandedProjectId((current) => current === project.id ? null : project.id)}
               project={project}
               width={cardWidth}
+              compact={width < 350 || fontScale > 1.25}
             />
           ))}
         </ScrollView>
@@ -64,6 +65,7 @@ function ProjectWorkspaceCard({
   onToggleChannels,
   project,
   width,
+  compact,
 }: {
   onChannel: (channel: NonNullable<HomeProject['channels']>[number]) => void;
   onOpen: () => void;
@@ -71,10 +73,11 @@ function ProjectWorkspaceCard({
   onToggleChannels: () => void;
   project: HomeProject;
   width: number;
+  compact: boolean;
 }) {
   const theme = useTheme();
   const reduceMotion = useReducedMotion();
-  const members = project.members ?? [];
+  const members = (project.members ?? []).slice(0, compact ? 2 : 3);
   const channels = project.channels ?? [];
   const remainingMembers = Math.max(0, project.memberCount - members.length);
   const remainingChannels = Math.max(0, (project.channelCount ?? channels.length) - channels.length);
@@ -82,21 +85,21 @@ function ProjectWorkspaceCard({
 
   return (
     <View style={[styles.card, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder, width }]}>
-      <Pressable accessibilityLabel={`${project.name}. ${role}. Open Project.`} accessibilityRole="button" onPress={onOpen} style={({ pressed }) => [styles.primaryArea, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
       <ProjectCardArtwork />
-      <View style={styles.cardTop}>
-        <View style={[styles.projectMark, { backgroundColor: theme.accentSoft }]}>
-          <PlatformIcon color={theme.accentStrong} name="project" size={IconSize.large} weight="semibold" />
+      <Pressable accessibilityLabel={`${project.name}. ${role}. Open Project.`} accessibilityRole="button" onPress={onOpen} style={({ pressed }) => [styles.primaryArea, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+        <View style={styles.cardTop}>
+          <View style={[styles.projectMark, { backgroundColor: theme.accentSoft }]}>
+            <PlatformIcon color={theme.accentStrong} name="project" size={IconSize.large} weight="semibold" />
+          </View>
         </View>
-      </View>
 
-      <View style={styles.projectCopy}>
-        <ThemedText numberOfLines={1} style={styles.projectName} type="titleLarge">{project.name}</ThemedText>
-        <ThemedText numberOfLines={1} themeColor="accentStrong" type="label">{role}</ThemedText>
-        <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
-          {project.companyName ?? 'Company'} · {project.totalTasks ?? 0} tasks · {project.channelCount ?? channels.length} Channels
-        </ThemedText>
-      </View>
+        <View style={styles.projectCopy}>
+          <ThemedText numberOfLines={1} style={styles.projectName} type="titleLarge">{project.name}</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="accentStrong" type="label">{role}</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">
+            {project.companyName ?? 'Company'} · {project.totalTasks ?? 0} tasks · {project.channelCount ?? channels.length} Channels
+          </ThemedText>
+        </View>
       </Pressable>
 
       <View style={styles.detailsRow}>
@@ -105,7 +108,7 @@ function ProjectWorkspaceCard({
             <View key={member.id} style={[styles.avatarWrap, index > 0 && styles.avatarOverlap, { borderColor: theme.homeSurface }]}>
               {member.avatarUrl ? (
                 <Image accessibilityLabel={member.name} contentFit="cover" recyclingKey={String(member.id)} source={{ uri: member.avatarUrl }} style={styles.memberImage} transition={120} />
-              ) : <ColoredAvatar label={member.name} seed={member.id} size={30} />}
+              ) : <ColoredAvatar label={member.name} seed={member.id} size={28} />}
             </View>
           ))}
           {remainingMembers > 0 ? (
@@ -124,8 +127,8 @@ function ProjectWorkspaceCard({
               onOpen();
             }}
             style={({ pressed }) => [styles.openProject, { borderColor: theme.homeBorder, opacity: pressed ? 0.65 : 1 }]}>
-            <ThemedText themeColor="text" type="captionBold">Open Project</ThemedText>
-            <PlatformIcon color={theme.text} name="chevron-right" size={IconSize.small} />
+            <ThemedText numberOfLines={1} style={styles.openProjectLabel} themeColor="text" type="captionBold">Open Project</ThemedText>
+            <View style={[styles.openProjectIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.text} name="chevron-right" size={IconSize.small} /></View>
           </Pressable>
           <Pressable
             accessibilityLabel={`${expanded ? 'Hide' : 'Show'} ${project.name} Channels`}
@@ -218,34 +221,36 @@ export function EmptySurface({ copy }: { copy: string }) {
 }
 
 const styles = StyleSheet.create({
-  arrow: { alignItems: 'center', borderRadius: Radius.pill, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  artImage: StyleSheet.absoluteFillObject,
+  arrow: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  artImage: { ...StyleSheet.absoluteFill, borderRadius: Radius.large },
   avatarOverlap: { marginLeft: -8 },
-  avatars: { alignItems: 'center', flexDirection: 'row', minHeight: 32 },
+  avatars: { alignItems: 'center', flex: 1, flexDirection: 'row', minHeight: 32, minWidth: 0, overflow: 'hidden' },
   avatarWrap: { borderRadius: Radius.pill, borderWidth: 2 },
   card: {
     borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two,
     minHeight: 204, overflow: 'hidden', padding: Spacing.three,
   },
   cardTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  cardActions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  carouselContent: { gap: Spacing.three, paddingRight: Spacing.four },
-  channel: { alignItems: 'center', borderRadius: Radius.small, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: 42, paddingHorizontal: Spacing.two },
+  cardActions: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: Spacing.one },
+  carouselContent: { alignItems: 'flex-start', gap: Spacing.three, paddingRight: Spacing.four },
+  channel: { alignItems: 'center', borderRadius: Radius.small, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   channelDrawer: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, padding: Spacing.two },
   channelDrawerHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   channelDrawerTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   channelLabel: { flex: 1 },
   channelList: { gap: Spacing.one },
-  detailsRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  detailsRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   empty: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, padding: Spacing.four },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  memberImage: { borderRadius: Radius.pill, height: 30, width: 30 },
-  openProject: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  memberImage: { borderRadius: Radius.pill, height: 28, width: 28 },
+  openProject: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', flexShrink: 1, gap: Spacing.half, minHeight: TouchTarget, minWidth: 0, paddingHorizontal: Spacing.one },
+  openProjectIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 20, justifyContent: 'center', width: 20 },
+  openProjectLabel: { flexShrink: 1 },
   primaryArea: { borderRadius: Radius.medium, gap: Spacing.two, overflow: 'hidden', padding: Spacing.one },
   projectCopy: { gap: 2 },
   projectMark: { alignItems: 'center', borderRadius: Radius.medium, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   projectName: { fontSize: 19, lineHeight: 24 },
-  remaining: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 2, height: 32, justifyContent: 'center', width: 32 },
+  remaining: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 2, height: 28, justifyContent: 'center', width: 28 },
   section: { gap: Spacing.three },
   seeAll: { alignItems: 'center', flexDirection: 'row', minHeight: TouchTarget, paddingLeft: Spacing.three },
 });

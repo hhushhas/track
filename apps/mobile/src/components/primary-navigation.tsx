@@ -1,8 +1,7 @@
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { BlurView } from 'expo-blur';
-import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import type { ComponentProps } from 'react';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useKeyboardState } from 'react-native-keyboard-controller';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -12,61 +11,67 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, IconSize, Radius, Spacing } from '@/constants/theme';
-import { useThemeOverride } from '@/contexts/theme-override-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
-import { primaryDestinationForRoute, primaryDestinationIndexAtX, primaryNavigationHeight, primaryNavigationVisibleForPath, primaryTabResetTarget, type PrimaryDestination } from '@/lib/primary-navigation';
+import { primaryDestinationForRoute, primaryNavigationHeight, primaryNavigationVisibleForPath, primaryRouteIndex, primaryTabIndexAtX, primaryTabResetTarget, type PrimaryDestination } from '@/lib/primary-navigation';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskListHref } from '@/lib/task-navigation';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
 type StandaloneTabKey = PrimaryDestination['key'];
+type RouterTabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
 type NavigationItem = { key: StandaloneTabKey; label: string; icon: IconName; href: string; disabled?: boolean };
-type NavigationParams = { archive?: string; companyId?: string; groupId?: string; membershipId?: string; projectId?: string };
 
 const standaloneTabs: NavigationItem[] = [
-  { key: 'home', label: 'Home', icon: 'home', href: '/' },
-  { key: 'inbox', label: 'Inbox', icon: 'email-outline', href: '/inbox' },
+  { key: 'conversations', label: 'Chats', icon: 'message', href: '/conversations' },
   { key: 'tasks', label: 'My Tasks', icon: 'task', href: '/tasks' },
-  { key: 'team', label: 'Team', icon: 'account-group', href: '/team' },
+  { key: 'inbox', label: 'Inbox', icon: 'email-outline', href: '/inbox' },
+  { key: 'profile', label: 'Profile', icon: 'account-circle', href: '/profile' },
 ];
 
-/** Keeps utility routes attached to the same five-position app shell. */
-export function StandalonePrimaryNavigation({ active, onCreate }: { active?: StandaloneTabKey; onCreate?: () => void }) {
+/** Keeps utility routes attached to the same four-destination app shell. */
+export function StandalonePrimaryNavigation({ active }: { active?: StandaloneTabKey }) {
   const router = useRouter();
-  const release = useReleaseConfig();
   return <FloatingNavigation
     activeKey={active}
-    createDisabled={!release.tasks}
+    createDisabled
     hidden={false}
     items={standaloneTabs}
-    onCreate={onCreate ?? (() => router.navigate(`/today?create=${Date.now()}` as never))}
+    onCreate={() => undefined}
     onSelect={(item) => router.replace(item.href as never)}
   />;
 }
 
-/** Four peer destinations with a non-route creation action in the physical center. */
-export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
+/** Four peer destinations with platform-specific selection feedback. */
+export function PrimaryNavigation({ navigation, state }: RouterTabBarProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const params = useLocalSearchParams<NavigationParams>();
   const release = useReleaseConfig();
   const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
-  const { createContext, hidden, setHidden } = usePrimaryNavigationVisibility();
-  // Projects remains reachable from Home, but it is not a peer destination in
-  // the global action bar.
-  const visibleRoutes = state.routes.filter((route) => route.name !== '(projects)');
+  const { createAction, createContext, hidden, setHidden } = usePrimaryNavigationVisibility();
+  const visibleRoutes = state.routes
+    .filter((route) => route.name !== '(projects)')
+    .sort((a, b) => primaryRouteIndex(a.name) - primaryRouteIndex(b.name));
   const items = visibleRoutes.map((route) => ({
     ...primaryDestinationForRoute(route.name, !release.tasks),
     href: route.name,
   }));
   const activeRouteName = state.routes[state.index]?.name;
-  const activeKey = items.find((item) => item.href === activeRouteName)?.key ?? 'home';
-  const scopedParams: NavigationParams = createContext
-    ? { ...createContext, archive: createContext.archive ? '1' : undefined }
-    : params;
-  const createHref = contextAwareCreateHref(pathname, scopedParams);
+  const activeKey = items.find((item) => item.href === activeRouteName)?.key ?? 'conversations';
+  const createHref = createContext?.projectId
+    ? taskListHref(
+      createContext.projectId as Id<'projects'>,
+      createContext.companyId && createContext.membershipId ? {
+        archived: Boolean(createContext.archive),
+        companyId: createContext.companyId as Id<'companies'>,
+        membershipId: createContext.membershipId as Id<'projectMembers'>,
+      } : null,
+      undefined,
+      undefined,
+      { create: !createContext.archive, groupId: createContext.groupId as Id<'groups'> | undefined },
+    )
+    : '/tasks?create=1';
 
   useEffect(() => setHidden(false), [pathname, setHidden]);
 
@@ -74,20 +79,12 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
 
   return <FloatingNavigation
     activeKey={activeKey}
-    createDisabled={!release.tasks}
+    createDisabled={!release.tasks || Boolean(createContext?.archive)}
     hidden={hidden}
     items={items}
     onCreate={() => {
-      if (pathname.endsWith('/tasks') && scopedParams.projectId) {
-        router.setParams({ create: '1', groupId: scopedParams.groupId });
-        return;
-      }
-      if (pathname.endsWith('/today')) {
-        router.setParams({ create: String(Date.now()) });
-        return;
-      }
-      if (pathname.endsWith('/projects')) {
-        router.setParams({ create: String(Date.now()) });
+      if (createAction) {
+        createAction();
         return;
       }
       router.push(createHref as never);
@@ -104,23 +101,6 @@ export function PrimaryNavigation({ navigation, state }: BottomTabBarProps) {
   />;
 }
 
-function contextAwareCreateHref(pathname: string, params: NavigationParams) {
-  const projectId = typeof params.projectId === 'string' ? params.projectId as Id<'projects'> : undefined;
-  if (!projectId && pathname.endsWith('/projects')) return `/projects?create=${Date.now()}`;
-  if (!projectId) return `/today?create=${Date.now()}`;
-
-  const projectScopedRoute = pathname.endsWith('/project') || pathname.endsWith('/groups') || pathname.endsWith('/conversation') || pathname.endsWith('/tasks');
-  if (!projectScopedRoute) return `/today?create=${Date.now()}`;
-
-  const identity = params.companyId && params.membershipId ? {
-    archived: params.archive === '1',
-    companyId: params.companyId as Id<'companies'>,
-    membershipId: params.membershipId as Id<'projectMembers'>,
-  } : null;
-  const groupId = typeof params.groupId === 'string' ? params.groupId as Id<'groups'> : undefined;
-  return taskListHref(projectId, identity, undefined, undefined, { create: true, groupId });
-}
-
 function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate, onSelect }: {
   activeKey?: StandaloneTabKey;
   createDisabled: boolean;
@@ -130,24 +110,18 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   onSelect: (item: NavigationItem | (PrimaryDestination & { href: string })) => void;
 }) {
   const theme = useTheme();
-  const { theme: themeName } = useThemeOverride();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
-  const navigationHeight = primaryNavigationHeight(fontScale, BottomTabInset);
+  const isAndroid = Platform.OS === 'android';
+  const navigationHeight = isAndroid
+    ? primaryNavigationHeight(fontScale, 64)
+    : primaryNavigationHeight(fontScale, BottomTabInset);
   const reducedMotion = useReducedMotion();
   const [rowWidth, setRowWidth] = useState(0);
   const hiddenProgress = useSharedValue(hidden ? 1 : 0);
   const dragX = useSharedValue(0);
   const dragOpacity = useSharedValue(0);
   const dragStretch = useSharedValue(1);
-  const [reduceTransparency, setReduceTransparency] = useState(false);
-  useEffect(() => {
-    void AccessibilityInfo.isReduceTransparencyEnabled().then(setReduceTransparency);
-    const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduceTransparency);
-    return () => subscription.remove();
-  }, []);
-  const left = items.slice(0, 2);
-  const right = items.slice(2, 4);
 
   useEffect(() => {
     hiddenProgress.set(reducedMotion
@@ -172,9 +146,8 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
       dragStretch.set(Math.min(1.28, 1 + Math.abs(event.velocityX) / 3_000));
     })
     .onEnd((event) => {
-      const index = primaryDestinationIndexAtX(event.x, rowWidth);
-      const slot = index < 2 ? index : index + 1;
-      const target = (slot + 0.5) * (rowWidth / 5);
+      const index = primaryTabIndexAtX(event.x, rowWidth, items.length);
+      const target = (index + 0.5) * (rowWidth / items.length);
       dragX.set(reducedMotion ? target : withSpring(target, { dampingRatio: 1, duration: 320, velocity: event.velocityX }));
       dragStretch.set(withSpring(1, { dampingRatio: 1, duration: 220 }));
       dragOpacity.set(withTiming(0, { duration: reducedMotion ? 80 : 140 }));
@@ -191,22 +164,36 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   }));
   const dragStyle = useAnimatedStyle(() => ({
     opacity: dragOpacity.get(),
-    transform: [{ translateX: dragX.get() - 39 }, { scaleX: dragStretch.get() }],
+    transform: [{ translateX: dragX.get() - 28 }, { scaleX: dragStretch.get() }],
   }));
 
-  return <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.positioner, { paddingBottom: Math.max(insets.bottom, Spacing.two) }, positionStyle]}>
-    <View style={[styles.chrome, { backgroundColor: reduceTransparency ? theme.homeSurface : 'transparent', borderColor: theme.homeBorder, height: navigationHeight }]}>
-      {!reduceTransparency ? <BlurView intensity={Platform.OS === 'ios' ? 22 : 18} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.blurSurface, { backgroundColor: theme.navigationGlass, opacity: Platform.OS === 'ios' ? 0.72 : 1 }]} tint={themeName === 'dark' ? 'dark' : 'light'} /> : null}
-      <GestureDetector gesture={drag}>
-        <View accessibilityRole="tablist" onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)} style={[styles.row, { height: navigationHeight }]}>
-          <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: theme.navigationSelectionGlass, borderColor: theme.homeBorder }, dragStyle]} />
-          {left.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
-          <CreateButton disabled={createDisabled} height={navigationHeight} onPress={onCreate} />
-          {right.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
-        </View>
-      </GestureDetector>
-    </View>
-  </Animated.View>;
+  const navigationRow = <View accessibilityRole="tablist" onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)} style={[styles.row, { height: navigationHeight }]}>
+    <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: theme.navigationSelectionGlass, borderColor: theme.accentSoft, top: (navigationHeight - 56) / 2, height: 56 }, dragStyle]} />
+    {items.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
+  </View>;
+
+  return <>
+    <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.positioner, isAndroid && styles.androidPositioner, {
+      paddingBottom: Math.max(insets.bottom, Spacing.two),
+      paddingHorizontal: isAndroid ? 0 : 20,
+      paddingTop: isAndroid ? 0 : Spacing.two,
+    }, positionStyle]}>
+      <View style={[styles.fabBand, { height: 64 }]}>
+        <CreateButton disabled={createDisabled} onPress={onCreate} style={{ bottom: 4, right: isAndroid ? Spacing.three : 28 }} />
+      </View>
+      <View style={[styles.chrome, isAndroid && styles.androidChrome, {
+        backgroundColor: theme.navigationGlass,
+        borderColor: theme.homeBorder,
+        height: navigationHeight,
+        boxShadow: isAndroid ? 'none' : theme.background === '#1b1917'
+          ? 'inset 0 2px 12px rgba(240,177,0,0.12), 0 6px 18px rgba(0,0,0,0.2)'
+          : '0 6px 18px rgba(0,0,0,0.12)',
+      }]}>
+        <GestureDetector gesture={drag}>{navigationRow}</GestureDetector>
+      </View>
+      {isAndroid ? <View pointerEvents="none" style={[styles.androidSafeArea, { backgroundColor: theme.navigationGlass, height: Math.max(insets.bottom, Spacing.two) }]} /> : null}
+    </Animated.View>
+  </>;
 }
 
 function NavigationTab({ active, item, onPress }: {
@@ -215,48 +202,55 @@ function NavigationTab({ active, item, onPress }: {
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const isAndroid = Platform.OS === 'android';
   return <Pressable
     accessibilityLabel={item.label}
     accessibilityRole="tab"
     accessibilityState={{ disabled: item.disabled, selected: active }}
+    android_ripple={isAndroid ? { color: theme.backgroundSelected } : undefined}
     disabled={item.disabled}
     onPress={() => { hapticLight(); onPress(); }}
     style={({ pressed }) => [styles.item, { opacity: item.disabled ? 0.38 : pressed ? 0.62 : 1 }]}
   >
-    <View style={[styles.iconWell, active && { backgroundColor: theme.navigationSelectionGlass, borderColor: theme.homeBorder }]}>
-      <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={item.icon} size={IconSize.large + 4} variant={active ? 'filled' : 'outline'} weight={active ? 'semibold' : 'regular'} />
+    <View style={[styles.iconWell, { backgroundColor: active ? theme.navigationSelectionGlass : theme.homeSurface, borderColor: active ? theme.accentSoft : theme.homeBorder }]}>
+      <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={item.icon} size={isAndroid ? 24 : IconSize.large + 4} variant={active ? 'filled' : 'outline'} weight={active ? 'semibold' : 'regular'} />
     </View>
-    <ThemedText numberOfLines={1} style={[styles.itemLabel, { color: active ? theme.accentStrong : theme.textSecondary }]} type="captionBold">{item.label}</ThemedText>
+    <ThemedText numberOfLines={1} style={[styles.itemLabel, isAndroid && styles.androidItemLabel, { color: active ? theme.accentStrong : theme.textSecondary }]} type="captionBold">{item.label}</ThemedText>
   </Pressable>;
 }
 
-function CreateButton({ disabled, height, onPress }: { disabled: boolean; height: number; onPress: () => void }) {
+function CreateButton({ disabled, onPress, style }: { disabled: boolean; onPress: () => void; style: { bottom: number; right: number } }) {
   const theme = useTheme();
-  return <View style={[styles.createSlot, { height }]}>
-    <View style={[styles.createMoat, { backgroundColor: theme.homeBackground }]}><Pressable
-      accessibilityHint="Choose a Project before creating a task"
-      accessibilityLabel="Create"
+  const isAndroid = Platform.OS === 'android';
+  return <View style={[styles.createSlot, style]}>
+    <Pressable
+      accessibilityHint={disabled ? 'Task creation is unavailable in this Project.' : 'Create a task in the selected Project, or choose a Project first.'}
+      accessibilityLabel="Create task"
       accessibilityRole="button"
       accessibilityState={{ disabled }}
+      android_ripple={isAndroid ? { color: theme.backgroundSelected, borderless: true } : undefined}
       disabled={disabled}
       onPress={() => { hapticLight(); onPress(); }}
-      style={({ pressed }) => [styles.createButton, { backgroundColor: disabled ? theme.backgroundSelected : theme.accent, borderColor: theme.accentStrong, opacity: disabled ? 0.45 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+      style={({ pressed }) => [styles.createButton, { backgroundColor: disabled ? theme.backgroundSelected : theme.accent, borderColor: theme.accentStrong, boxShadow: '0 4px 12px rgba(27,25,23,0.18)', elevation: 8, opacity: disabled ? 0.45 : pressed ? 0.82 : 1 }]}
     >
-      <PlatformIcon color={disabled ? theme.textTertiary : theme.background} name="plus" size={31} weight="medium" />
-    </Pressable></View>
+      <PlatformIcon color={disabled ? theme.textTertiary : theme.accentInk} name="plus" size={30} weight="semibold" />
+    </Pressable>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  blurSurface: { borderRadius: Radius.pill, overflow: 'hidden' },
-  chrome: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', height: BottomTabInset, overflow: 'visible' },
-  createButton: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 58, justifyContent: 'center', width: 58 },
-  createMoat: { alignItems: 'center', borderRadius: Radius.pill, height: 70, justifyContent: 'center', width: 70 },
-  createSlot: { alignItems: 'center', flex: 1, height: BottomTabInset, justifyContent: 'flex-start', transform: [{ translateY: -14 }] },
-  dragPill: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 58, left: 0, position: 'absolute', top: 9, width: 78 },
-  iconWell: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 40, justifyContent: 'center', width: 48 },
+  androidChrome: { borderBottomWidth: 0, borderLeftWidth: 0, borderRightWidth: 0, borderTopLeftRadius: Radius.large, borderTopRightRadius: Radius.large, borderTopWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  androidItemLabel: { fontSize: 11, lineHeight: 14, marginTop: 2 },
+  androidPositioner: { left: 0, paddingHorizontal: 0, paddingTop: 0, right: 0 },
+  chrome: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: BottomTabInset, overflow: 'visible' },
+  createButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 56, justifyContent: 'center', width: 56 },
+  createSlot: { alignItems: 'center', elevation: 10, position: 'absolute', zIndex: 10 },
+  dragPill: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 56, left: 0, position: 'absolute', width: 56 },
+  androidSafeArea: { bottom: 0, left: 0, position: 'absolute', right: 0 },
+  fabBand: { overflow: 'visible', position: 'relative', zIndex: 5 },
+  iconWell: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 40, justifyContent: 'center', width: 40 },
   item: { alignItems: 'center', alignSelf: 'center', flex: 1, justifyContent: 'center', minHeight: 60, minWidth: 0 },
   itemLabel: { fontSize: 10, lineHeight: 13, marginTop: 1 },
-  positioner: { bottom: 0, left: 0, paddingHorizontal: 20, paddingTop: Spacing.two, position: 'absolute', right: 0, zIndex: 50 },
-  row: { alignItems: 'center', flexDirection: 'row', height: BottomTabInset, overflow: 'visible', paddingHorizontal: Spacing.two },
+  positioner: { bottom: 0, left: 0, overflow: 'visible', paddingHorizontal: 20, paddingTop: Spacing.two, position: 'absolute', right: 0, zIndex: 50 },
+  row: { alignItems: 'center', flexDirection: 'row', height: BottomTabInset, overflow: 'visible' },
 });

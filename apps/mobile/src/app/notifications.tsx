@@ -7,7 +7,6 @@ import { api } from '../../../../convex/_generated/api';
 import { ActionButton } from '@/components/action-button';
 import { useAppToast } from '@/components/app-toast';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
-import { StandalonePrimaryNavigation } from '@/components/primary-navigation';
 import { SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
@@ -190,7 +189,6 @@ export default function NotificationSettingsScreen() {
           Push delivery is best effort. Track records provider acceptance, but Apple and Google control final device presentation. Payloads contain the preview level selected above.
         </ThemedText>
       </ScrollView>
-      <StandalonePrimaryNavigation active="home" />
     </ThemedView>
   );
 }

@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -12,10 +13,10 @@ import {
 import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -24,7 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useThemeOverride } from '@/contexts/theme-override-context';
 import { hapticLight } from '@/lib/haptics';
 import { useTheme } from '@/hooks/use-theme';
@@ -38,26 +39,23 @@ type Props = {
   children: React.ReactNode;
   onClose: () => void;
   presentation?: 'sheet' | 'drawer';
-  showScrollProgress?: boolean;
   title: string;
   visible: boolean;
 };
 
-export function OptionsSheet({ children, onClose, presentation = 'sheet', showScrollProgress = false, title, visible }: Props) {
+export function OptionsSheet({ children, onClose, presentation = 'sheet', title, visible }: Props) {
   const theme = useTheme();
   const { theme: themeName } = useThemeOverride();
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(0);
   const translateX = useSharedValue(0);
   const scrim = useSharedValue(0);
-  const scrollY = useSharedValue(0);
-  const contentHeight = useSharedValue(0);
-  const viewportHeight = useSharedValue(0);
   const reducedMotion = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
 
   useEffect(() => {
     const distance = presentation === 'drawer' ? 440 : 520;
+    let dismissTimer: ReturnType<typeof setTimeout> | undefined;
     if (visible) {
       setMounted(true);
       // A screen input may still hold the keyboard; the modal is a separate
@@ -78,8 +76,13 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', showSc
       exit.value = withTiming(distance, {
         duration: reducedMotion ? 0 : 150,
         easing: Easing.in(Easing.cubic),
-      }, () => scheduleOnRN(setMounted, false));
+      });
+      // A tab switch can pause its Reanimated tree before the completion
+      // callback runs. Close the native Modal on the JS clock as well, or it
+      // can stay above the destination screen's sheet indefinitely.
+      dismissTimer = setTimeout(() => setMounted(false), reducedMotion ? 0 : 170);
     }
+    return () => { if (dismissTimer) clearTimeout(dismissTimer); };
   }, [presentation, reducedMotion, scrim, translateX, translateY, visible]);
 
   const pan = (presentation === 'drawer' ? Gesture.Pan().activeOffsetX([-12, 12]) : Gesture.Pan().activeOffsetY([-12, 12]))
@@ -96,33 +99,19 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', showSc
         return;
       }
       const settle = presentation === 'drawer' ? translateX : translateY;
-      settle.value = withTiming(0, {
-        duration: reducedMotion ? 0 : 150,
-        easing: Easing.out(Easing.cubic),
-      });
+      settle.value = reducedMotion
+        ? withTiming(0, { duration: 0 })
+        : withSpring(0, {
+          dampingRatio: 0.9,
+          duration: 240,
+          velocity: Math.max(0, presentation === 'drawer' ? event.velocityX : event.velocityY),
+        });
     });
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: presentation === 'drawer' ? [{ translateX: translateX.value }] : [{ translateY: translateY.value }],
   }));
   const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
-  const scrollHandler = useAnimatedScrollHandler((event) => {
-    scrollY.value = event.contentOffset.y;
-  });
-  const progressStyle = useAnimatedStyle(() => {
-    const viewport = viewportHeight.value;
-    const content = contentHeight.value;
-    if (!showScrollProgress || !viewport || content <= viewport + 1) return { opacity: 0, height: 0, transform: [{ translateY: 0 }] };
-    const thumb = Math.max(32, (viewport * viewport) / content);
-    const travel = Math.max(0, viewport - thumb - 16);
-    const offset = Math.min(Math.max(scrollY.value, 0), content - viewport);
-    return {
-      opacity: 1,
-      height: thumb,
-      transform: [{ translateY: 8 + (offset / (content - viewport)) * travel }],
-    };
-  });
-
   if (!mounted) return null;
 
   return (
@@ -150,7 +139,7 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', showSc
               styles.sheetLayer,
               presentation === 'drawer' && styles.drawerLayer,
               {
-                paddingBottom: Math.max(insets.bottom, Spacing.two),
+                paddingBottom: presentation === 'drawer' ? Math.max(insets.bottom, Spacing.two) : 0,
                 paddingTop: insets.top + Spacing.six,
               },
             ]}>
@@ -161,6 +150,7 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', showSc
                 style={[
                   styles.sheet,
                   presentation === 'drawer' && styles.drawer,
+                  presentation === 'sheet' && styles.bottomSheet,
                   {
                     backgroundColor: theme.homeBackground,
                     borderColor: theme.homeBorder,
@@ -184,24 +174,15 @@ export function OptionsSheet({ children, onClose, presentation = 'sheet', showSc
                   </View>
                 </GestureDetector>
                 <View style={styles.scrollFrame}>
-                  <Animated.ScrollView
-                    contentContainerStyle={styles.content}
+                  <ScrollView
+                    contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, Spacing.two) }]}
                     indicatorStyle={themeName === 'dark' ? 'white' : 'black'}
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
-                    onContentSizeChange={(_, height) => { contentHeight.value = height; }}
-                    onLayout={(event) => { viewportHeight.value = event.nativeEvent.layout.height; }}
-                    onScroll={scrollHandler}
-                    scrollEventThrottle={16}
-                    showsVerticalScrollIndicator={!showScrollProgress}
+                    showsVerticalScrollIndicator
                     style={styles.scroll}>
                     {children}
-                  </Animated.ScrollView>
-                  {showScrollProgress ? (
-                    <View pointerEvents="none" style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
-                      <Animated.View style={[styles.progressThumb, { backgroundColor: theme.accentStrong }, progressStyle]} />
-                    </View>
-                  ) : null}
+                  </ScrollView>
                 </View>
               </ThemedView>
             </Animated.View>
@@ -352,6 +333,7 @@ export function SheetInput({
       <TextInput
         accessibilityLabel={label}
         autoFocus={autoFocus}
+        keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
         cursorColor={theme.accent}
         maxLength={maxLength}
         maxFontSizeMultiplier={MaxFontScale}
@@ -477,6 +459,7 @@ export function SheetSearchList({
           accessibilityLabel={placeholder}
           autoCorrect={false}
           clearButtonMode="while-editing"
+          keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
           cursorColor={theme.accent}
           maxLength={100}
           maxFontSizeMultiplier={MaxFontScale}
@@ -577,8 +560,7 @@ const styles = StyleSheet.create({
     minHeight: 96,
   },
   inputText: {
-    fontSize: 15,
-    lineHeight: 21,
+    ...Typography.body,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
@@ -595,7 +577,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrimLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
 
   scroll: {
@@ -605,20 +587,6 @@ const styles = StyleSheet.create({
   scrollFrame: {
     flexShrink: 1,
     position: 'relative',
-  },
-  progressTrack: {
-    borderRadius: Radius.pill,
-    bottom: 8,
-    overflow: 'hidden',
-    position: 'absolute',
-    right: 2,
-    top: 8,
-    width: 3,
-  },
-  progressThumb: {
-    borderRadius: Radius.pill,
-    position: 'absolute',
-    width: 3,
   },
   searchBar: {
     alignItems: 'center',
@@ -634,9 +602,8 @@ const styles = StyleSheet.create({
     padding: Spacing.five,
   },
   searchInput: {
+    ...Typography.body,
     flex: 1,
-    fontSize: 15,
-    lineHeight: 21,
     paddingVertical: Spacing.two,
   },
   searchMore: {
@@ -675,6 +642,10 @@ const styles = StyleSheet.create({
     boxShadow: '0 12px 36px rgba(0,0,0,0.22)',
     flexShrink: 1,
     paddingHorizontal: Spacing.four,
+  },
+  bottomSheet: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   drawer: {
     flex: 1,

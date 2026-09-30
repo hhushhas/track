@@ -1,14 +1,6 @@
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { representedContextQuery, type RepresentedProjectContext } from './company-navigation';
 
-export function threadListHref(
-  projectId: Id<'projects'>,
-  groupId: Id<'groups'>,
-  context?: RepresentedProjectContext | null,
-) {
-  return `/threads?projectId=${encodeURIComponent(projectId)}&groupId=${encodeURIComponent(groupId)}${representedContextQuery(context ?? null)}`;
-}
-
 export function threadConversationHref(
   projectId: Id<'projects'>,
   groupId: Id<'groups'>,

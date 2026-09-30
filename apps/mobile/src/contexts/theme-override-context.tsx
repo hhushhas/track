@@ -59,10 +59,10 @@ export function ThemeOverrideProvider({ children }: { children: React.ReactNode 
    * state stays the single source of truth for every colour Track draws itself.
    */
   useEffect(() => {
-    if (Platform.OS !== 'web') {
+    if (isThemeReady && Platform.OS !== 'web') {
       Appearance.setColorScheme(themeOverride === 'system' ? 'unspecified' : themeOverride);
     }
-  }, [themeOverride]);
+  }, [isThemeReady, themeOverride]);
 
   const setThemeOverride = useCallback((value: ThemeOverride) => {
     setThemeOverrideState(value);

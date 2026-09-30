@@ -4,6 +4,7 @@ import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx } from './_generated/server'
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
+import { requireActiveCompanyMembership } from './lib/companyPolicy'
 import { appendAuditEvent } from './lib/audit'
 import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import {
@@ -190,6 +191,60 @@ export const list = query({
       (left.board.rank ?? left.board.createdAt.toString()).localeCompare(
         right.board.rank ?? right.board.createdAt.toString(),
       ),
+    )
+  },
+})
+
+/** Returns every non-archived Board the current actor can read, grouped by the
+ * Project and Company context that grants access. This is intentionally
+ * permission-checked per board so a Channel board never leaks through a
+ * global picker. */
+export const listMine = query({
+  args: { actingCompanyId: v.optional(v.id('companies')) },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    if (args.actingCompanyId) await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
+    const memberships = await ctx.db.query('projectMembers').withIndex('by_user', (q) => q.eq('userId', actor.userId)).collect()
+    const candidates = memberships.filter((membership) =>
+      membership.status === 'active' && (!args.actingCompanyId || membership.companyId === args.actingCompanyId),
+    )
+    const seen = new Set<string>()
+    const rows: Array<{
+      board: Doc<'taskBoards'>
+      states: Array<Doc<'taskWorkflowStates'>>
+      project: { _id: Id<'projects'>; name: string }
+      company: { _id: Id<'companies'>; displayName: string } | null
+      projectMemberId: Id<'projectMembers'>
+      companyId?: Id<'companies'>
+    }> = []
+    for (const membership of candidates) {
+      const project = await ctx.db.get(membership.projectId)
+      if (!project || project.status !== 'active') continue
+      const identity = membership.companyId
+        ? { actingCompanyId: membership.companyId, projectMemberId: membership._id }
+        : {}
+      const boards = await ctx.db.query('taskBoards').withIndex('by_project_archived', (q) => q.eq('projectId', project._id).eq('archivedAt', undefined)).collect()
+      for (const board of boards) {
+        const key = String(board._id)
+        if (seen.has(key)) continue
+        try {
+          const access = await resolveTaskRequestContext(ctx, actor, project._id, identity, board.groupId)
+          const canRead = board.groupId ? access.capabilities.canReadChannel : access.capabilities.canReadProject
+          if (!canRead) continue
+          const states = await ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).collect()
+          const company = membership.companyId ? await ctx.db.get(membership.companyId) : null
+          seen.add(key)
+          rows.push({ board, states: states.filter((state) => !state.archivedAt), project: { _id: project._id, name: project.name }, company: company ? { _id: company._id, displayName: company.displayName } : null, projectMemberId: membership._id, ...(membership.companyId ? { companyId: membership.companyId } : {}) })
+        } catch {
+          // Permission failures are expected when a Project or Channel changed
+          // after membership pagination. Omit that Board from the picker.
+        }
+      }
+    }
+    return rows.sort((left, right) =>
+      (left.company?.displayName ?? '').localeCompare(right.company?.displayName ?? '') ||
+      left.project.name.localeCompare(right.project.name) ||
+      (left.board.rank ?? left.board.createdAt.toString()).localeCompare(right.board.rank ?? right.board.createdAt.toString()),
     )
   },
 })

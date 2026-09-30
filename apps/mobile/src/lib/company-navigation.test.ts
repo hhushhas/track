@@ -11,10 +11,13 @@ describe('Company mobile navigation presenter', () => {
 
   it('preserves represented Company membership through Project, Channel, and denied links', () => {
     const context = { archived: false, companyId, membershipId };
-    expect(projectChannelsHref(projectId, context)).toContain('companyId=company-id&membershipId=membership-id');
+    expect(projectChannelsHref(projectId, context)).toBe('/conversations?projectId=project-id&companyId=company-id&membershipId=membership-id');
     expect(channelHref(projectId, groupId, context)).toBe('/conversation?groupId=group-id&projectId=project-id&companyId=company-id&membershipId=membership-id');
     expect(channelHref(projectId, groupId, context, 'message-id' as Id<'messages'>)).toBe('/conversation?groupId=group-id&projectId=project-id&companyId=company-id&membershipId=membership-id&messageId=message-id');
     expect(channelHref(projectId, groupId, { archived: true, companyId, membershipId })).toContain('&archive=1');
+    expect(projectChannelsHref(projectId, { archived: true, companyId, membershipId }))
+      .toBe('/conversations?projectId=project-id&companyId=company-id&membershipId=membership-id&archive=1');
+    expect(projectChannelsHref(projectId, null)).toBe('/conversations?projectId=project-id');
     expect(navigationUnavailableCopy(true)).not.toContain(groupId);
   });
 

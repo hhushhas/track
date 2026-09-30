@@ -55,7 +55,7 @@ describe('development auth bypass', () => {
   })
 
   it('enforces the disabled bypass at the mutation boundary', async () => {
-    const t = createTest()
+    const t = convexTest(schema, modules)
 
     await expect(t.mutation(api.auth.syncDevUser, {})).rejects.toThrow(
       'dev_auth_bypass_disabled',

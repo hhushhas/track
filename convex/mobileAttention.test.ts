@@ -89,6 +89,9 @@ describe('mobile attention queue', () => {
     })
 
     expect(first.isDone).toBe(false)
+    expect(first.page[0]?.members).toEqual([{ id: userId, name: 'Many Projects Owner', avatarUrl: null }])
+    expect(first.page[0]?.memberCount).toBe(1)
+    expect(first.page[0]?.memberCountTruncated).toBe(false)
     const membershipIds = [...first.page, ...second.page]
       .flatMap((row) => row ? [row.membership._id] : [])
     expect(new Set(membershipIds).size).toBe(101)
@@ -280,6 +283,7 @@ describe('mobile attention queue', () => {
         term: 1,
         userDisplayNameSnapshot: 'Global Attention Owner',
       })
+      await ctx.db.patch(task._id, { dueDate: '2026-09-24' })
       const groupMember = await ctx.db.query('groupMembers').withIndex('by_user', (q) =>
         q.eq('userId', userId),
       ).filter((q) => q.eq(q.field('groupId'), group._id)).unique()
@@ -306,7 +310,7 @@ describe('mobile attention queue', () => {
         attachmentIds: [],
         createdAt: 20,
       })
-      return { companyId, memberId: member._id, projectId: seeded.projectId }
+      return { companyId, memberId: member._id, projectId: seeded.projectId, taskId: task._id }
     })
 
     const identity = { subject: 'global-attention-owner' }
@@ -326,6 +330,32 @@ describe('mobile attention queue', () => {
     })
     expect(scopedItems.page).toHaveLength(2)
 
+    const foreignInvitation = await t.run(async (ctx) => {
+      const now = Date.now()
+      const companyId = await ctx.db.insert('companies', {
+        displayName: 'Company B', normalizedHandle: 'global-attention-company-b', status: 'active',
+        revision: 1, createdBy: userId, createdAt: now, updatedAt: now,
+      })
+      await ctx.db.insert('companyInvitations', {
+        companyId,
+        normalizedEmail: 'global-attention-owner@track.local',
+        role: 'member',
+        status: 'pending',
+        invitedBy: userId,
+        tokenHash: 'foreign-company-invitation',
+        expiresAt: now + 60_000,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return companyId
+    })
+    const scopedAfterForeignInvite = await t.withIdentity(identity).query(api.mobile.listAttention, {
+      userId,
+      actingCompanyId: fixture.companyId,
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+    expect(scopedAfterForeignInvite.page.some((item) => item.kind === 'invitation' && item.companyId === foreignInvitation)).toBe(false)
+
     const globalProjects = await t.withIdentity(identity).query(api.mobile.listProjects, {
       userId,
       paginationOpts: { cursor: null, numItems: 50 },
@@ -342,6 +372,15 @@ describe('mobile attention queue', () => {
     expect(scopedProjects.page).toHaveLength(1)
     expect(scopedProjects.page[0]?.membership.companyId).toBe(fixture.companyId)
 
+    const taskProjects = await t.withIdentity(identity).query(api.mobile.listTaskProjects, {
+      userId,
+      actingCompanyId: fixture.companyId,
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+    expect(taskProjects.page).toHaveLength(1)
+    expect(taskProjects.page[0]?.membership.companyId).toBe(fixture.companyId)
+    expect(taskProjects.page[0]).not.toHaveProperty('unreadCount')
+
     const globalTasks = await t.withIdentity(identity).query(api.mobile.listMyTasks, {
       userId,
       openOnly: true,
@@ -350,6 +389,26 @@ describe('mobile attention queue', () => {
     expect(globalTasks.page).toEqual(expect.arrayContaining([
       expect.objectContaining({ companyId: fixture.companyId, companyName: 'Company A', projectMemberId: fixture.memberId }),
     ]))
+
+    const companyWeekTasks = await t.withIdentity(identity).query(api.mobile.listMyTasks, {
+      userId,
+      actingCompanyId: fixture.companyId,
+      dueDateStart: '2026-09-21',
+      dueDateEnd: '2026-09-27',
+      paginationOpts: { cursor: null, numItems: 50 },
+    })
+    expect(companyWeekTasks.page).toEqual(expect.arrayContaining([
+      expect.objectContaining({ task: expect.objectContaining({ _id: fixture.taskId, dueDate: '2026-09-24' }), companyId: fixture.companyId }),
+    ]))
+    expect(companyWeekTasks.page.every((item) => item.task.dueDate !== undefined && item.task.dueDate >= '2026-09-21' && item.task.dueDate <= '2026-09-27')).toBe(true)
+
+    await expect(t.withIdentity(identity).query(api.mobile.listMyTasks, {
+      userId,
+      actingCompanyId: fixture.companyId,
+      dueDateStart: '2026-09-27',
+      dueDateEnd: '2026-09-21',
+      paginationOpts: { cursor: null, numItems: 50 },
+    })).rejects.toThrow('invalid_due_date_range')
   })
 
   it('combines unread task events and direct mentions in one scoped feed', async () => {
