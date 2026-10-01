@@ -1,5 +1,6 @@
 import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { v } from 'convex/values'
+import { entityMarkColorKeys, entityMarkIconKeys } from '@track/shared'
 import { isActiveChannelMembership } from '@track/shared/channel-membership'
 import type { Id } from './_generated/dataModel'
 
@@ -55,6 +56,8 @@ export const create = mutation({
     projectId: v.id('projects'),
     userId: v.id('users'),
     name: v.string(),
+    markIconKey: v.optional(v.union(v.null(), ...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(v.null(), ...entityMarkColorKeys.map((key) => v.literal(key)))),
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
@@ -102,6 +105,8 @@ export const update = mutation({
     groupId: v.id('groups'),
     userId: v.id('users'),
     name: v.string(),
+    markIconKey: v.optional(v.union(v.null(), ...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(v.null(), ...entityMarkColorKeys.map((key) => v.literal(key)))),
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
@@ -115,6 +120,8 @@ export const update = mutation({
 
     await ctx.db.patch(args.groupId, {
       name,
+      ...(args.markIconKey !== undefined ? { markIconKey: args.markIconKey ?? undefined } : {}),
+      ...(args.markColorKey !== undefined ? { markColorKey: args.markColorKey ?? undefined } : {}),
       updatedAt: Date.now(),
     })
 
@@ -125,8 +132,8 @@ export const update = mutation({
       entityType: 'group',
       entityId: args.groupId,
       action: 'group.updated',
-      before: { name: group.name },
-      after: { name },
+      before: { name: group.name, markIconKey: group.markIconKey, markColorKey: group.markColorKey },
+      after: { name, markIconKey: args.markIconKey === undefined ? group.markIconKey : args.markIconKey ?? undefined, markColorKey: args.markColorKey === undefined ? group.markColorKey : args.markColorKey ?? undefined },
     })
   },
 })

@@ -4,21 +4,29 @@ import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'reac
 import { PlatformIcon } from '@/components/platform-icon';
 import { CompactPillButton } from '@/components/compact-pill-button';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
+import { EntityMark } from '@/components/entity-mark';
 
 export type ConversationProjectTab = {
+  actionBusy?: boolean;
+  assignedCount?: number;
+  colorKey?: string;
+  countPartial?: boolean;
+  iconKey?: string;
   id: string;
   name: string;
 };
 
 /** Compact, scrollable Project tabs keep the selected scope visible and unclipped. */
-export function ConversationProjectTabs({ projects, selectedId, onSelect, onOpen }: {
+export function ConversationProjectTabs({ projects, selectedId, onSelect, onOpen , showProjectMarks = true, showAssignedCountOnMark = false }: {
   projects: ConversationProjectTab[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onOpen?: (id: string) => void;
+  showProjectMarks?: boolean;
+  showAssignedCountOnMark?: boolean;
 }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -62,24 +70,41 @@ export function ConversationProjectTabs({ projects, selectedId, onSelect, onOpen
       ref={tabListRef}
       renderItem={({ item }) => {
         const selected = (selectedId ?? '') === item.id;
-        return <CompactPillButton
-          accessibilityLabel={`${item.name}${selected ? ', selected' : ''}`}
+        const accessibleCount = item.assignedCount === undefined
+          ? ''
+          : `, ${item.assignedCount}${item.countPartial ? ' or more' : ''} assigned ${item.assignedCount === 1 ? 'task' : 'tasks'}`;
+        const projectMark = item.id && showProjectMarks
+          ? <View style={styles.projectMarkWrap}>
+            <EntityMark colorKey={item.colorKey} iconKey={item.iconKey} id={item.id} kind="project" name={item.name} size={22} />
+            {showAssignedCountOnMark && item.assignedCount !== undefined ? <View
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={[styles.projectCountBadge, { backgroundColor: theme.accent, borderColor: theme.homeBackground }]}
+            ><ThemedText style={styles.projectCountText} themeColor="accentInk" type="captionBold">{item.assignedCount > 99 ? '99+' : `${item.assignedCount}${item.countPartial ? '+' : ''}`}</ThemedText></View> : null}
+          </View>
+          : <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={item.id ? 'project' : 'office-building'} size={15} weight="regular" />;
+        const projectPill = <CompactPillButton
+          accessibilityLabel={`${item.name}${accessibleCount}${selected ? ', selected' : ''}`}
           accessibilityRole="tab"
           accessibilityState={{ selected }}
           onPress={() => { hapticLight(); onSelect(item.id || null); }}
           targetStyle={{ maxWidth: maxTabWidth }}
           pillStyle={{
             backgroundColor: selected ? theme.accentSoft : theme.homeSurface,
-            borderColor: selected ? theme.accentStrong : theme.homeBorder,
+            borderColor: selected ? 'transparent' : theme.homeBorder,
             flexShrink: 0,
             maxWidth: maxTabWidth,
           }}
-          pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}
+          pressedPillStyle={{ backgroundColor: theme.backgroundElevated, borderColor: 'transparent' }}
         >
-          <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={item.id ? 'project' : 'office-building'} size={15} weight="regular" />
+          {projectMark}
           <ThemedText numberOfLines={1} style={styles.tabLabel} type={selected ? 'captionBold' : 'caption'}>{item.name}</ThemedText>
+          {item.id && !showAssignedCountOnMark && item.assignedCount !== undefined ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.countBadge, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText style={styles.tabularNumber} themeColor="textSecondary" type="captionBold">{item.assignedCount > 99 ? '99+' : `${item.assignedCount}${item.countPartial ? '+' : ''}`}</ThemedText>
+          </View> : null}
           {selected ? <PlatformIcon color={theme.accentStrong} name="check" size={14} weight="semibold" /> : null}
         </CompactPillButton>;
+        return projectPill;
       }}
       showsHorizontalScrollIndicator={false}
     />
@@ -91,6 +116,11 @@ const styles = StyleSheet.create({
   openProject: { alignItems: 'center', borderRadius: Radius.small, flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   section: { gap: Spacing.one },
   sectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 32 },
+  countBadge: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, justifyContent: 'center', minHeight: 22, minWidth: 22, paddingHorizontal: Spacing.one },
+  projectMarkWrap: { height: 24, marginRight: 2, position: 'relative', width: 24 },
+  projectCountBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1.5, justifyContent: 'center', minHeight: 24, minWidth: 24, paddingHorizontal: 3, paddingVertical: 2, position: 'absolute', right: -7, top: -5 },
+  projectCountText: Typography.captionBold,
+  tabularNumber: { fontVariant: ['tabular-nums'] },
   tabLabel: { flexShrink: 1, minWidth: 0 },
   tabs: { alignItems: 'center', gap: Spacing.two, paddingRight: Spacing.four },
 });

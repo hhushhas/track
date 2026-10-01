@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   primaryDestinationForRoute,
   primaryNavigationHeight,
+  primaryNavigationSafeAreaInset,
   primaryNavigationVisibleForPath,
   primaryRouteOrder,
   primaryTabGeometry,
@@ -38,6 +39,18 @@ describe('primaryNavigationHeight', () => {
     expect(primaryNavigationHeight(1.2, 76)).toBe(76);
     expect(primaryNavigationHeight(1.3, 76)).toBe(108);
     expect(primaryNavigationHeight(2, 76)).toBe(108);
+  });
+});
+
+describe('primaryNavigationSafeAreaInset', () => {
+  it('uses the measured system inset without adding a gap on Android', () => {
+    expect(primaryNavigationSafeAreaInset(0)).toBe(0);
+    expect(primaryNavigationSafeAreaInset(28)).toBe(28);
+  });
+
+  it('keeps the small visual floor where the platform uses a floating bar', () => {
+    expect(primaryNavigationSafeAreaInset(0, 8)).toBe(8);
+    expect(primaryNavigationSafeAreaInset(28, 8)).toBe(28);
   });
 });
 

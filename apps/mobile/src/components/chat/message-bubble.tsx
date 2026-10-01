@@ -63,7 +63,7 @@ export function MessageBubble({
   };
 
   return (
-    <View style={[styles.row, isFirstInGroup && styles.rowFirst, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
+    <View pointerEvents="box-none" style={[styles.row, isFirstInGroup && styles.rowFirst, isOwnMessage ? styles.rowOwn : styles.rowOther]}>
       {isOwnMessage ? null : isFirstInGroup ? (
         <ColoredAvatar label={name} seed={authorId} size={AVATAR_SIZE} />
       ) : (
@@ -281,6 +281,7 @@ const styles = StyleSheet.create({
     width: AVATAR_SIZE,
   },
   forwarded: {
+    alignSelf: 'stretch',
     borderLeftWidth: 2,
     borderRadius: Radius.small,
     borderWidth: StyleSheet.hairlineWidth,
@@ -333,6 +334,7 @@ const styles = StyleSheet.create({
     paddingTop: MEDIA_PAD,
   },
   quote: {
+    alignSelf: 'stretch',
     borderLeftWidth: 3,
     borderRadius: Radius.small,
     gap: 1,
@@ -381,6 +383,7 @@ const styles = StyleSheet.create({
   },
   threadChip: {
     alignItems: 'center',
+    alignSelf: 'stretch',
     borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',

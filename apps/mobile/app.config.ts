@@ -46,7 +46,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         'android.permission.MODIFY_AUDIO_SETTINGS',
         'android.permission.POST_NOTIFICATIONS',
       ],
-      predictiveBackGestureEnabled: false,
+      predictiveBackGestureEnabled: true,
       ...(googleServicesFile ? { googleServicesFile } : {}),
     },
     ios: {
@@ -100,7 +100,34 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           },
         },
       ],
-      'expo-font',
+      [
+        'expo-font',
+        {
+          android: {
+            fonts: [
+              {
+                fontFamily: 'Manrope V5',
+                fontDefinitions: [
+                  { path: './assets/fonts/ManropeV5-Regular.otf', weight: 400 },
+                  { path: './assets/fonts/ManropeV5-Medium.otf', weight: 500 },
+                  { path: './assets/fonts/ManropeV5-SemiBold.otf', weight: 600 },
+                  { path: './assets/fonts/ManropeV5-Bold.otf', weight: 700 },
+                  { path: './assets/fonts/ManropeV5-ExtraBold.otf', weight: 800 },
+                ],
+              },
+            ],
+          },
+          ios: {
+            fonts: [
+              './assets/fonts/ManropeV5-Regular.otf',
+              './assets/fonts/ManropeV5-Medium.otf',
+              './assets/fonts/ManropeV5-SemiBold.otf',
+              './assets/fonts/ManropeV5-Bold.otf',
+              './assets/fonts/ManropeV5-ExtraBold.otf',
+            ],
+          },
+        },
+      ],
       'expo-secure-store',
       'expo-web-browser',
       'expo-apple-authentication',

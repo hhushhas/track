@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { messageSwipeCancelIntent, messageSwipeIntent } from './message-swipe';
 
 describe('message swipe actions', () => {
-  it('opens forward and report actions after a left swipe on a message', () => {
+  it('opens message actions after a left swipe on iOS', () => {
     expect(messageSwipeIntent(-72, true, true)).toBe('actions');
   });
 
@@ -11,8 +11,20 @@ describe('message swipe actions', () => {
     expect(messageSwipeIntent(72, true, true)).toBe('reply');
   });
 
+  it('opens the message menu on a right swipe on Android', () => {
+    expect(messageSwipeIntent(72, true, true, false, 'right')).toBe('actions');
+  });
+
+  it('keeps reply on the opposite swipe direction on Android', () => {
+    expect(messageSwipeIntent(-72, true, true, false, 'right')).toBe('reply');
+  });
+
   it('closes an open action tray on a right swipe without entering reply mode', () => {
     expect(messageSwipeIntent(72, true, true, true)).toBe('close');
+  });
+
+  it('closes the Android action tray on a left swipe', () => {
+    expect(messageSwipeIntent(-72, true, true, true, 'right')).toBe('close');
   });
 
   it('keeps the action tray open after a short drag', () => {

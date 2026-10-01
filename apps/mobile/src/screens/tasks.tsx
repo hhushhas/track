@@ -1,17 +1,19 @@
 import type { TaskPriority } from '@track/shared/tasks';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
+import type { EntityMarkColorKey, EntityMarkIconKey } from '@track/shared';
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
-import { ConversationProjectTabs } from '@/components/conversation-project-tabs';
+import { BoardAttentionSheet } from '@/components/board-attention-sheet';
 import { DateField } from '@/components/date-field';
 import { EmptyState } from '@/components/empty-state';
+import { EntityMark } from '@/components/entity-mark';
+import { EntityMarkPicker } from '@/components/entity-mark-picker';
 import { IconButton } from '@/components/icon-button';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
@@ -26,6 +28,7 @@ import {
   type MobileTaskView,
 } from '@/components/task-list-content';
 import { TaskAction, TaskStateBanner } from '@/components/task-ui';
+import { MyTaskWorkspace } from '@/components/my-task-workspace';
 import {
   SprintFlowHeader,
   TaskCreateContext,
@@ -34,7 +37,7 @@ import {
 } from '@/components/tasks-dashboard';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useCompany } from '@/contexts/company-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
@@ -46,8 +49,8 @@ import { useAppToast } from '@/components/app-toast';
 import { enqueueOfflineTask } from '@/lib/offline-task-queue';
 import { groupMobileTasksByState, taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { taskPriorityLabel } from '@/lib/task-presentation';
-import { taskCoverageStatus } from '@/lib/task-coverage';
-import { scopeMyTaskItems } from '@/lib/my-task-views';
+import type { MyTask } from '@/lib/my-task-types';
+import { scopeMyTaskItems } from '@/lib/my-task-scope';
 import { resolveWorkflowStateId, taskMatchesWorkflowStateFilter, visibleBoardStateIds } from '@/lib/task-workflow';
 import { taskErrorMessage } from '@/lib/user-facing-error';
 
@@ -61,7 +64,6 @@ type TaskTab = 'board' | 'inbox';
 type CreatePicker = 'assignee' | 'board' | 'priority' | 'status' | null;
 type BoardSort = 'manual' | 'due' | 'priority';
 type BoardFilter = 'all' | 'open' | 'completed' | 'high';
-type GlobalTaskView = FunctionReturnType<typeof api.mobile.listMyTasks>['page'][number];
 type GlobalBoardView = FunctionReturnType<typeof api.taskBoards.listMine>[number];
 type TaskStatusTarget = {
   identity: {
@@ -85,7 +87,6 @@ function readableError(failure: unknown) {
 
 export default function TasksScreen() {
   const theme = useTheme();
-  const safeAreaInsets = useSafeAreaInsets();
   const bottomContentInset = useBottomTabContentInset();
   const router = useRouter();
   const { showToast } = useAppToast();
@@ -150,6 +151,19 @@ export default function TasksScreen() {
     boardId: selectedBoard?.board._id,
     ...queryIdentity,
   } : 'skip') as MobileTaskView[] | undefined;
+  const attentionTasks = useMemo(() => {
+    const completedStateIds = new Set((selectedBoard?.states ?? [])
+      .filter((state) => state.category === 'completed')
+      .map((state) => String(state._id)));
+    return (tasks ?? [])
+      .filter((item) => item.task.priority === 'urgent' || item.task.priority === 'high')
+      .filter((item) => !completedStateIds.has(String(item.task.workflowStateId)))
+      .sort((left, right) =>
+        (left.task.priority === 'urgent' ? 0 : 1) - (right.task.priority === 'urgent' ? 0 : 1)
+        || right.task.updatedAt - left.task.updatedAt,
+      )
+      .slice(0, 4);
+  }, [selectedBoard?.states, tasks]);
   const activeCompanies = useMemo(() => (companies ?? []).filter(({ company }) => company?.status === 'active'), [companies]);
   useEffect(() => {
     if (!actingCompanyId && activeCompanies[0]?.company?._id) setActingCompanyId(activeCompanies[0].company._id);
@@ -161,53 +175,27 @@ export default function TasksScreen() {
   const projectDirectory = useMemo(() => (projectDirectoryPages.results as Array<FunctionReturnType<typeof api.mobile.listTaskProjects>['page'][number]>)
     .filter((item): item is NonNullable<typeof item> => Boolean(item && item.membership.status === 'active')),
   [projectDirectoryPages.results]);
-  const [taskSearch, setTaskSearch] = useState('');
   const [selectedMyTaskProjectId, setSelectedMyTaskProjectId] = useState<string | null>(null);
-  const myTaskPages = usePaginatedQuery(api.mobile.listMyTasks, release.tasks && !projectId && trackUserId && actingCompanyId ? {
-    userId: trackUserId,
-    actingCompanyId,
-  } : 'skip', { initialNumItems: 50 });
-  const myTasks = useMemo(() => {
-    const seenTaskIds = new Set<string>();
-    return [...myTaskPages.results as GlobalTaskView[]]
-      .filter((item) => item.companyId === actingCompanyId)
-      .filter((item) => {
-        if (seenTaskIds.has(item.task._id)) return false;
-        seenTaskIds.add(item.task._id);
-        return true;
-      })
-      .sort((left, right) =>
-        (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31')
-        || right.task.updatedAt - left.task.updatedAt,
-      );
-  }, [actingCompanyId, myTaskPages.results]);
-  const { status: myTaskStatus } = myTaskPages;
-  const cappedTaskProject = (myTaskPages.results as GlobalTaskView[])
-    .find((item) => item.hasMoreAssignedTasks);
-  const taskCoverage = taskCoverageStatus(myTaskStatus, 'Exhausted', Boolean(cappedTaskProject));
   useEffect(() => {
     setSelectedMyTaskProjectId(null);
   }, [actingCompanyId]);
   const globalBoards = useQuery(api.taskBoards.listMine, release.tasks && !projectId ? {
     actingCompanyId: actingCompanyId ?? undefined,
   } : 'skip') as GlobalBoardView[] | undefined;
+  const assignedTaskPages = usePaginatedQuery(
+    api.mobile.listMyTasks,
+    release.tasks && !projectId && trackUserId
+      ? { userId: trackUserId, actingCompanyId: actingCompanyId ?? undefined }
+      : 'skip',
+    { initialNumItems: 12 },
+  );
+  const assignedTaskRows = useMemo(() => assignedTaskPages.results.filter((item): item is MyTask =>
+    Boolean(item && (!actingCompanyId || String(item.companyId ?? '') === String(actingCompanyId))),
+  ), [actingCompanyId, assignedTaskPages.results]);
   const companyBoards = useMemo(() => scopeMyTaskItems(
     globalBoards?.filter((item) => String(item.companyId ?? '') === String(actingCompanyId ?? '')) ?? [],
     selectedMyTaskProjectId,
   ), [actingCompanyId, globalBoards, selectedMyTaskProjectId]);
-  const allGlobalTasks = useMemo(() => scopeMyTaskItems([...myTasks].sort((left, right) =>
-    (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31')
-    || right.task.updatedAt - left.task.updatedAt,
-  ), selectedMyTaskProjectId), [myTasks, selectedMyTaskProjectId]);
-  const boardTaskCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of allGlobalTasks) {
-      const boardKey = String(item.task.boardId);
-      counts.set(boardKey, (counts.get(boardKey) ?? 0) + 1);
-    }
-    return counts;
-  }, [allGlobalTasks]);
-  const boardTaskCountsPartial = taskCoverage !== 'complete';
   const suggestions = useQuery(api.taskSuggestions.list, release.tasks && projectId && !readOnly ? {
     projectId: project,
     ...queryIdentity,
@@ -218,9 +206,15 @@ export default function TasksScreen() {
   const dismissSuggestion = useMutation(api.taskSuggestions.dismiss);
   const hideSuggestion = useMutation(api.taskSuggestions.hide);
   const linkSuggestion = useMutation(api.taskSuggestions.linkToExisting);
+  const updateBoardMark = useMutation(api.taskBoards.update);
   const [createOpen, setCreateOpen] = useState(false);
   const [createProjectPickerOpen, setCreateProjectPickerOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [boardMarkTarget, setBoardMarkTarget] = useState<MobileBoardView | null>(null);
+  const [boardMarkIconKey, setBoardMarkIconKey] = useState<EntityMarkIconKey | ''>('');
+  const [boardMarkColorKey, setBoardMarkColorKey] = useState<EntityMarkColorKey | ''>('');
+  const [boardMarkSaving, setBoardMarkSaving] = useState(false);
+  const [boardAttentionOpen, setBoardAttentionOpen] = useState(false);
   const [statusTarget, setStatusTarget] = useState<TaskStatusTarget | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -231,6 +225,7 @@ export default function TasksScreen() {
   const [assigneeId, setAssigneeId] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [assignedTaskConfirmation, setAssignedTaskConfirmation] = useState<{ task: MyTask; stateId: string } | null>(null);
   const [boardSearch, setBoardSearch] = useState('');
   const [activeBoardStateId, setActiveBoardStateId] = useState('');
   const [boardSort, setBoardSort] = useState<BoardSort>('manual');
@@ -241,6 +236,33 @@ export default function TasksScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [createPicker, setCreatePicker] = useState<CreatePicker>(null);
   const [viewMode, setViewMode] = useState<TaskViewMode>(viewParam === 'list' ? 'list' : 'board');
+
+  useEffect(() => {
+    if (!boardMarkTarget) return;
+    setBoardMarkIconKey((boardMarkTarget.board.markIconKey as EntityMarkIconKey | undefined) ?? '');
+    setBoardMarkColorKey((boardMarkTarget.board.markColorKey as EntityMarkColorKey | undefined) ?? '');
+  }, [boardMarkTarget]);
+
+  async function saveBoardMark() {
+    if (!boardMarkTarget) return;
+    setBoardMarkSaving(true);
+    try {
+      await updateBoardMark({
+        actingCompanyId: identity?.companyId,
+        boardId: boardMarkTarget.board._id,
+        description: boardMarkTarget.board.description ?? null,
+        markColorKey: boardMarkColorKey || null,
+        markIconKey: boardMarkIconKey || null,
+        name: boardMarkTarget.board.name,
+        projectMemberId: identity?.membershipId,
+      });
+      setBoardMarkTarget(null);
+    } catch (failure) {
+      setError(readableError(failure));
+    } finally {
+      setBoardMarkSaving(false);
+    }
+  }
 
   useLayoutEffect(() => {
     if (createParam !== '1') {
@@ -453,6 +475,38 @@ export default function TasksScreen() {
     setStatusTarget({ identity: queryIdentity, states: board.states, task: item.task });
   }
 
+  function moveAssignedTaskToState(item: MyTask, workflowStateId: string, confirmOpenSubtasks = false) {
+    const taskIdentity = item.companyId
+      ? { actingCompanyId: item.companyId, projectMemberId: item.projectMemberId }
+      : {};
+    void moveTask({
+      expectedRevision: item.task.revision,
+      taskId: item.task._id,
+      workflowStateId: workflowStateId as Id<'taskWorkflowStates'>,
+      ...(confirmOpenSubtasks ? { confirmOpenSubtasks: true } : {}),
+      ...taskIdentity,
+    }).then(() => hapticMedium()).catch((failure) => {
+      if (!confirmOpenSubtasks && failure instanceof Error && failure.message.includes('task_open_subtasks_confirmation_required')) {
+        setAssignedTaskConfirmation({ task: item, stateId: workflowStateId });
+        return;
+      }
+      setError(readableError(failure));
+    });
+  }
+
+  function toggleAssignedTaskCompletion(item: MyTask) {
+    const board = globalBoards?.find((candidate) => candidate.board._id === item.task.boardId);
+    const state = item.state?.category === 'completed'
+      ? board?.states.find((candidate) => candidate.category === 'unstarted')
+        ?? board?.states.find((candidate) => candidate.category !== 'completed' && candidate.category !== 'canceled')
+      : board?.states.find((candidate) => candidate.category === 'completed');
+    if (!state) {
+      setError('A matching task status is unavailable right now.');
+      return;
+    }
+    moveAssignedTaskToState(item, String(state._id));
+  }
+
   function assigneeName(item: MobileTaskView) {
     if (!item.task.assigneeProjectMemberId) return undefined;
     return assignees?.find((candidate) => candidate.member._id === item.task.assigneeProjectMemberId)?.user.displayName
@@ -552,82 +606,77 @@ export default function TasksScreen() {
     return (
       <ThemedView style={styles.screen}>
         <Stack.Screen options={{ title: 'Tasks unavailable' }} />
-        <EmptyState icon="task" title="Tasks aren’t available here yet" body="You can still use Project conversations while task tools are unavailable." />
+        <EmptyState icon="task" title="Tasks are unavailable here yet" body="You can still use Project conversations while task tools are unavailable." />
       </ThemedView>
     );
   }
 
   if (!projectId) {
-    const matchingBoards = companyBoards.filter(({ board, project: boardProject }) =>
-      (board.name + ' ' + boardProject.name).toLocaleLowerCase().includes(taskSearch.trim().toLocaleLowerCase()),
-    );
+    const hasMoreProjects = projectDirectoryPages.status === 'CanLoadMore'
+      || projectDirectoryPages.status === 'LoadingMore'
+      || assignedTaskPages.status === 'CanLoadMore'
+      || assignedTaskPages.status === 'LoadingMore';
+    const isLoadingMoreProjects = projectDirectoryPages.status === 'LoadingMore'
+      || assignedTaskPages.status === 'LoadingMore';
     return (
-      <ThemedView style={styles.screen}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <ScrollView
-          accessibilityLabel="Project boards"
-          contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset, paddingTop: Spacing.four + safeAreaInsets.top, paddingLeft: Spacing.four + safeAreaInsets.left, paddingRight: Spacing.four + safeAreaInsets.right }]}
-          contentInsetAdjustmentBehavior="never"
-          keyboardShouldPersistTaps="handled"
-        >
-          {offline ? <TaskStateBanner icon="cloud-off" message="Offline. Reconnect to refresh Boards." tone="offline" /> : null}
-          {error ? <TaskStateBanner action={{ label: 'Dismiss', onPress: () => setError('') }} icon="refresh" message={error} tone="danger" /> : null}
-          <View style={styles.globalHeading}>
-            <View style={styles.globalTitleCopy}>
-              <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.pageTitle} type="display">My Tasks</ThemedText>
-              <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{actingCompany?.company?.displayName ?? 'Boards in your workspace'}</ThemedText>
-            </View>
-          </View>
-          <View style={styles.personalControls}>
-            {projectDirectoryPages.status === 'LoadingFirstPage' ? <SheetNote>Loading Projects...</SheetNote> : <ConversationProjectTabs
-              onSelect={setSelectedMyTaskProjectId}
-              projects={projectDirectory.map(({ project: directoryProject }) => ({ id: String(directoryProject._id), name: directoryProject.name }))}
-              selectedId={selectedMyTaskProjectId}
-            />}
-            {projectDirectoryPages.status === 'CanLoadMore' || projectDirectoryPages.status === 'LoadingMore' ? <Pressable accessibilityRole="button" disabled={projectDirectoryPages.status === 'LoadingMore'} onPress={() => projectDirectoryPages.loadMore(12)} style={[styles.loadMoreProjects, { borderColor: theme.homeBorder }]}><ThemedText themeColor="textSecondary" type="captionBold">{projectDirectoryPages.status === 'LoadingMore' ? 'Loading Projects...' : 'Load more Projects'}</ThemedText></Pressable> : null}
-            <View style={[styles.taskSearch, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
-              <PlatformIcon color={theme.textTertiary} name="search" size={19} />
-              <TextInput accessibilityLabel="Search boards" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} onChangeText={setTaskSearch} placeholder="Search boards and Projects" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.taskSearchInput, { color: theme.text }]} value={taskSearch} />
-            </View>
-          </View>
-          <View style={styles.taskProjectSection}>
-            <View style={[styles.boardDirectoryHeading, { borderBottomColor: theme.hairline, borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: Spacing.two }]}><ThemedText accessibilityRole="header" type="subtitle">Boards</ThemedText></View>
-            {globalBoards === undefined ? <SkeletonList count={3} label="Loading boards" /> : matchingBoards.length ? matchingBoards.map((item) => {
-              const taskCount = boardTaskCounts.get(String(item.board._id)) ?? 0;
-              const countLabel = String(taskCount) + (boardTaskCountsPartial ? '+' : '');
-              return <Pressable
-                accessibilityHint={'Opens ' + item.board.name + ' in ' + item.project.name}
-                accessibilityLabel={item.board.name + ' board, ' + item.project.name + ' Project, ' + taskCount + (boardTaskCountsPartial ? ' or more' : '') + ' assigned tasks'}
-                accessibilityRole="button"
-                key={item.board._id}
-                onPress={() => {
-                  const identity = item.companyId ? { companyId: item.companyId, membershipId: item.projectMemberId } : null;
-                  router.push(taskListHref(item.project._id, identity, undefined, undefined, { boardId: item.board._id }) as never);
-                }}
-                style={({ pressed }) => [styles.boardDirectoryRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderBottomColor: theme.hairline }]}
-              >
-                <View style={[styles.boardDirectoryIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.textSecondary} name="view-board" size={17} /></View>
-                <View style={styles.boardDirectoryCopy}><ThemedText numberOfLines={1} type="smallBold">{item.board.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{item.project.name}</ThemedText></View>
-                <View style={[styles.boardCountBadge, { backgroundColor: theme.backgroundElement }]}><ThemedText themeColor="textSecondary" type="captionBold">{countLabel}</ThemedText></View>
-                <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
-              </Pressable>;
-            }) : <EmptyState icon="view-board" title={taskSearch ? 'No matching boards' : 'No boards yet'} body={taskSearch ? 'Try a shorter Board or Project name.' : selectedMyTaskProjectId ? 'Boards in this Project will appear here.' : 'Boards in your Projects will appear here.'} />}
-          </View>
-        </ScrollView>
-        {createProjectPickerSheet}
-      </ThemedView>
+      <MyTaskWorkspace
+        assignedTasks={assignedTaskRows}
+        confirmationStateId={assignedTaskConfirmation?.stateId ?? null}
+        confirmationTask={assignedTaskConfirmation?.task ?? null}
+        boards={companyBoards}
+        boardsLoading={globalBoards === undefined}
+        companyName={actingCompany?.company?.displayName ?? 'All Companies'}
+        createProjectPickerSheet={createProjectPickerSheet}
+        error={error}
+        hasMoreProjects={hasMoreProjects}
+        isLoading={assignedTaskPages.status === 'LoadingFirstPage'}
+        isLoadingMoreProjects={isLoadingMoreProjects}
+        isOffline={offline}
+        onDismissError={() => setError('')}
+        onLoadMoreProjects={() => {
+          if (projectDirectoryPages.status === 'CanLoadMore') projectDirectoryPages.loadMore(12);
+          if (assignedTaskPages.status === 'CanLoadMore') assignedTaskPages.loadMore(12);
+        }}
+        onOpenBoard={(item) => {
+          const targetIdentity = item.companyId ? { companyId: item.companyId, membershipId: item.projectMemberId } : null;
+          router.push(taskListHref(item.project._id, targetIdentity, undefined, undefined, { boardId: item.board._id }) as never);
+        }}
+        onOpenTask={(item) => {
+          const taskIdentity = item.companyId ? { companyId: item.companyId, membershipId: item.projectMemberId } : null;
+          router.push(taskDetailHref(item.project._id, item.task.publicKey, taskIdentity));
+        }}
+        onSetTaskStatus={moveAssignedTaskToState}
+        onToggleTaskComplete={toggleAssignedTaskCompletion}
+        onCancelTaskStatusConfirmation={() => setAssignedTaskConfirmation(null)}
+        onConfirmTaskStatus={() => {
+          if (!assignedTaskConfirmation) return;
+          const pending = assignedTaskConfirmation;
+          setAssignedTaskConfirmation(null);
+          moveAssignedTaskToState(pending.task, pending.stateId, true);
+        }}
+        profileName={currentUser?.displayName ?? 'My Tasks'}
+        projectDirectory={projectDirectory}
+        projectDirectoryLoading={projectDirectoryPages.status === 'LoadingFirstPage'}
+        selectedProjectId={selectedMyTaskProjectId}
+        onSelectProject={setSelectedMyTaskProjectId}
+      />
     );
   }
+
   const heading = (
     <>
-      {offline ? <TaskStateBanner icon="cloud-off" message="Offline — showing saved tasks" tone="offline" /> : null}
+      {offline ? <TaskStateBanner icon="cloud-off" message="Offline. Showing saved tasks." tone="offline" /> : null}
       {readOnly ? <TaskStateBanner icon="shield-lock-outline" message="Read-only archive" /> : null}
       {tab !== 'inbox' ? (
         <>
           <TasksToolbar
+            boardColorKey={selectedBoard?.board.markColorKey}
+            boardIconKey={selectedBoard?.board.markIconKey}
+            boardId={selectedBoard ? String(selectedBoard.board._id) : undefined}
             boardName={selectedBoard?.board.name ?? 'Board'}
             filterActive={boardFilter !== 'all' || Boolean(statusFilterId) || boardSort !== 'manual'}
             mode={viewMode}
+            onAttentionPress={() => setBoardAttentionOpen(true)}
             onBoardPress={() => setBoardOpen(true)}
             onFilterPress={() => setFilterOpen(true)}
             onModeChange={setViewMode}
@@ -637,6 +686,7 @@ export default function TasksScreen() {
               : 'Project tasks'}
             scopeLabel={selectedBoard?.board.groupId ? 'Channels' : 'Project'}
             searchActive={Boolean(boardSearch)}
+            taskCount={visibleTaskCount}
           />
           <SprintFlowHeader
             activeStateId={activeBoardStateId || undefined}
@@ -691,13 +741,7 @@ export default function TasksScreen() {
         headerBackVisible: false,
         headerLargeTitle: false,
         headerTransparent: false,
-        headerRight: () => (
-          <View style={styles.headerActions}>
-            {tab === 'inbox' ? (
-              <IconButton accessibilityLabel="Return to task board" icon="arrow-left" onPress={() => setTab('board')} />
-            ) : null}
-          </View>
-        ),
+        headerRight: tab === 'inbox' ? () => <IconButton accessibilityLabel="Return to task board" icon="arrow-left" onPress={() => setTab('board')} /> : undefined,
       }} />
 
       {tab === 'board' && viewMode === 'board' ? (
@@ -758,21 +802,53 @@ export default function TasksScreen() {
         </SheetSection>
       </OptionsSheet>
 
-      <OptionsSheet onClose={() => setBoardOpen(false)} title="Choose board" visible={boardOpen}>
-        <SheetSection>
+      <OptionsSheet
+        onClose={() => boardMarkTarget ? setBoardMarkTarget(null) : setBoardOpen(false)}
+        title={boardMarkTarget ? `Edit ${boardMarkTarget.board.name} mark` : 'Choose board'}
+        visible={boardOpen}
+      >
+        {boardMarkTarget ? <>
+          <SheetRow icon="chevron-left" label="Back to Boards" onPress={() => setBoardMarkTarget(null)} />
+          <View style={[styles.boardMarkPreview, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+            <EntityMark
+              colorKey={boardMarkColorKey || null}
+              iconKey={boardMarkIconKey || null}
+              id={String(boardMarkTarget.board._id)}
+              kind="board"
+              name={boardMarkTarget.board.name}
+              size={48}
+            />
+            <View style={styles.boardMarkPreviewCopy}>
+              <ThemedText numberOfLines={1} type="smallBold">{boardMarkTarget.board.name}</ThemedText>
+              <ThemedText themeColor="textSecondary" type="caption">Board mark preview</ThemedText>
+            </View>
+          </View>
+          <EntityMarkPicker colorKey={boardMarkColorKey} iconKey={boardMarkIconKey} onColorChange={setBoardMarkColorKey} onIconChange={setBoardMarkIconKey} />
+          <TaskAction disabled={boardMarkSaving} label={boardMarkSaving ? 'Saving...' : 'Save Board mark'} onPress={() => void saveBoardMark()} primary />
+        </> : <SheetSection title="Boards in this Project">
           {boards?.map((item) => (
             <SheetRow
-              icon="view-board"
+              detail={item.board.groupId ? 'Channel Board' : undefined}
               key={item.board._id}
               label={item.board.name}
+              leading={<EntityMark colorKey={item.board.markColorKey} iconKey={item.board.markIconKey} id={String(item.board._id)} kind="board" name={item.board.name} size={36} />}
               selected={item.board._id === selectedBoard?.board._id}
               onPress={() => {
                 setBoardId(item.board._id);
                 setBoardOpen(false);
               }}
+              trailing={item.canManageMark ? <Pressable
+                accessibilityHint={`Changes the icon and color for ${item.board.name}`}
+                accessibilityLabel={`Edit ${item.board.name} mark`}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={(event) => { event.stopPropagation(); setBoardMarkTarget(item); }}
+                style={({ pressed }) => [styles.boardMarkEditButton, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}
+              ><PlatformIcon color={theme.textSecondary} name="edit" size={18} /></Pressable> : undefined}
             />
           ))}
-        </SheetSection>
+          {boards?.length === 0 ? <SheetNote>No Boards are available in this Project.</SheetNote> : null}
+        </SheetSection>}
       </OptionsSheet>
 
       {createProjectPickerSheet}
@@ -785,7 +861,7 @@ export default function TasksScreen() {
           <>
             <SheetSection><SheetRow icon="chevron-left" label="Back to task" onPress={() => setCreatePicker(null)} /></SheetSection>
             {createPicker === 'board' ? <SheetSection title="Board">
-              {boards?.map((item) => <SheetRow icon="view-board" key={item.board._id} label={item.board.name} selected={item.board._id === selectedCreateBoard?.board._id} onPress={() => {
+              {boards?.map((item) => <SheetRow leading={<EntityMark colorKey={item.board.markColorKey} iconKey={item.board.markIconKey} id={String(item.board._id)} kind="board" name={item.board.name} size={36} />} key={item.board._id} label={item.board.name} selected={item.board._id === selectedCreateBoard?.board._id} onPress={() => {
                 setCreateBoardId(item.board._id);
                 setCreateWorkflowStateId(resolveWorkflowStateId(item.states));
                 setCreatePicker(null);
@@ -800,7 +876,7 @@ export default function TasksScreen() {
             </SheetSection> : null}
             {createPicker === 'assignee' ? <SheetSection title="Assignee">
               <SheetRow icon="person" label="Unassigned" selected={!selectedCreateAssigneeId} onPress={() => { setAssigneeId(''); setCreatePicker(null); }} />
-              {assignableCreateAssignees?.map((item) => <SheetRow icon="person" key={item.member._id} label={`${item.user.displayName}${item.company ? ` · ${item.company.displayName}` : ''}`} selected={selectedCreateAssigneeId === item.member._id} onPress={() => { setAssigneeId(item.member._id); setCreatePicker(null); }} />)}
+              {assignableCreateAssignees?.map((item) => <SheetRow icon="person" key={item.member._id} label={[item.user.displayName, item.company?.displayName].filter(Boolean).join(' ')} selected={selectedCreateAssigneeId === item.member._id} onPress={() => { setAssigneeId(item.member._id); setCreatePicker(null); }} />)}
             </SheetSection> : null}
           </>
         ) : (
@@ -827,7 +903,7 @@ export default function TasksScreen() {
             <SheetInput label="Description (optional)" maxLength={4000} multiline onChangeText={setDescription} value={description} />
             {boards && boards.length > 1 ? <SheetFieldButton icon="view-board" label="Board" onPress={() => setCreatePicker('board')} value={selectedCreateBoard?.board.name} /> : null}
             {error ? <ThemedText themeColor="danger" type="small">{error}</ThemedText> : null}
-            <TaskAction disabled={busy || !title.trim()} label={busy ? 'Creating…' : 'Create task'} onPress={() => void create()} primary />
+            <TaskAction disabled={busy || !title.trim()} label={busy ? 'Creating...' : 'Create task'} onPress={() => void create()} primary />
           </>
         )}
       </OptionsSheet>
@@ -842,7 +918,7 @@ export default function TasksScreen() {
           <SheetRow icon="circle-outline" label="Open tasks" selected={boardFilter === 'open'} onPress={() => setBoardFilter('open')} />
           <SheetRow icon="check-circle" label="Completed" selected={boardFilter === 'completed'} onPress={() => setBoardFilter('completed')} />
           <SheetRow icon="flag" label="High priority" selected={boardFilter === 'high'} onPress={() => setBoardFilter('high')} />
-          <SheetRow icon="view-column" label="Hide empty statuses" selected={hideEmptyColumns} onPress={() => setHideEmptyColumns((current) => !current)} />
+          <SheetRow accessibilityHint="Shows or hides columns with no tasks" accessibilityRole="checkbox" icon="view-column" label="Hide empty statuses" selected={hideEmptyColumns} onPress={() => setHideEmptyColumns((current) => !current)} />
         </SheetSection>
         <SheetSection title="Status">
           <SheetRow icon="view-column" label="All statuses" selected={!statusFilterId} onPress={() => setStatusFilterId('')} />
@@ -863,53 +939,33 @@ export default function TasksScreen() {
         </SheetSection>
         <TaskAction label="Done" onPress={() => setFilterOpen(false)} primary />
       </OptionsSheet>
+      <BoardAttentionSheet
+        attentionTasks={attentionTasks}
+        attentionTasksLoading={tasks === undefined}
+        boardName={selectedBoard?.board.name ?? 'Board'}
+        onClose={() => setBoardAttentionOpen(false)}
+        onOpenTask={(item) => {
+          setBoardAttentionOpen(false);
+          router.push(taskDetailHref(project, item.task.publicKey, identity));
+        }}
+        visible={boardAttentionOpen && tab !== 'inbox'}
+      />
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  boardScreen: { flex: 1, gap: Spacing.two, padding: Spacing.three },
+  boardScreen: { flex: 1, gap: Spacing.three, padding: Spacing.four },
   content: { gap: Spacing.three, padding: Spacing.four },
   fieldCell: { flex: 1, minWidth: 150 },
   fieldCellStacked: { flex: 0, width: '100%' },
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   fieldGridLarge: { flexDirection: 'column' },
   flex: { flex: 1, minWidth: 0 },
-  boardDirectoryHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
-  boardHeadingDivider: { flex: 1, height: StyleSheet.hairlineWidth },
-  boardOwner: { flexShrink: 1, maxWidth: '58%' },
-  boardDirectoryIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 38, justifyContent: 'center', width: 38 },
-  boardDirectoryIconWrap: { height: 38, position: 'relative', width: 38 },
-  boardDirectoryCopy: { flex: 1, gap: 2, minWidth: 0 },
-  boardDirectoryRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: 68, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  boardUnreadBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1.5, height: 18, justifyContent: 'center', minWidth: 18, paddingHorizontal: 3, position: 'absolute', right: -4, top: -4 },
-  boardUnreadCount: { fontSize: 9, lineHeight: 12 },
-  boardCountBadge: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, justifyContent: 'center', minHeight: 26, minWidth: 28, paddingHorizontal: Spacing.two },
-  personalEmpty: { paddingVertical: Spacing.three },
-  personalSection: { gap: Spacing.two },
-  personalSectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
-  selectedDayLabel: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
-  personalControls: { gap: Spacing.three, marginTop: Spacing.three },
-  searchAndFilter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  filterSheetActions: { gap: Spacing.two, paddingTop: Spacing.two },
-  filterButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'center', minWidth: TouchTarget, paddingHorizontal: Spacing.two },
-  taskSearch: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingLeft: Spacing.three },
-  taskSearchInput: { ...Typography.body, flex: 1, minHeight: TouchTarget, paddingVertical: Spacing.two },
-  loadMoreProjects: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', minHeight: TouchTarget },
-  taskViewTabs: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  taskProjectSection: { gap: Spacing.two },
-  weekHeadingActions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  weekPickerButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  weekDays: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, paddingVertical: Spacing.one },
-  weekDay: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.half, justifyContent: 'center', minHeight: 78, minWidth: 72, paddingHorizontal: Spacing.two, paddingVertical: Spacing.two },
-  loadWeek: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', minHeight: TouchTarget },
-  headerActions: { alignItems: 'center', flexDirection: 'row' },
+  boardMarkEditButton: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
+  boardMarkPreview: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, padding: Spacing.three },
+  boardMarkPreviewCopy: { flex: 1, gap: Spacing.half, minWidth: 0 },
   inboxHeading: { gap: Spacing.one },
-  globalHeading: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
-  globalTitleCopy: { flex: 1, gap: Spacing.half, minWidth: 0 },
-  pageTitle: { flexShrink: 1 },
-  companyPill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, maxWidth: '58%', minHeight: 40, paddingHorizontal: Spacing.two },
-  companyPillText: { flexShrink: 1 },
   coverageCopy: { flex: 1, gap: 2, minWidth: 0 },
   coverageHint: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   taskCountPill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, minHeight: 30, paddingHorizontal: Spacing.two },

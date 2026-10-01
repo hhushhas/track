@@ -172,3 +172,11 @@
   .company-settings-danger-actions button { flex: 1 1 150px; }
   .company-settings-owner-note { text-align: left; }
 }
+.company-profile-logo-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: var(--paper-3);
+  padding: 4px;
+}

@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
 
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   endCopy: { maxWidth: 280, textAlign: 'center' },
   endIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 44, justifyContent: 'center', width: 44 },
   endMarker: { alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.four, paddingVertical: Spacing.five },
-  fieldLabel: { textTransform: 'uppercase' },
+  fieldLabel: Typography.label,
   flex: { flex: 1, minWidth: 0 },
   kindBadge: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: Spacing.one, minHeight: 26 },
   live: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },

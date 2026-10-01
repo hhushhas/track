@@ -1535,6 +1535,8 @@ export function CompanyHubPage({
                   description={administration.company.description ?? ""}
                   displayName={administration.company.displayName}
                   handle={administration.company.normalizedHandle}
+                  logoStorageId={administration.company.logoStorageId}
+                  logoUrl={administration.company.logoUrl}
                   run={run}
                 />
               </section>

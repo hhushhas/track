@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
 import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
-import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -211,7 +211,7 @@ export default function InboxScreen() {
         headerShown: false,
       }} />
       <ConnectivityBanner style={styles.connection} />
-      {itemStatus === 'LoadingFirstPage' ? <SkeletonList label="Loading attention" /> : (
+      {itemStatus === 'LoadingFirstPage' ? <ScreenLoading variant="inbox" /> : (
         <FlatList
           style={styles.screenContent}
           contentInsetAdjustmentBehavior="never"
@@ -258,7 +258,7 @@ export default function InboxScreen() {
               </View>
               <View style={[styles.search, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
                 <PlatformIcon color={theme.textTertiary} name="search" size={19} />
-                <TextInput accessibilityLabel="Search inbox" autoCapitalize="none" autoCorrect={false} clearButtonMode="while-editing" keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search updates" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
+                <TextInput accessibilityLabel="Search inbox" autoCapitalize="none" autoCorrect={false} keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search updates" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
                 {search ? <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.clearSearch}><PlatformIcon color={theme.textSecondary} name="close" size={18} /></Pressable> : null}
               </View>
               <ScrollView accessibilityLabel="Inbox filters" accessibilityRole="tablist" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
@@ -271,9 +271,9 @@ export default function InboxScreen() {
                     onPress={() => setFilter(value)}
                     pillStyle={{
                       backgroundColor: filter === value ? theme.accentSoft : theme.homeSurface,
-                      borderColor: filter === value ? theme.accentStrong : theme.homeBorder,
+                      borderColor: filter === value ? 'transparent' : theme.homeBorder,
                     }}
-                    pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}
+                    pressedPillStyle={{ backgroundColor: theme.homeBackground, borderColor: 'transparent' }}
                   >
                     <ThemedText style={{ color: filter === value ? theme.text : theme.textSecondary }} type="captionBold">{value === 'all' ? 'All' : value === 'mentions' ? 'Mentions' : value === 'replies' ? 'Replies' : 'Tasks'}</ThemedText>
                   </CompactPillButton>
@@ -284,9 +284,9 @@ export default function InboxScreen() {
                   onPress={() => setFilterSheetOpen(true)}
                   pillStyle={{
                     backgroundColor: filter === 'suggestions' || filter === 'invitations' ? theme.accentSoft : theme.homeSurface,
-                    borderColor: filter === 'suggestions' || filter === 'invitations' ? theme.accentStrong : theme.homeBorder,
+                    borderColor: filter === 'suggestions' || filter === 'invitations' ? 'transparent' : theme.homeBorder,
                   }}
-                  pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}
+                  pressedPillStyle={{ backgroundColor: theme.homeBackground, borderColor: 'transparent' }}
                 >
                   <ThemedText style={{ color: filter === 'suggestions' || filter === 'invitations' ? theme.text : theme.textSecondary }} type="captionBold">{filter === 'suggestions' ? 'Suggestions' : filter === 'invitations' ? 'Invitations' : 'More'}</ThemedText>
                 </CompactPillButton>

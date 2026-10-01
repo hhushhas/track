@@ -18,7 +18,7 @@ import { ThemeOverrideProvider, useThemeOverride } from '@/contexts/theme-overri
 import { Colors } from '@/constants/theme';
 import { PushNotificationBridge } from '@/lib/push-notifications';
 import { OfflineTaskSync } from '@/components/offline-task-sync';
-import { LaunchScreen } from '@/components/launch-screen';
+import { LAUNCH_ARTWORK_DURATION_MS, LaunchScreen } from '@/components/launch-screen';
 import { AppToastProvider } from '@/components/app-toast';
 import { TrackHeaderBackground } from '@/components/primary-stack';
 import { TouchFeedback } from '@/components/touch-feedback';
@@ -72,7 +72,9 @@ function AppLayout() {
   const [continuationDidLayout, setContinuationDidLayout] = useState(false);
   const [showContinuation, setShowContinuation] = useState(true);
   const [launchExiting, setLaunchExiting] = useState(false);
+  const [launchAnimationActive, setLaunchAnimationActive] = useState(false);
   const finishLaunch = useCallback(() => setShowContinuation(false), []);
+  const markLaunchArtworkReady = useCallback(() => setContinuationDidLayout(true), []);
 
   useEffect(() => {
     // The continuation already contains the final splash artwork. Hide the
@@ -81,6 +83,7 @@ function AppLayout() {
     if (!continuationDidLayout) return;
 
     let active = true;
+    let exitTimer: ReturnType<typeof setTimeout> | undefined;
     const hideNativeSplash = Platform.OS === 'web'
       ? Promise.resolve()
       : SplashScreen.hideAsync();
@@ -88,12 +91,17 @@ function AppLayout() {
     void hideNativeSplash.finally(() => {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (active) setLaunchExiting(true);
+          if (!active) return;
+          setLaunchAnimationActive(true);
+          exitTimer = setTimeout(() => {
+            if (active) setLaunchExiting(true);
+          }, LAUNCH_ARTWORK_DURATION_MS);
         });
       });
     });
     return () => {
       active = false;
+      if (exitTimer) clearTimeout(exitTimer);
     };
   }, [continuationDidLayout]);
 
@@ -118,7 +126,7 @@ function AppLayout() {
                   <View style={styles.app}>
                     <Stack
                       screenOptions={{
-                        animation: 'slide_from_right',
+                        animation: Platform.OS === 'android' ? 'default' : 'slide_from_right',
                         gestureEnabled: true,
                         headerShown: true,
                         headerBackButtonDisplayMode: 'minimal',
@@ -141,9 +149,10 @@ function AppLayout() {
                     {showContinuation ? (
                       <View pointerEvents="none" style={styles.continuation}>
                         <LaunchScreen
+                          animationActive={launchAnimationActive}
                           exiting={launchExiting}
                           onExitComplete={finishLaunch}
-                          onReady={() => setContinuationDidLayout(true)}
+                          onReady={markLaunchArtworkReady}
                         />
                       </View>
                     ) : null}

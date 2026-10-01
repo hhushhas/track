@@ -134,18 +134,26 @@ export function CompanyProfileForm({
   displayName: initialDisplayName,
   description: initialDescription,
   handle: initialHandle,
+  logoStorageId: initialLogoStorageId,
+  logoUrl,
   run,
 }: {
   actingCompanyId: Id<"companies">;
   displayName: string;
   description?: string;
   handle?: string;
+  logoStorageId?: Id<"_storage">;
+  logoUrl?: string | null;
   run: AsyncAction;
 }) {
   const updateProfile = useMutation(api.companies.updateProfile);
+  const generateLogoUploadUrl = useMutation(api.companies.generateLogoUploadUrl);
+  const [removingLogo, setRemovingLogo] = useState(false);
   const [displayName, setDisplayName] = useState(initialDisplayName);
   const [description, setDescription] = useState(initialDescription ?? "");
   const [handle, setHandle] = useState(initialHandle ?? "");
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
   useEffect(() => {
     setDisplayName(initialDisplayName);
     setDescription(initialDescription ?? "");
@@ -156,9 +164,28 @@ export function CompanyProfileForm({
       className="company-inline-form"
       onSubmit={(event) => {
         event.preventDefault();
-        void run(() =>
-          updateProfile({ companyId: actingCompanyId, displayName, description, handle }),
-        );
+        setLogoError(null);
+        void run(async () => {
+          let logoStorageId: Id<"_storage"> | undefined;
+          if (logoFile) {
+            const uploadUrl = await generateLogoUploadUrl({ companyId: actingCompanyId });
+            const response = await fetch(uploadUrl, {
+              method: "POST",
+              headers: { "Content-Type": logoFile.type },
+              body: logoFile,
+            });
+            if (!response.ok) throw new Error("Company logo upload failed.");
+            const uploadResult: unknown = await response.json();
+            if (!uploadResult || typeof uploadResult !== "object" || !("storageId" in uploadResult) || typeof uploadResult.storageId !== "string") {
+              throw new Error("Company logo upload returned an invalid response.");
+            }
+            logoStorageId = uploadResult.storageId as Id<"_storage">;
+          }
+          await updateProfile({ companyId: actingCompanyId, displayName, description, handle, ...(logoStorageId ? { logoStorageId } : {}) });
+          setLogoFile(null);
+        }).catch((error: unknown) => {
+          setLogoError(error instanceof Error ? error.message : "Company logo could not be saved.");
+        });
       }}
     >
       <div>
@@ -179,6 +206,38 @@ export function CompanyProfileForm({
         <Label htmlFor="company-profile-description">Description</Label>
         <Textarea autoComplete="off" className="company-profile-description-input" id="company-profile-description" name="description" onChange={(event) => setDescription(event.target.value)} rows={3} value={description} />
       </div>
+      <div>
+        <Label htmlFor="company-profile-logo">Company logo</Label>
+        {logoUrl ? <img alt="Current Company logo" className="company-profile-logo-preview" height={48} src={logoUrl} width={48} /> : null}
+        <Input
+          accept="image/png,image/jpeg,image/webp"
+          id="company-profile-logo"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0] ?? null;
+            if (file && file.size > 5 * 1024 * 1024) {
+              setLogoError("Choose a logo smaller than 5 MB.");
+              event.currentTarget.value = "";
+              setLogoFile(null);
+              return;
+            }
+            if (file && !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+              setLogoError("Choose a PNG, JPEG, or WebP image.");
+              event.currentTarget.value = "";
+              setLogoFile(null);
+              return;
+            }
+            setLogoError(null);
+            setLogoFile(file);
+          }}
+          type="file"
+        />
+        <span className="company-field-hint">PNG, JPEG, or WebP, up to 5 MB. The logo is visible to Company members and collaborators.</span>
+        {initialLogoStorageId ? <Button disabled={removingLogo} onClick={() => {
+          setRemovingLogo(true);
+          void run(() => updateProfile({ companyId: actingCompanyId, logoStorageId: null })).finally(() => setRemovingLogo(false));
+        }} type="button" variant="outline">{removingLogo ? "Removing logoâ€¦" : "Use automatic mark"}</Button> : null}
+      </div>
+      {logoError ? <p aria-live="polite" className="company-field-error">{logoError}</p> : null}
       <Button type="submit">Save profile</Button>
     </form>
   );

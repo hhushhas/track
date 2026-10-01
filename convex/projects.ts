@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import { entityMarkColorKeys, entityMarkIconKeys } from '@track/shared'
 import { canAdministerCompany } from '@track/shared/company'
 import { resolveProjectAccessProfile } from '@track/shared/feature-flags'
 import type { Id } from './_generated/dataModel'
@@ -202,6 +203,8 @@ export const create = mutation({
     userId: v.id('users'),
     name: v.string(),
     clientLabel: v.optional(v.string()),
+    markIconKey: v.optional(v.union(v.null(), ...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(v.null(), ...entityMarkColorKeys.map((key) => v.literal(key)))),
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
@@ -294,6 +297,8 @@ export const update = mutation({
     userId: v.id('users'),
     name: v.string(),
     clientLabel: v.optional(v.string()),
+    markIconKey: v.optional(v.union(v.null(), ...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(v.null(), ...entityMarkColorKeys.map((key) => v.literal(key)))),
   },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
@@ -309,6 +314,8 @@ export const update = mutation({
     await ctx.db.patch(args.projectId, {
       name,
       clientLabel,
+      ...(args.markIconKey !== undefined ? { markIconKey: args.markIconKey ?? undefined } : {}),
+      ...(args.markColorKey !== undefined ? { markColorKey: args.markColorKey ?? undefined } : {}),
       updatedAt: Date.now(),
     })
 
@@ -318,8 +325,8 @@ export const update = mutation({
       entityType: 'project',
       entityId: args.projectId,
       action: 'project.updated',
-      before: { name: project.name, clientLabel: project.clientLabel },
-      after: { name, clientLabel },
+      before: { name: project.name, clientLabel: project.clientLabel, markIconKey: project.markIconKey, markColorKey: project.markColorKey },
+      after: { name, clientLabel, markIconKey: args.markIconKey === undefined ? project.markIconKey : args.markIconKey ?? undefined, markColorKey: args.markColorKey === undefined ? project.markColorKey : args.markColorKey ?? undefined },
     })
   },
 })

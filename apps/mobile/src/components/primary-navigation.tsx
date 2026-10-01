@@ -1,4 +1,6 @@
 import type { ComponentProps } from 'react';
+import { BlurView } from 'expo-blur';
+import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
@@ -10,11 +12,11 @@ import { scheduleOnRN } from 'react-native-worklets';
 
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { BottomTabInset, IconSize, Radius, Spacing } from '@/constants/theme';
+import { AndroidBottomTabHeight, BottomTabInset, IconSize, Radius, Spacing, Typography } from '@/constants/theme';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticLight } from '@/lib/haptics';
-import { primaryDestinationForRoute, primaryNavigationHeight, primaryNavigationVisibleForPath, primaryRouteIndex, primaryTabIndexAtX, primaryTabResetTarget, type PrimaryDestination } from '@/lib/primary-navigation';
+import { primaryDestinationForRoute, primaryNavigationHeight, primaryNavigationSafeAreaInset, primaryNavigationVisibleForPath, primaryRouteIndex, primaryTabIndexAtX, primaryTabResetTarget, type PrimaryDestination } from '@/lib/primary-navigation';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskListHref } from '@/lib/task-navigation';
 import type { Id } from '../../../../convex/_generated/dataModel';
@@ -113,9 +115,10 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const isAndroid = Platform.OS === 'android';
+  const safeAreaBottom = primaryNavigationSafeAreaInset(insets.bottom, isAndroid ? 0 : Spacing.two);
   const [reduceTransparency, setReduceTransparency] = useState(false);
   const navigationHeight = isAndroid
-    ? primaryNavigationHeight(fontScale, 64)
+    ? primaryNavigationHeight(fontScale, AndroidBottomTabHeight)
     : primaryNavigationHeight(fontScale, BottomTabInset);
   const reducedMotion = useReducedMotion();
   const [rowWidth, setRowWidth] = useState(0);
@@ -123,6 +126,7 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   const dragX = useSharedValue(0);
   const dragOpacity = useSharedValue(0);
   const dragStretch = useSharedValue(1);
+  const dragPillWidth = rowWidth / Math.max(items.length, 1);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return undefined;
@@ -156,7 +160,7 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
       dragStretch.set(1.08);
     })
     .onUpdate((event) => {
-      dragX.set(Math.max(28, Math.min(rowWidth - 28, event.x)));
+      dragX.set(Math.max(dragPillWidth / 2, Math.min(rowWidth - dragPillWidth / 2, event.x)));
       dragStretch.set(Math.min(1.28, 1 + Math.abs(event.velocityX) / 3_000));
     })
     .onEnd((event) => {
@@ -178,20 +182,21 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
   }));
   const dragStyle = useAnimatedStyle(() => ({
     opacity: dragOpacity.get(),
-    transform: [{ translateX: dragX.get() - 28 }, { scaleX: dragStretch.get() }],
+    transform: [{ translateX: dragX.get() - dragPillWidth / 2 }, { scaleX: dragStretch.get() }],
   }));
 
   const solidSelection = isAndroid || reduceTransparency;
-  const selectionSurface = solidSelection ? theme.accentSoft : theme.navigationSelectionGlass;
-  const navigationSurface = solidSelection ? theme.homeSurface : theme.navigationGlass;
+  const selectionSurface = theme.homeBackground;
+  const useNativeGlass = Platform.OS === 'ios' && !reduceTransparency && safeGlassAvailability();
+  const navigationSurface = solidSelection ? theme.homeSurface : 'transparent';
   const navigationRow = <View accessibilityRole="tablist" onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)} style={[styles.row, { height: navigationHeight }]}>
-    <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: selectionSurface, borderColor: theme.accentSoft, top: (navigationHeight - 56) / 2, height: 56 }, dragStyle]} />
-    {items.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} solidSelection={solidSelection} />)}
+    <Animated.View pointerEvents="none" style={[styles.dragPill, { backgroundColor: selectionSurface, borderColor: 'transparent', height: navigationHeight, width: dragPillWidth }, dragStyle]} />
+    {items.map((item) => <NavigationTab active={item.key === activeKey} item={item} key={item.key} onPress={() => onSelect(item)} />)}
   </View>;
 
   return <>
     <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.positioner, isAndroid && styles.androidPositioner, {
-      paddingBottom: Math.max(insets.bottom, Spacing.two),
+      paddingBottom: safeAreaBottom,
       paddingHorizontal: isAndroid ? 0 : 20,
       paddingTop: isAndroid ? 0 : Spacing.two,
     }, positionStyle]}>
@@ -206,18 +211,33 @@ function FloatingNavigation({ activeKey, createDisabled, hidden, items, onCreate
           ? 'inset 0 2px 12px rgba(240,177,0,0.12), 0 6px 18px rgba(0,0,0,0.2)'
           : '0 6px 18px rgba(0,0,0,0.12)',
       }]}>
+        {!solidSelection ? <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.materialClip]}>
+          {useNativeGlass ? <GlassView
+            colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'}
+            glassEffectStyle="regular"
+            isInteractive={false}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+            tintColor={theme.navigationGlass}
+          /> : <BlurView
+            intensity={52}
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+            tint={theme.background === '#1b1917' ? 'dark' : 'light'}
+          />}
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.navigationGlass }]} />
+        </View> : null}
         <GestureDetector gesture={drag}>{navigationRow}</GestureDetector>
       </View>
-      {isAndroid ? <View pointerEvents="none" style={[styles.androidSafeArea, { backgroundColor: navigationSurface, height: Math.max(insets.bottom, Spacing.two) }]} /> : null}
+      {isAndroid ? <View pointerEvents="none" style={[styles.androidSafeArea, { backgroundColor: navigationSurface, height: safeAreaBottom }]} /> : null}
     </Animated.View>
   </>;
 }
 
-function NavigationTab({ active, item, onPress, solidSelection }: {
+function NavigationTab({ active, item, onPress }: {
   active: boolean;
   item: NavigationItem | (PrimaryDestination & { href: string });
   onPress: () => void;
-  solidSelection: boolean;
 }) {
   const theme = useTheme();
   const isAndroid = Platform.OS === 'android';
@@ -225,12 +245,12 @@ function NavigationTab({ active, item, onPress, solidSelection }: {
     accessibilityLabel={item.label}
     accessibilityRole="tab"
     accessibilityState={{ disabled: item.disabled, selected: active }}
-    android_ripple={isAndroid ? { color: theme.backgroundSelected } : undefined}
+    android_ripple={isAndroid ? { color: theme.homeBackground } : undefined}
     disabled={item.disabled}
     onPress={() => { hapticLight(); onPress(); }}
-    style={({ pressed }) => [styles.item, { opacity: item.disabled ? 0.38 : pressed ? 0.62 : 1 }]}
+    style={({ pressed }) => [styles.item, { backgroundColor: active ? theme.homeBackground : 'transparent', opacity: item.disabled ? 0.38 : pressed ? 0.9 : 1 }]}
   >
-    <View style={[styles.iconWell, { backgroundColor: active ? solidSelection ? theme.accentSoft : theme.navigationSelectionGlass : theme.homeSurface, borderColor: active ? theme.accentSoft : theme.homeBorder }]}>
+    <View style={[styles.iconWell, { backgroundColor: active ? 'transparent' : theme.homeSurface, borderColor: active ? 'transparent' : theme.homeBorder }]}>
       <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={item.icon} size={isAndroid ? 24 : IconSize.large + 4} variant={active ? 'filled' : 'outline'} weight={active ? 'semibold' : 'regular'} />
     </View>
     <ThemedText numberOfLines={1} style={[styles.itemLabel, isAndroid && styles.androidItemLabel, { color: active ? theme.accentStrong : theme.textSecondary }]} type="captionBold">{item.label}</ThemedText>
@@ -239,36 +259,45 @@ function NavigationTab({ active, item, onPress, solidSelection }: {
 
 function CreateButton({ disabled, onPress, style }: { disabled: boolean; onPress: () => void; style: { bottom: number; right: number } }) {
   const theme = useTheme();
-  const isAndroid = Platform.OS === 'android';
   return <View style={[styles.createSlot, style]}>
     <Pressable
       accessibilityHint={disabled ? 'Task creation is unavailable in this Project.' : 'Create a task in the selected Project, or choose a Project first.'}
       accessibilityLabel="Create task"
       accessibilityRole="button"
       accessibilityState={{ disabled }}
-      android_ripple={isAndroid ? { color: theme.backgroundSelected, borderless: true } : undefined}
       disabled={disabled}
       onPress={() => { hapticLight(); onPress(); }}
-      style={({ pressed }) => [styles.createButton, { backgroundColor: disabled ? theme.backgroundSelected : theme.accent, borderColor: theme.accentStrong, boxShadow: '0 4px 12px rgba(27,25,23,0.18)', elevation: 8, opacity: disabled ? 0.45 : pressed ? 0.82 : 1 }]}
+      style={({ pressed }) => [styles.createButton, { boxShadow: '0 4px 12px rgba(27,25,23,0.18)', elevation: 8, opacity: disabled ? 0.45 : pressed ? 0.82 : 1 }]}
     >
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.createButtonFill, { backgroundColor: disabled ? theme.backgroundSelected : theme.accent, borderColor: theme.accentStrong }]} />
       <PlatformIcon color={disabled ? theme.textTertiary : theme.accentInk} name="plus" size={30} weight="semibold" />
     </Pressable>
   </View>;
 }
 
+function safeGlassAvailability() {
+  try {
+    return isGlassEffectAPIAvailable();
+  } catch {
+    return false;
+  }
+}
+
 const styles = StyleSheet.create({
   androidChrome: { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderRadius: 0, borderRightWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, borderTopWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  androidItemLabel: { fontSize: 11, lineHeight: 14, marginTop: 2 },
+  androidItemLabel: { ...Typography.captionBold, marginTop: 2 },
   androidPositioner: { left: 0, paddingHorizontal: 0, paddingTop: 0, right: 0 },
   chrome: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: BottomTabInset, overflow: 'visible' },
-  createButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 56, justifyContent: 'center', width: 56 },
+  createButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, height: 56, justifyContent: 'center', width: 56 },
+  createButtonFill: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth },
   createSlot: { alignItems: 'center', elevation: 10, position: 'absolute', zIndex: 10 },
-  dragPill: { borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 56, left: 0, position: 'absolute', width: 56 },
+  dragPill: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, left: 0, position: 'absolute' },
   androidSafeArea: { bottom: 0, left: 0, position: 'absolute', right: 0 },
   fabBand: { overflow: 'visible', position: 'relative', zIndex: 5 },
   iconWell: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 40, justifyContent: 'center', width: 40 },
-  item: { alignItems: 'center', alignSelf: 'center', flex: 1, justifyContent: 'center', minHeight: 60, minWidth: 0 },
-  itemLabel: { fontSize: 10, lineHeight: 13, marginTop: 1 },
+  materialClip: { borderCurve: 'continuous', borderRadius: Radius.pill, overflow: 'hidden' },
+  item: { alignItems: 'center', alignSelf: 'stretch', borderCurve: 'continuous', borderRadius: Radius.large, flex: 1, justifyContent: 'center', minHeight: 60, minWidth: 0, overflow: 'hidden' },
+  itemLabel: { ...Typography.captionBold, marginTop: 1 },
   positioner: { bottom: 0, left: 0, overflow: 'visible', paddingHorizontal: 20, paddingTop: Spacing.two, position: 'absolute', right: 0, zIndex: 50 },
   row: { alignItems: 'center', flexDirection: 'row', height: BottomTabInset, overflow: 'visible' },
 });

@@ -214,12 +214,13 @@ describe('company to project to channel authorization chain', () => {
     await asUser(t, owner).mutation(api.sharedProjects.updateDetails, {
       actingCompanyId: companyId, projectId: created.projectId,
       projectMemberId: created.projectMemberId, name: 'Launch plan', label: 'FY27',
+      markColorKey: 'violet', markIconKey: 'launch',
     })
     const updated = await t.run(async (ctx) => ({
       project: await ctx.db.get(created.projectId),
       audits: await ctx.db.query('auditEvents').collect(),
     }))
-    expect(updated.project).toMatchObject({ name: 'Launch plan', clientLabel: 'FY27' })
+    expect(updated.project).toMatchObject({ name: 'Launch plan', clientLabel: 'FY27', markColorKey: 'violet', markIconKey: 'launch' })
     expect(updated.audits.some((event) => event.action === 'project.updated')).toBe(true)
 
     await asUser(t, owner).mutation(api.companies.updateProfile, {

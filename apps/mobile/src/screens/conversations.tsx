@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { Image } from 'expo-image';
+import { FlatList, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -9,10 +8,11 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { CompactPillButton } from '@/components/compact-pill-button';
+import { EntityMark } from '@/components/entity-mark';
 import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ConversationProjectTabs } from '@/components/conversation-project-tabs';
-import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { OptionsSheet, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
@@ -22,7 +22,6 @@ import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-vi
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
-import { companyMarkColors } from '@/lib/company-brand';
 import { channelHref, projectOverviewHref, type RepresentedProjectContext } from '@/lib/company-navigation';
 import { hapticLight } from '@/lib/haptics';
 import { threadConversationHref } from '@/lib/thread-navigation';
@@ -40,12 +39,10 @@ type ConversationActionTarget = { context: string; href: Href; label: string; op
 export default function ConversationsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const routeParams = useLocalSearchParams<{ archive?: string; companyId?: string; membershipId?: string; projectId?: string }>();
+  const routeParams = useLocalSearchParams<{ archive?: string; companyId?: string; membershipId?: string; projectId?: string; startup?: string }>();
   const bottomInset = useBottomTabContentInset(Spacing.five);
   const safeAreaInsets = useSafeAreaInsets();
   const { actingCompany, actingCompanyId, companies, setActingCompanyId } = useCompany();
-  const companyLogoUrl = useQuery(api.companies.getLogoUrl, actingCompanyId ? { companyId: actingCompanyId } : 'skip');
-  const companyTone = companyMarkColors(String(actingCompanyId ?? 'track'), theme);
   const { trackUserId } = useTrackUser();
   const { setCreateAction, setCreateContext } = usePrimaryNavigationVisibility();
   const release = useReleaseConfig();
@@ -56,17 +53,20 @@ export default function ConversationsScreen() {
   const [filter, setFilter] = useState<ConversationFilter>('all');
   const [search, setSearch] = useState('');
   const routeSelection = useRef<string | null>(null);
+  const startingAtChats = routeParams.startup === '1';
   const activeCompanies = useMemo(() => (companies ?? []).filter(({ company }) => company?.status === 'active'), [companies]);
   useEffect(() => {
+    if (startingAtChats) return;
     if (!actingCompanyId && activeCompanies[0]?.company?._id) setActingCompanyId(activeCompanies[0].company._id);
-  }, [actingCompanyId, activeCompanies, setActingCompanyId]);
+  }, [actingCompanyId, activeCompanies, setActingCompanyId, startingAtChats]);
   useEffect(() => {
+    if (startingAtChats) return;
     const requestedCompanyId = routeParams.companyId;
     if (!requestedCompanyId || !activeCompanies.some(({ company }) => String(company?._id) === requestedCompanyId)) return;
     if (actingCompanyId !== requestedCompanyId) setActingCompanyId(requestedCompanyId as Id<'companies'>);
-  }, [activeCompanies, actingCompanyId, routeParams.companyId, setActingCompanyId]);
-  const routeCompanyId = routeParams.companyId as Id<'companies'> | undefined;
-  const requestedProjectId = routeParams.projectId;
+  }, [activeCompanies, actingCompanyId, routeParams.companyId, setActingCompanyId, startingAtChats]);
+  const routeCompanyId = startingAtChats ? undefined : routeParams.companyId as Id<'companies'> | undefined;
+  const requestedProjectId = startingAtChats ? undefined : routeParams.projectId;
   const projectsPage = usePaginatedQuery(api.mobile.listProjects, trackUserId
     ? { userId: trackUserId, actingCompanyId: routeCompanyId ?? (requestedProjectId ? undefined : actingCompanyId ?? undefined) }
     : 'skip', { initialNumItems: 12 });
@@ -113,6 +113,13 @@ export default function ConversationsScreen() {
   }, [router, selectedProject, setCreateAction, setCreateContext]));
 
   useEffect(() => {
+    if (startingAtChats) {
+      routeSelection.current = null;
+      setSelectedProjectId(null);
+      setSelectedRouteProject(null);
+      router.setParams({ archive: undefined, companyId: undefined, membershipId: undefined, projectId: undefined, startup: undefined });
+      return;
+    }
     const requestedProjectId = routeParams.projectId;
     if (!requestedProjectId) {
       routeSelection.current = null;
@@ -137,7 +144,7 @@ export default function ConversationsScreen() {
     }
     routeSelection.current = selectionKey;
     router.setParams({ archive: undefined, companyId: undefined, membershipId: undefined, projectId: undefined });
-  }, [actingCompanyId, listedProjects, projectsPage, routeParams.companyId, routeParams.projectId, router, setActingCompanyId]);
+  }, [actingCompanyId, listedProjects, projectsPage, routeParams.companyId, routeParams.projectId, router, setActingCompanyId, startingAtChats]);
 
   useEffect(() => {
     if (selectedProjectId && !projects.some(({ project }) => String(project._id) === selectedProjectId)
@@ -159,7 +166,7 @@ export default function ConversationsScreen() {
               <ThemedText numberOfLines={1} style={styles.companyContext} themeColor="textSecondary" type="caption">{companyName}</ThemedText>
             </View>
             <Pressable accessibilityHint="Opens the Company selector" accessibilityLabel={`Switch Company. Current Company: ${companyName}`} accessibilityRole="button" onPress={() => setCompanySheetOpen(true)} style={({ pressed }) => [styles.companySwitchButton, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder }]}>
-              <View style={[styles.companyMark, { backgroundColor: companyTone.background }]}>{companyLogoUrl ? <Image accessibilityElementsHidden contentFit="cover" importantForAccessibility="no" source={{ uri: companyLogoUrl }} style={styles.companyLogo} /> : <PlatformIcon color={companyTone.foreground} name="office-building" size={20} weight="regular" />}</View>
+              <EntityMark id={String(actingCompanyId ?? 'company')} imageUrl={actingCompany?.company?.logoUrl} kind="company" name={companyName} size={30} />
               <PlatformIcon color={theme.textSecondary} name="chevron-down" size={14} weight="regular" />
             </Pressable>
           </View>
@@ -169,7 +176,7 @@ export default function ConversationsScreen() {
               if (item) router.push(projectOverviewHref(item.project._id, projectContext(item)) as never);
             }}
             onSelect={(id) => { setSelectedProjectId(id); if (!id || projects.some(({ project }) => String(project._id) === id)) setSelectedRouteProject(null); }}
-            projects={[...((selectedProject && !projects.some(({ project }) => project._id === selectedProject.project._id)) ? [selectedProject] : projects)].map(({ project }) => ({ id: String(project._id), name: project.name }))}
+            projects={[...((selectedProject && !projects.some(({ project }) => project._id === selectedProject.project._id)) ? [selectedProject] : projects)].map(({ project }) => ({ colorKey: project.markColorKey, iconKey: project.markIconKey, id: String(project._id), name: project.name }))}
             selectedId={selectedProjectId}
           />
           <View style={[styles.search, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
@@ -182,7 +189,7 @@ export default function ConversationsScreen() {
               ['all', 'All'], ['unread', 'Unread'], ['channels', 'Channels'], ['threads', 'Threads'],
             ] as const).map(([value, label]) => {
               const active = filter === value;
-              return <CompactPillButton key={value} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { hapticLight(); setFilter(value); }} pillStyle={{ backgroundColor: active ? theme.accentSoft : theme.homeSurface, borderColor: active ? theme.accentStrong : theme.homeBorder }} pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}>
+              return <CompactPillButton key={value} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { hapticLight(); setFilter(value); }} pillStyle={{ backgroundColor: active ? theme.accentSoft : theme.homeSurface, borderColor: active ? 'transparent' : theme.homeBorder, minHeight: Platform.OS === 'android' ? 28 : undefined }} pressedPillStyle={{ backgroundColor: theme.backgroundElevated, borderColor: 'transparent' }}>
                 <ThemedText style={{ color: active ? theme.text : theme.textSecondary }} type="captionBold">{label}</ThemedText>
               </CompactPillButton>;
             })}
@@ -204,7 +211,7 @@ export default function ConversationsScreen() {
           threadsEnabled={release.threads}
           userId={trackUserId as Id<'users'>}
         />}
-        ListEmptyComponent={loading ? <SkeletonList label="Loading Company conversations" /> : <EmptyState icon="message" title={projects.length ? 'No matching conversations' : 'No Projects yet'} body={projects.length ? 'Try a different filter or search term.' : 'Projects you can access in this Company will appear here.'} />}
+        ListEmptyComponent={loading ? <ScreenLoading compact variant="chats" /> : <EmptyState icon="message" title={projects.length ? 'No matching conversations' : 'No Projects yet'} body={projects.length ? 'Try a different filter or search term.' : 'Projects you can access in this Company will appear here.'} />}
         ListFooterComponent={projectsPage.status === 'CanLoadMore' || projectsPage.status === 'LoadingMore' ? <Pressable accessibilityRole="button" disabled={projectsPage.status === 'LoadingMore'} onPress={() => projectsPage.loadMore(12)} style={[styles.loadMore, { borderColor: theme.homeBorder }]}><ThemedText type="captionBold">{projectsPage.status === 'LoadingMore' ? 'Loading Projects…' : 'Load more Projects'}</ThemedText></Pressable> : <View style={styles.footerSpace} />}
         onEndReached={() => { if (projectsPage.status === 'CanLoadMore') projectsPage.loadMore(12); }}
         onEndReachedThreshold={0.6}
@@ -214,7 +221,7 @@ export default function ConversationsScreen() {
       <OptionsSheet onClose={() => setCompanySheetOpen(false)} title="Switch Company" visible={companySheetOpen}>
         <SheetNote>Company conversations stay within that Company. Independent Project links open one authorized Project at a time.</SheetNote>
         <SheetSection title="Company workspace">
-            {activeCompanies.map(({ company }) => company ? <SheetRow detail="Company conversations" key={company._id} label={company.displayName} leading={<View style={[styles.sheetCompanyMark, { backgroundColor: theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="office-building" size={18} weight="regular" /></View>} onPress={() => { setActingCompanyId(company._id); setSelectedProjectId(null); setSelectedRouteProject(null); setCompanySheetOpen(false); }} selected={company._id === actingCompanyId} /> : null)}
+            {activeCompanies.map(({ company }) => company ? <SheetRow detail="Company conversations" key={company._id} label={company.displayName} leading={<EntityMark id={String(company._id)} imageUrl={company.logoUrl} kind="company" name={company.displayName} size={36} />} onPress={() => { setActingCompanyId(company._id); setSelectedProjectId(null); setSelectedRouteProject(null); setCompanySheetOpen(false); }} selected={company._id === actingCompanyId} /> : null)}
         </SheetSection>
       </OptionsSheet>
       <OptionsSheet onClose={() => setConversationActions(null)} title={conversationActions?.openLabel === 'Open Channel' ? 'Channel actions' : 'Thread actions'} visible={Boolean(conversationActions)}>
@@ -284,17 +291,24 @@ function ProjectConversationSection({ companyId, filter, membershipId, onActions
     thread.thread.name.toLocaleLowerCase().includes(query) && (filter !== 'unread' || thread.unread),
   ) : [];
 
-  if (query.length < 2 && groups.status === 'LoadingFirstPage') return <View style={styles.projectSection}><Divider title={project.project.name} /><SkeletonList count={2} label={`Loading ${project.project.name} conversations`} /></View>;
+  if (query.length < 2 && groups.status === 'LoadingFirstPage') return <View style={styles.projectSection}><Divider title={project.project.name} /><ScreenLoading compact variant="chats" /></View>;
   return <View style={styles.projectSection}>
     <Divider title={project.project.name} />
-    {query.length >= 2 ? messageSearch === undefined ? <SkeletonList count={2} label={`Searching ${project.project.name} conversations`} /> : <>
+    {query.length >= 2 ? messageSearch === undefined ? <ScreenLoading compact variant="chats" /> : <>
       {matchedMessages.map((message) => <Pressable accessibilityLabel={`${message.title}. ${message.subtitle}. Open matching message.`} accessibilityRole="button" key={`message:${String(message.messageId)}`} onPress={() => onSearchMessage(message)} style={({ pressed }) => [styles.searchResult, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderBottomColor: theme.homeBorder }]}>
         <View style={[styles.channelIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.accentStrong} name={message.threadId ? 'thread' : 'channel'} size={18} /></View>
         <View style={styles.rowCopy}><ThemedText numberOfLines={1} type="captionBold">{message.threadName ?? message.groupName}</ThemedText><ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{message.preview}</ThemedText><ThemedText numberOfLines={1} themeColor="textTertiary" type="caption">{message.subtitle}</ThemedText></View>
         <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} weight="regular" />
       </Pressable>)}
-      {matchingChannels.map((channel) => <Pressable accessibilityHint="Tap to open. Touch and hold for Channel actions." accessibilityLabel={`${channel.group.name} Channel${channel.unreadCount ? `, ${channel.unreadCount} unread` : ''}`} accessibilityRole="button" delayLongPress={360} key={`channel:${String(channel.group._id)}`} onLongPress={() => onActions(channelActionTarget(project, channel))} onPress={() => onChannel(channel)} style={({ pressed }) => [styles.channelRow, { opacity: pressed ? 0.68 : 1 }]}>
-        <ChannelIcon unreadCount={channel.unreadCount} />
+      {matchingChannels.map((channel) => <Pressable accessibilityActions={[{ name: 'showActions', label: 'Show Channel actions' }]} accessibilityHint="Tap to open. Touch and hold or use the Channel actions menu to show options." accessibilityLabel={`${channel.group.name} Channel${channel.unreadCount ? `, ${channel.unreadCount} unread` : ''}`} accessibilityRole="button" delayLongPress={360} key={`channel:${String(channel.group._id)}`} onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === 'showActions') onActions(channelActionTarget(project, channel)); }} onLongPress={() => onActions(channelActionTarget(project, channel))} onPress={() => onChannel(channel)} style={({ pressed }) => [styles.channelRow, {
+        backgroundColor: pressed ? theme.backgroundSelected : 'transparent',
+        borderColor: pressed ? theme.textTertiary : 'transparent',
+        borderRadius: Radius.medium,
+        borderWidth: pressed ? StyleSheet.hairlineWidth : 0,
+        boxShadow: pressed ? '0 2px 8px rgba(0,0,0,0.16)' : undefined,
+        opacity: pressed ? 0.9 : 1,
+      }]}>
+        <ChannelIcon channel={channel.group} unreadCount={channel.unreadCount} />
         <View style={styles.rowCopy}><ThemedText numberOfLines={1} type="captionBold">{channel.group.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{channel.lastMessage?.body?.trim() || 'No messages yet'}</ThemedText></View>
         <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} weight="regular" />
       </Pressable>)}
@@ -307,15 +321,21 @@ function ProjectConversationSection({ companyId, filter, membershipId, onActions
         .filter((thread) => filter !== 'unread' || thread.unread)
         .sort((left, right) => (right.latestReplyAt ?? 0) - (left.latestReplyAt ?? 0));
         return <View key={String(channel.group._id)} style={[styles.channelBlock, { borderBottomColor: theme.homeBorder }]}>
-          {filter !== 'threads' ? <Pressable accessibilityHint="Tap to open. Touch and hold for Channel actions." accessibilityLabel={`${channel.group.name} Channel${channel.unreadCount ? `, ${channel.unreadCount} unread` : ''}`} accessibilityRole="button" delayLongPress={360} onLongPress={() => onActions(channelActionTarget(project, channel))} onPress={() => onChannel(channel)} style={({ pressed }) => [styles.channelRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
-              <ChannelIcon unreadCount={channel.unreadCount} />
+          {filter !== 'threads' ? <Pressable accessibilityActions={[{ name: 'showActions', label: 'Show Channel actions' }]} accessibilityHint="Tap to open. Touch and hold or use the Channel actions menu to show options." accessibilityLabel={`${channel.group.name} Channel${channel.unreadCount ? `, ${channel.unreadCount} unread` : ''}`} accessibilityRole="button" delayLongPress={360} onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === 'showActions') onActions(channelActionTarget(project, channel)); }} onLongPress={() => onActions(channelActionTarget(project, channel))} onPress={() => onChannel(channel)} style={({ pressed }) => [styles.channelRow, {
+            backgroundColor: pressed ? theme.backgroundSelected : 'transparent',
+            borderColor: pressed ? theme.textTertiary : 'transparent',
+            borderRadius: Radius.medium,
+            borderWidth: pressed ? StyleSheet.hairlineWidth : 0,
+            boxShadow: pressed ? '0 2px 8px rgba(0,0,0,0.16)' : undefined,
+          }]}>
+              <ChannelIcon channel={channel.group} unreadCount={channel.unreadCount} />
               <View style={styles.rowCopy}>
                 <ThemedText numberOfLines={1} style={styles.rowTitle} type="smallBold">{channel.group.name}</ThemedText>
                 <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{channel.lastMessage?.body?.trim() || 'No messages yet'}</ThemedText>
               </View>
               <View style={styles.rowMeta}>{channel.lastMessage ? <ThemedText themeColor="textTertiary" type="caption">{conversationTime(channel.lastMessage.createdAt)}</ThemedText> : null}</View>
           </Pressable> : null}
-          {filter === 'threads' ? relatedThreads.map((thread) => <Pressable accessibilityHint="Tap to open. Touch and hold for Thread actions." accessibilityLabel={`${thread.thread.name}, thread in ${channel.group.name}${thread.unread ? ', unread' : ''}`} accessibilityRole="button" delayLongPress={360} key={String(thread.thread._id)} onLongPress={() => onActions(threadActionTarget(project, thread))} onPress={() => onThread(thread)} style={({ pressed }) => [styles.threadRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+          {filter === 'threads' ? relatedThreads.map((thread) => <Pressable accessibilityActions={[{ name: 'showActions', label: 'Show Thread actions' }]} accessibilityHint="Tap to open. Touch and hold or use the Thread actions menu to show options." accessibilityLabel={`${thread.thread.name}, thread in ${channel.group.name}${thread.unread ? ', unread' : ''}`} accessibilityRole="button" delayLongPress={360} key={String(thread.thread._id)} onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === 'showActions') onActions(threadActionTarget(project, thread)); }} onLongPress={() => onActions(threadActionTarget(project, thread))} onPress={() => onThread(thread)} style={({ pressed }) => [styles.threadRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
           <PlatformIcon color={theme.textTertiary} name="thread" size={16} />
           <View style={styles.rowCopy}>
             <View style={styles.titleLine}><ThemedText numberOfLines={1} style={styles.rowTitle} type="captionBold">{thread.thread.name}</ThemedText>{thread.unread ? <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} /> : null}</View>
@@ -335,7 +355,7 @@ function ProjectConversationSection({ companyId, filter, membershipId, onActions
 
 function ConversationThreadRow({ item, onLongPress, onPress }: { item: ThreadRow; onLongPress: () => void; onPress: () => void }) {
   const theme = useTheme();
-  return <Pressable accessibilityHint="Tap to open. Touch and hold for Thread actions." accessibilityLabel={`${item.thread.name}, thread in ${item.channel?.name ?? 'Channel'}`} accessibilityRole="button" delayLongPress={360} onLongPress={onLongPress} onPress={onPress} style={({ pressed }) => [styles.threadRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+  return <Pressable accessibilityActions={[{ name: 'showActions', label: 'Show Thread actions' }]} accessibilityHint="Tap to open. Touch and hold or use the Thread actions menu to show options." accessibilityLabel={`${item.thread.name}, thread in ${item.channel?.name ?? 'Channel'}`} accessibilityRole="button" delayLongPress={360} onAccessibilityAction={(event) => { if (event.nativeEvent.actionName === 'showActions') onLongPress(); }} onLongPress={onLongPress} onPress={onPress} style={({ pressed }) => [styles.threadRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
     <PlatformIcon color={theme.accentStrong} name="thread" size={17} />
     <View style={styles.rowCopy}><ThemedText numberOfLines={1} type="captionBold">{item.thread.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{item.channel?.name ?? 'Channel'} · {threadPreview(item)}</ThemedText></View>
     <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />
@@ -394,10 +414,10 @@ function threadActionTarget(project: ProjectRow, thread: ThreadRow): Conversatio
   };
 }
 
-function ChannelIcon({ unreadCount }: { unreadCount: number }) {
+function ChannelIcon({ channel, unreadCount }: { channel: ChannelRow['group']; unreadCount: number }) {
   const theme = useTheme();
   return <View style={styles.channelIconWrap}>
-    <View style={[styles.channelIcon, { backgroundColor: theme.backgroundSelected }]}><PlatformIcon color={theme.textSecondary} name="channel" size={18} weight="regular" /></View>
+    <EntityMark colorKey={channel.markColorKey} iconKey={channel.markIconKey} id={String(channel._id)} kind="channel" name={channel.name} size={42} />
     {unreadCount > 0 ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.channelUnreadBadge, { backgroundColor: theme.accent, borderColor: theme.homeSurface }]}><ThemedText style={styles.channelUnreadCount} type="captionBold">{unreadCount > 99 ? '99+' : unreadCount}</ThemedText></View> : null}
   </View>;
 }
@@ -407,13 +427,11 @@ const styles = StyleSheet.create({
   channelBlock: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: Spacing.one },
   channelIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 42, justifyContent: 'center', width: 42 },
   channelIconWrap: { height: 42, position: 'relative', width: 42 },
-  channelUnreadBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1.5, height: 20, justifyContent: 'center', minWidth: 20, paddingHorizontal: 3, position: 'absolute', right: -4, top: -4 },
-  channelUnreadCount: { color: '#1b1917', fontSize: 9, lineHeight: 12 },
+  channelUnreadBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1.5, justifyContent: 'center', minHeight: 24, minWidth: 24, paddingHorizontal: 3, paddingVertical: 2, position: 'absolute', right: -4, top: -4 },
+  channelUnreadCount: { ...Typography.captionBold, color: '#1b1917' },
   channelRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: 68, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   clearSearch: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   companyContext: { maxWidth: '100%' },
-  companyMark: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, height: 30, justifyContent: 'center', overflow: 'hidden', width: 30 },
-  companyLogo: { borderRadius: Radius.small, height: 30, width: 30 },
   companySwitchButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'center', paddingHorizontal: Spacing.one, width: 64 },
   content: { gap: Spacing.one, paddingHorizontal: Spacing.four, paddingTop: Spacing.two },
   divider: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.two, paddingTop: Spacing.two, paddingBottom: Spacing.one },

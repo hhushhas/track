@@ -24,6 +24,7 @@ supportedArchitectures:
     - x64
 
 overrides:
+  hono: 4.13.12
   # Keep the workspace on one React version; React Native 0.86 accepts ^19.2.3.
   react: 19.2.7
   react-dom: 19.2.7

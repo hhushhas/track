@@ -23,7 +23,7 @@ import { uniqueTaskViews } from '@/lib/unique-task-views';
 
 const ColumnWidth = 280;
 const ColumnGap = Spacing.three;
-const CardGap = Spacing.two;
+const CardGap = Spacing.three;
 
 export type BoardColumnView = {
   state: Doc<'taskWorkflowStates'>;
@@ -470,6 +470,6 @@ const styles = StyleSheet.create({
   compactColumns: { gap: ColumnGap, paddingBottom: Spacing.four, paddingRight: Spacing.three },
   columnDot: { borderRadius: Radius.pill, height: 8, width: 8 },
   columnTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minWidth: 0 },
-  root: { flex: 1, gap: Spacing.two },
+  root: { flex: 1, gap: Spacing.three },
   sheetStateIcon: { alignItems: 'center', borderRadius: Radius.small, height: 32, justifyContent: 'center', width: 32 },
 });

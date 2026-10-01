@@ -66,8 +66,8 @@ export function ProjectScopeCarousel({ projects, selectedId, onSelect, onOpen, e
           accessibilityLabel={`${item.name}${selected ? ', selected' : ''}`}
           key={item.id || 'all-projects'}
           onPress={() => { hapticLight(); onSelect(item.id || null); }}
-          pillStyle={{ backgroundColor: selected ? theme.accentSoft : theme.homeSurface, borderColor: selected ? theme.accentStrong : theme.homeBorder, maxWidth: 260 }}
-          pressedPillStyle={{ backgroundColor: theme.backgroundSelected }}
+          pillStyle={{ backgroundColor: selected ? theme.accentSoft : theme.homeSurface, borderColor: selected ? 'transparent' : theme.homeBorder, maxWidth: 260 }}
+          pressedPillStyle={{ backgroundColor: theme.homeBackground, borderColor: 'transparent' }}
         >
           <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={item.id ? 'project' : 'office-building'} size={15} />
           <ThemedText numberOfLines={1} style={[styles.compactLabel, { color: selected ? theme.accentStrong : theme.text }]} type="captionBold">{item.name}</ThemedText>

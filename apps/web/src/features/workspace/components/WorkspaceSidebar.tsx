@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '#/components/ui/dialog'
 import { AvatarNameTooltip } from '#/features/workspace/avatar-tooltip'
+import { EntityMark } from '#/features/workspace/entity-mark'
 import { getGroupAvatar } from '#/features/workspace/group-avatar'
 import { getAvatarTone, getInitials } from '#/features/workspace/identity'
 import { useReleaseConfig } from '#/lib/release-config'
@@ -273,7 +274,7 @@ export function WorkspaceSidebar({
               disabled={!projectItems.length}
               title={navCollapsed ? activeProject?.project.name ?? 'Select a project' : undefined}
             >
-              <FolderKanban aria-hidden="true" className="track-nav-icon track-project-icon" size={14} />
+              {activeProject ? <EntityMark colorKey={activeProject.project.markColorKey} iconKey={activeProject.project.markIconKey} id={String(activeProject.project._id)} kind="project" name={activeProject.project.name} size={24} /> : <FolderKanban aria-hidden="true" className="track-nav-icon track-project-icon" size={14} />}
               <span className="track-nav-copy">
                 <span className="track-nav-title">{activeProject?.project.name ?? 'Select a project'}</span>
                 <span className="track-nav-meta">{activeProject ? `${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Independent project'} · ${activeProject.membership.role}` : 'No project selected'}</span>
@@ -292,6 +293,7 @@ export function WorkspaceSidebar({
                     onPointerEnter={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
                     onTouchStart={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
                   >
+                    <EntityMark colorKey={item.project.markColorKey} iconKey={item.project.markIconKey} id={String(item.project._id)} kind="project" name={item.project.name} size={22} />
                     <span className="track-menu-project-name">{item.project.name}</span>
                     <span className="track-menu-project-role">{item.membership.role}</span>
                   </DropdownMenuItem>

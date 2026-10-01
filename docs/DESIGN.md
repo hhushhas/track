@@ -80,7 +80,7 @@ Light and dark themes share the same layout, hierarchy, and interaction states. 
 
 ### Type and spacing
 
-Use Inter for interface text, the configured rounded display face for occasional display headings, Geist for metadata, and Geist Mono only for task keys or other fixed identifiers. Do not bundle system fonts that the platform already provides. Avoid oversized headings on operational screens.
+Typography is platform-specific. The web app uses Inter for interface text, the configured rounded display face for occasional display headings, Geist for metadata, and Geist Mono only for fixed identifiers. The native mobile app uses Manrope V5 Static for app-owned text and the platform monospace for fixed identifiers. Native controls keep their platform font. Mobile bundles the original static Manrope files and shows the required attribution in the account's Fonts and licenses section. Avoid oversized headings on operational screens.
 
 Use an 8-point spacing rhythm and existing shared spacing tokens. Align row starts, titles, metadata, input edges, and navigation cells to consistent vertical lines. Prefer whitespace and a hairline divider to a border around every component. Use the shared 6px, 8px, and 12px radii for ordinary controls; reserve pill and circular shapes for controls whose meaning benefits from that shape.
 

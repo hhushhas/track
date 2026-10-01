@@ -10,7 +10,7 @@ import { useTrackUser } from '@/contexts/track-user-context';
 const STORAGE_KEY = 'track.acting-company.v1';
 
 type CompanyMembership = {
-  company: Doc<'companies'> | null;
+  company: (Doc<'companies'> & { logoUrl: string | null }) | null;
   membership: Doc<'companyMembers'>;
 };
 

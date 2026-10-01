@@ -5,6 +5,7 @@ import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition, useReducedMoti
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { PlatformIcon } from '@/components/platform-icon';
+import { EntityMark } from '@/components/entity-mark';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -12,7 +13,10 @@ import { hapticLight } from '@/lib/haptics';
 import { projectRoleLabel } from '@/lib/role-label';
 
 export type DirectoryProject = {
-  project: Pick<Doc<'projects'>, '_id' | 'name'>;
+  project: Pick<Doc<'projects'>, '_id' | 'name'> & {
+    markIconKey: Doc<'projects'>['markIconKey'];
+    markColorKey: Doc<'projects'>['markColorKey'];
+  };
   membership: Doc<'projectMembers'>;
   groupCount: number;
   memberCount: number;
@@ -110,9 +114,7 @@ export function ProjectDirectoryCard({
       >
         <View style={styles.topline}>
           <View style={styles.roleLine}>
-            <View style={[styles.projectGlyph, { backgroundColor: archived ? theme.backgroundSelected : theme.accentSoft }]}>
-              <PlatformIcon color={archived ? theme.textSecondary : theme.accentStrong} name={archived ? 'archive' : 'project'} size={14} />
-            </View>
+            <EntityMark colorKey={item.project.markColorKey} iconKey={item.project.markIconKey} id={String(item.project._id)} kind="project" name={item.project.name} size={24} />
             <ThemedText themeColor={archived ? 'textTertiary' : 'textSecondary'} type="captionBold">{role}</ThemedText>
           </View>
           {archived ? <PlatformIcon color={theme.textTertiary} name="archive" size={16} /> : item.unreadCount > 0 ? (
@@ -153,7 +155,7 @@ function ChannelRow({ channel, onPress }: { channel: DirectoryChannel; onPress: 
   const theme = useTheme();
   return (
     <Pressable accessibilityLabel={`${channel.group.name}.${channel.unreadCount ? ` ${channel.unreadCount} unread.` : ''}`} accessibilityRole="button" android_ripple={{ color: theme.backgroundSelected }} onPress={() => { hapticLight(); onPress(); }} style={({ pressed }) => [styles.channel, pressed && { backgroundColor: theme.backgroundElement }]}>
-      <View style={[styles.channelIcon, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="channel" size={16} /></View>
+      <EntityMark colorKey={channel.group.markColorKey} iconKey={channel.group.markIconKey} id={String(channel.group._id)} kind="channel" name={channel.group.name} size={32} />
       <View style={styles.flex}>
         <View style={styles.channelTitle}><ThemedText numberOfLines={1} style={styles.flex} type="title">{channel.group.name}</ThemedText>{channel.unreadCount > 0 ? <ThemedText themeColor="accentStrong" type="captionBold">{compact(channel.unreadCount)}</ThemedText> : null}</View>
         <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{channel.lastMessage?.body || 'No messages yet'}</ThemedText>

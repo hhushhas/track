@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
+import { entityMarkColorKeys, entityMarkIconKeys } from '@track/shared'
 
 import { companyCoreTables } from './schema/companyCoreTables'
 import { companyProjectTables } from './schema/companyProjectTables'
@@ -197,6 +198,8 @@ export default defineSchema({
     clientLabel: v.optional(v.string()),
     description: v.optional(v.string()),
     iconStorageId: v.optional(v.id('_storage')),
+    markIconKey: v.optional(v.union(...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(...entityMarkColorKeys.map((key) => v.literal(key)))),
     accessProfile: v.optional(projectAccessProfile),
     owningCompanyId: v.optional(v.id('companies')),
     relationshipId: v.optional(v.id('relationships')),
@@ -244,6 +247,8 @@ export default defineSchema({
     projectId: v.id('projects'),
     kind: groupKind,
     name: v.string(),
+    markIconKey: v.optional(v.union(...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(...entityMarkColorKeys.map((key) => v.literal(key)))),
     status: v.optional(channelStatus),
     revision: v.optional(v.number()),
     archivedAt: v.optional(v.number()),

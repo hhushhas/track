@@ -200,6 +200,67 @@ describe('mobile attention queue', () => {
     expect(tasksThird.page.length).toBeGreaterThan(100)
   })
 
+  it('keeps older urgent tasks visible when the general task query reaches its per-Project cap', async () => {
+    process.env.TRACK_TASKS_ENABLED = 'true'
+    const t = convexTest(schema, modules)
+    const userId = await t.run(async (ctx) => await ctx.db.insert('users', {
+      authUserId: 'capped-attention-owner',
+      googleSubject: 'capped-attention-owner',
+      normalizedEmail: 'capped-attention-owner@track.local',
+      email: 'capped-attention-owner@track.local',
+      displayName: 'Capped Attention Owner',
+      twoFactorEnabled: false,
+      createdAt: 1,
+      updatedAt: 1,
+    }))
+    const seeded = await t.mutation(internal.demoSeed.seed, { email: 'capped-attention-owner@track.local' })
+    const urgentTaskId = await t.run(async (ctx) => {
+      const member = await ctx.db.query('projectMembers').withIndex('by_project_user', (q) =>
+        q.eq('projectId', seeded.projectId).eq('userId', userId),
+      ).unique()
+      const original = await ctx.db.query('tasks').withIndex('by_project_archived', (q) =>
+        q.eq('projectId', seeded.projectId).eq('archivedAt', undefined),
+      ).first()
+      if (!member || !original) throw new Error('capped_attention_fixture_incomplete')
+      const openState = (await ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) =>
+        q.eq('boardId', original.boardId),
+      ).collect()).find((state) => state.category === 'unstarted' || state.category === 'started')
+      if (!openState) throw new Error('capped_attention_state_incomplete')
+      await ctx.db.patch(original._id, { assigneeProjectMemberId: member._id, workflowStateId: openState._id, priority: 'urgent', dueDate: '2026-09-30' })
+      const { _id: _taskId, _creationTime: _taskCreationTime, ...fields } = original
+      for (let index = 0; index < 501; index += 1) {
+        await ctx.db.insert('tasks', {
+          ...fields,
+          publicKey: `CAP-${index}`,
+          title: `Recent medium task ${index}`,
+          priority: 'medium',
+          dueDate: '2026-12-31',
+          rank: `cap-${String(index).padStart(4, '0')}`,
+          createIdempotencyKey: `cap-task-${index}`,
+          createdAt: index + 10,
+          updatedAt: index + 10,
+        })
+      }
+      return original._id
+    })
+    const actor = t.withIdentity({ subject: 'capped-attention-owner' })
+    const generalTasks = await actor.query(api.mobile.listMyTasks, {
+      userId,
+      openOnly: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    })
+    expect(generalTasks.page.some((item) => item.task._id === urgentTaskId)).toBe(false)
+
+    const attention = await actor.query(api.mobile.listMyTaskAttention, {
+      userId,
+      beforeDate: '2026-10-01',
+      paginationOpts: { cursor: null, numItems: 10 },
+    })
+    expect(attention.page).toEqual(expect.arrayContaining([
+      expect.objectContaining({ task: expect.objectContaining({ _id: urgentTaskId, priority: 'urgent' }) }),
+    ]))
+  })
+
   it('aggregates Company-scoped mentions and assigned work when no Company filter is supplied', async () => {
     process.env.TRACK_COMPANY_MODEL_ENABLED = 'true'
     process.env.TRACK_TASKS_ENABLED = 'true'
@@ -380,6 +441,8 @@ describe('mobile attention queue', () => {
     expect(taskProjects.page).toHaveLength(1)
     expect(taskProjects.page[0]?.membership.companyId).toBe(fixture.companyId)
     expect(taskProjects.page[0]).not.toHaveProperty('unreadCount')
+    expect(taskProjects.page[0]?.assignedTaskCount).toBeGreaterThan(0)
+    expect(taskProjects.page[0]?.assignedTaskCountPartial).toBe(false)
 
     const globalTasks = await t.withIdentity(identity).query(api.mobile.listMyTasks, {
       userId,

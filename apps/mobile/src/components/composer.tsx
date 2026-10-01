@@ -51,7 +51,6 @@ import {
   type MentionCandidate,
 } from '@/lib/mention-autocomplete';
 import { useVoiceRecorder } from '@/lib/media-capture';
-import { pickDocuments } from '@/lib/media-capture';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
 export type ComposerProps = {
@@ -75,7 +74,6 @@ export type ComposerProps = {
    */
   onSendMessage: (submission: ComposerSubmission) => Promise<ComposerSubmissionResult>;
   replyTo: DetailedMessage | null;
-  surfaceColor?: string;
   value: string;
 };
 
@@ -127,28 +125,27 @@ export function Composer({
   onLoadMoreMentionCandidates,
   onSendMessage,
   replyTo,
-  surfaceColor,
   value,
 }: ComposerProps) {
   const theme = useTheme();
   const isIOS = Platform.OS === 'ios';
+  const hasLiquidGlass = isIOS && safeGlassAvailable();
   const bottomTabBarInset = useBottomTabBarInset();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboard = useReanimatedKeyboardAnimation();
   const reducedMotion = useReducedMotion();
   const inputRef = useRef<TextInput>(null);
-  const hasLiquidGlass = isIOS && safeGlassAvailable();
 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [caret, setCaret] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
   const [microphoneCanAskAgain, setMicrophoneCanAskAgain] = useState<boolean | null>(null);
   const [retryMessageId, setRetryMessageId] = useState<Id<'messages'> | null>(null);
   /** Set for one commit after inserting a mention, to place the caret after it. */
   const [selection, setSelection] = useState<{ end: number; start: number } | null>(null);
   const [sending, setSending] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
 
   const voice = useVoiceRecorder({
     onCapture: handleCapture,
@@ -255,16 +252,6 @@ export function Composer({
     });
   }
 
-  async function chooseDocuments() {
-    hapticLight();
-    try {
-      const files = await pickDocuments();
-      if (files.length) setAttachments((previous) => [...previous, ...files]);
-    } catch {
-      setNotice('Could not open Documents. Try again.');
-    }
-  }
-
   const micPan = Gesture.Pan()
     .activateAfterLongPress(HoldDelay)
     .onStart(() => {
@@ -305,8 +292,7 @@ export function Composer({
         styles.surface,
         Platform.OS === 'ios' && styles.iosSurface,
         {
-          backgroundColor: surfaceColor ?? theme.background,
-          borderTopColor: theme.hairline,
+          backgroundColor: theme.background === '#1b1917' ? 'rgba(27,25,23,0.16)' : 'rgba(250,249,247,0.1)',
           marginBottom: keyboardVisible ? 0 : bottomTabBarInset,
         },
         surfaceStyle,
@@ -396,22 +382,13 @@ export function Composer({
           <View style={[styles.messageField, Platform.OS === 'ios' && styles.iosMessageField]}>
             {Platform.OS === 'ios' ? <GlassContainer spacing={4} style={styles.iosActionGroup}>
               <Pressable
-                accessibilityLabel="Add a photo"
+                accessibilityLabel="Add to message"
                 accessibilityRole="button"
                 hitSlop={6}
                 onPress={() => { hapticLight(); setMenuOpen(true); }}
                 style={({ pressed }) => [styles.iosGlassButton, { opacity: pressed ? 0.78 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
                 {hasLiquidGlass ? <GlassView colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'} glassEffectStyle="regular" isInteractive={false} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosGlassMaterial]} tintColor={theme.backgroundElement} /> : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosFallbackMaterial, { backgroundColor: theme.backgroundSelected }]} />}
                 <PlatformIcon color={theme.textSecondary} name="plus" size={19} />
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Attach a document"
-                accessibilityRole="button"
-                hitSlop={6}
-                onPress={() => void chooseDocuments()}
-                style={({ pressed }) => [styles.iosGlassButton, { opacity: pressed ? 0.78 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}>
-                {hasLiquidGlass ? <GlassView colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'} glassEffectStyle="regular" isInteractive={false} pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosGlassMaterial]} tintColor={theme.backgroundElement} /> : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.iosFallbackMaterial, { backgroundColor: theme.backgroundSelected }]} />}
-                <PlatformIcon color={theme.textSecondary} name="file-document-outline" size={18} />
               </Pressable>
             </GlassContainer> : <Pressable
               accessibilityLabel="Add a photo or document"
@@ -570,16 +547,22 @@ const styles = StyleSheet.create({
     flex: 1,
     ...Typography.message,
     maxHeight: 120,
-    minHeight: TouchTarget,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Platform.OS === 'ios' ? 11 : 8,
+    minHeight: 48,
+    paddingLeft: Spacing.five + Spacing.one,
+    paddingRight: Spacing.three,
+    paddingTop: Platform.OS === 'ios' ? 9 : 0,
+    paddingBottom: Platform.OS === 'ios' ? Spacing.one : 0,
+    textAlign: 'left',
+    textAlignVertical: Platform.OS === 'android' ? 'center' : 'top',
   },
   inputPill: {
+    alignItems: 'stretch',
     borderCurve: 'continuous',
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    minHeight: TouchTarget,
+    justifyContent: 'center',
+    minHeight: 56,
     overflow: 'hidden',
   },
   inputPillFallback: { borderRadius: Radius.pill },
@@ -597,7 +580,6 @@ const styles = StyleSheet.create({
   iosInlineAttach: { height: TouchTarget - Spacing.two, width: TouchTarget - Spacing.two },
   iosMicButton: { overflow: 'hidden' },
   iosMessageField: { borderRadius: 0, paddingHorizontal: 0 },
-  iosSurface: { borderTopWidth: 0 },
   inlineAttach: { alignItems: 'center', borderRadius: Radius.pill, height: 40, justifyContent: 'center', width: 40 },
   messageField: {
     alignItems: 'center',
@@ -646,15 +628,13 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'flex-end',
     flexDirection: 'row',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
+    gap: Spacing.one,
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.one,
   },
   slideHint: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
-  surface: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: Spacing.two,
-    paddingTop: Spacing.two,
-  },
+  surface: { gap: Spacing.two, paddingTop: Spacing.two },
+  iosSurface: { borderTopWidth: 0 },
   timer: { minWidth: 34 },
   wave: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 3 },
 });

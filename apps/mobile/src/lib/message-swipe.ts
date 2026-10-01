@@ -1,4 +1,5 @@
 export type MessageSwipeIntent = 'actions' | 'reply' | 'close';
+export type MessageActionsSwipeDirection = 'left' | 'right';
 
 /** Returns an interrupted gesture to its last settled tray state. */
 export function messageSwipeCancelIntent(trayAlreadyOpen: boolean): MessageSwipeIntent {
@@ -7,10 +8,18 @@ export function messageSwipeCancelIntent(trayAlreadyOpen: boolean): MessageSwipe
 }
 
 /** Maps a completed horizontal drag to the action surface it is allowed to open. */
-export function messageSwipeIntent(translationX: number, canReply: boolean, canOpenActions: boolean, trayAlreadyOpen = false): MessageSwipeIntent {
+export function messageSwipeIntent(
+  translationX: number,
+  canReply: boolean,
+  canOpenActions: boolean,
+  trayAlreadyOpen = false,
+  actionsDirection: MessageActionsSwipeDirection = 'left',
+): MessageSwipeIntent {
   'worklet';
-  if (trayAlreadyOpen) return translationX >= 56 ? 'close' : 'actions';
-  if (translationX <= -56 && canOpenActions) return 'actions';
-  if (translationX >= 56 && canReply) return 'reply';
+  const direction = actionsDirection === 'right' ? 1 : -1;
+  const actionDistance = translationX * direction;
+  if (trayAlreadyOpen) return actionDistance <= -56 ? 'close' : 'actions';
+  if (actionDistance >= 56 && canOpenActions) return 'actions';
+  if (actionDistance <= -56 && canReply) return 'reply';
   return 'close';
 }

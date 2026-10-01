@@ -20,6 +20,8 @@ import {
   SelectTrigger,
 } from '#/components/ui/select'
 import { getGroupAvatar } from './group-avatar'
+import { EntityMarkPicker } from './EntityMarkPicker'
+import type { EntityMarkColorKey, EntityMarkIconKey } from '@track/shared'
 
 export function WorkspaceDialogs({
   activeGroupId,
@@ -27,6 +29,8 @@ export function WorkspaceDialogs({
   groupDialogOpen,
   groupDialogMode,
   groupName,
+  groupMarkColorKey,
+  groupMarkIconKey,
   inviteDialogOpen,
   inviteEmail,
   inviteRole,
@@ -36,8 +40,12 @@ export function WorkspaceDialogs({
   projectDialogMode,
   projectGroups,
   projectName,
+  projectMarkColorKey,
+  projectMarkIconKey,
   setGroupDialogOpen,
   setGroupName,
+  setGroupMarkColorKey,
+  setGroupMarkIconKey,
   setInviteDialogOpen,
   setInviteEmail,
   setInviteRole,
@@ -45,6 +53,8 @@ export function WorkspaceDialogs({
   setProjectClientLabel,
   setProjectDialogOpen,
   setProjectName,
+  setProjectMarkColorKey,
+  setProjectMarkIconKey,
   onCreateGroupSubmit,
   onCreateProjectSubmit,
   onInviteSubmit,
@@ -54,6 +64,8 @@ export function WorkspaceDialogs({
   groupDialogOpen: boolean
   groupDialogMode: 'create' | 'edit'
   groupName: string
+  groupMarkColorKey: EntityMarkColorKey | ''
+  groupMarkIconKey: EntityMarkIconKey | ''
   inviteDialogOpen: boolean
   inviteEmail: string
   inviteRole: 'admin' | 'staff' | 'client'
@@ -63,8 +75,12 @@ export function WorkspaceDialogs({
   projectDialogMode: 'create' | 'edit'
   projectGroups: Array<Doc<'groups'>>
   projectName: string
+  projectMarkColorKey: EntityMarkColorKey | ''
+  projectMarkIconKey: EntityMarkIconKey | ''
   setGroupDialogOpen: (open: boolean) => void
   setGroupName: (value: string) => void
+  setGroupMarkColorKey: (value: EntityMarkColorKey | '') => void
+  setGroupMarkIconKey: (value: EntityMarkIconKey | '') => void
   setInviteDialogOpen: (open: boolean) => void
   setInviteEmail: (value: string) => void
   setInviteRole: (value: 'admin' | 'staff' | 'client') => void
@@ -72,6 +88,8 @@ export function WorkspaceDialogs({
   setProjectClientLabel: (value: string) => void
   setProjectDialogOpen: (open: boolean) => void
   setProjectName: (value: string) => void
+  setProjectMarkColorKey: (value: EntityMarkColorKey | '') => void
+  setProjectMarkIconKey: (value: EntityMarkIconKey | '') => void
   onCreateGroupSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCreateProjectSubmit: (event: FormEvent<HTMLFormElement>) => void
   onInviteSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -106,6 +124,7 @@ export function WorkspaceDialogs({
                   value={projectName}
                 />
               </label>
+              {projectDialogMode === 'edit' ? <EntityMarkPicker colorKey={projectMarkColorKey} iconKey={projectMarkIconKey} onColorChange={setProjectMarkColorKey} onIconChange={setProjectMarkIconKey} /> : null}
               <label className="track-dialog-field">
                 <span>Client label</span>
                 <Input
@@ -115,6 +134,7 @@ export function WorkspaceDialogs({
                   value={projectClientLabel}
                 />
               </label>
+              {groupDialogMode === 'edit' ? <EntityMarkPicker colorKey={groupMarkColorKey} iconKey={groupMarkIconKey} onColorChange={setGroupMarkColorKey} onIconChange={setGroupMarkIconKey} /> : null}
             </div>
             <DialogFooter>
               <Button className="track-button" type="button" onClick={() => setProjectDialogOpen(false)}>

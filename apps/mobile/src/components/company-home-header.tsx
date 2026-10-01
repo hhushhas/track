@@ -112,9 +112,9 @@ const styles = StyleSheet.create({
   actions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   badge: {
     alignItems: 'center', borderRadius: Radius.pill, borderWidth: 2, height: 20, justifyContent: 'center',
-    minWidth: 20, paddingHorizontal: 4, position: 'absolute', right: -4, top: -5,
+    minHeight: 24, minWidth: 24, paddingHorizontal: 4, paddingVertical: 2, position: 'absolute', right: -4, top: -5,
   },
-  badgeText: { fontSize: 10, lineHeight: 12 },
+  badgeText: Typography.captionBold,
   company: {
     alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth,
     flex: 1, flexDirection: 'row', gap: Spacing.three, maxWidth: 250, minHeight: TouchTarget, paddingRight: Spacing.three,

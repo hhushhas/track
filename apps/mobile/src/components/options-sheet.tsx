@@ -266,6 +266,8 @@ export function SheetRow({
   destructive,
   detail,
   disabled,
+  accessibilityHint,
+  accessibilityRole,
   icon,
   label,
   leading,
@@ -275,6 +277,8 @@ export function SheetRow({
   state = 'default',
   trailing,
 }: {
+  accessibilityHint?: string;
+  accessibilityRole?: 'button' | 'checkbox' | 'radio';
   destructive?: boolean;
   detail?: string;
   disabled?: boolean;
@@ -294,8 +298,14 @@ export function SheetRow({
 
   return (
     <Pressable
-      accessibilityRole={onPress ? selected === undefined ? 'button' : 'radio' : undefined}
-      accessibilityState={{ busy: Boolean(loading), disabled: Boolean(unavailable), selected }}
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={detail ? `${label}, ${detail}` : label}
+      accessibilityRole={onPress ? accessibilityRole ?? (selected === undefined ? 'button' : 'radio') : undefined}
+      accessibilityState={{
+        busy: Boolean(loading),
+        disabled: Boolean(unavailable),
+        ...(accessibilityRole === 'checkbox' ? { checked: Boolean(selected) } : { selected }),
+      }}
       android_ripple={{ color: theme.backgroundSelected }}
       disabled={unavailable}
       onPress={() => { if (onPress) { hapticLight(); onPress(); } }}

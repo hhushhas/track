@@ -3,7 +3,9 @@ import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useNetworkState } from 'expo-network';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useKeyboardState } from 'react-native-keyboard-controller';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Clipboard,
   KeyboardAvoidingView,
@@ -19,34 +21,32 @@ import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { DateField } from '@/components/date-field';
 import { ActionButton } from '@/components/action-button';
+import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
 import { OptionsSheet, SheetInput, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
-import { PlatformIcon, type IconName } from '@/components/platform-icon';
+import { PlatformIcon } from '@/components/platform-icon';
 import {
   TaskCommentComposer,
-  TaskDetailsTab,
+  TaskOverview,
   TaskUpdatesFeed,
 } from '@/components/task-detail-content';
 import type { TaskEditField } from '@/components/task-detail-types';
-import {
-  TaskCardSkeletons,
-  TaskPriorityBadge,
-  TaskStateBanner,
-} from '@/components/task-ui';
+import { TaskDueChip, TaskPriorityBadge, TaskStateBanner, TaskStatusPill } from '@/components/task-ui';
+import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxFontScale, Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
 import { taskErrorMessage } from '@/lib/user-facing-error';
-import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
+import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
 import { channelHref, projectOverviewHref } from '@/lib/company-navigation';
 import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { idempotencyKey } from '@/lib/idempotency';
 import { useReleaseConfig } from '@/lib/release-config';
 import { setActivePushContext } from '@/lib/push-presentation';
-import { shortTaskKey, taskDueDisplay, taskPriorityLabel } from '@/lib/task-presentation';
+import { shortTaskKey, taskPriorityLabel } from '@/lib/task-presentation';
 import { taskDecisionForCategory } from '@/lib/task-decision';
 import { visibleTaskUpdates } from '@/lib/task-updates';
 import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
@@ -86,7 +86,9 @@ function errorMessage(failure: unknown) {
 
 export default function TaskScreen() {
   const theme = useTheme();
-  const bottomContentInset = useBottomTabContentInset();
+  const safeAreaInsets = useSafeAreaInsets();
+  const bottomTabBarInset = useBottomTabBarInset();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const router = useRouter();
   const release = useReleaseConfig();
   const { trackUserId } = useTrackUser();
@@ -181,6 +183,7 @@ export default function TaskScreen() {
   const [comment, setComment] = useState('');
   const [mentionIds, setMentionIds] = useState<Array<Id<'projectMembers'>>>([]);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [updatesExpanded, setUpdatesExpanded] = useState(false);
   // Each save returns the next revision, so consecutive inline edits chain
   // without waiting for the reactive query to catch up.
   const savedRevision = useRef<number | null>(null);
@@ -462,10 +465,7 @@ export default function TaskScreen() {
     return (
       <ThemedView style={styles.screen}>
         <Stack.Screen options={{ title: taskKey ? shortTaskKey(taskKey) : 'Task' }} />
-        <View style={styles.loading}>
-          <View style={[styles.loadingHero, { backgroundColor: theme.skeleton }]} />
-          <TaskCardSkeletons count={3} />
-        </View>
+        <ScreenLoading variant="task" />
       </ThemedView>
     );
   }
@@ -483,13 +483,13 @@ export default function TaskScreen() {
   const updatesLoading = commentPage.status === 'LoadingFirstPage' || activityPage.status === 'LoadingFirstPage';
   const taskDecision = taskDecisionForCategory(detail.state?.category);
   const decisionState = board?.states.find((state) => state.category === taskDecision.targetCategory);
-  const dueDisplay = taskDueDisplay(detail.task.dueDate, undefined, detail.state?.category);
-  const canAdvance = !readOnly && detail.state?.category !== 'completed' && detail.state?.category !== 'canceled';
+  const canAdvance = !readOnly;
+  const visibleUpdates = updatesExpanded ? updates : updates.slice(-1);
 
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
-        title: 'Task',
+        title: shortTaskKey(detail.task.publicKey),
         headerRight: () => (
           <View style={styles.headerActions}>
             <IconButton
@@ -519,7 +519,7 @@ export default function TaskScreen() {
           ref={scrollRef}
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: bottomContentInset },
+            { paddingBottom: Spacing.four },
           ]}
           contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -542,13 +542,16 @@ export default function TaskScreen() {
           ) : null}
 
           <View style={styles.hero}>
-          <View style={styles.eyebrow}>
-            <ThemedText themeColor="accentStrong" type="captionBold">Project</ThemedText>
-            <ThemedText numberOfLines={1} style={styles.eyebrowBoard} themeColor="textTertiary" type="caption">
+          <View style={styles.projectContext}>
+            <PlatformIcon color={theme.textSecondary} name="project" size={15} />
+            <ThemedText numberOfLines={1} style={styles.contextName} themeColor="textSecondary" type="captionBold">
               {projectNavigation?.available && projectNavigation.project ? projectNavigation.project.name : 'Project'}
             </ThemedText>
+            {detail.board ? <>
+              <PlatformIcon color={theme.textTertiary} name="chevron-right" size={13} />
+              <ThemedText numberOfLines={1} style={styles.contextName} themeColor="textTertiary" type="caption">{detail.board.name}</ThemedText>
+            </> : null}
           </View>
-          {detail.board ? <ThemedText themeColor="textSecondary" type="caption">Board · {detail.board.name}</ThemedText> : null}
           <View style={styles.heroKeyRow}>
             <Pressable
               accessibilityHint="Copies the full task id"
@@ -561,14 +564,14 @@ export default function TaskScreen() {
                 setKeyCopied(true);
                 setTimeout(() => setKeyCopied(false), 1500);
               }}>
-              <ThemedText themeColor="textSecondary" type="mono">
+              <ThemedText themeColor="textTertiary" type="mono">
                 {keyCopied ? 'Copied' : shortTaskKey(detail.task.publicKey)}
               </ThemedText>
             </Pressable>
-            <TaskPriorityBadge
-              onPress={readOnly ? undefined : () => setField('priority')}
-              priority={detail.task.priority}
-            />
+            {titleDraft === null && !readOnly ? <Pressable accessibilityLabel="Edit task title" accessibilityRole="button" onPress={() => setTitleDraft(detail.task.title)} style={styles.editTitleButton}>
+              <PlatformIcon color={theme.textSecondary} name="edit" size={14} />
+              <ThemedText themeColor="textSecondary" type="caption">Edit</ThemedText>
+            </Pressable> : null}
           </View>
           {titleDraft === null ? (
             <Pressable
@@ -605,28 +608,43 @@ export default function TaskScreen() {
               value={titleDraft}
             />
           )}
-          <View style={[styles.propertyGroup, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
-            <TaskPropertyRow icon={detail.state?.category === 'completed' ? 'check-circle' : detail.state?.category === 'started' ? 'play' : detail.state?.category === 'canceled' ? 'close' : 'circle-outline'} label="Status" onPress={readOnly ? undefined : () => setField('status')} value={detail.state?.name ?? 'Unknown'} />
-            <TaskPropertyRow icon={dueDisplay?.overdue ? 'calendar-remove' : 'calendar'} label="Due date" onPress={readOnly ? undefined : () => setField('dueDate')} tone={dueDisplay?.overdue ? 'danger' : undefined} value={dueDisplay?.label ?? 'No due date'} />
-            <TaskPropertyRow icon="account-circle" label="Assignee" onPress={readOnly ? undefined : () => setField('assignee')} value={assigneeName} />
+          <View style={styles.statusControls}>
+            <TaskStatusPill
+              category={detail.state?.category}
+              label={detail.state?.name ?? 'Unknown'}
+              onPress={readOnly ? undefined : () => setField('status')}
+            />
+            <TaskPriorityBadge
+              compact
+              onPress={readOnly ? undefined : () => setField('priority')}
+              priority={detail.task.priority}
+            />
+            <TaskDueChip
+              category={detail.state?.category}
+              dueDate={detail.task.dueDate}
+              onPress={readOnly ? undefined : () => setField('dueDate')}
+              showNoDate
+            />
           </View>
+          <Pressable
+            accessibilityHint={readOnly ? undefined : 'Changes who owns this task'}
+            accessibilityLabel={`Assignee: ${assigneeName}`}
+            accessibilityRole={readOnly ? 'text' : 'button'}
+            disabled={readOnly}
+            onPress={() => setField('assignee')}
+            style={({ pressed }) => [styles.assigneeRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+            {detail.assignee
+              ? <ColoredAvatar label={assigneeName} seed={assigneeName} size={34} />
+              : <View style={[styles.unassignedAvatar, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="person" size={17} /></View>}
+            <View style={styles.assigneeCopy}>
+              <ThemedText themeColor="textTertiary" type="caption">ASSIGNEE</ThemedText>
+              <ThemedText numberOfLines={1} type="smallBold">{assigneeName}</ThemedText>
+            </View>
+            {readOnly ? null : <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />}
+          </Pressable>
         </View>
 
-          {canAdvance ? (
-            <ActionButton
-              disabled={readOnly}
-              icon={taskDecision.icon}
-              label={taskDecision.label}
-              loading={busy}
-              onPress={() => {
-                if (decisionState) void saveField({ workflowStateId: decisionState._id });
-                else setField('status');
-              }}
-              style={styles.decisionButton}
-            />
-          ) : null}
-
-          <TaskDetailsTab
+          <TaskOverview
             busy={busy}
             detail={detail}
             highlightSubtaskId={highlightSubtaskId ?? undefined}
@@ -653,17 +671,31 @@ export default function TaskScreen() {
 
           <View style={styles.updatesSection}>
             <View style={styles.updatesHeading}>
-              <ThemedText type="subtitle">Conversation and updates</ThemedText>
-              <ThemedText themeColor="textSecondary" type="caption">Comments and task changes in one timeline.</ThemedText>
+              <View accessibilityRole="header" style={[styles.updatesTab, { backgroundColor: theme.backgroundElevated }]}>
+                <ThemedText themeColor="textSecondary" type="captionBold">Updates</ThemedText>
+                {updates.length ? <ThemedText themeColor="textTertiary" type="caption">{updates.length}{hasMoreUpdates ? '+' : ''}</ThemedText> : null}
+              </View>
             </View>
             <TaskUpdatesFeed
               assignees={assignees}
+              compact={!updatesExpanded && (updates.length > 1 || hasMoreUpdates)}
               loading={updatesLoading}
-              loadingEarlier={commentPage.status === 'LoadingMore' || activityPage.status === 'LoadingMore'}
-              onLoadEarlier={hasMoreUpdates ? loadEarlierUpdates : undefined}
-              updates={updates}
+              loadingEarlier={updatesExpanded && (commentPage.status === 'LoadingMore' || activityPage.status === 'LoadingMore')}
+              onLoadEarlier={updatesExpanded && hasMoreUpdates ? loadEarlierUpdates : undefined}
+              updates={visibleUpdates}
               workflowStates={board?.states}
             />
+            {updates.length > 1 || hasMoreUpdates ? <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: updatesExpanded }}
+              onPress={() => {
+                setUpdatesExpanded((expanded) => !expanded);
+                if (!updatesExpanded && hasMoreUpdates) loadEarlierUpdates();
+              }}
+              style={styles.updatesToggle}>
+              <ThemedText themeColor="accentStrong" type="smallBold">{updatesExpanded ? 'Show latest only' : 'View all updates'}</ThemedText>
+              <PlatformIcon color={theme.accentStrong} name={updatesExpanded ? 'chevron-up' : 'chevron-down'} size={15} />
+            </Pressable> : null}
           </View>
 
         </ScrollView>
@@ -683,10 +715,27 @@ export default function TaskScreen() {
           : [...current, memberId as Id<'projectMembers'>])}
         onSend={() => void addComment()}
         value={comment}
-      /> : detail.capabilities.canComment ? <Pressable accessibilityLabel="Write a task update" accessibilityRole="button" onPress={() => setComposerOpen(true)} style={[styles.taskUpdatePrompt, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
-        <PlatformIcon color={theme.accentStrong} name="message" size={18} />
-        <ThemedText themeColor="textSecondary" type="small">Write an update</ThemedText>
-      </Pressable> : null}
+      /> : !keyboardVisible && (canAdvance || detail.capabilities.canComment) ? <View style={[styles.bottomDock, { backgroundColor: theme.background, borderTopColor: theme.hairline, marginBottom: bottomTabBarInset, paddingBottom: safeAreaInsets.bottom }]}>
+        {canAdvance ? <ActionButton
+          icon={taskDecision.icon}
+          label={taskDecision.label}
+          loading={busy}
+          onPress={() => {
+            if (decisionState) void saveField({ workflowStateId: decisionState._id });
+            else setField('status');
+          }}
+          style={styles.decisionButton}
+        /> : null}
+        {detail.capabilities.canComment ? <Pressable
+          accessibilityLabel="Write a task update"
+          accessibilityRole="button"
+          onPress={() => setComposerOpen(true)}
+          style={({ pressed }) => [styles.updateButton, !canAdvance && styles.expandedUpdateButton, { backgroundColor: pressed ? theme.backgroundElement : 'transparent' }]}
+        >
+          <PlatformIcon color={theme.textSecondary} name="message" size={18} />
+          <ThemedText themeColor="textSecondary" type="captionBold">Update</ThemedText>
+        </Pressable> : null}
+      </View> : null}
 
       <OptionsSheet
         onClose={() => setField(null)}
@@ -795,23 +844,6 @@ export default function TaskScreen() {
                 }));
               }}
             />
-            {detail.capabilities.canComment ? (
-              <SheetRow
-                icon={detail.following ? 'bell-off-outline' : 'bell-outline'}
-                label={detail.following ? 'Unfollow task' : 'Follow task'}
-                onPress={() => {
-                  setField(null);
-                  void run(() => setFollowing({
-                    taskId: detail.task._id,
-                    enabled: !detail.following,
-                    ...identity,
-                  }));
-                }}
-              />
-            ) : null}
-            {!readOnly ? (
-              <SheetRow icon="tag" label={detail.labels.some(Boolean) ? 'Edit labels' : 'Add labels'} onPress={() => setField('labels')} />
-            ) : null}
             {detail.capabilities.canArchive ? (
               <SheetRow
                 destructive={!detail.task.archivedAt}
@@ -855,50 +887,31 @@ export default function TaskScreen() {
   );
 }
 
-function TaskPropertyRow({ icon, label, onPress, tone, value }: {
-  icon: IconName;
-  label: string;
-  onPress?: () => void;
-  tone?: 'danger';
-  value: string;
-}) {
-  const theme = useTheme();
-  return <Pressable
-    accessibilityLabel={`${label}: ${value}`}
-    accessibilityRole={onPress ? 'button' : 'text'}
-    disabled={!onPress}
-    onPress={onPress}
-    style={({ pressed }) => [styles.propertyRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderBottomColor: theme.hairline }]}>
-    <PlatformIcon color={tone === 'danger' ? theme.danger : theme.textSecondary} name={icon} size={18} weight="medium" />
-    <ThemedText style={styles.propertyLabel} themeColor="textSecondary" type="small">{label}</ThemedText>
-    <ThemedText numberOfLines={1} style={[styles.propertyValue, tone === 'danger' && { color: theme.danger }]} type="smallBold">{value}</ThemedText>
-    {onPress ? <PlatformIcon color={theme.textTertiary} name="chevron-right" size={17} /> : null}
-  </Pressable>;
-}
-
 const styles = StyleSheet.create({
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six, paddingTop: Spacing.five },
-  decisionButton: { alignSelf: 'stretch' },
-  eyebrow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  eyebrowBoard: { flex: 1 },
+  content: { gap: Spacing.four, padding: Spacing.three, paddingTop: Spacing.five },
+  decisionButton: { alignSelf: 'stretch', flex: 1 },
+  assigneeCopy: { flex: 1, gap: 2, minWidth: 0 },
+  assigneeRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, flexDirection: 'row', gap: Spacing.two, marginHorizontal: -Spacing.two, minHeight: 54, paddingHorizontal: Spacing.two },
+  bottomDock: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
+  contextName: { flexShrink: 1 },
+  editTitleButton: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingLeft: Spacing.two },
+  expandedUpdateButton: { flex: 1 },
+  projectContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  statusControls: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  unassignedAvatar: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', width: 34 },
+  updateButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   headerActions: { alignItems: 'center', flexDirection: 'row' },
-  headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   hero: {
-    gap: Spacing.three,
+    gap: Spacing.two,
     paddingHorizontal: Spacing.one,
   },
   heroKeyRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  propertyGroup: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  propertyLabel: { flex: 1, marginLeft: Spacing.two },
-  propertyRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', minHeight: 50, paddingHorizontal: Spacing.three },
-  propertyValue: { flexShrink: 1, maxWidth: '48%' },
-  loading: { gap: Spacing.four, padding: Spacing.three, paddingTop: Spacing.six },
-  loadingHero: { borderCurve: 'continuous', borderRadius: Radius.large, height: 112 },
   screen: { flex: 1 },
-  taskTitle: { fontSize: 25, fontWeight: '700', letterSpacing: -0.3, lineHeight: 32 },
-  taskUpdatePrompt: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, margin: Spacing.three, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  updatesHeading: { gap: Spacing.one },
+  taskTitle: { ...Typography.display, fontSize: 28, letterSpacing: -0.5, lineHeight: 35 },
+  updatesToggle: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.one },
+  updatesHeading: { alignItems: 'flex-start' },
   updatesSection: { gap: Spacing.two, paddingTop: Spacing.two },
+  updatesTab: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, minHeight: 28, paddingHorizontal: Spacing.two },
   titleInput: {
     borderCurve: 'continuous',
     borderRadius: Radius.medium,

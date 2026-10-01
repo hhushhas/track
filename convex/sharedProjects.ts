@@ -1,6 +1,7 @@
 import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import { resolveCompanyProjectParticipationRole } from '@track/shared/company'
 import { v } from 'convex/values'
+import { entityMarkColorKeys, entityMarkIconKeys } from '@track/shared'
 
 import { mutation, query } from './_generated/server'
 import type { Id } from './_generated/dataModel'
@@ -356,11 +357,21 @@ export const listEligibleCompanyMembers = query({
 })
 
 export const updateDetails = mutation({
-  args: { projectId: v.id('projects'), actingCompanyId: v.id('companies'), projectMemberId: v.id('projectMembers'), name: v.optional(v.string()), description: v.optional(v.string()), label: v.optional(v.string()), iconStorageId: v.optional(v.union(v.id('_storage'), v.null())) },
+  args: {
+    projectId: v.id('projects'),
+    actingCompanyId: v.id('companies'),
+    projectMemberId: v.id('projectMembers'),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
+    label: v.optional(v.string()),
+    iconStorageId: v.optional(v.union(v.id('_storage'), v.null())),
+    markIconKey: v.optional(v.union(v.null(), ...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(v.null(), ...entityMarkColorKeys.map((key) => v.literal(key)))),
+  },
   handler: async (ctx, args) => {
     const actor = await requireAuthenticatedActor(ctx)
     const access = await requireCompanyProjectManager(ctx, actor, args)
-    if (args.name === undefined && args.description === undefined && args.label === undefined && args.iconStorageId === undefined) {
+    if (args.name === undefined && args.description === undefined && args.label === undefined && args.iconStorageId === undefined && args.markIconKey === undefined && args.markColorKey === undefined) {
       throw new Error('project_update_required')
     }
     const name = args.name?.trim() ?? access.project.name
@@ -372,7 +383,16 @@ export const updateDetails = mutation({
     if (clientLabel && clientLabel.length > 80) throw new Error('project_label_too_long')
     const now = Date.now()
     const revision = (access.project.revision ?? 0) + 1
-    await ctx.db.patch(access.project._id, { name, description, clientLabel, iconStorageId: args.iconStorageId === undefined ? access.project.iconStorageId : args.iconStorageId ?? undefined, revision, updatedAt: now })
+    await ctx.db.patch(access.project._id, {
+      name,
+      description,
+      clientLabel,
+      iconStorageId: args.iconStorageId === undefined ? access.project.iconStorageId : args.iconStorageId ?? undefined,
+      ...(args.markIconKey !== undefined ? { markIconKey: args.markIconKey ?? undefined } : {}),
+      ...(args.markColorKey !== undefined ? { markColorKey: args.markColorKey ?? undefined } : {}),
+      revision,
+      updatedAt: now,
+    })
     await appendAuditEvent(ctx, {
       projectId: access.project._id,
       actorId: actor.userId,
@@ -381,8 +401,8 @@ export const updateDetails = mutation({
       entityType: 'project',
       entityId: access.project._id,
       action: 'project.updated',
-      before: { name: access.project.name, description: access.project.description, clientLabel: access.project.clientLabel, revision: access.project.revision ?? 0 },
-      after: { name, description, clientLabel, revision },
+      before: { name: access.project.name, description: access.project.description, clientLabel: access.project.clientLabel, markIconKey: access.project.markIconKey, markColorKey: access.project.markColorKey, revision: access.project.revision ?? 0 },
+      after: { name, description, clientLabel, markIconKey: args.markIconKey === undefined ? access.project.markIconKey : args.markIconKey ?? undefined, markColorKey: args.markColorKey === undefined ? access.project.markColorKey : args.markColorKey ?? undefined, revision },
     })
     return { projectId: access.project._id }
   },

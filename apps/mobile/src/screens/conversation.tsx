@@ -1,10 +1,8 @@
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useNetworkState } from 'expo-network';
-import { BlurView } from 'expo-blur';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { GlassContainer, GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, FlatList, Platform, Pressable, StyleSheet, View, type FlatListProps, type ListRenderItem } from 'react-native';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, View, type FlatListProps, type ListRenderItem } from 'react-native';
 import { KeyboardEvents } from 'react-native-keyboard-controller';
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
@@ -31,6 +29,7 @@ import { idempotencyKey } from '@/lib/idempotency';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, navigationUnavailableCopy, projectChannelsHref } from '@/lib/company-navigation';
 import { buildMentionCandidates } from '@/lib/mention-autocomplete';
+import { shouldShowJumpToLatest, stickyDateHeaderIndices } from '@/lib/thread-list';
 import { useReleaseConfig } from '@/lib/release-config';
 import type { MobileTaskIdentity } from '@/lib/task-navigation';
 import { messageTaskDraft } from '@/lib/message-task-draft';
@@ -44,14 +43,6 @@ import { reconcilePendingMessages, type PendingMessage } from '@/lib/pending-mes
 const FIVE_MINUTES = 5 * 60 * 1000;
 
 const reportReasons = ['inaccurate', 'unsafe', 'spam', 'harassment', 'privacy', 'other'] as const;
-
-function safeGlassAvailability() {
-  try {
-    return isGlassEffectAPIAvailable();
-  } catch {
-    return false;
-  }
-}
 
 const reportReasonLabels: Record<(typeof reportReasons)[number], string> = {
   harassment: 'Harassment',
@@ -171,10 +162,12 @@ export default function ConversationScreen() {
   const acknowledgedMessageIdRef = useRef<Id<'messages'> | null>(null);
   const acknowledgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-  const [reduceTransparency, setReduceTransparency] = useState<boolean | null>(null);
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
+  const scrollMetricsRef = useRef({ contentHeight: 0, offsetY: 0, viewportHeight: 0 });
   const knownMessageIdsRef = useRef<Set<Id<'messages'>> | null>(null);
   const knownAssistantStreamsRef = useRef<Map<Id<'assistantStreams'>, string> | null>(null);
   const newestFeedTimeRef = useRef(0);
+
 
   const sendKey = useRef<string | null>(null);
   const sendSignatureRef = useRef<string | null>(null);
@@ -194,26 +187,6 @@ export default function ConversationScreen() {
   const [forwardTarget, setForwardTarget] = useState<DetailedMessage | null>(null);
   const [forwardBusyGroupId, setForwardBusyGroupId] = useState<Id<'groups'> | null>(null);
   const [forwardError, setForwardError] = useState<string | null>(null);
-  const glassAvailable = Platform.OS === 'ios' && reduceTransparency === false && safeGlassAvailability();
-
-  useEffect(() => {
-    if (Platform.OS !== 'ios') {
-      setReduceTransparency(true);
-      return;
-    }
-
-    let active = true;
-    void AccessibilityInfo.isReduceTransparencyEnabled().then((enabled) => {
-      if (active) setReduceTransparency(enabled);
-    });
-    const subscription = AccessibilityInfo.addEventListener('reduceTransparencyChanged', (enabled) => {
-      setReduceTransparency(enabled);
-    });
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
   /**
    * Rows that render task cards below them; those cards interrupt author
    * grouping. Rows only report while mounted, so scrolling never regroups.
@@ -330,8 +303,13 @@ export default function ConversationScreen() {
   }, []);
   const scrollToLatest = useCallback(() => {
     atBottomRef.current = true;
-    setShowJumpToLatest(false);
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    listRef.current?.scrollToEnd({ animated: true });
+  }, []);
+  const updateJumpToLatest = useCallback(() => {
+    const { contentHeight, offsetY, viewportHeight } = scrollMetricsRef.current;
+    const distanceFromBottom = Math.max(0, contentHeight - offsetY - viewportHeight);
+    atBottomRef.current = distanceFromBottom < 80;
+    setShowJumpToLatest(shouldShowJumpToLatest(distanceFromBottom));
   }, []);
 
   useEffect(() => {
@@ -802,9 +780,11 @@ export default function ConversationScreen() {
     );
   }, [cid, gid, pid, pmid, readOnly, releaseConfig.tasks, releaseConfig.threads, router, setReplyTo, taskIdentity, trackCardRow, trackUserId]);
 
+  const isOffline = network.isConnected === false || network.isInternetReachable === false;
   if (navigation && !navigation.available) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable</ThemedText><ThemedText style={{ color: theme.textSecondary }}>{navigationUnavailableCopy(Boolean(cid))}</ThemedText></View></ThemedView>;
-  if ((network.isConnected === false || network.isInternetReachable === false) && messages === undefined) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable offline</ThemedText><ThemedText style={{ color: theme.textSecondary }}>Connect to the internet to load this Channel.</ThemedText><Pressable accessibilityRole="button" onPress={() => pid && gid && router.replace(channelHref(pid, gid, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null))} style={[styles.retry, { backgroundColor: theme.accent }]}><ThemedText style={{ color: theme.accentInk }} type="smallBold">Try again</ThemedText></Pressable></View></ThemedView>;
-  if (navigation === undefined || (navigation.available && messages === undefined)) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Conversation' }} /><ConversationLoading label="Loading conversation" /></ThemedView>;
+  if (isOffline && messages === undefined) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Channel unavailable' }} /><View style={styles.empty}><ThemedText type="subtitle">Channel unavailable offline</ThemedText><ThemedText style={{ color: theme.textSecondary }}>Connect to the internet to load this Channel.</ThemedText><Pressable accessibilityRole="button" onPress={() => pid && gid && router.replace(channelHref(pid, gid, cid && pmid ? { archived: readOnly, companyId: cid, membershipId: pmid } : null))} style={[styles.retry, { backgroundColor: theme.accent }]}><ThemedText style={{ color: theme.accentInk }} type="smallBold">Try again</ThemedText></Pressable></View></ThemedView>;
+  const initialConversationDataLoading = messages === undefined || (!isOffline && (assistantStreams === undefined || groups === undefined));
+  if (navigation === undefined || (navigation.available && initialConversationDataLoading)) return <ThemedView style={styles.screen}><Stack.Screen options={{ title: 'Conversation' }} /><ConversationLoading label={`Loading ${activeGroup?.name ?? 'conversation'}`} /></ThemedView>;
 
   const taskLinkMessageIds = threadItems.flatMap((entry) => entry.kind === 'message' ? [entry.item.message._id] : []);
   const taskLinkAssistantStreamIds = threadItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.stream._id] : []);
@@ -814,7 +794,9 @@ export default function ConversationScreen() {
       <Stack.Screen
         options={{
           contentStyle: { backgroundColor: 'transparent' },
-          headerTransparent: false,
+          headerTransparent: Platform.OS === 'ios',
+          headerBlurEffect: 'none',
+          headerBackground: () => <View pointerEvents="none" style={StyleSheet.absoluteFill} />,
           headerLeft: () => <IconButton
             accessibilityLabel="Back to conversations"
             appearance="plain"
@@ -832,37 +814,20 @@ export default function ConversationScreen() {
           /> : null,
           headerTitle: () => (
             <View style={styles.headerTitle}>
-              <View style={[styles.channelHeaderButton, { backgroundColor: glassAvailable ? 'transparent' : theme.backgroundElement, borderColor: theme.homeBorder }]}>
-                {Platform.OS === 'ios' && glassAvailable ? (
-                  <GlassContainer pointerEvents="none" spacing={Spacing.one} style={StyleSheet.absoluteFill}>
-                    <GlassView
-                      colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'}
-                      glassEffectStyle="regular"
-                      isInteractive={false}
-                      pointerEvents="none"
-                      style={[StyleSheet.absoluteFill, styles.channelHeaderMaterial]}
-                      tintColor={theme.navigationGlass}
-                    />
-                  </GlassContainer>
-                ) : Platform.OS === 'ios' && reduceTransparency === false ? (
-                  <BlurView
-                    intensity={78}
-                    pointerEvents="none"
-                    style={[StyleSheet.absoluteFill, styles.channelHeaderMaterial, { backgroundColor: theme.navigationGlass }]}
-                    tint={theme.background === '#1b1917' ? 'systemMaterialDark' : 'systemMaterialLight'}
-                  />
-                ) : null}
+              <View style={[styles.channelHeaderButton, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
+                <View style={styles.channelNameButton}>
+                  <PlatformIcon color={theme.textSecondary} name="channel" size={17} />
+                  <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.channelTitle} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+                </View>
                 <Pressable
                   accessibilityHint="Opens the Channel picker"
-                  accessibilityLabel={`Switch Channel: ${activeGroup?.name ?? 'Conversation'}`}
+                  accessibilityLabel={`Choose Channel. Current Channel: ${activeGroup?.name ?? 'Conversation'}`}
                   accessibilityRole="button"
-                  hitSlop={8}
+                  hitSlop={4}
                   onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
-                  style={styles.channelNameButton}
+                  style={({ pressed }) => [styles.channelDropdownButton, pressed && { backgroundColor: theme.backgroundSelected }]}
                 >
-                  <PlatformIcon color={theme.textSecondary} name="channel" size={17} />
-                  <ThemedText accessibilityRole="header" numberOfLines={1} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
-                  <PlatformIcon color={theme.textSecondary} name="chevron-down" size={14} />
+                  <PlatformIcon color={theme.textSecondary} name="chevron-down" size={15} />
                 </Pressable>
               </View>
             </View>
@@ -880,9 +845,10 @@ export default function ConversationScreen() {
       >
       <FlatList
           ref={listRef}
-          contentContainerStyle={styles.thread}
+          contentContainerStyle={[styles.thread, { paddingBottom: composerOverlayHeight + Spacing.two }]}
           contentInsetAdjustmentBehavior="automatic"
           data={threadItems}
+          stickyHeaderIndices={stickyDateHeaderIndices(threadItems, hasMoreMessages)}
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           keyboardShouldPersistTaps="handled"
           maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
@@ -890,15 +856,29 @@ export default function ConversationScreen() {
           initialNumToRender={24}
           keyExtractor={(item) => item.key}
           maxToRenderPerBatch={16}
+          onLayout={({ nativeEvent }) => {
+            scrollMetricsRef.current.viewportHeight = nativeEvent.layout.height;
+            updateJumpToLatest();
+          }}
           onScroll={({ nativeEvent }) => {
-            const distanceFromBottom = nativeEvent.contentSize.height - nativeEvent.contentOffset.y - nativeEvent.layoutMeasurement.height;
-            atBottomRef.current = distanceFromBottom < 80;
-            setShowJumpToLatest(distanceFromBottom > 320);
+            scrollMetricsRef.current.offsetY = nativeEvent.contentOffset.y;
+            scrollMetricsRef.current.contentHeight = nativeEvent.contentSize.height;
+            scrollMetricsRef.current.viewportHeight = nativeEvent.layoutMeasurement.height;
+            updateJumpToLatest();
+          }}
+          onMomentumScrollEnd={({ nativeEvent }) => {
+            scrollMetricsRef.current.offsetY = nativeEvent.contentOffset.y;
+            scrollMetricsRef.current.contentHeight = nativeEvent.contentSize.height;
+            scrollMetricsRef.current.viewportHeight = nativeEvent.layoutMeasurement.height;
+            updateJumpToLatest();
           }}
           onViewableItemsChanged={onViewableItemsChanged}
           scrollEventThrottle={16}
-          onContentSizeChange={() => {
-            if (!targetMessageId && atBottomRef.current) listRef.current?.scrollToEnd({ animated: true });
+          onContentSizeChange={(_width, height) => {
+            const wasAtBottom = atBottomRef.current;
+            scrollMetricsRef.current.contentHeight = height;
+            updateJumpToLatest();
+            if (!targetMessageId && wasAtBottom) listRef.current?.scrollToEnd({ animated: true });
           }}
           removeClippedSubviews={false}
           renderItem={renderItem}
@@ -949,29 +929,35 @@ export default function ConversationScreen() {
             hapticLight();
             scrollToLatest();
           }}
-          style={[styles.jumpToLatest, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline }]}>
+          style={[styles.jumpToLatest, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline, bottom: composerOverlayHeight + Spacing.two }]}>
           <PlatformIcon color={theme.text} name="chevron-down" size={22} />
         </Pressable>
       ) : null}
       </View>
 
-      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <Composer
-        activeGroupName={activeGroup?.name ?? null}
-        busy={busy === 'send'}
-        surfaceColor="transparent"
-        mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
-        mentionCandidatesLoading={projectMembersPage.status === 'LoadingMore'}
-        mentionCandidates={mentionCandidates}
-        onCancelReply={() => setReplyTo(null)}
-        onChangeText={setComposer}
-        onFocus={scrollToLatest}
-        onLoadMoreMentionCandidates={() => {
-          if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
+      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <View
+        onLayout={({ nativeEvent }) => {
+          const height = Math.ceil(nativeEvent.layout.height);
+          setComposerOverlayHeight((current) => current === height ? current : height);
         }}
-        onSendMessage={handleSendMessage}
-        replyTo={replyTo}
-        value={composer}
-      />}
+        style={styles.composerOverlay}>
+        <Composer
+          activeGroupName={activeGroup?.name ?? null}
+          busy={busy === 'send'}
+          mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
+          mentionCandidatesLoading={projectMembersPage.status === 'LoadingMore'}
+          mentionCandidates={mentionCandidates}
+          onCancelReply={() => setReplyTo(null)}
+          onChangeText={setComposer}
+          onFocus={scrollToLatest}
+          onLoadMoreMentionCandidates={() => {
+            if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
+          }}
+          onSendMessage={handleSendMessage}
+          replyTo={replyTo}
+          value={composer}
+        />
+      </View>}
 
       <OptionsSheet onClose={() => setGroupSwitchOpen(false)} title="Switch Channel" visible={groupSwitchOpen}>
         <SheetSection>
@@ -1088,24 +1074,25 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', padding: Spacing.six },
   flex: { flex: 1 },
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
+  composerOverlay: { bottom: 0, left: 0, position: 'absolute', right: 0, zIndex: 2 },
   jumpToLatest: {
     alignItems: 'center',
     borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    bottom: Spacing.three,
     boxShadow: '0 3px 10px rgba(0,0,0,0.14)',
-    height: 40,
+    height: TouchTarget,
     justifyContent: 'center',
     position: 'absolute',
     right: Spacing.three,
-    width: 40,
+    width: TouchTarget,
   },
   loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
   headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  headerTitle: { backgroundColor: 'transparent', maxWidth: 280, minHeight: TouchTarget },
-  channelHeaderButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', height: TouchTarget, maxWidth: 280, minWidth: 150, overflow: 'hidden', paddingLeft: Spacing.three, paddingRight: Spacing.one },
-  channelNameButton: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.one, height: TouchTarget, justifyContent: 'flex-start', minWidth: 0 },
-  channelHeaderMaterial: { borderRadius: Radius.pill, overflow: 'hidden' },
+  headerTitle: { alignItems: 'center', backgroundColor: 'transparent', maxWidth: 280, minHeight: TouchTarget },
+  channelHeaderButton: { alignItems: 'center', alignSelf: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', maxWidth: 280, minHeight: TouchTarget, overflow: 'hidden', paddingLeft: Spacing.three, paddingRight: Spacing.half },
+  channelNameButton: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one, justifyContent: 'flex-start', minHeight: TouchTarget, minWidth: 0 },
+  channelTitle: { flexShrink: 1, minWidth: 0 },
+  channelDropdownButton: { alignItems: 'center', borderRadius: Radius.pill, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   pendingBody: { alignItems: 'flex-start', alignSelf: 'flex-end', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, maxWidth: '84%', minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   pendingCopy: { flexShrink: 1, gap: 2, minWidth: 0 },
   pendingRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },

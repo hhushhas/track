@@ -28,20 +28,8 @@ export function tasksForMyTaskWeek<T extends WeekTask>(
   const allowedDates = new Set(selectedDate ? [selectedDate] : weekDates);
   return tasks.filter((item) =>
     Boolean(item.task.dueDate && allowedDates.has(item.task.dueDate))
-    && item.task.priority === 'urgent',
+    && item.task.priority === 'urgent'
+    && item.state?.category !== 'completed'
+    && item.state?.category !== 'canceled',
   );
-}
-
-export function needsAttention<T extends WeekTask>(tasks: readonly T[], today: string) {
-  const isOpen = (task: T) => task.state?.category !== 'completed' && task.state?.category !== 'canceled';
-  return tasks.filter((item) => isOpen(item) && (
-    Boolean(item.task.dueDate && item.task.dueDate < today)
-    || item.task.priority === 'urgent'
-    || item.task.priority === 'high'
-  )).sort((left, right) => {
-    const leftOverdue = left.task.dueDate && left.task.dueDate < today ? 0 : 1;
-    const rightOverdue = right.task.dueDate && right.task.dueDate < today ? 0 : 1;
-    return leftOverdue - rightOverdue
-      || (left.task.dueDate ?? '9999-12-31').localeCompare(right.task.dueDate ?? '9999-12-31');
-  });
 }

@@ -1,0 +1,29 @@
+Manrope V5 Font Software License Agreement
+Version 1.0, April 5, 2025
+
+This font software ("Manrope V5") is the intellectual property of Mikhail
+Sharanda and is provided free of charge for personal and commercial use.
+
+Permissions
+
+- You may use this font in personal and commercial projects.
+- You may embed this font in websites, apps, or software.
+- You may redistribute this font if it remains unmodified and retains the
+  original name "Manrope V5".
+
+Restrictions
+
+- You may not modify, reverse-engineer, or create derivative versions of the
+  font software.
+- You may not sell this font by itself.
+
+Attribution
+
+When redistributing, include this attribution: "Manrope V5 by Mikhail
+Sharanda".
+
+Copyright
+
+Copyright 2025 Mikhail Sharanda. All rights reserved.
+
+Source: https://www.sharanda.com/manrope

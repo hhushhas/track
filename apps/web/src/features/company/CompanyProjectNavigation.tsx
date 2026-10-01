@@ -1,10 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
-  Building2,
   ChevronLeft,
   ChevronRight,
-  FolderKanban,
   FileSearch,
   LayoutDashboard,
   ListTodo,
@@ -18,6 +16,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import { EntityMark } from "#/features/workspace/entity-mark";
 import { resolveActiveActingCompanyId } from "./company-query-scope";
 import {
   getCompanyProjectConversationSearch,
@@ -80,7 +79,7 @@ function ProjectLink({
     membership: {
       _id: Id<"projectMembers">;
     };
-    project: Pick<Doc<"projects">, "_id" | "name" | "status">;
+    project: Pick<Doc<"projects">, "_id" | "name" | "status" | "markColorKey" | "markIconKey">;
   };
 }) {
   return (
@@ -101,9 +100,7 @@ function ProjectLink({
       title={item.project.name}
       to="/workspace/company-projects/$projectId"
     >
-      <span className="company-project-nav-project-glyph" aria-hidden="true">
-        {item.project.name.slice(0, 1).toUpperCase()}
-      </span>
+      <EntityMark colorKey={item.project.markColorKey} iconKey={item.project.markIconKey} id={String(item.project._id)} kind="project" name={item.project.name} size={28} />
       <span className="company-project-nav-copy">
         <strong>{item.project.name}</strong>
         <small>
@@ -419,9 +416,8 @@ export function CompanyProjectNavigation({
         title={actingCompany?.company?.displayName ?? "Companies"}
         to="/workspace/company"
       >
-        <span className="company-project-nav-company-icon">
-          <Building2 aria-hidden="true" size={15} />
-        </span>
+        <EntityMark colorKey={undefined} iconKey="building" id={String(actingCompany?.company?._id ?? "company")}
+          imageUrl={actingCompany?.company?.logoUrl} kind="company" name={actingCompany?.company?.displayName ?? "Company"} size={30} />
         <span className="company-project-nav-copy">
           <strong>{actingCompany?.company?.displayName ?? "Companies"}</strong>
           <small>
@@ -445,9 +441,7 @@ export function CompanyProjectNavigation({
       {activeProjectItem && activeLinkContext ? (
         <>
           <section className="company-project-nav-active-project">
-            <span className="company-project-nav-project-icon">
-              <FolderKanban aria-hidden="true" size={15} />
-            </span>
+            <EntityMark colorKey={activeProjectItem.project.markColorKey} iconKey={activeProjectItem.project.markIconKey} id={String(activeProjectItem.project._id)} kind="project" name={activeProjectItem.project.name} size={32} />
             <span className="company-project-nav-copy">
               <strong>{activeProjectItem.project.name}</strong>
               <small>

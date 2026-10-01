@@ -39,9 +39,8 @@ export function TaskSegmentedControl<T extends string>({
               hapticLight();
               onChange(segment.value);
             }}
-            style={[styles.segment, selected && {
-              backgroundColor: theme.backgroundElevated,
-              borderColor: theme.hairline,
+            style={({ pressed }) => [styles.segment, {
+              backgroundColor: pressed || selected ? theme.backgroundElevated : 'transparent',
             }]}>
             <ThemedText numberOfLines={1} themeColor={selected ? 'text' : 'textSecondary'} type="smallBold">
               {segment.label}
@@ -266,12 +265,24 @@ export function TaskCard({
         accessibilityLabel={`${title}. ${taskContext}${evidence ? '. Linked to conversation evidence' : ''}. ${stateName}${dueLabel ? `. ${dueLabel}` : ''}`}
         accessibilityRole="button"
         onPress={onPress}
-        style={({ pressed }) => [styles.quietPressable, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}
+        style={({ pressed }) => [styles.quietPressable, {
+          backgroundColor: pressed ? theme.backgroundSelected : 'transparent',
+          borderColor: pressed ? theme.textTertiary : 'transparent',
+          borderRadius: Radius.medium,
+          borderWidth: pressed ? StyleSheet.hairlineWidth : 0,
+          boxShadow: pressed ? '0 2px 8px rgba(0,0,0,0.16)' : undefined,
+        }]}
       >
         {assignee ? <ColoredAvatar label={assignee} seed={assignee} size={28} /> : null}
         <View style={styles.quietCopy}>
           <ThemedText numberOfLines={2} type="smallBold">{title}</ThemedText>
-          <View style={styles.quietProjectContext}><PlatformIcon color={theme.accentStrong} name="project" size={13} /><ThemedText numberOfLines={1} style={styles.quietProjectName} type="captionBold">{[projectName, companyName].filter(Boolean).join(' · ')}</ThemedText></View>
+          {projectName ? <View style={styles.quietProjectContext}>
+            <PlatformIcon color={theme.textSecondary} name="project" size={13} />
+            <ThemedText numberOfLines={1} style={styles.quietProjectName} type="captionBold">{projectName}</ThemedText>
+            {companyName ? <View style={[styles.companyPill, styles.quietCompanyPill, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+              <ThemedText numberOfLines={1} style={styles.companyPillText} themeColor="textSecondary" type="captionBold">{companyName}</ThemedText>
+            </View> : null}
+          </View> : null}
           <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{[groupName ? `#${groupName.replace(/^#/, '')}` : null, alwaysShowPriority || priority === 'urgent' || priority === 'high' ? taskPriorityLabel(priority) : null].filter(Boolean).join(' · ')}</ThemedText>
           <TaskDueChip category={category} dueDate={dueDate} showNoDate={alwaysShowPriority} />
         </View>
@@ -304,7 +315,7 @@ export function TaskCard({
               <ThemedText numberOfLines={2} style={styles.cardTitle} type="title">{title}</ThemedText>
               {projectName ? (
                 <View style={styles.listProjectContext}>
-                  <PlatformIcon color={theme.accentStrong} name="project" size={13} />
+                  <PlatformIcon color={theme.textSecondary} name="project" size={13} />
                   <ThemedText numberOfLines={1} style={styles.listProjectName} type="captionBold">{projectName}</ThemedText>
                   {companyName ? <View style={[styles.companyPill, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}><ThemedText numberOfLines={1} style={styles.companyPillText} themeColor="textSecondary" type="captionBold">{companyName}</ThemedText></View> : null}
                 </View>
@@ -491,9 +502,10 @@ export function TaskAction({
 
 const styles = StyleSheet.create({
   quietAction: { alignItems: 'flex-end', paddingBottom: Spacing.two, paddingRight: Spacing.three },
-  quietCopy: { flex: 1, gap: 3, minWidth: 0 },
-  quietProjectContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
-  quietProjectName: { flex: 1, minWidth: 0 },
+  quietCopy: { flex: 1, gap: 2, minWidth: 0 },
+  quietProjectContext: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, minWidth: 0 },
+  quietProjectName: { flexShrink: 1, maxWidth: '100%' },
+  quietCompanyPill: { flexShrink: 0, minHeight: 24 },
   quietDue: { maxWidth: 92, textAlign: 'right' },
   quietPressable: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.three, minHeight: 62, minWidth: 0, paddingHorizontal: Spacing.two, paddingTop: Spacing.two },
   quietGlassRow: { borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, marginBottom: Spacing.two, overflow: 'hidden' },
@@ -538,7 +550,7 @@ const styles = StyleSheet.create({
   pillLabel: { flexShrink: 1 },
   priority: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   priorityBadge: { borderRadius: Radius.pill, paddingHorizontal: Spacing.two, paddingVertical: 2 },
-  segment: { alignItems: 'center', borderColor: 'transparent', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexGrow: 0, justifyContent: 'center', minHeight: TouchTarget, minWidth: 104, paddingHorizontal: Spacing.three },
+  segment: { alignItems: 'center', borderRadius: Radius.pill, flexGrow: 0, justifyContent: 'center', minHeight: TouchTarget, minWidth: 104, paddingHorizontal: Spacing.three },
   segmented: { borderCurve: 'continuous', borderRadius: Radius.pill, flexGrow: 0 },
   segmentedContent: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, padding: Spacing.one },
   skeletonAvatar: { borderRadius: Radius.pill, height: 24, width: 24 },

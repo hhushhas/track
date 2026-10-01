@@ -16,14 +16,14 @@ import {
   ProjectWorkHub,
 } from '@/components/project-overview-dashboard';
 import { ScreenEntrance } from '@/components/screen-entrance';
-import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { channelHref, projectChannelsHref, projectSettingsHref } from '@/lib/company-navigation';
-import { attentionTitle, type MobileAttentionItem } from '@/lib/mobile-attention';
+import type { MobileAttentionItem } from '@/lib/mobile-attention';
 import { projectRoleLabel } from '@/lib/role-label';
 import { useReleaseConfig } from '@/lib/release-config';
 import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
@@ -129,12 +129,12 @@ export default function ProjectOverviewScreen() {
       title: 'Project',
     }} />
     <ConnectivityBanner style={styles.connection} />
-    {loading ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading Project" /></ScreenEntrance> : navigation && !navigation.available ? (
+    {loading ? <ScreenEntrance style={styles.screenContent}><ScreenLoading variant="project" /></ScreenEntrance> : navigation && !navigation.available ? (
       <View style={styles.centered}><EmptyState body="This Project isn’t available with your current Company access." icon="shield-lock-outline" title="Project unavailable" /></View>
     ) : projectId && project ? (
       <ScreenEntrance style={styles.screenContent}><ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomContentInset }]} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
         <ProjectHero archived={navigation.archived} company={project.project.clientLabel ?? projectCompany} description={project.project.description} memberCount={memberCount} name={projectName} role={projectRole} />
-        {release.tasks ? <ProjectProgress completed={completedTaskCount} latestUpdate={projectAttention[0] ? attentionTitle(projectAttention[0]) : undefined} total={totalTaskCount} /> : null}
+        {release.tasks ? <ProjectProgress completed={completedTaskCount} total={totalTaskCount} /> : null}
         <ProjectWorkHub channelCount={channelCount} dueSoonCount={dueSoonCount} onBoard={openBoard} onChannels={openChannels} onTasks={openTasks} openTaskCount={openTaskCount} tasksEnabled={release.tasks} unreadCount={unreadCount} />
         <ProjectAttention items={projectAttention} onOpen={openAttention} />
       </ScrollView></ScreenEntrance>

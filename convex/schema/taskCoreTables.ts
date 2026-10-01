@@ -1,5 +1,6 @@
 import { defineTable } from 'convex/server'
 import { v } from 'convex/values'
+import { entityMarkColorKeys, entityMarkIconKeys } from '@track/shared'
 
 import {
   taskActivityAction,
@@ -17,6 +18,8 @@ export const taskCoreTables = {
     groupId: v.optional(v.id('groups')),
     name: v.string(),
     description: v.optional(v.string()),
+    markIconKey: v.optional(v.union(...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(...entityMarkColorKeys.map((key) => v.literal(key)))),
     rank: v.optional(v.string()),
     isDefault: v.boolean(),
     createdByProjectMemberId: v.id('projectMembers'),
@@ -81,6 +84,7 @@ export const taskCoreTables = {
     .index('by_board_state_priority_archived_rank', ['boardId', 'workflowStateId', 'priority', 'archivedAt', 'rank'])
     .index('by_assignee_archived', ['assigneeProjectMemberId', 'archivedAt'])
     .index('by_assignee_archived_due_date', ['assigneeProjectMemberId', 'archivedAt', 'dueDate'])
+    .index('by_assignee_priority_archived_due_date_updated', ['assigneeProjectMemberId', 'priority', 'archivedAt', 'dueDate', 'updatedAt'])
     .index('by_parent', ['parentTaskId'])
     .index('by_parent_rank', ['parentTaskId', 'rank'])
     .index('by_project_idempotency', ['projectId', 'createIdempotencyKey'])

@@ -7,7 +7,6 @@ import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import type { Doc } from '../../../../convex/_generated/dataModel';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { CompactPillButton } from '@/components/compact-pill-button';
-import { EmptyState } from '@/components/empty-state';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import type {
   MobileTaskAssignee,
@@ -31,8 +30,9 @@ import { formatTaskUpdateDate, mergeTaskUpdates, taskUpdateDayLabel } from '@/li
 
 type TaskUpdate = ReturnType<typeof mergeTaskUpdates<Doc<'taskComments'>, Doc<'taskActivities'>>>[number];
 
-export function TaskUpdatesFeed({ assignees, loading, loadingEarlier, onLoadEarlier, updates, workflowStates }: {
+export function TaskUpdatesFeed({ assignees, compact = false, loading, loadingEarlier, onLoadEarlier, updates, workflowStates }: {
   assignees?: MobileTaskAssignee[];
+  compact?: boolean;
   loading: boolean;
   loadingEarlier: boolean;
   onLoadEarlier?: () => void;
@@ -59,7 +59,7 @@ export function TaskUpdatesFeed({ assignees, loading, loadingEarlier, onLoadEarl
                 <ThemedText type="smallBold">{author}</ThemedText>
                 <ThemedText themeColor="textSecondary" type="caption">{formatTimestamp(item.createdAt)}</ThemedText>
               </View>
-              <ThemedText type="small">{item.body}</ThemedText>
+              <ThemedText numberOfLines={compact ? 2 : undefined} type="small">{item.body}</ThemedText>
             </View>
           </View>
         </View>;
@@ -87,11 +87,14 @@ export function TaskUpdatesFeed({ assignees, loading, loadingEarlier, onLoadEarl
           </View>
         </Pressable>
       </View>;
-    }) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading updates…</ThemedText> : <EmptyState icon="message" title="No updates yet" body="Comments and task changes will appear here." />}
+    }) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading updates…</ThemedText> : <View style={styles.noUpdates}>
+      <PlatformIcon color={theme.textTertiary} name="message" size={16} />
+      <ThemedText themeColor="textSecondary" type="small">No task updates yet</ThemedText>
+    </View>}
   </View>;
 }
 
-export function TaskDetailsTab({
+export function TaskOverview({
   busy,
   detail,
   highlightSubtaskId,
@@ -136,6 +139,7 @@ export function TaskDetailsTab({
   const [expandedSubtaskId, setExpandedSubtaskId] = useState<string | null>(null);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [checklistExpanded, setChecklistExpanded] = useState(false);
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const visibleSubtasks = uniqueTaskViews(subtasks);
   const incompleteSubtasks = visibleSubtasks.filter((item) => item.state?.category !== 'completed' && item.state?.category !== 'canceled');
   const displayedSubtasks = checklistExpanded || visibleSubtasks.length <= 5
@@ -147,31 +151,33 @@ export function TaskDetailsTab({
   const labels = detail.labels.flatMap((label) => label ? [label] : []);
   return (
     <>
-      {detail.task.description || !readOnly ? <TaskSection title="Description">
-        <Pressable
-          accessibilityHint={readOnly ? undefined : 'Opens the description editor'}
-          accessibilityRole={readOnly ? 'text' : 'button'}
-          disabled={readOnly}
-          onPress={() => onEditField('description')}
-          style={[styles.description, { borderColor: theme.hairline }]}>
-          <ThemedText numberOfLines={!descriptionExpanded && (detail.task.description?.length ?? 0) > 180 ? 4 : undefined} themeColor={detail.task.description ? 'text' : 'textSecondary'} type="small">
-            {detail.task.description || (readOnly ? 'No description.' : 'Add a description…')}
-          </ThemedText>
-        </Pressable>
+      {references.length || referencesLoading ? <TaskSection title="References">
+        {references.length ? [...references]
+          .sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary))
+          .slice(0, sourcesExpanded ? references.length : 1)
+          .map((reference) => <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />)
+          : <ThemedText themeColor="textSecondary" type="small">Finding the linked source…</ThemedText>}
+        {references.length > 1 || onLoadMoreReferences || referencesLoadingMore ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: sourcesExpanded }} onPress={() => {
+          setSourcesExpanded((expanded) => !expanded);
+          if (!sourcesExpanded && onLoadMoreReferences) onLoadMoreReferences();
+        }} style={styles.textAction}>
+          <ThemedText themeColor="accentStrong" type="smallBold">{sourcesExpanded ? 'Show primary source' : references.length > 1 ? `View ${references.length - 1} more ${references.length === 2 ? 'source' : 'sources'}` : 'View more sources'}</ThemedText>
+        </Pressable> : null}
+        {sourcesExpanded && referencesLoadingMore ? <LoadMoreButton label="sources" loading onPress={onLoadMoreReferences} /> : null}
+      </TaskSection> : null}
+
+      {detail.task.description || !readOnly ? <TaskSection title="Description" trailing={!readOnly ? <Pressable accessibilityRole="button" onPress={() => onEditField('description')} style={styles.sectionAction}>
+        <ThemedText themeColor="accentStrong" type="captionBold">{detail.task.description ? 'Edit' : 'Add'}</ThemedText>
+      </Pressable> : undefined}>
+        {detail.task.description ? <ThemedText numberOfLines={!descriptionExpanded && detail.task.description.length > 180 ? 4 : undefined} selectable type="small">
+          {detail.task.description}
+        </ThemedText> : <Pressable accessibilityHint="Adds a description to explain this task" accessibilityRole="button" onPress={() => onEditField('description')} style={styles.descriptionPrompt}>
+          <PlatformIcon color={theme.textTertiary} name="plus" size={16} />
+          <ThemedText themeColor="textSecondary" type="small">Add a short description</ThemedText>
+        </Pressable>}
         {detail.task.description && detail.task.description.length > 180 ? <Pressable accessibilityRole="button" onPress={() => setDescriptionExpanded((current) => !current)} style={styles.textAction}>
           <ThemedText themeColor="accentStrong" type="smallBold">{descriptionExpanded ? 'Show less' : 'Show more'}</ThemedText>
         </Pressable> : null}
-      </TaskSection> : null}
-
-      {references.length || referencesLoading || onLoadMoreReferences || referencesLoadingMore ? <TaskSection title="Source conversation">
-        {references.length ? references.map((reference) => (
-          <ReferenceRow key={reference._id} onOpen={onOpenReference} reference={reference} />
-        )) : referencesLoading ? <ThemedText themeColor="textSecondary" type="small">Loading linked conversation…</ThemedText> : (
-          <View style={[styles.description, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-            <ThemedText themeColor="textSecondary" type="small">No linked source conversation.</ThemedText>
-          </View>
-        )}
-        {onLoadMoreReferences || referencesLoadingMore ? <LoadMoreButton label="source conversation" loading={referencesLoadingMore} onPress={onLoadMoreReferences} /> : null}
       </TaskSection> : null}
 
       {visibleSubtasks.length || (!readOnly && !detail.task.parentTaskId) ? <View onLayout={onChecklistLayout}>
@@ -219,7 +225,6 @@ export function TaskDetailsTab({
                           }]} type="small">
                             {item.task.title}
                           </ThemedText>
-                          <ThemedText themeColor="textSecondary" type="caption">{item.state?.name ?? 'Unknown'}</ThemedText>
                         </Pressable>
                         <PlatformIcon color={theme.textTertiary} name={description ? (expanded ? 'chevron-up' : 'chevron-down') : 'chevron-right'} size={18} />
                       </View>
@@ -304,32 +309,23 @@ function ReferenceRow({
   const blocked = taskReferenceBlockedReason(reference.availability, Boolean(reference.groupId));
   return (
     <Pressable
-      accessibilityHint={blocked ?? 'Opens the linked conversation'}
+      accessibilityHint={blocked ?? 'Opens the original message'}
       accessibilityRole={blocked ? 'text' : 'link'}
       accessibilityState={{ disabled: Boolean(blocked) }}
       disabled={Boolean(blocked)}
       onPress={() => onOpen(reference)}
-      style={({ pressed }) => [styles.evidence, {
-        backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
-        borderColor: theme.hairline,
-      }]}>
-      <View style={styles.evidenceHeader}>
-        <PlatformIcon
-          color={blocked ? theme.textTertiary : theme.accent}
-          name={blocked ? 'shield-lock-outline' : 'link'}
-          size={17}
-        />
-        <ThemedText style={styles.evidenceTitle} type="smallBold">
-          {taskReferenceLabel(reference.type)}
-        </ThemedText>
-        {blocked ? null : <PlatformIcon color={theme.textSecondary} name="chevron-right" size={18} />}
+      style={({ pressed }) => [styles.sourceRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+      <View style={[styles.sourceIcon, { backgroundColor: theme.backgroundElement }]}>
+        <PlatformIcon color={blocked ? theme.textTertiary : theme.accentStrong} name={blocked ? 'shield-lock-outline' : 'message'} size={16} />
       </View>
-      {reference.quote ? (
-        <View style={[styles.quote, { borderLeftColor: theme.accent }]}>
-          <ThemedText numberOfLines={3} type="small">{reference.quote}</ThemedText>
-        </View>
-      ) : null}
-      {blocked ? <ThemedText themeColor="textSecondary" type="caption">{blocked}</ThemedText> : null}
+      <View style={styles.sourceCopy}>
+        <ThemedText numberOfLines={1} type="smallBold">{taskReferenceLabel(reference.type)}</ThemedText>
+        {reference.quote ? (
+          <ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{reference.quote}</ThemedText>
+        ) : null}
+        {blocked ? <ThemedText themeColor="textSecondary" type="caption">{blocked}</ThemedText> : null}
+      </View>
+      {blocked ? null : <PlatformIcon color={theme.textTertiary} name="chevron-right" size={17} />}
     </Pressable>
   );
 }
@@ -545,7 +541,6 @@ function formatTimestamp(value: number) {
 }
 
 const styles = StyleSheet.create({
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   addButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   addSubtask: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   checkCopy: { flex: 1, gap: 2, justifyContent: 'center', minHeight: TouchTarget, minWidth: 0, paddingVertical: Spacing.two },
@@ -565,12 +560,7 @@ const styles = StyleSheet.create({
   composerClose: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   composerInput: { ...Typography.message, borderRadius: Radius.xlarge, flex: 1, maxHeight: 112, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Platform.OS === 'ios' ? 11 : 8 },
   composerRow: { alignItems: 'flex-end', flexDirection: 'row', gap: Spacing.two },
-  description: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, minHeight: 72, padding: Spacing.three },
-  emptyBlock: { alignItems: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, padding: Spacing.three },
-  emptyBlockCopy: { flex: 1, gap: Spacing.one },
-  evidence: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.two, padding: Spacing.three },
-  evidenceHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  evidenceTitle: { flex: 1 },
+  descriptionPrompt: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.one },
   inlineInput: { ...Typography.body, borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   label: { alignItems: 'center', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   labelDot: { borderRadius: 4, height: 8, width: 8 },
@@ -579,10 +569,14 @@ const styles = StyleSheet.create({
   mentionRow: { gap: Spacing.two },
   progressTrack: { borderRadius: Radius.small, height: 6, overflow: 'hidden' },
   progressValue: { borderRadius: Radius.small, height: 6 },
-  quote: { borderLeftWidth: 3, paddingLeft: Spacing.three },
+  noUpdates: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget },
   section: { gap: Spacing.two },
+  sectionAction: { alignItems: 'center', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.one },
   sectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   sectionTrailing: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, maxWidth: '58%' },
+  sourceCopy: { flex: 1, gap: 3, minWidth: 0 },
+  sourceIcon: { alignItems: 'center', borderRadius: Radius.pill, height: 32, justifyContent: 'center', width: 32 },
+  sourceRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, marginHorizontal: -Spacing.one, minHeight: 54, paddingHorizontal: Spacing.one, paddingVertical: Spacing.one },
   textAction: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.one },
   sendButton: { alignItems: 'center', borderRadius: TouchTarget / 2, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   activityChange: { alignItems: 'center', borderRadius: Radius.small, flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, paddingHorizontal: Spacing.two, paddingVertical: Spacing.one },

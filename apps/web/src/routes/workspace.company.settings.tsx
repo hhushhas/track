@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
-import { AlertTriangle, ArrowLeft, Building2, FolderKanban, Handshake, LayoutGrid, MessageSquareText, Plus, ShieldCheck, Users } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, FolderKanban, Handshake, LayoutGrid, MessageSquareText, Plus, ShieldCheck, Users } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 
 import { api } from '../../../../convex/_generated/api'
@@ -9,6 +9,7 @@ import { Button } from '#/components/ui/button'
 import { ConfirmDialog } from '#/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
 import { CompanyProfileForm, CreateCompanyForm } from '#/features/company/CompanyForms'
+import { EntityMark } from '#/features/workspace/entity-mark'
 import { CompanyProjectNavigation } from '#/features/company/CompanyProjectNavigation'
 import { MigrationPanel } from '#/features/company/MigrationPanel'
 import { useActingCompany } from '#/features/company/use-acting-company'
@@ -122,7 +123,7 @@ function CompanySettingsPage() {
 
       <section aria-labelledby="company-profile-heading" className="company-settings-profile">
         <div className="company-settings-identity">
-          <span aria-hidden="true" className="company-settings-identity-icon"><Building2 size={26} /></span>
+          <EntityMark id={String(company._id)} imageUrl={company.logoUrl} kind="company" name={company.displayName} size={72} />
           <div className="company-settings-identity-copy">
             <div className="company-settings-identity-title"><h2 id="company-profile-heading">{company.displayName}</h2><span className="company-settings-current">Current company</span></div>
             <p>{company.normalizedHandle}</p>
@@ -130,7 +131,7 @@ function CompanySettingsPage() {
           <p className="company-settings-identity-hint">This name is visible to company members across Projects, Channels, and shared resources.</p>
         </div>
         <div className="company-settings-profile-form">
-          <CompanyProfileForm actingCompanyId={actingCompanyId} description={company.description} displayName={company.displayName} handle={company.normalizedHandle} key={actingCompanyId} run={run} />
+          <CompanyProfileForm actingCompanyId={actingCompanyId} description={company.description} displayName={company.displayName} handle={company.normalizedHandle} key={actingCompanyId} logoStorageId={company.logoStorageId} logoUrl={company.logoUrl} run={run} />
         </div>
       </section>
 

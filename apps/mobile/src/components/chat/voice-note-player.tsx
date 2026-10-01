@@ -185,13 +185,14 @@ export function VoiceNotePlayer({ attachment, url }: Props) {
           <ThemedText themeColor="textSecondary" type="caption">
             {formatDuration((engaged ? elapsedSeconds : totalSeconds || 0) * 1000)}
           </ThemedText>
-          {engaged ? (
+          {status.playing ? (
             <Pressable
               accessibilityLabel={`Playback speed ${speed} times`}
               accessibilityRole="button"
-              hitSlop={12}
+              hitSlop={8}
               onPress={cycleSpeed}
-              style={[styles.speed, { backgroundColor: theme.backgroundSelected }]}>
+              style={[styles.speed, { backgroundColor: theme.backgroundSelected }]}
+            >
               <ThemedText themeColor="textSecondary" type="captionBold">{`${speed}x`}</ThemedText>
             </Pressable>
           ) : null}
@@ -213,6 +214,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 2,
     height: '100%',
+    justifyContent: 'center',
   },
   knob: {
     borderRadius: Radius.pill,
@@ -250,12 +252,15 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: Spacing.two,
+    gap: Spacing.one,
   },
   speed: {
+    alignItems: 'center',
     borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 1,
+    height: 28,
+    justifyContent: 'center',
+    minWidth: 32,
+    paddingHorizontal: Spacing.one,
   },
   track: {
     height: 26,

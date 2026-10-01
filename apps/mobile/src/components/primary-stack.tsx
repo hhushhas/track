@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { Colors, Typography } from '@/constants/theme';
 import { useThemeOverride } from '@/contexts/theme-override-context';
@@ -20,7 +20,7 @@ export function PrimaryStack({ initialRouteName }: { initialRouteName: string })
     <Stack
       initialRouteName={initialRouteName}
       screenOptions={{
-        animation: 'slide_from_right',
+        animation: Platform.OS === 'android' ? 'default' : 'slide_from_right',
         gestureEnabled: true,
         headerShown: true,
         headerLargeTitle: false,

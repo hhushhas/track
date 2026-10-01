@@ -51,7 +51,7 @@ type MobileMemberRow = {
 }
 
 type MobileGroupRow = {
-  group: { _id: Id<'groups'>; projectId: Id<'projects'>; name: string; kind: string; status?: string }
+  group: { _id: Id<'groups'>; projectId: Id<'projects'>; name: string; kind: string; status?: string; markIconKey?: string; markColorKey?: string }
   membership: { _id: string; groupId: Id<'groups'>; projectId: Id<'projects'> }
   lastMessage: Doc<'messages'> | null
   unreadCount: number
@@ -245,6 +245,8 @@ export const listProjects = query({
           project: {
             _id: project._id,
             name: entitlement ? decodeLegacyArchivedProject(entitlement.projectSnapshot).name : project.name,
+            markIconKey: entitlement ? undefined : project.markIconKey,
+            markColorKey: entitlement ? undefined : project.markColorKey,
           },
           membership,
           groupCount: entitlement?.channelCount ?? projectGroupMemberships.length,
@@ -279,10 +281,22 @@ export const listTaskProjects = query({
     const page = await Promise.all(memberships.page.map(async (membership) => {
       const project = await ctx.db.get(membership.projectId)
       if (!project) return null
-      const [memberRows, channelRows] = await Promise.all([
+      const [memberRows, channelRows, assignedTasks] = await Promise.all([
         ctx.db.query('projectMembers').withIndex('by_project_status', (q) => q.eq('projectId', project._id).eq('status', 'active')).take(4),
         ctx.db.query('groupMembers').withIndex('by_project_member_status', (q) => q.eq('projectMemberId', membership._id).eq('status', 'active')).take(101),
+        ctx.db.query('tasks').withIndex('by_assignee_archived', (q) => q.eq('assigneeProjectMemberId', membership._id).eq('archivedAt', undefined)).take(101),
       ])
+      let assignedTaskCount = 0
+      for (const task of assignedTasks.slice(0, 100)) {
+        try {
+          await requireTaskAccess(ctx, actor, task._id, membership.companyId
+            ? { actingCompanyId: membership.companyId, projectMemberId: membership._id }
+            : {})
+          assignedTaskCount += 1
+        } catch {
+          // A task can become inaccessible while a legacy or archived membership is being read.
+        }
+      }
       const members = await Promise.all(memberRows.slice(0, 3).map(async (projectMember) => {
         const user = await ctx.db.get(projectMember.userId)
         if (!user) return null
@@ -293,8 +307,10 @@ export const listTaskProjects = query({
         }
       }))
       return {
-        project: { _id: project._id, name: project.name },
+        project: { _id: project._id, name: project.name, markColorKey: project.markColorKey, markIconKey: project.markIconKey },
         membership,
+        assignedTaskCount,
+        assignedTaskCountPartial: assignedTasks.length > 100,
         groupCount: Math.min(channelRows.length, 100),
         groupCountTruncated: channelRows.length > 100,
         memberCount: memberRows.length,
@@ -535,6 +551,85 @@ export const listMyTasks = query({
       }
     }
     return { ...memberships, page: rows.sort((a, b) => b.task.updatedAt - a.task.updatedAt) }
+  },
+})
+
+/** Bounded attention candidates avoid hiding older urgent or overdue work. */
+export const listMyTaskAttention = query({
+  args: {
+    userId: v.id('users'),
+    actingCompanyId: v.optional(v.id('companies')),
+    beforeDate: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireAuthenticatedActor(ctx)
+    assertActorMatches(actor, args.userId)
+    const parsedBeforeDate = new Date(`${args.beforeDate}T00:00:00.000Z`)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(args.beforeDate) || Number.isNaN(parsedBeforeDate.getTime()) || parsedBeforeDate.toISOString().slice(0, 10) !== args.beforeDate) {
+      throw new Error('invalid_attention_date')
+    }
+    if (args.actingCompanyId) {
+      requireCompanyModelEnabled()
+      await requireActiveCompanyMembership(ctx, actor, args.actingCompanyId)
+    }
+    const memberships = args.actingCompanyId
+      ? await ctx.db.query('projectMembers').withIndex('by_user_company_status', (q) =>
+          q.eq('userId', args.userId).eq('companyId', args.actingCompanyId).eq('status', 'active'),
+        ).order('desc').paginate(args.paginationOpts)
+      : await ctx.db.query('projectMembers').withIndex('by_user', (q) => q.eq('userId', args.userId)).filter((q) => q.eq(q.field('status'), 'active')).order('desc').paginate(args.paginationOpts)
+    const assigneeName = (await ctx.db.get(args.userId))?.displayName ?? null
+    const rows = []
+    for (const membership of memberships.page) {
+      if (args.actingCompanyId && membership.companyId !== args.actingCompanyId) continue
+      const project = await ctx.db.get(membership.projectId)
+      if (!project) continue
+      const identity = membership.companyId
+        ? { actingCompanyId: membership.companyId, projectMemberId: membership._id }
+        : {}
+      const taskPriorities = ['urgent', 'high', 'medium', 'low', 'none'] as const
+      // Dated partitions use the due-date index in ascending order, so their
+      // first four rows preserve the most overdue or nearest-due candidates.
+      // Equal dates have equal rank; unscheduled work uses newest updates below.
+      const [dueByPriority, futureUrgent, unscheduledUrgent] = await Promise.all([
+        Promise.all(taskPriorities.map((priority) => ctx.db.query('tasks')
+          .withIndex('by_assignee_priority_archived_due_date_updated', (q) =>
+            q.eq('assigneeProjectMemberId', membership._id).eq('priority', priority).eq('archivedAt', undefined).lte('dueDate', args.beforeDate),
+          ).take(4))),
+        Promise.all((['urgent', 'high'] as const).map((priority) => ctx.db.query('tasks')
+          .withIndex('by_assignee_priority_archived_due_date_updated', (q) =>
+            q.eq('assigneeProjectMemberId', membership._id).eq('priority', priority).eq('archivedAt', undefined).gt('dueDate', args.beforeDate),
+          ).take(4))),
+        Promise.all((['urgent', 'high'] as const).map((priority) => ctx.db.query('tasks')
+          .withIndex('by_assignee_priority_archived_due_date_updated', (q) =>
+            q.eq('assigneeProjectMemberId', membership._id).eq('priority', priority).eq('archivedAt', undefined).eq('dueDate', undefined),
+          ).order('desc').take(4))),
+      ])
+      const candidates = new Map<string, (typeof dueByPriority)[number][number]>()
+      for (const task of [...dueByPriority.flat(), ...futureUrgent.flat(), ...unscheduledUrgent.flat()]) candidates.set(String(task._id), task)
+      for (const task of candidates.values()) {
+        try {
+          const access = await requireTaskAccess(ctx, actor, task._id, identity)
+          if (!access.taskCapabilities.canView) continue
+          const view = await taskView(ctx, task)
+          if (!view.state || isTerminalTaskState(view.state.category)) continue
+          rows.push({
+            ...view,
+            assigneeName,
+            group: task.groupId ? await ctx.db.get(task.groupId) : null,
+            project: { _id: project._id, name: project.name },
+            companyId: membership.companyId,
+            companyName: membership.companyDisplayNameSnapshot,
+            projectMemberId: membership._id,
+            hasMoreAssignedTasks: false,
+            hasMoreDueTasks: false,
+          })
+        } catch {
+          // Membership or Channel access can change while this query runs.
+        }
+      }
+    }
+    return { ...memberships, page: rows.sort((left, right) => right.task.updatedAt - left.task.updatedAt) }
   },
 })
 

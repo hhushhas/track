@@ -247,7 +247,7 @@ export const getProject = query({
 
     const health = blocked.length || overdue.length ? 'At risk' : tasks.length > 0 && completedTasks.length === tasks.length ? 'Completed' : 'On track'
     return {
-      project: { id: scope.project.project._id, name: scope.project.project.name, description: scope.project.project.description ?? null, status: scope.project.project.status ?? 'active', updatedAt: scope.project.project.updatedAt, health },
+      project: { id: scope.project.project._id, name: scope.project.project.name, markIconKey: scope.project.project.markIconKey, markColorKey: scope.project.project.markColorKey, description: scope.project.project.description ?? null, status: scope.project.project.status ?? 'active', updatedAt: scope.project.project.updatedAt, health },
       members: memberSummaries.filter((member): member is NonNullable<typeof member> => Boolean(member)),
       memberCount: members.length,
       permissions: { canManageProject: scope.project.capabilities.canManageProject, canWriteProject: scope.project.capabilities.canWriteProject },

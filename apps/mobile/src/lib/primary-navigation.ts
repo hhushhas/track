@@ -44,6 +44,11 @@ export function primaryNavigationHeight(fontScale: number, baseHeight: number) {
   return baseHeight + (Number.isFinite(fontScale) && fontScale > 1.2 ? 32 : 0);
 }
 
+/** Uses the measured device inset, with a visual floor only for floating bars. */
+export function primaryNavigationSafeAreaInset(bottomInset: number, minimumInset = 0) {
+  return Math.max(Number.isFinite(bottomInset) ? bottomInset : 0, minimumInset);
+}
+
 /** Keeps the selection pill and tab content on the same cell centers. */
 export function primaryTabGeometry(rowWidth: number, tabCount: number, tabIndex: number): PrimaryTabGeometry {
   const safeCount = Math.max(1, tabCount);

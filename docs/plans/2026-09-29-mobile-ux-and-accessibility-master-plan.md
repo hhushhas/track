@@ -1,10 +1,10 @@
 ﻿# Track Mobile UX and Accessibility Master Plan
 
-Status: Not done. The approved mobile UX changes in the current worktree pass the repository lint, typecheck, test, production dependency audit, and build gates. Device accessibility checks and a local route smoke are still unproved because no Android device is connected and the configured remote Convex deployment is not confirmed as development.
+Status: Not done. The full automated repository gate passes for the current source, but no on-device route or accessibility check has verified the interaction. The app was not launched because the configured remote Convex target is unconfirmed.
 
 Owner: Track mobile
 
-Review date: 2026-09-30
+Review date: 2026-10-01
 
 Scope: `apps/mobile`, plus shared or Convex behavior only where an approved mobile journey depends on it.
 
@@ -54,8 +54,8 @@ On the specific chat screen, preserve the requested jelly background treatment a
 
 #### Message gestures and actions
 
-- A left swipe reveals the existing message actions while the message bubble stays anchored in place. The row must not translate its readable message content off the left edge or hide it behind an overflow-clipping parent.
-- A right swipe continues to offer Reply where allowed.
+- On iOS, a left swipe reveals the existing message actions; on Android, a right swipe reveals the three-dot action menu. In both cases, the message bubble stays anchored in place and readable.
+- Reply stays available in the opposite swipe direction on each platform: right on iOS and left on Android, where allowed.
 - Finishing or cancelling a gesture returns the row to a stable position. If actions remain exposed, their state and dismissal path are clear.
 - Touch-and-hold on a message opens the existing Message actions sheet. Do not open a message preview. Do not add an unrequested dropdown or drawer.
 - Forward, Report, Reply, Open Thread, Create Task, Copy, Delete, and other currently supported actions retain their eligibility rules, confirmation behavior, and feedback.
@@ -66,39 +66,15 @@ The composer stays above the keyboard and system navigation. It supports text, a
 
 ### 3.3 My Tasks: assigned work and Board directory
 
-My Tasks is for work assigned to the current person across the active Company. Keep the Company data scope inherited from app context, but remove the Company-selection dropdown/form from this screen. Show a quiet scope label when needed so users can still tell which Company their tasks belong to. Do not weaken backend membership or authorization checks.
+My Tasks shows work assigned to the signed-in person across the active Company. Keep Company scope inherited from app context, remove the Company-selection dropdown from this screen, and show a quiet static Company label. Keep backend membership and authorization checks unchanged.
 
-Use this hierarchy:
+Use this order: My Tasks title and Company label; horizontal Project pills with the signed-in person's assigned-task count on each Project mark; one search field and one filter button; Today, Upcoming, All, and Done views; the Due this week count and its calendar control; matching task rows; then the Board directory. The search covers task title, Project, Channel, and Board context. The filter sheet groups status, priority, and due date, edits a draft, and applies changes only when the person taps Apply. Do not show live result counts for draft filter choices. Show the number of active filters only after they are applied.
 
-1. The My Tasks title and concise user identity/context where already required by the current design.
-2. The requested lighter statistics-card background, using semantic theme tokens and retaining AA text contrast.
-3. One search field and one filter button.
-4. One clear task-view set: Today, Upcoming, All, and Done. Add counts only when they describe the same applied query and complete/partial data state as the results.
-5. Urgent-only Today items.
-6. Urgent-only Due this week items, with the week count beside a calendar control.
-7. A Boards directory after the search, filters, task views, and urgent due sections.
+Today contains only urgent open tasks that are overdue or due today. Upcoming contains open tasks due after today, including the rest of this week and later dates, at every priority. The Due this week count and each day count include only urgent open tasks. Opening its calendar lists the days; choosing one filters the task rows for that date. The calendar button changes to a close icon while the picker is open. Closing the picker keeps the selected day, and a separate Clear day action removes that selection. All contains open, canceled, and completed work, with Completed and Canceled in collapsible groups. Done contains completed work.
 
-Do not show a generic “Needs Attention” section on My Tasks. Today and Due this week contain only Urgent tasks, as explicitly selected by the requester. Normal and low-priority tasks remain reachable in Upcoming and All. Done remains the completed-work view. Status and priority remain available in the filter sheet.
+Each task row shows its title, Project and Channel context, due date, priority, and status. A direct control marks a task complete or reopens it, a status control opens available workflow states, and tapping the row opens the full task. Group tasks by date and urgency. Include loading, empty, no-search-results, offline, failed-action, and partially loaded states, with the next safe action where recovery is possible. Label counts as partial while pagination or the backend task cap leaves more results.
 
-The Board area is a directory, not a task tab inside My Tasks. Use the signed-in person’s profile name as the directory heading, then group that person’s accessible Boards beneath a divider. Show the Boards in quiet, ghost-style rows that visually relate to Channel rows in Chats. Each row shows the Board name, its Project context, and a small task-count or unread badge where that data exists. Do not label an assigned-task total as a notification. Show a notification badge only when the backend provides an actual unread count. Counts must say when they are partial.
-
-#### My Tasks filter behavior
-
-- The filter button opens an interactive bottom sheet with Status, Priority, and Due date controls.
-- Controls update a draft selection while the sheet is open. The visible applied count and task list do not change until the user taps Apply.
-- Apply commits the draft filters, closes the sheet, and updates rows and counts together. Cancel/close discards draft changes and keeps the prior applied filters.
-- Reset/Clear returns the draft selection to its defaults. It changes applied results only after Apply, unless a clearly named immediate reset action is intentionally chosen and documented.
-- Expose selected values and sheet actions to screen readers. Focus and dismissal behavior must be tested on both platforms.
-
-#### Due-this-week day picker
-
-- Keep the calendar icon beside the Due this week count.
-- Opening the icon shows the days of the selected week. Each day is a labeled, selectable control with weekday, date, task count, and selected state.
-- Selecting a day filters the urgent week task list to that day and shows the selected date.
-- The calendar icon changes to a close/cross control while the day strip is open. Closing the strip preserves the selected date filter. The separate clear-day action clears that filter.
-- The count and list use the same date boundaries, timezone, search, applied task filters, urgent-only rule, pagination coverage, and completion policy.
-
-Every task row presents a readable title, Project and Channel context when available, due date, priority, and status. Completion/status actions are easy to reach, and tapping the task row opens full Task Detail. Completed tasks in All appear in a collapsible group. Empty, loading, no-search-results, offline, error, and partial-Project states explain what is happening and what to do next.
+Place the Board directory after task controls and task rows. Use the signed-in person's profile name as the directory heading, followed by a divider and quiet ghost-style Board rows that relate to Channel rows in Chats. Each row shows the Board name and Project context. Show a yellow badge only for a backend-provided unread notification count; never present an assigned-task count as a notification. Selecting a Board opens its task view. The Board screen's Board-name control opens the Project's Board chooser, where permitted users can also edit its mark.
 
 ### 3.4 Inbox
 
@@ -154,7 +130,7 @@ Shared touch targets and text scaling are already present in many primitives, an
 | --- | --- | --- |
 | P0 | Protect content during message gestures | Repeated left/right swipe, cancellation, and interrupted-gesture checks never hide or misidentify the target message. |
 | P0 | Accessible message actions | VoiceOver and TalkBack users can inspect a message and open its actions without needing swipe or long-press. |
-| P1 | My Tasks hierarchy and behavior | The generic Needs Attention section and Company selector are absent; urgent-only Today/week, four views, draft/apply filters, calendar preservation, Board order, and count consistency all match this plan. |
+| P1 | My Tasks hierarchy and behavior | My Tasks keeps inherited Company scope, Project tabs with assigned-task badges, Today/Upcoming/All/Done views, urgent-only Today and Due this week counts, applied task filters, task rows with status and completion controls, and the Board directory after the tasks. The screen has no Needs Attention section or Company selector. |
 | P1 | Chats discovery and action behavior | Project pill tabs work; unread Channel badges are correct; Channel/Thread hold opens actions only; search/filter and scope states remain clear. |
 | P1 | Inbox/Profile consistency | Inbox search/filter matches Chats; identity is centered on Profile; shared plus remains visible and operable. |
 | P1 | Navigation gesture and platform treatment | Taps and press-hold-slide both work; iOS/Android treatment matches the approved contract; insets and content hit areas remain correct. |
@@ -187,7 +163,7 @@ Shared touch targets and text scaling are already present in many primitives, an
 
 ### Phase 2: Chats, Channel/Thread actions, and message gestures
 
-1. Implement stationary-bubble left-swipe action reveal, stable close/cancel behavior, and right-swipe Reply.
+1. Implement stationary-bubble message-action reveal to the left on iOS and right on Android, with Reply in the opposite direction and stable close/cancel behavior.
 2. Ensure long-hold on a Channel/Thread row opens an action sheet with no preview/drawer/dropdown.
 3. Place yellow unread count badges at the top-right of Channel logos and expose the same count to assistive technology.
 4. Align Project tabs to pill format and verify search/filter composition, loading, no-results, partial coverage, and scope replacement.
@@ -197,15 +173,16 @@ Shared touch targets and text scaling are already present in many primitives, an
 
 ### Phase 3: My Tasks and Board directory
 
-1. Remove the generic Needs Attention content and Company selector control from My Tasks while retaining inherited Company scope and a useful scope label.
-2. Add/confirm Today, Upcoming, All, Done views and correct counts.
-3. Restrict Today and Due this week to Urgent tasks. Keep regular/low tasks reachable in Upcoming and All.
-4. Make the filter sheet interactive with draft and applied state, explicit Apply/Cancel/Clear behavior, and count changes only after apply.
-5. Keep week count and calendar together; implement day selection, close-without-clear, and explicit clear-day behavior.
-6. Place the ghost-style Board directory after filters and urgent sections, with Project context and truthful task/unread counts.
-7. Ensure every task row exposes title, Project/Channel, due date, priority, status, completion, and full-detail navigation.
+1. Keep Company context inherited from app state and show it as a static label, with no Company selector on My Tasks.
+2. Keep All Projects and per-Project pills, with each Project's assigned-task count on its yellow mark badge.
+3. Add one task and Board search field, one filter button, and a sheet with draft status, priority, and due-date choices. Apply them only on explicit Apply and show active-filter counts only after application.
+4. Add Today, Upcoming, All, and Done views. Today and Due this week show only urgent open tasks; Upcoming shows future-dated open tasks of all priorities; All includes collapsed Completed and Canceled groups; Done shows completed work.
+5. Add the week calendar beside its count, with day filtering, a close icon that preserves the selected day, and a separate Clear day action.
+6. Show task title, Project, Channel, due date, priority, and status in each row. Keep completion, workflow status, and full-task navigation available.
+7. Place the profile-name Board directory after task rows and show ghost-style Board rows with Project context and actual unread badges only.
+8. On the Board screen, open the current Project's Board switcher from the Board-name control and show the selected Board's tasks.
 
-**Exit gate:** the same test fixtures produce matching rows and counts across each view, filter combination, day selection, pagination state, and completion transition.
+**Exit gate:** Project scope updates the task list and Board directory together, no Company selector or Needs Attention section appears on My Tasks, task search covers task and context fields, and Board selection opens that Board's tasks.
 
 ### Phase 4: Inbox, Profile, and shared create action
 
@@ -242,7 +219,7 @@ Shared touch targets and text scaling are already present in many primitives, an
 3. Install or launch a current build through the approved workflow; do not use protected native regeneration/run commands without the required immediate approval.
 4. Capture device/OS/build identity, screenshots, full-flow recordings, accessibility-tree evidence, and focused test output for Android and iOS.
 5. Inspect every intended diff and confirm no unrelated work, generated files, credentials, or stale docs were changed.
-6. Run the required scoped code review for nontrivial implementation and resolve valid findings.
+6. Do not rerun the stalled CLI review for this implementation because the requester directed the work to move on without review. Record that exception and keep the automated gates and source self-review as the remaining code checks.
 7. Make a clear release recommendation using observed evidence. Do not call the app user-validated without user testing.
 
 **Exit gate:** all relevant automated gates and real user paths pass on current builds; no unresolved P0/P1 issue remains; remaining limitations are explicit.
@@ -251,12 +228,15 @@ Shared touch targets and text scaling are already present in many primitives, an
 
 1. From Chats, select a Project pill and open an unread Channel; the feed, badge, Channel header, and back path all preserve the same Project/Channel scope.
 2. Long-hold a Channel or Thread row; its action sheet opens without preview. Tap instead; the conversation opens.
-3. In a Channel, swipe a long message left and right, cancel mid-swipe, and repeat at top/bottom scroll boundaries; the message remains visible and the intended action is clear.
+3. In a Channel, swipe a long message in both directions on iOS and Android, cancel mid-swipe, and repeat at top/bottom scroll boundaries; the message remains visible and the intended action is clear.
 4. With VoiceOver/TalkBack enabled, read a message, invoke message actions without gestures, perform an allowed action, dismiss the sheet, and return to the same reading location.
-5. In My Tasks, apply Status/Priority/Due date drafts, cancel, reopen, then apply; canceled values never affect counts, and applied values change list and count together.
-6. Confirm Today and Due this week contain Urgent tasks only. Select a week day, close the calendar, and verify that the day remains selected until Clear is activated.
-7. Confirm My Tasks shows no Company dropdown or generic Needs Attention section, retains Company context, and lists Boards after filters and urgent work.
-8. In Board rows, verify task totals are not called notifications, unread badges only use real unread data, and partial totals are identified.
+5. In My Tasks, switch Project scope and verify task rows and Boards update together; confirm the Company remains a static inherited label and there is no Needs Attention section.
+6. Verify Today and Due this week show only urgent open tasks, Upcoming includes all future priorities, All has collapsible Completed and Canceled groups, and Done contains completed work.
+7. Draft status, priority, and due-date filters, cancel without changing results, then apply them and verify the active-filter count appears only after application. Search task title, Project, Channel, and Board context.
+8. Open the week picker, choose a day, close it, and verify that date remains selected and filters task rows. Clear the date explicitly and confirm tasks return to the selected time view.
+9. Verify each task row exposes Project, Channel, due date, priority, status, completion, and task-detail navigation.
+10. Tap a My Tasks Board row and verify it opens that Board's task screen. From there, open the Board-name control, choose another Board, and verify its task list appears.
+11. In Board rows, verify notifications use actual unread counts, show in a yellow badge, and never relabel assigned-task totals as unread activity.
 9. In Inbox, search and open filters using the same interaction pattern as Chats. Verify the scope remains user-global and every result opens an authorized source.
 10. On Profile, confirm the icon sits above the name, email, and role in one centered vertical identity group at normal and large text sizes.
 11. On Inbox and Profile, confirm the plus action is visible, labeled, has a full target, and opens a correctly scoped task flow without covering content.
@@ -266,23 +246,24 @@ Shared touch targets and text scaling are already present in many primitives, an
 
 ## 8. Review artifacts and status reporting
 
-### Implementation checkpoint: 2026-09-30
+### Implementation checkpoint: 2026-10-01, 15:01 UTC
 
 | Gate | Result | Evidence or remaining limit |
 | --- | --- | --- |
-| Mobile regression | Pass | The mobile suite passed 36 files and 152 tests, including task-view scoping and urgency, task filters, navigation, and message-swipe cancellation. |
-| Web and shared regression | Pass | The web suite passed 47 files and 133 tests; shared-domain tests passed 5 files and 10 tests. |
-| Root and Convex regression | Pass | The root Vitest suite passed 20 files and 100 tests. The earlier `convex/companyRelationships.test.ts` timeouts did not recur. |
-| Lint and typecheck | Pass | Root `pnpm lint` and `pnpm typecheck` completed successfully on the settled source. Mobile lint reported zero warnings or errors. |
-| Production dependency audit | Pass | `pnpm audit --prod` reported no known vulnerabilities after the workspace override and patch update. |
-| Production build | Pass | `pnpm build` completed for the web app and Expo web, Android, and iOS bundles. |
-| Device and assistive technology | Not verified | `adb devices -l` listed no device. Android and iOS VoiceOver/TalkBack, large text, gesture, focus, and current-build flows still need device evidence. |
-| Local route smoke | Not run | The Expo server was stopped without opening the app. `apps/mobile/.env` enables the development auth bypass and supplies a remote Convex URL but does not identify the target as a development deployment; keep the app disconnected until the exact target is confirmed. |
-| Scoped code review | Pending | `codex review --uncommitted` started, but its review process was interrupted before it reported findings. Rerun the review after this checkpoint update. |
-| Visual stat-card check | Source-only | The statistics palette and card surfaces were lightened. The mobile routes do not currently mount the `HomeStatsSection` or `TaskStatusSummary` components, so a visible stat-card change is not proven in a live route. |
-| Diff and repository safety | Pass | `git diff --check` passed. Existing working-tree changes were preserved; no commit, push, deployment, or native regeneration command was run. |
+| My Tasks and Board behavior | Implemented, source checked | Removed Needs Attention and the Company selector from the live My Tasks route. Added Today, Upcoming, All, and Done views; urgent-only Today and week counts; an applied-filter sheet; task and Board search; the day picker; task completion and status actions; partial-data states; and the profile-name Board directory with backend unread badges. The Board screen's Board-name control retains its Board chooser. |
+| Focused My Tasks regression | Passed | The focused mobile run passed 2 files / 9 tests for My Tasks filtering, views, deduplication, ordering, and week-day counts. |
+| Full mobile regression | Passed | `pnpm test` passed 39 mobile files / 154 tests. |
+| Web and shared regression | Passed | `pnpm test` passed 47 Web files / 133 tests and 6 shared files / 14 tests. |
+| Root and Convex regression | Passed | `pnpm test` passed 20 Convex files / 102 tests. |
+| Lint and typecheck | Passed | `pnpm lint` passed for mobile, web, shared, and Convex with zero reported warnings or errors. `pnpm typecheck` passed for Convex, mobile, web, and shared packages. |
+| Production dependency audit | Passed | `pnpm audit --prod` reported no known vulnerabilities. |
+| Production build | Passed | `pnpm build` built the web app and exported mobile Web, Android, and iOS JavaScript bundles. No native prebuild or install was run. |
+| Device and assistive technology | Not verified | `adb devices -l` found no connected Android device, and `xcrun` was unavailable. VoiceOver/TalkBack, large text, touch, focus, contrast, gestures, and navigation overlap remain unverified on devices. |
+| Local route smoke | Not run | The Expo bundle build passed, but the app was not launched against the unconfirmed remote Convex target. |
+| Scoped code review | Not run by requester direction | The requester directed the work to leave the CLI review and move on. The full automated gate and source self-review were used as compensating checks; this exception remains in effect for this implementation. |
+| Diff and repository safety | Passed for reviewed paths | `git diff --check` reported no whitespace errors. Unrelated worktree changes remain untouched. No commit, push, deployment, native regeneration, or device install was run. |
 
-The implementation remains not done until the scoped review completes, the exact development backend target is confirmed for a local route smoke, and the required current-device accessibility and user-path checks pass. Do not describe the app as user-validated or release-approved before those checks.
+**Status: Not done.** The source changes and automated gates pass, but device interaction, assistive technology, large-text behavior, and a local route smoke remain unproved. Do not describe the app as user-validated or release-approved until those checks pass.
 
 For every implementation checkpoint, record:
 

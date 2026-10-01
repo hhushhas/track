@@ -124,6 +124,37 @@ describe('groups.listMembers', () => {
       name: 'x'.repeat(121),
     })).rejects.toThrow('project_name_too_long')
   })
+
+  it('lets Project managers set and clear a stable Channel mark', async () => {
+    const t = convexTest(schema, modules)
+    const fixture = await seedChannel(t)
+    const owner = t.withIdentity({ subject: 'channel-owner' })
+    await owner.mutation(api.groups.update, {
+      groupId: fixture.groupId,
+      projectId: fixture.projectId,
+      userId: fixture.ownerId,
+      name: 'Authorized Channel',
+      markColorKey: 'teal',
+      markIconKey: 'design',
+    })
+    expect(await t.run(async (ctx) => await ctx.db.get(fixture.groupId))).toMatchObject({ markColorKey: 'teal', markIconKey: 'design' })
+    await expect(t.withIdentity({ subject: 'project-only-member' }).mutation(api.groups.update, {
+      groupId: fixture.groupId,
+      projectId: fixture.projectId,
+      userId: fixture.projectOnlyMemberId,
+      name: 'Unauthorized rename',
+      markColorKey: 'rose',
+    })).rejects.toThrow('not_project_manager')
+    await owner.mutation(api.groups.update, {
+      groupId: fixture.groupId,
+      projectId: fixture.projectId,
+      userId: fixture.ownerId,
+      name: 'Authorized Channel',
+      markColorKey: null,
+      markIconKey: null,
+    })
+    expect(await t.run(async (ctx) => await ctx.db.get(fixture.groupId))).not.toHaveProperty('markColorKey')
+  })
 })
 
 async function seedChannel(t: ReturnType<typeof convexTest>) {

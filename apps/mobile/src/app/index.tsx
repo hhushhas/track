@@ -1,11 +1,15 @@
 import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
 import { authClient } from '@/lib/auth-client';
 import { hasStoredAuthSession } from '@/lib/auth-storage';
 import { useDevAuthBypass } from '@/lib/dev-auth-bypass';
 import { useTrackUser } from '@/contexts/track-user-context';
-import { LaunchScreen } from '@/components/launch-screen';
+import { AnimatedTrackLogo } from '@/components/animated-track-logo';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { Spacing } from '@/constants/theme';
 
 export default function Index() {
   const session = authClient.useSession();
@@ -43,13 +47,30 @@ export default function Index() {
   }, [devAuthBypass.enabled, refetchSession, restoreSettled, sessionData, sessionIsPending]);
 
   if ((sessionIsPending || !restoreSettled) && !devAuthBypass.enabled) {
-    return <LaunchScreen />;
+    return <StartupLoadingScreen />;
   }
 
   // Only a settled, empty session sends anyone to sign-in.
   if (!hasAccess) return <Redirect href="/sign-in" />;
 
-  if (isAuthReady && trackUserId) return <Redirect href="/conversations" />;
+  if (isAuthReady && trackUserId) return <Redirect href={{ pathname: '/conversations', params: { startup: '1' } }} />;
 
-  return <LaunchScreen />;
+  return <StartupLoadingScreen />;
 }
+
+function StartupLoadingScreen() {
+  return (
+    <ThemedView accessibilityLabel="Getting Track ready" accessibilityRole="progressbar" accessibilityState={{ busy: true }} style={styles.startupScreen}>
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <AnimatedTrackLogo showName size={96} />
+      </View>
+      <ThemedText themeColor="textSecondary" type="small">
+        Getting Track ready…
+      </ThemedText>
+    </ThemedView>
+  );
+}
+
+const styles = StyleSheet.create({
+  startupScreen: { alignItems: 'center', flex: 1, gap: Spacing.five, justifyContent: 'center', padding: Spacing.five },
+});

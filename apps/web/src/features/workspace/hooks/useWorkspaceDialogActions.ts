@@ -4,12 +4,15 @@ import type { FormEvent } from 'react'
 import { api } from '../../../../../../convex/_generated/api'
 import type { Id } from '../../../../../../convex/_generated/dataModel'
 import type { WorkspaceInviteRole } from '#/features/workspace/hooks/useWorkspaceDialogState'
+import type { EntityMarkColorKey, EntityMarkIconKey } from '@track/shared'
 
 export function useWorkspaceDialogActions({
   activeProjectId,
   editingGroupId,
   groupDialogMode,
   groupName,
+  groupMarkColorKey,
+  groupMarkIconKey,
   inviteAccess,
   inviteEmail,
   inviteRole,
@@ -28,12 +31,16 @@ export function useWorkspaceDialogActions({
   projectClientLabel,
   projectDialogMode,
   projectName,
+  projectMarkColorKey,
+  projectMarkIconKey,
   trackUserId,
 }: {
   activeProjectId: Id<'projects'> | null
   editingGroupId: Id<'groups'> | null
   groupDialogMode: 'create' | 'edit'
   groupName: string
+  groupMarkColorKey: EntityMarkColorKey | ''
+  groupMarkIconKey: EntityMarkIconKey | ''
   inviteAccess: string
   inviteEmail: string
   inviteRole: WorkspaceInviteRole
@@ -52,6 +59,8 @@ export function useWorkspaceDialogActions({
   projectClientLabel: string
   projectDialogMode: 'create' | 'edit'
   projectName: string
+  projectMarkColorKey: EntityMarkColorKey | ''
+  projectMarkIconKey: EntityMarkIconKey | ''
   trackUserId: Id<'users'> | null
 }) {
   const createProject = useMutation(api.projects.create)
@@ -89,6 +98,8 @@ export function useWorkspaceDialogActions({
           userId: trackUserId,
           name,
           clientLabel: projectClientLabel.trim() || undefined,
+          markIconKey: projectMarkIconKey || null,
+          markColorKey: projectMarkColorKey || null,
         })
         onProjectUpdated(activeProjectId)
         onProjectDialogOpenChange(false)
@@ -117,6 +128,8 @@ export function useWorkspaceDialogActions({
           groupId: editingGroupId,
           userId: trackUserId,
           name,
+          markIconKey: groupMarkIconKey || null,
+          markColorKey: groupMarkColorKey || null,
         })
         onGroupUpdated(editingGroupId)
         onGroupDialogOpenChange(false)

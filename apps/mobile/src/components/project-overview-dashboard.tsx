@@ -4,7 +4,7 @@ import { AssistantMark } from '@/components/chat/assistant-mark';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { attentionAction, attentionContext, attentionTitle, relativeAttentionTime, type MobileAttentionItem } from '@/lib/mobile-attention';
 
@@ -31,7 +31,7 @@ export function ProjectMetrics({ channels, people, tasks, tasksEnabled, unread }
   </View>;
 }
 
-export function ProjectProgress({ completed, latestUpdate, total }: { completed: number; latestUpdate?: string; total: number }) {
+export function ProjectProgress({ completed, total }: { completed: number; total: number }) {
   const theme = useTheme();
   const percent = total ? Math.round((completed / total) * 100) : 0;
   return <View style={[styles.progress, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
@@ -45,7 +45,6 @@ export function ProjectProgress({ completed, latestUpdate, total }: { completed:
     <View accessibilityLabel={`${percent} percent complete`} accessibilityRole="progressbar" accessibilityValue={{ max: 100, min: 0, now: percent }} style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
       <View style={[styles.progressFill, { backgroundColor: theme.accent, width: `${percent}%` }]} />
     </View>
-    {latestUpdate ? <View style={styles.latestUpdate}><PlatformIcon color={theme.textTertiary} name="clock-outline" size={15} /><ThemedText numberOfLines={2} themeColor="textSecondary" type="caption">{latestUpdate}</ThemedText></View> : null}
   </View>;
 }
 
@@ -82,10 +81,10 @@ function HubRow({ detail, icon, label, onPress }: { detail: string; icon: IconNa
 }
 
 export function ProjectAttention({ items, onOpen }: { items: MobileAttentionItem[]; onOpen: (item: MobileAttentionItem) => void }) {
-  const theme = useTheme();
+  if (!items.length) return null;
   return <View style={styles.attentionSection}>
     <SectionHeading title="Your attention" />
-    {items.length ? items.map((item) => <AttentionCard item={item} key={`${item.kind}:${item.id}`} onPress={() => onOpen(item)} />) : <View style={[styles.clearState, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.success} name="check-circle" size={17} /><ThemedText themeColor="textSecondary" type="caption">Nothing else needs your attention in this Project.</ThemedText></View>}
+    {items.map((item) => <AttentionCard item={item} key={`${item.kind}:${item.id}`} onPress={() => onOpen(item)} />)}
   </View>;
 }
 
@@ -123,9 +122,9 @@ function SectionHeading({ title }: { title: string }) {
 
 const styles = StyleSheet.create({
   actionInk: { color: '#1b1917' }, attentionCard: { gap: Spacing.two, padding: Spacing.three }, attentionFooter: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' }, attentionFooterLarge: { alignItems: 'flex-start', flexDirection: 'column' }, attentionIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 24, justifyContent: 'center', width: 24 }, attentionIdentity: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: Spacing.two, minWidth: 0 }, attentionSection: { gap: Spacing.two }, attentionSurface: { borderCurve: 'continuous', borderLeftWidth: 3, borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }, attentionTopline: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  backLink: { alignItems: 'center', flexDirection: 'row', minHeight: TouchTarget }, clearState: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: 52, padding: Spacing.three }, company: { flexShrink: 1, textTransform: 'uppercase' }, companyLine: { alignItems: 'center', flexDirection: 'row', gap: 6 }, flex: { flex: 1, minWidth: 0 },
+  backLink: { alignItems: 'center', flexDirection: 'row', minHeight: TouchTarget }, company: { flexShrink: 1 }, companyLine: { alignItems: 'center', flexDirection: 'row', gap: 6 }, flex: { flex: 1, minWidth: 0 },
   hero: { gap: Spacing.one }, heroTopline: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, heroToplineLarge: { alignItems: 'flex-start', flexDirection: 'column' },
   hub: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' }, hubDivider: { height: StyleSheet.hairlineWidth, marginLeft: 68 }, hubIcon: { alignItems: 'center', borderRadius: Radius.medium, height: 40, justifyContent: 'center', width: 40 }, hubRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 76, overflow: 'hidden', padding: Spacing.four }, inlineAction: { borderRadius: Radius.small, minHeight: 30, paddingHorizontal: Spacing.two, paddingVertical: 7 },
-  metric: { borderCurve: 'continuous', borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', flex: 1, gap: 2, minWidth: 0, padding: Spacing.three }, metricLabel: { fontSize: 10, lineHeight: 14, textTransform: 'uppercase' }, metricResult: { alignItems: 'baseline', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one }, metrics: { flexDirection: 'row', gap: Spacing.three }, metricsLarge: { flexDirection: 'column' }, metricValue: { fontSize: 16, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 22 }, sectionHeading: { marginBottom: Spacing.three, marginTop: Spacing.two }, sectionTitle: { letterSpacing: -0.15 }, statusDot: { borderRadius: Radius.pill, height: 6, width: 6 }, statusLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
-  latestUpdate: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two }, progress: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three, padding: Spacing.four }, progressFill: { borderRadius: Radius.pill, bottom: 0, left: 0, position: 'absolute', top: 0 }, progressHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, progressTrack: { borderRadius: Radius.pill, height: 8, overflow: 'hidden' }, progressValue: { fontVariant: ['tabular-nums'] },
+  metric: { borderCurve: 'continuous', borderRadius: Radius.medium, boxShadow: '0 1px 2px rgba(0,0,0,0.05)', flex: 1, gap: 2, minWidth: 0, padding: Spacing.three }, metricLabel: Typography.captionBold, metricResult: { alignItems: 'baseline', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one }, metrics: { flexDirection: 'row', gap: Spacing.three }, metricsLarge: { flexDirection: 'column' }, metricValue: { fontSize: 16, fontVariant: ['tabular-nums'], fontWeight: '700', lineHeight: 22 }, sectionHeading: { marginBottom: Spacing.three, marginTop: Spacing.two }, sectionTitle: { letterSpacing: -0.15 }, statusDot: { borderRadius: Radius.pill, height: 6, width: 6 }, statusLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  progress: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three, padding: Spacing.four }, progressFill: { borderRadius: Radius.pill, bottom: 0, left: 0, position: 'absolute', top: 0 }, progressHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, progressTrack: { borderRadius: Radius.pill, height: 8, overflow: 'hidden' }, progressValue: { fontVariant: ['tabular-nums'] },
 });

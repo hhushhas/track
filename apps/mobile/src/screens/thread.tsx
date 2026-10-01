@@ -132,6 +132,7 @@ export default function ThreadScreen() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [actionTarget, setActionTarget] = useState<GroupedThreadItem | null>(null);
+  const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<DetailedMessage | null>(null);
   const [editBody, setEditBody] = useState('');
@@ -707,7 +708,10 @@ export default function ThreadScreen() {
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen options={{
-        headerTitle: () => <View style={styles.headerIdentity}>
+        headerTransparent: true,
+        headerBlurEffect: 'none',
+        headerBackground: () => <View pointerEvents="none" style={StyleSheet.absoluteFill} />,
+        headerTitle: () => <View style={[styles.headerIdentity, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
           <View style={[styles.headerMark, { backgroundColor: Platform.OS === 'ios' ? 'transparent' : theme.accentSoft }]}><PlatformIcon color={theme.accentStrong} name="thread" size={18} /></View>
           <View style={styles.headerTitle}>
             <ThemedText numberOfLines={1} type="title">{thread.thread.name}</ThemedText>
@@ -716,7 +720,6 @@ export default function ThreadScreen() {
         </View>,
         headerLeft: () => <IconButton
           accessibilityLabel="Back to Channel"
-          appearance="plain"
           icon="arrow-left"
           onPress={() => {
             if (router.canGoBack()) {
@@ -726,7 +729,7 @@ export default function ThreadScreen() {
             }
           }}
         />,
-        headerRight: () => <IconButton accessibilityLabel="Thread options" appearance="plain" icon="dots-horizontal" onPress={() => setToolsOpen(true)} />,
+        headerRight: () => <IconButton accessibilityLabel="Thread options" icon="dots-horizontal" onPress={() => setToolsOpen(true)} />,
       }} />
       <ConnectivityBanner message="You’re offline. Cached replies stay available; sending will retry when you reconnect." style={styles.connection} />
       {notice ? <ThemedText accessibilityLiveRegion="polite" style={[styles.notice, { color: theme.success }]} type="small">{notice}</ThemedText> : null}
@@ -739,7 +742,8 @@ export default function ThreadScreen() {
         messageIds={taskLinkMessageIds}
       >
       <FlatList
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: composerOverlayHeight + Spacing.two }]}
+          contentInsetAdjustmentBehavior="automatic"
           style={styles.flex}
           data={threadItems}
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -775,22 +779,29 @@ export default function ThreadScreen() {
           viewabilityConfig={viewabilityConfig}
         />
       </TaskLinkBatchProvider>
-      {!readOnly ? <Composer
-        activeGroupName={thread.thread.name}
-        busy={busy}
-        mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
-        mentionCandidatesLoading={projectMembersPage.status === 'LoadingMore'}
-        mentionCandidates={mentionCandidates}
-        onCancelReply={() => setReplyTo(null)}
-        onChangeText={setComposer}
-        onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
-        onLoadMoreMentionCandidates={() => {
-          if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
+      {!readOnly ? <View
+        onLayout={({ nativeEvent }) => {
+          const height = Math.ceil(nativeEvent.layout.height);
+          setComposerOverlayHeight((current) => current === height ? current : height);
         }}
-        onSendMessage={handleSendMessage}
-        replyTo={replyTo}
-        value={composer}
-      /> : null}
+        style={styles.composerOverlay}>
+        <Composer
+          activeGroupName={thread.thread.name}
+          busy={busy}
+          mentionCandidatesHasMore={projectMembersPage.status === 'CanLoadMore'}
+          mentionCandidatesLoading={projectMembersPage.status === 'LoadingMore'}
+          mentionCandidates={mentionCandidates}
+          onCancelReply={() => setReplyTo(null)}
+          onChangeText={setComposer}
+          onFocus={() => requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }))}
+          onLoadMoreMentionCandidates={() => {
+            if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
+          }}
+          onSendMessage={handleSendMessage}
+          replyTo={replyTo}
+          value={composer}
+        />
+      </View> : null}
       <OptionsSheet onClose={() => setToolsOpen(false)} title="Thread" visible={toolsOpen}>
         <SheetSection>
           {!navigation.archived ? <SheetRow label={thread.following ? 'Unfollow' : 'Follow'} icon="bell-outline" onPress={() => void changeFollowing()} /> : null}
@@ -846,10 +857,11 @@ export default function ThreadScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerIdentity: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, maxWidth: 230 },
+  headerIdentity: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, maxWidth: 230, minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   headerMark: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', width: 34 },
   archive: { gap: 2, padding: Spacing.three },
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
+  composerOverlay: { bottom: 0, left: 0, position: 'absolute', right: 0, zIndex: 2 },
   editAction: { flex: 1 },
   editActions: { flexDirection: 'row', gap: Spacing.two },
   error: { padding: Spacing.three },

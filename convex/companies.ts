@@ -98,7 +98,10 @@ export const listMine = query({
       .collect()
     return await Promise.all(memberships.map(async (membership) => {
       const company = await ctx.db.get(membership.companyId)
-      return { company: company ? basicCompany(company) : null, membership }
+      return {
+        company: company ? { ...basicCompany(company), logoUrl: company.logoStorageId ? await ctx.storage.getUrl(company.logoStorageId) : null } : null,
+        membership,
+      }
     }))
   },
 })
@@ -116,7 +119,7 @@ export const getBasic = query({
       ).collect(),
     ])
     return {
-      company: basicCompany(company),
+      company: { ...basicCompany(company), logoUrl: company.logoStorageId ? await ctx.storage.getUrl(company.logoStorageId) : null },
       membership,
       memberCount: members.filter((member) => member.status === 'active').length,
       projectCount: projects.length,
@@ -166,7 +169,7 @@ export const getAdministration = query({
       .withIndex('by_company_status', (q) => q.eq('companyId', company._id).eq('status', 'pending'))
       .collect()
     return {
-      company,
+      company: { ...company, logoUrl: company.logoStorageId ? await ctx.storage.getUrl(company.logoStorageId) : null },
       membership,
       members: await Promise.all(members.filter((member) => member.status !== 'removed').map(async (member) => {
         const user = await ctx.db.get(member.userId)
@@ -255,7 +258,7 @@ export const updateProfile = mutation({
     }
     if (args.logoStorageId) {
       const metadata = await ctx.storage.getMetadata(args.logoStorageId)
-      if (!metadata || metadata.size > 5_000_000 || !metadata.contentType?.startsWith('image/')) {
+      if (!metadata || metadata.size > 5_000_000 || !['image/png', 'image/jpeg', 'image/webp'].includes(metadata.contentType ?? '')) {
         throw new Error('company_logo_invalid')
       }
     }

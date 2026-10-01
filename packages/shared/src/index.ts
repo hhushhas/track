@@ -1,6 +1,7 @@
 export * from './company'
 export * from './channel-membership'
 export * from './domain'
+export * from './entity-identity'
 export * from './dev-auth'
 export * from './feature-flags'
 export * from './project-policy'

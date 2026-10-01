@@ -1,10 +1,12 @@
 import { v } from 'convex/values'
+import { entityMarkColorKeys, entityMarkIconKeys } from '@track/shared'
 
 import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx } from './_generated/server'
 import { mutation, query } from './_generated/server'
 import { requireAuthenticatedActor } from './lib/actorContext'
 import { requireActiveCompanyMembership } from './lib/companyPolicy'
+import { getGroupUnreadCount } from './lib/groupUnreadCount'
 import { appendAuditEvent } from './lib/audit'
 import { assertProjectSnapshotWritable } from './lib/projectSnapshotLock'
 import {
@@ -166,13 +168,14 @@ export const list = query({
         .map((board) => ({
           board,
           states: states.filter((state) => state.boardId === board._id && !state.archivedAt),
+          canManageMark: false,
         }))
     }
     const boards = await ctx.db
       .query('taskBoards')
       .withIndex('by_project_archived', (q) => q.eq('projectId', args.projectId))
       .collect()
-    const visible: Array<{ board: Doc<'taskBoards'>; states: Array<Doc<'taskWorkflowStates'>> }> = []
+    const visible: Array<{ board: Doc<'taskBoards'>; states: Array<Doc<'taskWorkflowStates'>>; canManageMark: boolean }> = []
     for (const board of boards) {
       if (board.archivedAt && !args.includeArchived) continue
       try {
@@ -182,7 +185,7 @@ export const list = query({
           .query('taskWorkflowStates')
           .withIndex('by_board_rank', (q) => q.eq('boardId', board._id))
           .collect()
-        visible.push({ board, states: states.filter((state) => !state.archivedAt) })
+        visible.push({ board, states: states.filter((state) => !state.archivedAt), canManageMark: access.capabilities.canManageProject })
       } catch {
         continue
       }
@@ -216,6 +219,8 @@ export const listMine = query({
       company: { _id: Id<'companies'>; displayName: string } | null
       projectMemberId: Id<'projectMembers'>
       companyId?: Id<'companies'>
+      canManageMark: boolean
+      unreadCount: number
     }> = []
     for (const membership of candidates) {
       const project = await ctx.db.get(membership.projectId)
@@ -233,8 +238,11 @@ export const listMine = query({
           if (!canRead) continue
           const states = await ctx.db.query('taskWorkflowStates').withIndex('by_board_rank', (q) => q.eq('boardId', board._id)).collect()
           const company = membership.companyId ? await ctx.db.get(membership.companyId) : null
+          const unreadCount = board.groupId
+            ? await getGroupUnreadCount(ctx, board.groupId, actor.userId, membership.companyId ? membership._id : undefined)
+            : 0
           seen.add(key)
-          rows.push({ board, states: states.filter((state) => !state.archivedAt), project: { _id: project._id, name: project.name }, company: company ? { _id: company._id, displayName: company.displayName } : null, projectMemberId: membership._id, ...(membership.companyId ? { companyId: membership.companyId } : {}) })
+          rows.push({ board, states: states.filter((state) => !state.archivedAt), project: { _id: project._id, name: project.name }, company: company ? { _id: company._id, displayName: company.displayName } : null, projectMemberId: membership._id, canManageMark: access.capabilities.canManageProject && (!board.groupId || access.capabilities.canReadChannel), unreadCount, ...(membership.companyId ? { companyId: membership.companyId } : {}) })
         } catch {
           // Permission failures are expected when a Project or Channel changed
           // after membership pagination. Omit that Board from the picker.
@@ -298,6 +306,8 @@ export const update = mutation({
     boardId: v.id('taskBoards'),
     name: v.string(),
     description: v.optional(v.union(v.string(), v.null())),
+    markIconKey: v.optional(v.union(v.null(), ...entityMarkIconKeys.map((key) => v.literal(key)))),
+    markColorKey: v.optional(v.union(v.null(), ...entityMarkColorKeys.map((key) => v.literal(key)))),
     ...identityArgs,
   },
   handler: async (ctx, args) => {
@@ -310,6 +320,8 @@ export const update = mutation({
     await ctx.db.patch(board._id, {
       name: validBoardName(args.name),
       description: args.description?.trim() || undefined,
+      ...(args.markIconKey !== undefined ? { markIconKey: args.markIconKey ?? undefined } : {}),
+      ...(args.markColorKey !== undefined ? { markColorKey: args.markColorKey ?? undefined } : {}),
       updatedAt: Date.now(),
     })
     return board._id

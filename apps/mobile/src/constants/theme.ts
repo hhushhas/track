@@ -1,6 +1,6 @@
 import '@/global.css';
 
-import { Platform } from 'react-native';
+import { Platform, type TextStyle } from 'react-native';
 
 export const Colors = {
   light: {
@@ -21,28 +21,28 @@ export const Colors = {
     accentInk: '#1b1917',
     accentSoft: '#fef3c7',
     accentStrong: '#8a6400',
-    statAccentSoft: '#fff9e5',
+    statAccentSoft: '#fffcf2',
     danger: '#b91c1c',
     dangerSoft: '#fee2e2',
-    statDangerSoft: '#fff4f4',
+    statDangerSoft: '#fffbfb',
     warning: '#9a3412',
-    statWarningSoft: '#fff6ec',
+    statWarningSoft: '#fffbf5',
     success: '#15803d',
     successSoft: '#dcfce7',
-    statSuccessSoft: '#f1faf3',
+    statSuccessSoft: '#f8fcf9',
     info: '#1d4ed8',
-    statInfoSoft: '#f2f7ff',
+    statInfoSoft: '#f8faff',
     workflowBacklog: '#7c3aed',
     workflowBacklogSoft: '#f1eafe',
     workflowBacklogStrong: '#6d28d9',
-    statPurpleSoft: '#f7f3ff',
+    statPurpleSoft: '#fbf9ff',
     workflowUnstarted: '#2563eb',
     workflowUnstartedSoft: '#eaf2ff',
     workflowUnstartedStrong: '#1d4ed8',
     workflowStarted: '#15803d',
     workflowStartedSoft: '#eaf7ef',
     workflowStartedStrong: '#166534',
-    statProgressSoft: '#f2faf4',
+    statProgressSoft: '#f8fcf9',
     workflowCompleted: '#0f766e',
     workflowCompletedSoft: '#e6f7f4',
     workflowCompletedStrong: '#115e59',
@@ -109,20 +109,62 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
+const noCommonLigatures: NonNullable<TextStyle['fontVariant']> = ['no-common-ligatures'];
+const tabularNoCommonLigatures: NonNullable<TextStyle['fontVariant']> = ['tabular-nums', 'no-common-ligatures'];
+
 export const Fonts = Platform.select({
   ios: {
-    sans: undefined,
+    sans: 'ManropeV5-Regular',
+    sansRegular: 'ManropeV5-Regular',
+    sansMedium: 'ManropeV5-Medium',
+    sansSemibold: 'ManropeV5-SemiBold',
+    sansBold: 'ManropeV5-Bold',
+    sansExtraBold: 'ManropeV5-ExtraBold',
     mono: 'Menlo',
   },
   android: {
-    sans: 'sans-serif',
+    sans: 'Manrope V5',
+    sansRegular: 'Manrope V5',
+    sansMedium: 'Manrope V5',
+    sansSemibold: 'Manrope V5',
+    sansBold: 'Manrope V5',
+    sansExtraBold: 'Manrope V5',
     mono: 'monospace',
   },
   default: {
     sans: 'sans-serif',
+    sansRegular: 'sans-serif',
+    sansMedium: 'sans-serif',
+    sansSemibold: 'sans-serif',
+    sansBold: 'sans-serif',
+    sansExtraBold: 'sans-serif',
     mono: 'monospace',
   },
 });
+
+export function sansFontForWeight(weight: TextStyle['fontWeight']) {
+  if (Platform.OS !== 'ios') return Fonts?.sans;
+
+  switch (String(weight ?? '400')) {
+    case '500':
+    case 'medium':
+      return Fonts?.sansMedium;
+    case '600':
+    case 'semibold':
+      return Fonts?.sansSemibold;
+    case '700':
+    case 'condensedBold':
+    case 'bold':
+      return Fonts?.sansBold;
+    case '800':
+    case '900':
+    case 'heavy':
+    case 'black':
+      return Fonts?.sansExtraBold;
+    default:
+      return Fonts?.sansRegular;
+  }
+}
 
 /**
  * Sans styles carry prose and metadata. The mono styles are reserved for
@@ -131,73 +173,82 @@ export const Fonts = Platform.select({
 export const Typography = {
   // Platform-sized navigation titles keep drill-in screens calm and familiar.
   navigationTitle: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansSemibold,
     fontSize: Platform.OS === 'ios' ? 17 : 20,
     lineHeight: Platform.OS === 'ios' ? 22 : 26,
     fontWeight: '600' as const,
+    fontVariant: noCommonLigatures,
   },
   // Prose
   message: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansRegular,
     fontSize: 16,
     lineHeight: 22,
     fontWeight: '400' as const,
+    fontVariant: noCommonLigatures,
   },
   body: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansRegular,
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '400' as const,
+    fontVariant: noCommonLigatures,
   },
   bodyBold: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansSemibold,
     fontSize: 15,
     lineHeight: 21,
     fontWeight: '600' as const,
+    fontVariant: noCommonLigatures,
   },
   // Headings
   display: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansBold,
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '700' as const,
+    fontVariant: noCommonLigatures,
   },
   titleLarge: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansBold,
     fontSize: 20,
     lineHeight: 26,
     fontWeight: '700' as const,
+    fontVariant: noCommonLigatures,
   },
   title: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansSemibold,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '600' as const,
+    fontVariant: noCommonLigatures,
   },
   subtitle: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansSemibold,
     fontSize: 17,
     lineHeight: 22,
     fontWeight: '600' as const,
+    fontVariant: noCommonLigatures,
   },
   // Secondary text — sans, not mono
   label: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansMedium,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '500' as const,
+    fontVariant: noCommonLigatures,
   },
   caption: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansRegular,
     fontSize: 12,
-    fontVariant: ['tabular-nums'] as const,
+    fontVariant: tabularNoCommonLigatures,
     lineHeight: 16,
     fontWeight: '400' as const,
   },
   captionBold: {
-    fontFamily: Fonts?.sans,
+    fontFamily: Fonts?.sansSemibold,
     fontSize: 12,
-    fontVariant: ['tabular-nums'] as const,
+    fontVariant: tabularNoCommonLigatures,
     lineHeight: 16,
     fontWeight: '600' as const,
   },
@@ -258,4 +309,5 @@ export const IconSize = {
  * stable content reserve so the last row never hides behind the bar.
  */
 export const BottomTabInset = 76;
+export const AndroidBottomTabHeight = 64;
 export const MaxContentWidth = 800;

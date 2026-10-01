@@ -478,6 +478,8 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         groupDialogOpen={dialogState.groupDialogOpen}
         groupDialogMode={dialogState.groupDialogMode}
         groupName={dialogState.groupName}
+        groupMarkColorKey={dialogState.groupMarkColorKey}
+        groupMarkIconKey={dialogState.groupMarkIconKey}
         inviteAccess={dialogState.inviteAccess}
         inviteDialogOpen={dialogState.inviteDialogOpen}
         inviteEmail={dialogState.inviteEmail}
@@ -490,8 +492,12 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         projectDialogMode={dialogState.projectDialogMode}
         projectGroups={visibleGroups}
         projectName={dialogState.projectName}
+        projectMarkColorKey={dialogState.projectMarkColorKey}
+        projectMarkIconKey={dialogState.projectMarkIconKey}
         setGroupDialogOpen={dialogState.setGroupDialogOpen}
         setGroupName={dialogState.setGroupName}
+        setGroupMarkColorKey={dialogState.setGroupMarkColorKey}
+        setGroupMarkIconKey={dialogState.setGroupMarkIconKey}
         setInviteAccess={dialogState.setInviteAccess}
         setInviteDialogOpen={dialogState.setInviteDialogOpen}
         setInviteEmail={dialogState.setInviteEmail}
@@ -499,6 +505,8 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
         setProjectClientLabel={dialogState.setProjectClientLabel}
         setProjectDialogOpen={dialogState.setProjectDialogOpen}
         setProjectName={dialogState.setProjectName}
+        setProjectMarkColorKey={dialogState.setProjectMarkColorKey}
+        setProjectMarkIconKey={dialogState.setProjectMarkIconKey}
       />
     </main>
   )

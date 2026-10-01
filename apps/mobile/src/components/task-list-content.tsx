@@ -8,7 +8,8 @@ import type {
   MobileSuggestionView,
   MobileTaskView,
 } from '@/components/task-detail-types';
-import { TaskAction, TaskCard, TaskCardSkeletons } from '@/components/task-ui';
+import { TaskAction, TaskCard } from '@/components/task-ui';
+import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -52,7 +53,7 @@ export function TaskCollection({
   tab: 'board' | 'my' | 'all';
   tasks?: MobileTaskView[];
 }) {
-  if (tasks === undefined) return <TaskCardSkeletons count={4} />;
+  if (tasks === undefined) return <ScreenLoading compact variant="tasks" />;
   if (!selectedBoard && tab === 'board') {
     return (
       <TaskEmptyState
@@ -158,7 +159,7 @@ export function SuggestionInbox({
       />
     );
   }
-  if (suggestions === undefined) return <TaskCardSkeletons count={3} />;
+  if (suggestions === undefined) return <ScreenLoading compact variant="inbox" />;
   if (!suggestions.length) {
     return (
       <EmptyState

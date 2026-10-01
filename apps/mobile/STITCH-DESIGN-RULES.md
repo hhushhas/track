@@ -109,7 +109,17 @@ Rules:
 
 ### Typography
 
-Use the platform system sans. Keep one clear display size per screen.
+Use Manrope V5 Static for app-owned mobile text. Resolve it through the shared
+`Fonts` and `Typography` tokens so headings, messages, forms, labels, pills,
+and metadata use the same family. Bundle the publisher's original static
+Regular, Medium, SemiBold, Bold, and ExtraBold files unchanged. Keep system
+fonts for OS-owned controls and as glyph fallbacks for scripts outside the
+font's coverage.
+
+Disable common ligatures in app-owned text so Manrope's custom substitutions
+do not change the visible form of user-written messages, task titles, or IDs.
+Use platform monospace only for fixed task keys and other identifiers. Keep one
+clear display size per screen.
 
 | Role | Size / line height | Use |
 |---|---:|---|
@@ -129,6 +139,11 @@ Rules:
 - Do not use monospace for names, timestamps, or ordinary labels.
 - Keep long titles readable at large text sizes.
 - Use tabular numerals for counts, times, and dates.
+- Keep the attribution `Manrope V5 by Mikhail Sharanda` available in the
+  account's Fonts and licenses section. Preserve the full license in
+  `assets/fonts/LICENSE-Manrope-V5.txt`.
+- Use the native `expo-font` config plugin with static files on SDK 57; do not
+  use the variable font or load the family after the first app frame.
 
 ### Spacing and shape
 

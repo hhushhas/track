@@ -404,6 +404,14 @@ export function TrackUserProvider({ children }: { children: React.ReactNode }) {
               <SheetRow icon="file-document-outline" label="Terms of service" onPress={() => void Linking.openURL('https://track.q9labs.ai/terms')} />
               <SheetRow icon="email-outline" label="Support" onPress={() => void Linking.openURL('mailto:q9labs.ai@gmail.com')} />
             </SheetSection>
+            <SheetSection title="Fonts and licenses">
+              <SheetRow
+                detail="Font credit and source"
+                icon="information-outline"
+                label="Manrope V5 by Mikhail Sharanda"
+                onPress={() => void Linking.openURL('https://www.sharanda.com/manrope')}
+              />
+            </SheetSection>
             <SheetSection>
               <SheetRow icon="logout" label="Sign out" onPress={() => { setSheet(null); setAccountAction('sign-out'); }} />
               <SheetRow destructive icon="trash-can-outline" label={deletingAccount ? 'Deleting account…' : 'Delete account'} onPress={() => {

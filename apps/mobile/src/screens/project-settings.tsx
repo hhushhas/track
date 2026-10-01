@@ -1,17 +1,21 @@
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
+import { useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { PlatformIcon, type IconName } from '@/components/platform-icon';
+import { EntityMark } from '@/components/entity-mark';
+import { EntityMarkPicker } from '@/components/entity-mark-picker';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSize, Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, projectChannelsHref, projectOverviewHref, type RepresentedProjectContext } from '@/lib/company-navigation';
 import { taskListHref } from '@/lib/task-navigation';
+import type { EntityMarkColorKey, EntityMarkIconKey } from '@track/shared';
 
 export default function ProjectSettingsScreen() {
   const theme = useTheme();
@@ -27,6 +31,15 @@ export default function ProjectSettingsScreen() {
     projectId,
     projectMemberId: membershipId,
   } : 'skip');
+  const updateProject = useMutation(api.sharedProjects.updateDetails);
+  const [markColorKey, setMarkColorKey] = useState<EntityMarkColorKey | ''>('');
+  const [markIconKey, setMarkIconKey] = useState<EntityMarkIconKey | ''>('');
+  const [savingMark, setSavingMark] = useState(false);
+  const [markNotice, setMarkNotice] = useState<string | null>(null);
+  useEffect(() => {
+    setMarkColorKey((overview?.project.markColorKey as EntityMarkColorKey | undefined) ?? '');
+    setMarkIconKey((overview?.project.markIconKey as EntityMarkIconKey | undefined) ?? '');
+  }, [overview?.project.markColorKey, overview?.project.markIconKey]);
   const context: RepresentedProjectContext | null = companyId && membershipId ? { archived: false, companyId, membershipId } : null;
   const title = overview?.project.name ?? 'Project settings';
 
@@ -37,14 +50,35 @@ export default function ProjectSettingsScreen() {
         {overview === undefined ? <SettingsState copy="Loading Project settings…" /> : (
           <>
             <View style={[styles.identity, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
-              <View style={[styles.mark, { backgroundColor: theme.accentSoft }]}>
-                <PlatformIcon color={theme.accentStrong} name="project" size={IconSize.large} weight="semibold" />
-              </View>
+              <EntityMark colorKey={overview.project.markColorKey} iconKey={overview.project.markIconKey} id={String(overview.project.id)} kind="project" name={overview.project.name} size={TouchTarget} />
               <View style={styles.identityCopy}>
                 <ThemedText numberOfLines={1} type="titleLarge">{title}</ThemedText>
                 <ThemedText themeColor="textSecondary" type="caption">{overview.project.health} · {overview.memberCount} members</ThemedText>
               </View>
             </View>
+
+            {overview.permissions.canManageProject ? <View style={styles.section}>
+              <ThemedText type="titleLarge">Project mark</ThemedText>
+              <View style={[styles.access, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+                <EntityMarkPicker colorKey={markColorKey} iconKey={markIconKey} onColorChange={setMarkColorKey} onIconChange={setMarkIconKey} />
+                {markNotice ? <ThemedText accessibilityLiveRegion="polite" themeColor="textSecondary" type="caption">{markNotice}</ThemedText> : null}
+                <Pressable accessibilityRole="button" disabled={savingMark} onPress={async () => {
+                  if (!projectId || !companyId || !membershipId) return;
+                  setSavingMark(true);
+                  setMarkNotice(null);
+                  try {
+                    await updateProject({ actingCompanyId: companyId, projectId, projectMemberId: membershipId, markIconKey: markIconKey || null, markColorKey: markColorKey || null });
+                    setMarkNotice('Project mark saved.');
+                  } catch {
+                    setMarkNotice('Could not save the Project mark. Check your access and try again.');
+                  } finally {
+                    setSavingMark(false);
+                  }
+                }} style={({ pressed }) => [styles.saveButton, { backgroundColor: pressed || savingMark ? theme.accentSoft : theme.accent }]}>
+                  <ThemedText style={{ color: theme.accentInk }} type="captionBold">{savingMark ? 'Saving…' : 'Save Project mark'}</ThemedText>
+                </Pressable>
+              </View>
+            </View> : null}
 
             <View style={styles.section}>
               <ThemedText type="titleLarge">Project workspace</ThemedText>
@@ -110,8 +144,8 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 52 },
   identity: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, padding: Spacing.four },
   identityCopy: { flex: 1, gap: Spacing.one, minWidth: 0 },
-  mark: { alignItems: 'center', borderRadius: Radius.medium, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   row: { alignItems: 'center', flexDirection: 'row', gap: Spacing.three, minHeight: 58, paddingHorizontal: Spacing.three },
+  saveButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.four },
   rowLabel: { flex: 1 },
   screen: { flex: 1 },
   section: { gap: Spacing.three },

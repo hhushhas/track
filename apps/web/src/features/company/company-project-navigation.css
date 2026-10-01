@@ -515,49 +515,8 @@
 }
 
 .company-project-nav-channel.active .company-project-nav-channel-icon {
-  background: transparent;
-}
-
-.company-project-nav-channel-icon.sun,
-.company-project-nav-channel-icon.amber,
-.company-project-nav-channel-icon.orange,
-.company-project-nav-channel-icon.yellow {
-  color: #b45309;
-}
-
-.company-project-nav-channel-icon.sky,
-.company-project-nav-channel-icon.blue {
-  color: #2563eb;
-}
-
-.company-project-nav-channel-icon.mint,
-.company-project-nav-channel-icon.emerald,
-.company-project-nav-channel-icon.green,
-.company-project-nav-channel-icon.lime {
-  color: #15803d;
-}
-
-.company-project-nav-channel-icon.rose,
-.company-project-nav-channel-icon.red,
-.company-project-nav-channel-icon.pink {
-  color: #be123c;
-}
-
-.company-project-nav-channel-icon.indigo,
-.company-project-nav-channel-icon.violet,
-.company-project-nav-channel-icon.purple {
-  color: #6d28d9;
-}
-
-.company-project-nav-channel-icon.slate,
-.company-project-nav-channel-icon.stone,
-.company-project-nav-channel-icon.zinc {
-  color: #57534e;
-}
-
-.company-project-nav-channel-icon.cyan,
-.company-project-nav-channel-icon.teal {
-  color: #0891b2;
+  outline: 2px solid var(--paper);
+  outline-offset: 1px;
 }
 
 .company-project-nav-count {

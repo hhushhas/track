@@ -7,7 +7,7 @@ import { api } from '../../../../convex/_generated/api';
 import type { Id } from '../../../../convex/_generated/dataModel';
 import { ConnectivityBanner } from '@/components/connectivity-banner';
 import { EmptyState } from '@/components/empty-state';
-import { IconButton } from '@/components/icon-button';
+import { EntityMark } from '@/components/entity-mark';
 import { OptionsSheet, SheetInput, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import {
@@ -16,17 +16,18 @@ import {
   type DirectoryChannel,
   type DirectoryProject,
 } from '@/components/projects-directory';
-import { SkeletonList } from '@/components/skeleton-row';
+import { ScreenLoading } from '@/components/screen-loading';
 import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useCompany } from '@/contexts/company-context';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing, TouchTarget } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { channelHref, projectOverviewHref, type RepresentedProjectContext } from '@/lib/company-navigation';
+import { hapticLight } from '@/lib/haptics';
 
 export default function ProjectsScreen() {
   const theme = useTheme();
@@ -142,12 +143,21 @@ export default function ProjectsScreen() {
         headerLargeTitle: false,
         headerTransparent: false,
         headerRight: () => <View style={styles.headerActions}>
-          {companyModelEnabled ? <IconButton accessibilityLabel="Switch Company" icon="office-building" onPress={() => setCompanySheetOpen(true)} /> : null}
+          {companyModelEnabled ? <Pressable
+            accessibilityHint="Opens the Company selector"
+            accessibilityLabel={`Switch Company. Current Company: ${actingCompany?.company?.displayName ?? 'All Companies'}`}
+            accessibilityRole="button"
+            hitSlop={4}
+            onPress={() => { hapticLight(); setCompanySheetOpen(true); }}
+            style={({ pressed }) => [styles.companyButton, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder, opacity: pressed ? 0.72 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+          >
+            <EntityMark id={String(actingCompanyId ?? 'company')} imageUrl={actingCompany?.company?.logoUrl} kind="company" name={actingCompany?.company?.displayName ?? 'Company'} size={28} />
+          </Pressable> : null}
         </View>,
       }} />
       <ConnectivityBanner style={styles.connection} />
 
-      {projects.status === 'LoadingFirstPage' ? <ScreenEntrance style={styles.screenContent}><SkeletonList label="Loading Projects" /></ScreenEntrance> : (
+      {projects.status === 'LoadingFirstPage' ? <ScreenEntrance style={styles.screenContent}><ScreenLoading variant="projects" /></ScreenEntrance> : (
         <ScreenEntrance style={styles.screenContent}><FlatList
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={[styles.list, { paddingBottom: bottomContentInset }]}
@@ -239,6 +249,7 @@ const styles = StyleSheet.create({
   directoryTitle: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   directoryTitleText: { fontSize: 16, lineHeight: 22 },
   headerActions: { alignItems: 'center', flexDirection: 'row' },
+  companyButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: TouchTarget, justifyContent: 'center', overflow: 'hidden', width: TouchTarget },
   list: { padding: Spacing.four, paddingTop: Spacing.two },
   listHeader: { marginBottom: Spacing.three },
   screen: { flex: 1 },

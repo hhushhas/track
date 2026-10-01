@@ -86,7 +86,7 @@ export default function ProfileScreen() {
         <ThemedText accessibilityRole="header" style={styles.pageTitle} type="display">Profile</ThemedText>
       </View>
       <View style={styles.identityCard}>
-        <ColoredAvatar label={displayName || profile?.user?.email || 'Track member'} seed={trackUserId ?? displayName} size={56} />
+        <ColoredAvatar label={displayName || profile?.user?.email || 'Track member'} seed={trackUserId ?? displayName} size={72} />
         <View style={styles.identityCopy}>
           <ThemedText accessibilityRole="header" style={styles.identityText} type="titleLarge">{displayName || 'Track member'}</ThemedText>
           <ThemedText style={styles.identityText} themeColor="textSecondary" type="caption">{profile?.user?.email ?? 'Account details'}</ThemedText>
@@ -134,15 +134,15 @@ const styles = StyleSheet.create({
   appearance: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three, padding: Spacing.four },
   appearanceOption: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.one },
   appearanceOptions: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, padding: Spacing.one },
-  content: { gap: Spacing.four, padding: Spacing.four },
-  identityCard: { alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.four, paddingVertical: Spacing.five },
+  content: { flexGrow: 1, gap: Spacing.four, padding: Spacing.four },
+  identityCard: { alignItems: 'center', flexGrow: 1, gap: Spacing.two, justifyContent: 'center', minHeight: 220, paddingHorizontal: Spacing.four, paddingVertical: Spacing.five },
   identityCopy: { alignItems: 'center', gap: Spacing.one, maxWidth: '100%' },
   identityText: { maxWidth: '100%', textAlign: 'center' },
   pageTitle: { textAlign: 'center' },
   preferenceCard: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   profileHeader: { alignItems: 'center', gap: Spacing.three },
   profileFields: { borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.three, padding: Spacing.four },
-  rolePill: { alignSelf: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
+  rolePill: { alignSelf: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, maxWidth: '100%', paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   screen: { flex: 1 },
   signOut: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: Spacing.four },
   signOutButton: { alignSelf: 'center', borderRadius: Radius.pill, width: 168 },
