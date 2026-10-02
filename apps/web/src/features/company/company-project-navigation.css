@@ -272,10 +272,14 @@
 }
 
 .company-project-nav-copy small {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: var(--ink-4);
   font-family: var(--font-meta);
-  font-size: 10px;
-  line-height: 1.25;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: normal;
 }
 
 .company-project-nav-switcher {
@@ -1063,6 +1067,58 @@
   }
 }
 
+.company-project-nav-channel-create-area {
+  border-top: 1px solid var(--hairline);
+  margin-top: 6px;
+  padding-top: 8px;
+}
+
+.company-project-nav-channel-create-trigger {
+  width: 100%;
+  min-height: 40px;
+  justify-content: flex-start;
+  gap: 9px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.company-project-nav-channel-create-trigger:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.company-project-nav-channel-create {
+  display: grid;
+  max-height: none;
+  gap: 8px;
+  overflow: visible;
+  border: 0;
+  padding: 0;
+  opacity: 1;
+  visibility: visible;
+}
+
+.company-project-nav-channel-create [data-slot="input"] {
+  min-height: 42px;
+  font-size: 14px;
+}
+
+.company-project-nav-channel-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.company-project-nav-channel-create-actions > button {
+  min-height: 40px;
+}
+
+.company-project-nav.is-collapsed .company-project-nav-channel-create-area {
+  display: none;
+}
+
 .company-mobile-navigation-sheet {
   --track-drawer-width: 320px;
   --track-drawer-body-padding: 16px;
@@ -1102,4 +1158,64 @@
 .track-ui-v2 .company-mobile-navigation-sheet .track-drawer-close {
   width: 44px;
   height: 44px;
+}
+
+/* Company and Project identity stay stable when the primary navigation changes. */
+.company-project-nav {
+  border-right-color: var(--hairline);
+  background: var(--paper-2);
+}
+
+.company-project-nav-brand {
+  min-height: 56px;
+  font-size: 15px;
+}
+
+.company-project-nav-label,
+.company-project-nav-group-label,
+.company-project-nav-switcher > span {
+  color: var(--ink-3);
+  font-size: 11px;
+  letter-spacing: 0.045em;
+}
+
+.company-project-nav-company,
+.company-project-nav-project,
+.company-project-nav-custom nav > a,
+.company-project-nav-custom nav > button,
+.company-project-nav-secondary nav a,
+.company-project-nav-secondary nav button,
+.company-project-nav-areas > a {
+  min-height: 44px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.company-project-nav-project.active,
+.company-project-nav-company.active,
+.company-project-nav-areas > a[aria-current="page"] {
+  border-color: transparent;
+  background: var(--accent-tint);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--ink);
+}
+
+.company-project-nav-copy strong {
+  font-size: 13px;
+}
+
+.company-project-nav-copy small {
+  font-size: 11px;
+}
+
+.company-project-nav-profile-link,
+.company-project-nav-profile-logout,
+.company-project-nav-profile .track-theme-toggle,
+.company-project-nav-collapse {
+  min-height: 44px;
+}
+
+.company-project-nav-switcher [data-slot="native-select"] {
+  min-height: 44px;
+  font-size: 13px;
 }

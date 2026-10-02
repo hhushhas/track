@@ -2,6 +2,11 @@ import '@/global.css';
 
 import { Platform, type TextStyle } from 'react-native';
 
+import { appFontVariants, sansFaceForWeight } from '@/lib/mobile-typography';
+
+const appTextVariants = appFontVariants();
+const tabularNums = appFontVariants(['tabular-nums']);
+
 export const Colors = {
   light: {
     text: '#1b1917',
@@ -109,9 +114,6 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
-const noCommonLigatures: NonNullable<TextStyle['fontVariant']> = ['no-common-ligatures'];
-const tabularNoCommonLigatures: NonNullable<TextStyle['fontVariant']> = ['tabular-nums', 'no-common-ligatures'];
-
 export const Fonts = Platform.select({
   ios: {
     sans: 'ManropeV5-Regular',
@@ -145,25 +147,13 @@ export const Fonts = Platform.select({
 export function sansFontForWeight(weight: TextStyle['fontWeight']) {
   if (Platform.OS !== 'ios') return Fonts?.sans;
 
-  switch (String(weight ?? '400')) {
-    case '500':
-    case 'medium':
-      return Fonts?.sansMedium;
-    case '600':
-    case 'semibold':
-      return Fonts?.sansSemibold;
-    case '700':
-    case 'condensedBold':
-    case 'bold':
-      return Fonts?.sansBold;
-    case '800':
-    case '900':
-    case 'heavy':
-    case 'black':
-      return Fonts?.sansExtraBold;
-    default:
-      return Fonts?.sansRegular;
-  }
+  return sansFaceForWeight(weight, {
+    regular: Fonts?.sansRegular,
+    medium: Fonts?.sansMedium,
+    semibold: Fonts?.sansSemibold,
+    bold: Fonts?.sansBold,
+    extraBold: Fonts?.sansExtraBold,
+  });
 }
 
 /**
@@ -175,80 +165,80 @@ export const Typography = {
   navigationTitle: {
     fontFamily: Fonts?.sansSemibold,
     fontSize: Platform.OS === 'ios' ? 17 : 20,
+    fontVariant: appTextVariants,
     lineHeight: Platform.OS === 'ios' ? 22 : 26,
     fontWeight: '600' as const,
-    fontVariant: noCommonLigatures,
   },
   // Prose
   message: {
     fontFamily: Fonts?.sansRegular,
     fontSize: 16,
+    fontVariant: appTextVariants,
     lineHeight: 22,
     fontWeight: '400' as const,
-    fontVariant: noCommonLigatures,
   },
   body: {
     fontFamily: Fonts?.sansRegular,
     fontSize: 15,
+    fontVariant: appTextVariants,
     lineHeight: 21,
     fontWeight: '400' as const,
-    fontVariant: noCommonLigatures,
   },
   bodyBold: {
     fontFamily: Fonts?.sansSemibold,
     fontSize: 15,
+    fontVariant: appTextVariants,
     lineHeight: 21,
     fontWeight: '600' as const,
-    fontVariant: noCommonLigatures,
   },
   // Headings
   display: {
     fontFamily: Fonts?.sansBold,
     fontSize: 28,
+    fontVariant: appTextVariants,
     lineHeight: 34,
     fontWeight: '700' as const,
-    fontVariant: noCommonLigatures,
   },
   titleLarge: {
     fontFamily: Fonts?.sansBold,
     fontSize: 20,
+    fontVariant: appTextVariants,
     lineHeight: 26,
     fontWeight: '700' as const,
-    fontVariant: noCommonLigatures,
   },
   title: {
     fontFamily: Fonts?.sansSemibold,
     fontSize: 15,
+    fontVariant: appTextVariants,
     lineHeight: 20,
     fontWeight: '600' as const,
-    fontVariant: noCommonLigatures,
   },
   subtitle: {
     fontFamily: Fonts?.sansSemibold,
     fontSize: 17,
+    fontVariant: appTextVariants,
     lineHeight: 22,
     fontWeight: '600' as const,
-    fontVariant: noCommonLigatures,
   },
   // Secondary text — sans, not mono
   label: {
     fontFamily: Fonts?.sansMedium,
     fontSize: 13,
+    fontVariant: appTextVariants,
     lineHeight: 18,
     fontWeight: '500' as const,
-    fontVariant: noCommonLigatures,
   },
   caption: {
     fontFamily: Fonts?.sansRegular,
     fontSize: 12,
-    fontVariant: tabularNoCommonLigatures,
+    fontVariant: tabularNums,
     lineHeight: 16,
     fontWeight: '400' as const,
   },
   captionBold: {
     fontFamily: Fonts?.sansSemibold,
     fontSize: 12,
-    fontVariant: tabularNoCommonLigatures,
+    fontVariant: tabularNums,
     lineHeight: 16,
     fontWeight: '600' as const,
   },
@@ -256,7 +246,7 @@ export const Typography = {
   metadata: {
     fontFamily: Fonts?.mono,
     fontSize: 11,
-    fontVariant: ['tabular-nums'] as const,
+    fontVariant: tabularNums,
     lineHeight: 15,
     fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
     letterSpacing: 0.3,
@@ -264,7 +254,7 @@ export const Typography = {
   metadataLabel: {
     fontFamily: Fonts?.mono,
     fontSize: 10.5,
-    fontVariant: ['tabular-nums'] as const,
+    fontVariant: tabularNums,
     lineHeight: 14,
     fontWeight: Platform.OS === 'android' ? ('700' as const) : ('500' as const),
     letterSpacing: 0.6,

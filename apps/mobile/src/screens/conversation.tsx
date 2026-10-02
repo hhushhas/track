@@ -163,6 +163,7 @@ export default function ConversationScreen() {
   const acknowledgeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const scrollMetricsRef = useRef({ contentHeight: 0, offsetY: 0, viewportHeight: 0 });
   const knownMessageIdsRef = useRef<Set<Id<'messages'>> | null>(null);
   const knownAssistantStreamsRef = useRef<Map<Id<'assistantStreams'>, string> | null>(null);
@@ -790,22 +791,23 @@ export default function ConversationScreen() {
   const taskLinkAssistantStreamIds = threadItems.flatMap((entry) => entry.kind === 'assistant' ? [entry.stream._id] : []);
 
   return (
-    <ThemedView style={[styles.screen, { backgroundColor: 'transparent' }]}>
+    <ThemedView style={[styles.screen, { backgroundColor: theme.homeSurface }]}>
       <Stack.Screen
         options={{
-          contentStyle: { backgroundColor: 'transparent' },
+          contentStyle: { backgroundColor: theme.homeSurface },
           headerTransparent: Platform.OS === 'ios',
           headerBlurEffect: 'none',
           headerBackground: () => <View pointerEvents="none" style={StyleSheet.absoluteFill} />,
-          headerLeft: () => <IconButton
+          headerLeft: () => <Pressable
             accessibilityLabel="Back to conversations"
-            appearance="plain"
-            icon="arrow-left"
+            accessibilityRole="button"
             onPress={() => {
+              hapticLight();
               if (router.canGoBack()) router.back();
               else router.replace(pid ? projectChannelsHref(pid, channelContext) as never : '/conversations' as never);
             }}
-          />,
+            style={({ pressed }) => [styles.headerCircle, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder }]}
+          ><PlatformIcon color={theme.textSecondary} name="arrow-left" size={20} /></Pressable>,
           headerRight: () => !readOnly ? <IconButton
             accessibilityLabel="Channel options"
             appearance="plain"
@@ -813,24 +815,18 @@ export default function ConversationScreen() {
             onPress={() => { hapticLight(); setToolsOpen(true); }}
           /> : null,
           headerTitle: () => (
-            <View style={styles.headerTitle}>
-              <View style={[styles.channelHeaderButton, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
-                <View style={styles.channelNameButton}>
-                  <PlatformIcon color={theme.textSecondary} name="channel" size={17} />
-                  <ThemedText accessibilityRole="header" numberOfLines={1} style={styles.channelTitle} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
-                </View>
-                <Pressable
-                  accessibilityHint="Opens the Channel picker"
-                  accessibilityLabel={`Choose Channel. Current Channel: ${activeGroup?.name ?? 'Conversation'}`}
-                  accessibilityRole="button"
-                  hitSlop={4}
-                  onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
-                  style={({ pressed }) => [styles.channelDropdownButton, pressed && { backgroundColor: theme.backgroundSelected }]}
-                >
-                  <PlatformIcon color={theme.textSecondary} name="chevron-down" size={15} />
-                </Pressable>
-              </View>
-            </View>
+            <Pressable
+              accessibilityHint="Opens the Channel picker"
+              accessibilityLabel={`Choose Channel. Current Channel: ${activeGroup?.name ?? 'Conversation'}`}
+              accessibilityRole="button"
+              hitSlop={4}
+              onPress={() => { hapticLight(); setGroupSwitchOpen(true); }}
+              style={({ pressed }) => [styles.channelHeaderButton, { backgroundColor: pressed ? theme.backgroundSelected : theme.homeSurface, borderColor: theme.homeBorder }]}
+            >
+              <PlatformIcon color={theme.textSecondary} name="channel" size={17} />
+              <ThemedText numberOfLines={1} style={styles.channelTitle} type="title">{activeGroup?.name ?? 'Conversation'}</ThemedText>
+              <PlatformIcon color={theme.textSecondary} name="chevron-down" size={15} />
+            </Pressable>
           ),
         }}
       />
@@ -845,7 +841,7 @@ export default function ConversationScreen() {
       >
       <FlatList
           ref={listRef}
-          contentContainerStyle={[styles.thread, { paddingBottom: composerOverlayHeight + Spacing.two }]}
+          contentContainerStyle={[styles.thread, { paddingBottom: composerOverlayHeight + TouchTarget + Spacing.four }]}
           contentInsetAdjustmentBehavior="automatic"
           data={threadItems}
           stickyHeaderIndices={stickyDateHeaderIndices(threadItems, hasMoreMessages)}
@@ -929,18 +925,19 @@ export default function ConversationScreen() {
             hapticLight();
             scrollToLatest();
           }}
-          style={[styles.jumpToLatest, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline, bottom: composerOverlayHeight + Spacing.two }]}>
+          style={[styles.jumpToLatest, { backgroundColor: theme.backgroundElevated, borderColor: theme.hairline, bottom: composerOverlayHeight + Spacing.four }]}>
           <PlatformIcon color={theme.text} name="chevron-down" size={22} />
         </Pressable>
       ) : null}
       </View>
 
-      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">Read-only archive</ThemedText><ThemedText style={{ color: theme.textSecondary }} type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <View
+      {readOnly ? <View style={[styles.archiveBanner, { backgroundColor: theme.backgroundElement }]}><ThemedText style={styles.archiveTitle} type="smallBold">Read-only archive</ThemedText><ThemedText style={styles.archiveDescription} themeColor="textSecondary" type="small">Messages and frozen memory stop at the Company exit cutoff.</ThemedText></View> : <View
         onLayout={({ nativeEvent }) => {
+          if (composerExpanded) return;
           const height = Math.ceil(nativeEvent.layout.height);
           setComposerOverlayHeight((current) => current === height ? current : height);
         }}
-        style={styles.composerOverlay}>
+        style={[styles.composerOverlay, composerExpanded && { backgroundColor: theme.homeSurface }, composerExpanded && styles.composerExpandedOverlay]}>
         <Composer
           activeGroupName={activeGroup?.name ?? null}
           busy={busy === 'send'}
@@ -949,6 +946,7 @@ export default function ConversationScreen() {
           mentionCandidates={mentionCandidates}
           onCancelReply={() => setReplyTo(null)}
           onChangeText={setComposer}
+          onExpandedChange={setComposerExpanded}
           onFocus={scrollToLatest}
           onLoadMoreMentionCandidates={() => {
             if (projectMembersPage.status === 'CanLoadMore') projectMembersPage.loadMore(100);
@@ -1068,13 +1066,16 @@ export default function ConversationScreen() {
 }
 
 const styles = StyleSheet.create({
-  archiveBanner: { gap: Spacing.one, padding: Spacing.three },
+  archiveBanner: { alignItems: 'center', gap: Spacing.one, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
+  archiveDescription: { maxWidth: 420, textAlign: 'center' },
+  archiveTitle: { textAlign: 'center' },
   editAction: { flex: 1 },
   editActions: { flexDirection: 'row', gap: Spacing.two },
   empty: { alignItems: 'center', padding: Spacing.six },
   flex: { flex: 1 },
   connection: { marginHorizontal: Spacing.three, marginTop: Spacing.two },
   composerOverlay: { bottom: 0, left: 0, position: 'absolute', right: 0, zIndex: 2 },
+  composerExpandedOverlay: { bottom: 0, left: 0, right: 0, top: 0, zIndex: 4 },
   jumpToLatest: {
     alignItems: 'center',
     borderRadius: Radius.pill,
@@ -1087,12 +1088,9 @@ const styles = StyleSheet.create({
     width: TouchTarget,
   },
   loadMore: { alignItems: 'center', minHeight: TouchTarget, justifyContent: 'center', padding: Spacing.two },
-  headerButton: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  headerTitle: { alignItems: 'center', backgroundColor: 'transparent', maxWidth: 280, minHeight: TouchTarget },
-  channelHeaderButton: { alignItems: 'center', alignSelf: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', maxWidth: 280, minHeight: TouchTarget, overflow: 'hidden', paddingLeft: Spacing.three, paddingRight: Spacing.half },
-  channelNameButton: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one, justifyContent: 'flex-start', minHeight: TouchTarget, minWidth: 0 },
+  headerCircle: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  channelHeaderButton: { alignItems: 'center', alignSelf: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, maxWidth: 280, minHeight: TouchTarget, overflow: 'hidden', paddingHorizontal: Spacing.three },
   channelTitle: { flexShrink: 1, minWidth: 0 },
-  channelDropdownButton: { alignItems: 'center', borderRadius: Radius.pill, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   pendingBody: { alignItems: 'flex-start', alignSelf: 'flex-end', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, maxWidth: '84%', minWidth: 0, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   pendingCopy: { flexShrink: 1, gap: 2, minWidth: 0 },
   pendingRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },

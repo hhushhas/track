@@ -853,7 +853,6 @@ export function CompanyHubPage({
               overview={companyOverview}
               projects={projects}
               run={run}
-              userName={currentUser.displayName}
             />
           ) : null}
 

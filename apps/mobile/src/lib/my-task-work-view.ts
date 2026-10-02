@@ -1,6 +1,6 @@
 import type { TaskPriority } from '@track/shared/tasks';
 
-export type MyTaskViewKey = 'today' | 'upcoming' | 'all' | 'done';
+export type MyTaskViewKey = 'this-week' | 'all' | 'done';
 
 export type MyTaskFilters = {
   status: 'any' | 'open' | 'completed' | 'canceled';
@@ -77,13 +77,13 @@ export function matchesMyTaskTimeView(
   view: MyTaskViewKey,
   today: string,
   selectedDate: string | null,
+  weekDates: readonly string[] = [],
 ) {
   const category = item.state?.category;
   const dueDate = item.task.dueDate;
   if (selectedDate && dueDate !== selectedDate) return false;
   const open = category !== 'completed' && category !== 'canceled';
-  if (view === 'today') return open && item.task.priority === 'urgent' && Boolean(dueDate && dueDate <= today);
-  if (view === 'upcoming') return open && Boolean(dueDate && dueDate > today);
+  if (view === 'this-week') return open && Boolean(dueDate && dueDate >= today && weekDates.includes(dueDate));
   if (view === 'done') return category === 'completed';
   return true;
 }

@@ -76,7 +76,10 @@ export function MessageBubble({
           styles.bubble,
           isThreadReply && styles.threadBubble,
           hasMedia ? styles.bubbleMedia : styles.bubbleText,
-          { backgroundColor: isOwnMessage ? theme.bubbleOwn : theme.bubbleOther },
+          {
+            backgroundColor: isOwnMessage ? theme.bubbleOwn : theme.homeSurface,
+            borderColor: isOwnMessage ? 'transparent' : theme.homeBorder,
+          },
           isFirstInGroup && (isOwnMessage ? styles.tailOwn : styles.tailOther),
         ]}>
         {showHeader || isThreadReply ? (
@@ -291,6 +294,7 @@ const styles = StyleSheet.create({
   },
   forwardedLabel: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   bubble: {
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.large,
     flexShrink: 1,
     gap: Spacing.one,

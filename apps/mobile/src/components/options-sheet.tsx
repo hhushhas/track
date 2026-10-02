@@ -7,7 +7,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -24,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { hapticLight } from '@/lib/haptics';
@@ -361,7 +361,7 @@ export function SheetInput({
   return (
     <View style={styles.inputWrap}>
       <ThemedText accessible={false} themeColor="textSecondary" type="captionBold">{label}</ThemedText>
-      <TextInput
+      <ThemedTextInput
         accessibilityLabel={label}
         autoFocus={autoFocus}
         keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
@@ -392,6 +392,7 @@ export function SheetInput({
  * Replaces free-form text entry for structured values.
  */
 export function SheetFieldButton({
+  expanded,
   icon,
   label,
   onPress,
@@ -399,6 +400,7 @@ export function SheetFieldButton({
   onClear,
   value,
 }: {
+  expanded?: boolean;
   icon?: React.ComponentProps<typeof PlatformIcon>['name'];
   label: string;
   onPress: () => void;
@@ -414,6 +416,7 @@ export function SheetFieldButton({
         accessibilityHint={`Opens the ${label.toLowerCase()} picker`}
         accessibilityLabel={`${label}: ${value || placeholder}`}
         accessibilityRole="button"
+        accessibilityState={expanded === undefined ? undefined : { expanded }}
         android_ripple={{ color: theme.backgroundSelected }}
         onPress={() => { hapticLight(); onPress(); }}
         style={[styles.field, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
@@ -434,7 +437,7 @@ export function SheetFieldButton({
             <PlatformIcon color={theme.textSecondary} name="close" size={17} />
           </Pressable>
         ) : (
-          <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
+          <PlatformIcon color={theme.textTertiary} name={expanded === undefined ? 'chevron-right' : expanded ? 'chevron-up' : 'chevron-down'} size={18} />
         )}
       </Pressable>
     </View>
@@ -486,7 +489,7 @@ export function SheetSearchList({
     <View style={styles.searchWrap}>
       <View style={[styles.searchBar, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
         <PlatformIcon color={theme.textSecondary} name="search" size={18} />
-        <TextInput
+        <ThemedTextInput
           accessibilityLabel={placeholder}
           autoCorrect={false}
           clearButtonMode="while-editing"

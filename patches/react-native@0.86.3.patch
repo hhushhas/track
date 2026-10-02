@@ -1,0 +1,135 @@
+diff --git a/ReactCommon/react/renderer/attributedstring/conversions.h b/ReactCommon/react/renderer/attributedstring/conversions.h
+index 331e2019338aa2eaf4539ba8194cd77020117fff..aab9353fdc770d31c88c0dd76c4d5438524db9bd 100644
+--- a/ReactCommon/react/renderer/attributedstring/conversions.h
++++ b/ReactCommon/react/renderer/attributedstring/conversions.h
+@@ -373,7 +373,6 @@ inline std::optional<FontVariant> fontVariantFromCSSFontVariant(CSSFontVariant c
+     case CSSFontVariant::StylisticTwenty:
+       return FontVariant::StylisticTwenty;
+     case CSSFontVariant::CommonLigatures:
+-    case CSSFontVariant::NoCommonLigatures:
+     case CSSFontVariant::DiscretionaryLigatures:
+     case CSSFontVariant::NoDiscretionaryLigatures:
+     case CSSFontVariant::HistoricalLigatures:
+@@ -381,6 +380,8 @@ inline std::optional<FontVariant> fontVariantFromCSSFontVariant(CSSFontVariant c
+     case CSSFontVariant::Contextual:
+     case CSSFontVariant::NoContextual:
+       return std::nullopt;
++    case CSSFontVariant::NoCommonLigatures:
++      return FontVariant::NoCommonLigatures;
+   }
+ }
+ 
+@@ -442,6 +443,8 @@ parseProcessedFontVariant(const PropsParserContext & /*context*/, const RawValue
+         result = (FontVariant)((int)result | (int)FontVariant::StylisticNineteen);
+       } else if (item == "stylistic-twenty") {
+         result = (FontVariant)((int)result | (int)FontVariant::StylisticTwenty);
++      } else if (item == "no-common-ligatures") {
++        result = (FontVariant)((int)result | (int)FontVariant::NoCommonLigatures);
+       } else {
+         LOG(ERROR) << "Unsupported FontVariant value: " << item;
+       }
+@@ -564,6 +567,9 @@ inline std::string toString(const FontVariant &fontVariant)
+   if (((int)fontVariant & (int)FontVariant::StylisticTwenty) != 0) {
+     result += "stylistic-twenty" + separator;
+   }
++  if (((int)fontVariant & (int)FontVariant::NoCommonLigatures) != 0) {
++    result += "no-common-ligatures" + separator;
++  }
+ 
+   if (!result.empty()) {
+     result.erase(result.length() - separator.length());
+@@ -1237,6 +1243,9 @@ inline MapBuffer toMapBuffer(const FontVariant &fontVariant)
+   if ((int)fontVariant & (int)FontVariant::StylisticTwenty) {
+     builder.putString(index++, "stylistic-twenty");
+   }
++  if ((int)fontVariant & (int)FontVariant::NoCommonLigatures) {
++    builder.putString(index++, "no-common-ligatures");
++  }
+ 
+   return builder.build();
+ }
+diff --git a/ReactCommon/react/renderer/attributedstring/primitives.h b/ReactCommon/react/renderer/attributedstring/primitives.h
+index d23104518c74d841c299e2573fc0f620e537fbef..7063fef67e9f23b51fa0dad33fa08f4c0ac417cd 100644
+--- a/ReactCommon/react/renderer/attributedstring/primitives.h
++++ b/ReactCommon/react/renderer/attributedstring/primitives.h
+@@ -62,7 +62,8 @@ enum class FontVariant : int {
+   StylisticSeventeen = 1 << 22,
+   StylisticEighteen = 1 << 23,
+   StylisticNineteen = 1 << 24,
+-  StylisticTwenty = 1 << 25
++  StylisticTwenty = 1 << 25,
++  NoCommonLigatures = 1 << 26
+ };
+ 
+ enum class DynamicTypeRamp {
+diff --git a/ReactCommon/react/renderer/components/view/tests/ConversionsTest.cpp b/ReactCommon/react/renderer/components/view/tests/ConversionsTest.cpp
+index a96a75aef756f78672f053d73f7d5eea7e1b930d..cd6f70b9b2c73e195c8d2322b06231b039262c1b 100644
+--- a/ReactCommon/react/renderer/components/view/tests/ConversionsTest.cpp
++++ b/ReactCommon/react/renderer/components/view/tests/ConversionsTest.cpp
+@@ -462,6 +462,29 @@ TEST(ConversionsTest, unprocessed_font_variant_string_single) {
+   EXPECT_EQ((int)result, (int)FontVariant::SmallCaps);
+ }
+ 
++TEST(ConversionsTest, unprocessed_font_variant_string_no_common_ligatures) {
++  FontVariant result{};
++  parseUnprocessedFontVariantString(
++      "no-common-ligatures tabular-nums", result);
++
++  EXPECT_EQ(
++      (int)result,
++      (int)FontVariant::NoCommonLigatures | (int)FontVariant::TabularNums);
++  EXPECT_EQ(toString(result), "tabular-nums, no-common-ligatures");
++}
++
++TEST(ConversionsTest, processed_font_variant_array_no_common_ligatures) {
++  RawValue value{folly::dynamic::array(
++      "no-common-ligatures", "tabular-nums")};
++  FontVariant result{};
++  parseProcessedFontVariant(
++      PropsParserContext{-1, ContextContainer{}}, value, result);
++
++  EXPECT_EQ(
++      (int)result,
++      (int)FontVariant::NoCommonLigatures | (int)FontVariant::TabularNums);
++}
++
+ TEST(ConversionsTest, unprocessed_font_variant_string_multiple) {
+   FontVariant result{};
+   parseUnprocessedFontVariantString(
+diff --git a/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontProperties.h b/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontProperties.h
+index efbfdf0d894e03ec61f63b857c7f5d413da660e6..01f56f9424f9bcff962269dc9cd300b377e98bfd 100644
+--- a/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontProperties.h
++++ b/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontProperties.h
+@@ -44,6 +44,7 @@ typedef NS_OPTIONS(NSInteger, RCTFontVariant) {
+   RCTFontVariantStylisticEighteen = 1 << 23,
+   RCTFontVariantStylisticNineteen = 1 << 24,
+   RCTFontVariantStylisticTwenty = 1 << 25,
++  RCTFontVariantNoCommonLigatures = 1 << 26,
+ };
+ 
+ struct RCTFontProperties {
+diff --git a/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontUtils.mm b/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontUtils.mm
+index b2b27626edc46625ac2372a13977d700948835b6..4c6d51affefe38daf426ff4889919d79587849dd 100644
+--- a/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontUtils.mm
++++ b/ReactCommon/react/renderer/textlayoutmanager/platform/ios/react/renderer/textlayoutmanager/RCTFontUtils.mm
+@@ -166,6 +166,10 @@ static NSArray *RCTFontFeatures(RCTFontVariant fontVariant)
+            UIFontFeatureTypeIdentifierKey : @(kStylisticAlternativesType),
+            UIFontFeatureSelectorIdentifierKey : @(kStylisticAltTwentyOnSelector),
+          }},
++        {RCTFontVariantNoCommonLigatures, @{
++           UIFontFeatureTypeIdentifierKey : @(kLigaturesType),
++           UIFontFeatureSelectorIdentifierKey : @(kCommonLigaturesOffSelector),
++         }},
+     };
+   });
+ 
+@@ -244,6 +248,9 @@ static NSArray *RCTFontFeatures(RCTFontVariant fontVariant)
+   if ((fontVariant & RCTFontVariantStylisticTwenty) != 0) {
+     [fontFeatures addObject:mapping[RCTFontVariantStylisticTwenty]];
+   }
++  if ((fontVariant & RCTFontVariantNoCommonLigatures) != 0) {
++    [fontFeatures addObject:mapping[RCTFontVariantNoCommonLigatures]];
++  }
+ 
+   return fontFeatures;
+ }

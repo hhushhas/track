@@ -7,6 +7,7 @@ import { companyProjectViewFromWorkspaceView } from '../lib/project-classificati
 import { findVisibleRouteGroupId } from '../lib/route-state'
 import { getResolvedTrackUserId, setResolvedTrackUserId } from '../workspace-session'
 import { SIDEBAR_COLLAPSE_THRESHOLD, clampSidebarWidth } from '../sidebar-sizing'
+import { clampRailWidth } from '../rail-sizing'
 
 type WorkspaceView = 'home' | 'project' | 'channels' | 'group' | 'evidence' | 'settings'
 type SessionUser = { id: string; email: string; name: string }
@@ -135,11 +136,15 @@ export function useWorkspaceSynchronization({
     }
     document.body.classList.add('track-nav-resizing')
     window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+    window.addEventListener('blur', handlePointerUp)
     return () => {
       document.body.classList.remove('track-nav-resizing')
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      window.removeEventListener('blur', handlePointerUp)
     }
   }, [navResizing, setNavCollapsed, setNavResizing, setNavWidth])
 
@@ -151,18 +156,22 @@ export function useWorkspaceSynchronization({
   useEffect(() => {
     if (!railResizing) return
     function handlePointerMove(event: PointerEvent) {
-      setRailWidth(Math.min(460, Math.max(280, window.innerWidth - event.clientX)))
+      setRailWidth(clampRailWidth(window.innerWidth - event.clientX))
     }
     function handlePointerUp() {
       setRailResizing(false)
     }
     document.body.classList.add('track-rail-resizing')
     window.addEventListener('pointermove', handlePointerMove)
-    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+    window.addEventListener('blur', handlePointerUp)
     return () => {
       document.body.classList.remove('track-rail-resizing')
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+      window.removeEventListener('blur', handlePointerUp)
     }
   }, [railResizing, setRailResizing, setRailWidth])
 

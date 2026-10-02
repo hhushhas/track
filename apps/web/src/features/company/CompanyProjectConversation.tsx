@@ -126,6 +126,7 @@ export function CompanyProjectConversation({
 }: CompanyProjectConversationProps) {
   const [contextRailCollapsed, setContextRailCollapsed] = useState(false);
   const [channelCreationPending, setChannelCreationPending] = useState(false);
+  const [channelCreationOpen, setChannelCreationOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
   const [projectSearchOpen, setProjectSearchOpen] = useState(false);
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -159,6 +160,7 @@ export function CompanyProjectConversation({
     setChannelCreationPending(true);
     try {
       await onCreateChannel();
+      setChannelCreationOpen(false);
     } catch (error: unknown) {
       onNotice(formatCompanyError(error));
     } finally {
@@ -269,28 +271,56 @@ export function CompanyProjectConversation({
             </nav>
             {item.membership.role === "manager" &&
             item.membership.status === "active" ? (
-              <form
-                className="company-project-nav-channel-create"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void submitChannelCreation();
-                }}
-              >
-                <Input
-                  aria-label="New Channel name"
-                  autoComplete="off"
-                  disabled={creatingChannel}
-                  name="channelName"
-                  onChange={(event) => onChannelNameChange(event.target.value)}
-                  placeholder="For example, Product launch…"
-                  required
-                  value={channelName}
-                />
-                <Button disabled={creatingChannel} type="submit">
-                  <Plus aria-hidden="true" size={13} />
-                  {creatingChannel ? "Creating…" : "Create Channel"}
-                </Button>
-              </form>
+              <div className="company-project-nav-channel-create-area">
+                {channelCreationOpen ? (
+                  <form
+                    className="company-project-nav-channel-create"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void submitChannelCreation();
+                    }}
+                  >
+                    <Input
+                      aria-label="New Channel name"
+                      autoComplete="off"
+                      autoFocus
+                      disabled={creatingChannel}
+                      name="channelName"
+                      onChange={(event) => onChannelNameChange(event.target.value)}
+                      placeholder="For example, Product launch…"
+                      required
+                      value={channelName}
+                    />
+                    <div className="company-project-nav-channel-create-actions">
+                      <Button disabled={creatingChannel} type="submit">
+                        <Plus aria-hidden="true" size={14} />
+                        {creatingChannel ? "Creating…" : "Create Channel"}
+                      </Button>
+                      <Button
+                        disabled={creatingChannel}
+                        onClick={() => {
+                          setChannelCreationOpen(false);
+                          onChannelNameChange("");
+                        }}
+                        type="button"
+                        variant="ghost"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <Button
+                    className="company-project-nav-channel-create-trigger"
+                    onClick={() => setChannelCreationOpen(true)}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Plus aria-hidden="true" size={15} />
+                    Create Channel
+                  </Button>
+                )}
+              </div>
             ) : null}
           </>
         }

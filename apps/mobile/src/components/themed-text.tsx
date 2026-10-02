@@ -2,6 +2,7 @@ import { StyleSheet, Text, type TextProps, type TextStyle } from 'react-native';
 
 import { MaxFontScale, sansFontForWeight, ThemeColor, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { appFontVariants } from '@/lib/mobile-typography';
 
 export type ThemedTextType =
   | 'default'
@@ -53,16 +54,6 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
   const fontFamily = customStyle?.fontFamily ?? (type === 'mono'
     ? typeStyle.fontFamily
     : sansFontForWeight(customStyle?.fontWeight ?? typeStyle.fontWeight));
-  const fontVariants = new Set<NonNullable<TextStyle['fontVariant']>[number]>([
-    ...(typeStyle.fontVariant ?? []),
-    ...(customStyle?.fontVariant ?? []),
-  ]);
-  // Manrope V5 has custom common ligatures; keep authored text visually literal.
-  if (type !== 'mono') {
-    fontVariants.delete('common-ligatures');
-    fontVariants.add('no-common-ligatures');
-  }
-
   return (
     <Text
       maxFontSizeMultiplier={MaxFontScale}
@@ -71,7 +62,13 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
         TYPE_STYLES[type],
         type === 'link' && { color: theme.info },
         style,
-        { fontFamily, fontVariant: Array.from(fontVariants) },
+        {
+          fontFamily,
+          fontVariant: appFontVariants([
+            ...(typeStyle.fontVariant ?? []),
+            ...(customStyle?.fontVariant ?? []),
+          ]),
+        },
       ]}
       {...rest}
     />

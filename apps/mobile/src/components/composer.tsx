@@ -4,9 +4,9 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   type NativeSyntheticEvent,
+  type TextInput,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -33,6 +33,7 @@ import { MentionSuggestions } from '@/components/chat/mention-suggestions';
 import { OptionsSheet, SheetNote, SheetRow } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import type { DetailedMessage } from '@/components/thread-row';
 import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
@@ -67,6 +68,7 @@ export type ComposerProps = {
   onLoadMoreMentionCandidates?: () => void;
   onCancelReply: () => void;
   onChangeText: (value: string) => void;
+  onExpandedChange?: (expanded: boolean) => void;
   onFocus?: () => void;
   /**
    * Sends body and attachments together. Resolve with the ids that failed so the
@@ -121,6 +123,7 @@ export function Composer({
   mentionCandidates = [],
   onCancelReply,
   onChangeText,
+  onExpandedChange,
   onFocus,
   onLoadMoreMentionCandidates,
   onSendMessage,
@@ -290,6 +293,7 @@ export function Composer({
     <Animated.View
       style={[
         styles.surface,
+        inputFocused && styles.expandedSurface,
         Platform.OS === 'ios' && styles.iosSurface,
         {
           backgroundColor: theme.background === '#1b1917' ? 'rgba(27,25,23,0.16)' : 'rgba(250,249,247,0.1)',
@@ -346,7 +350,17 @@ export function Composer({
         </View>
       ) : null}
 
-      <View style={[styles.row, Platform.OS === 'ios' && styles.iosComposerShell]}>
+      {inputFocused ? <View style={styles.expandedHeader}>
+        <View style={styles.expandedHeaderCopy}>
+          <ThemedText type="smallBold">New message</ThemedText>
+          <ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{activeGroupName ? `#${activeGroupName}` : 'Channel'}</ThemedText>
+        </View>
+        <Pressable accessibilityLabel="Close expanded composer" accessibilityRole="button" onPress={() => inputRef.current?.blur()} style={({ pressed }) => [styles.expandedClose, { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement }]}>
+          <PlatformIcon color={theme.textSecondary} name="chevron-down" size={20} />
+        </Pressable>
+      </View> : null}
+
+      <View style={[styles.row, inputFocused && styles.expandedRow, Platform.OS === 'ios' && styles.iosComposerShell]}>
         {mode !== 'idle' ? (
           <View
             accessibilityLabel={`Recording voice note, ${formatDuration(voice.durationMs)}`}
@@ -379,8 +393,8 @@ export function Composer({
             )}
           </View>
         ) : (
-          <View style={[styles.messageField, Platform.OS === 'ios' && styles.iosMessageField]}>
-            {Platform.OS === 'ios' ? <GlassContainer spacing={4} style={styles.iosActionGroup}>
+          <View style={[styles.messageField, inputFocused && styles.expandedMessageField, Platform.OS === 'ios' && styles.iosMessageField]}>
+            {Platform.OS === 'ios' ? <GlassContainer spacing={Spacing.two} style={[styles.iosActionGroup, inputFocused && styles.expandedActionGroup]}>
               <Pressable
                 accessibilityLabel="Add to message"
                 accessibilityRole="button"
@@ -396,10 +410,10 @@ export function Composer({
               android_ripple={{ borderless: true, color: theme.backgroundSelected }}
               hitSlop={6}
               onPress={() => { hapticLight(); setMenuOpen(true); }}
-              style={[styles.circle, { backgroundColor: theme.backgroundElement }]}>
-              <PlatformIcon color={theme.textSecondary} name="paperclip" size={20} />
+              style={[styles.circle, inputFocused && styles.expandedActionButton, { backgroundColor: theme.backgroundElement }]}>
+              <PlatformIcon color={theme.textSecondary} name="plus" size={20} />
             </Pressable>}
-            <View style={[styles.inputPill, { borderColor: inputFocused ? theme.accentStrong : theme.homeBorder }]}>
+            <View style={[styles.inputPill, inputFocused && styles.expandedInputPill, { borderColor: inputFocused ? theme.accentStrong : theme.homeBorder }]}>
               {Platform.OS === 'ios' && hasLiquidGlass ? (
                 <GlassView
                   colorScheme={theme.background === '#1b1917' ? 'dark' : 'light'}
@@ -415,7 +429,7 @@ export function Composer({
                   style={[StyleSheet.absoluteFill, styles.inputPillFallback, { backgroundColor: theme.backgroundElement }]}
                 />
               )}
-              <TextInput
+              <ThemedTextInput
                 accessibilityLabel={`Message ${activeGroupName ?? 'channel'}`}
                 allowFontScaling
                 cursorColor={theme.accent}
@@ -429,9 +443,13 @@ export function Composer({
                   if (selection) setSelection(null);
                   onChangeText(next);
                 }}
-                onBlur={() => setInputFocused(false)}
+                onBlur={() => {
+                  setInputFocused(false);
+                  onExpandedChange?.(false);
+                }}
                 onFocus={() => {
                   setInputFocused(true);
+                  onExpandedChange?.(true);
                   onFocus?.();
                 }}
                 onSelectionChange={handleSelectionChange}
@@ -441,7 +459,7 @@ export function Composer({
                 selection={selection ?? undefined}
                 selectionColor={theme.accent}
                 selectionHandleColor={theme.accent}
-                style={[styles.input, { color: theme.text }]}
+                style={[styles.input, inputFocused && styles.expandedInput, { color: theme.text }]}
                 value={value}
               />
             </View>
@@ -543,17 +561,26 @@ const styles = StyleSheet.create({
     width: TouchTarget,
   },
   dot: { borderRadius: Radius.pill, height: 9, width: 9 },
+  expandedActionButton: { bottom: Spacing.two, left: Spacing.two, position: 'absolute', zIndex: 2 },
+  expandedActionGroup: { bottom: Spacing.two, left: Spacing.two, position: 'absolute', zIndex: 2 },
+  expandedClose: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
+  expandedHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', paddingHorizontal: Spacing.four, paddingVertical: Spacing.two },
+  expandedHeaderCopy: { flex: 1, gap: Spacing.half, minWidth: 0 },
+  expandedInput: { maxHeight: undefined, minHeight: 0, paddingBottom: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.three, textAlignVertical: 'top' },
+  expandedInputPill: { borderRadius: Radius.large, flex: 1, minHeight: 0 },
+  expandedMessageField: { alignItems: 'stretch', flex: 1, height: '100%', position: 'relative' },
+  expandedRow: { alignItems: 'flex-end', flex: 1 },
+  expandedSurface: { flex: 1 },
   input: {
     flex: 1,
     ...Typography.message,
     maxHeight: 120,
     minHeight: 48,
-    paddingLeft: Spacing.five + Spacing.one,
-    paddingRight: Spacing.three,
-    paddingTop: Platform.OS === 'ios' ? 9 : 0,
-    paddingBottom: Platform.OS === 'ios' ? Spacing.one : 0,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.one,
+    paddingBottom: Spacing.one,
     textAlign: 'left',
-    textAlignVertical: Platform.OS === 'android' ? 'center' : 'top',
+    textAlignVertical: 'center',
   },
   inputPill: {
     alignItems: 'stretch',
@@ -587,6 +614,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.xlarge,
     flex: 1,
     flexDirection: 'row',
+    gap: Spacing.two,
     minHeight: TouchTarget,
     paddingLeft: Spacing.one,
     paddingRight: Spacing.one,
@@ -628,9 +656,9 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'flex-end',
     flexDirection: 'row',
-    gap: Spacing.one,
-    paddingLeft: Spacing.three,
-    paddingRight: Spacing.one,
+    gap: Spacing.two,
+    paddingLeft: Spacing.four,
+    paddingRight: Spacing.three,
   },
   slideHint: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   surface: { gap: Spacing.two, paddingTop: Spacing.two },

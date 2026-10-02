@@ -27,23 +27,25 @@ function item(
 
 describe('My Tasks work views', () => {
   const today = '2026-10-01';
+  const week = ['2026-09-28', '2026-09-29', '2026-09-30', today, '2026-10-02', '2026-10-03', '2026-10-04'];
 
-  it('keeps Today urgent-only and includes overdue plus due-today open work', () => {
-    expect(matchesMyTaskTimeView(item('overdue', '2026-09-30', 'urgent'), 'today', today, null)).toBe(true);
-    expect(matchesMyTaskTimeView(item('today', today, 'urgent'), 'today', today, null)).toBe(true);
-    expect(matchesMyTaskTimeView(item('high', today, 'high'), 'today', today, null)).toBe(false);
-    expect(matchesMyTaskTimeView(item('done', today, 'urgent', 'completed'), 'today', today, null)).toBe(false);
+  it('shows open tasks due from today through the end of this week', () => {
+    expect(matchesMyTaskTimeView(item('overdue', '2026-09-30', 'urgent'), 'this-week', today, null, week)).toBe(false);
+    expect(matchesMyTaskTimeView(item('today', today, 'high'), 'this-week', today, null, week)).toBe(true);
+    expect(matchesMyTaskTimeView(item('saturday', '2026-10-03', 'low'), 'this-week', today, null, week)).toBe(true);
+    expect(matchesMyTaskTimeView(item('next-week', '2026-10-05', 'urgent'), 'this-week', today, null, week)).toBe(false);
+    expect(matchesMyTaskTimeView(item('done', today, 'urgent', 'completed'), 'this-week', today, null, week)).toBe(false);
   });
 
-  it('keeps every priority in Upcoming and limits Done to completed work', () => {
-    expect(matchesMyTaskTimeView(item('next', '2026-10-02', 'low'), 'upcoming', today, null)).toBe(true);
-    expect(matchesMyTaskTimeView(item('no-date', undefined, 'urgent'), 'upcoming', today, null)).toBe(false);
+  it('limits Done to completed work and keeps every priority in All', () => {
+    expect(matchesMyTaskTimeView(item('low', '2026-10-02', 'low'), 'all', today, null)).toBe(true);
+    expect(matchesMyTaskTimeView(item('no-date', undefined, 'urgent'), 'all', today, null)).toBe(true);
     expect(matchesMyTaskTimeView(item('done', today, 'low', 'completed'), 'done', today, null)).toBe(true);
     expect(matchesMyTaskTimeView(item('canceled', today, 'low', 'canceled'), 'done', today, null)).toBe(false);
   });
 
   it('preserves a selected date as an exact due-date filter in every view', () => {
-    expect(matchesMyTaskTimeView(item('selected', '2026-10-03', 'high'), 'upcoming', today, '2026-10-03')).toBe(true);
+    expect(matchesMyTaskTimeView(item('selected', '2026-10-03', 'high'), 'this-week', today, '2026-10-03', week)).toBe(true);
     expect(matchesMyTaskTimeView(item('other-day', '2026-10-04', 'high'), 'all', today, '2026-10-03')).toBe(false);
   });
 

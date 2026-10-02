@@ -13,14 +13,15 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
+  type TextInput,
 } from 'react-native';
 
 import { api } from '../../../../convex/_generated/api';
 import type { Doc, Id } from '../../../../convex/_generated/dataModel';
 import { DateField } from '@/components/date-field';
 import { ActionButton } from '@/components/action-button';
+import { CompactPillButton } from '@/components/compact-pill-button';
 import { ColoredAvatar } from '@/components/colored-avatar';
 import { EmptyState } from '@/components/empty-state';
 import { IconButton } from '@/components/icon-button';
@@ -34,7 +35,9 @@ import {
 import type { TaskEditField } from '@/components/task-detail-types';
 import { TaskDueChip, TaskPriorityBadge, TaskStateBanner, TaskStatusPill } from '@/components/task-ui';
 import { ScreenLoading } from '@/components/screen-loading';
+import { ScreenEntrance } from '@/components/screen-entrance';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -184,6 +187,7 @@ export default function TaskScreen() {
   const [mentionIds, setMentionIds] = useState<Array<Id<'projectMembers'>>>([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [updatesExpanded, setUpdatesExpanded] = useState(false);
+  const [updateFilter, setUpdateFilter] = useState<'all' | 'comments' | 'activity'>('all');
   // Each save returns the next revision, so consecutive inline edits chain
   // without waiting for the reactive query to catch up.
   const savedRevision = useRef<number | null>(null);
@@ -480,11 +484,23 @@ export default function TaskScreen() {
 
   const assigneeName = assignees?.find((item) => item.member._id === detail.task.assigneeProjectMemberId)?.user.displayName
     ?? (detail.assignee ? 'Assigned member' : 'Unassigned');
-  const updatesLoading = commentPage.status === 'LoadingFirstPage' || activityPage.status === 'LoadingFirstPage';
+  const updatesLoading = updateFilter === 'comments'
+    ? commentPage.status === 'LoadingFirstPage'
+    : updateFilter === 'activity'
+      ? activityPage.status === 'LoadingFirstPage'
+      : commentPage.status === 'LoadingFirstPage' || activityPage.status === 'LoadingFirstPage';
   const taskDecision = taskDecisionForCategory(detail.state?.category);
   const decisionState = board?.states.find((state) => state.category === taskDecision.targetCategory);
   const canAdvance = !readOnly;
-  const visibleUpdates = updatesExpanded ? updates : updates.slice(-1);
+  const filteredUpdates = updateFilter === 'all'
+    ? updates
+    : updates.filter(({ kind }) => updateFilter === 'comments' ? kind === 'comment' : kind === 'activity');
+  const visibleUpdates = updatesExpanded ? filteredUpdates : filteredUpdates.slice(-1);
+  const hasMoreFilteredUpdates = updateFilter === 'comments'
+    ? commentPage.status === 'CanLoadMore' || commentPage.status === 'LoadingMore'
+    : updateFilter === 'activity'
+      ? activityPage.status === 'CanLoadMore' || activityPage.status === 'LoadingMore'
+      : hasMoreUpdates;
 
   return (
     <ThemedView style={styles.screen}>
@@ -541,108 +557,105 @@ export default function TaskScreen() {
             <TaskStateBanner action={{ label: 'Dismiss', onPress: () => setError('') }} icon="refresh" message={error} tone="danger" />
           ) : null}
 
-          <View style={styles.hero}>
-          <View style={styles.projectContext}>
-            <PlatformIcon color={theme.textSecondary} name="project" size={15} />
-            <ThemedText numberOfLines={1} style={styles.contextName} themeColor="textSecondary" type="captionBold">
-              {projectNavigation?.available && projectNavigation.project ? projectNavigation.project.name : 'Project'}
-            </ThemedText>
-            {detail.board ? <>
-              <PlatformIcon color={theme.textTertiary} name="chevron-right" size={13} />
-              <ThemedText numberOfLines={1} style={styles.contextName} themeColor="textTertiary" type="caption">{detail.board.name}</ThemedText>
-            </> : null}
-          </View>
-          <View style={styles.heroKeyRow}>
-            <Pressable
-              accessibilityHint="Copies the full task id"
-              accessibilityLabel={`Task id ${detail.task.publicKey}`}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => {
-                hapticLight();
-                Clipboard.setString(detail.task.publicKey);
-                setKeyCopied(true);
-                setTimeout(() => setKeyCopied(false), 1500);
-              }}>
-              <ThemedText themeColor="textTertiary" type="mono">
-                {keyCopied ? 'Copied' : shortTaskKey(detail.task.publicKey)}
-              </ThemedText>
-            </Pressable>
-            {titleDraft === null && !readOnly ? <Pressable accessibilityLabel="Edit task title" accessibilityRole="button" onPress={() => setTitleDraft(detail.task.title)} style={styles.editTitleButton}>
-              <PlatformIcon color={theme.textSecondary} name="edit" size={14} />
-              <ThemedText themeColor="textSecondary" type="caption">Edit</ThemedText>
-            </Pressable> : null}
-          </View>
-          {titleDraft === null ? (
-            <Pressable
-              accessibilityHint={readOnly ? undefined : 'Edits the title in place'}
-              accessibilityRole={readOnly ? 'header' : 'button'}
-              disabled={readOnly}
-              onPress={() => setTitleDraft(detail.task.title)}>
-              <ThemedText style={styles.taskTitle}>{detail.task.title}</ThemedText>
-            </Pressable>
-          ) : (
-            <TextInput
-              accessibilityLabel="Task title"
-              allowFontScaling
-              ref={focusTitleInput}
-              cursorColor={theme.accent}
-              keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
-              maxFontSizeMultiplier={MaxFontScale}
-              multiline
-              onBlur={() => {
-                const next = titleDraft.trim();
-                if (!next || next === detail.task.title) {
-                  setTitleDraft(null);
-                  return;
-                }
-                void saveField({ title: next });
-              }}
-              onChangeText={setTitleDraft}
-              selectionColor={theme.accent}
-              selectionHandleColor={theme.accent}
-              style={[styles.taskTitle, styles.titleInput, {
-                backgroundColor: theme.backgroundElement,
-                color: theme.text,
-              }]}
-              value={titleDraft}
-            />
-          )}
-          <View style={styles.statusControls}>
-            <TaskStatusPill
-              category={detail.state?.category}
-              label={detail.state?.name ?? 'Unknown'}
-              onPress={readOnly ? undefined : () => setField('status')}
-            />
-            <TaskPriorityBadge
-              compact
-              onPress={readOnly ? undefined : () => setField('priority')}
-              priority={detail.task.priority}
-            />
-            <TaskDueChip
-              category={detail.state?.category}
-              dueDate={detail.task.dueDate}
-              onPress={readOnly ? undefined : () => setField('dueDate')}
-              showNoDate
-            />
-          </View>
-          <Pressable
-            accessibilityHint={readOnly ? undefined : 'Changes who owns this task'}
-            accessibilityLabel={`Assignee: ${assigneeName}`}
-            accessibilityRole={readOnly ? 'text' : 'button'}
-            disabled={readOnly}
-            onPress={() => setField('assignee')}
-            style={({ pressed }) => [styles.assigneeRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
-            {detail.assignee
-              ? <ColoredAvatar label={assigneeName} seed={assigneeName} size={34} />
-              : <View style={[styles.unassignedAvatar, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="person" size={17} /></View>}
-            <View style={styles.assigneeCopy}>
-              <ThemedText themeColor="textTertiary" type="caption">ASSIGNEE</ThemedText>
-              <ThemedText numberOfLines={1} type="smallBold">{assigneeName}</ThemedText>
+          <ScreenEntrance style={styles.hero}>
+            {titleDraft === null ? (
+              <View style={styles.titleRow}>
+                <ThemedText accessibilityRole="header" style={styles.taskTitle}>{detail.task.title}</ThemedText>
+                {!readOnly ? <Pressable accessibilityLabel="Edit task title" accessibilityRole="button" hitSlop={8} onPress={() => setTitleDraft(detail.task.title)} style={({ pressed }) => [styles.editTitleButton, { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement, borderColor: theme.homeBorder }]}>
+                  <PlatformIcon color={theme.textSecondary} name="edit" size={17} />
+                  <ThemedText themeColor="textSecondary" type="captionBold">Edit</ThemedText>
+                </Pressable> : null}
+              </View>
+            ) : (
+              <ThemedTextInput
+                accessibilityLabel="Task title"
+                allowFontScaling
+                autoFocus
+                ref={focusTitleInput}
+                cursorColor={theme.accent}
+                keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
+                maxFontSizeMultiplier={MaxFontScale}
+                multiline
+                onBlur={() => {
+                  const next = titleDraft.trim();
+                  if (!next || next === detail.task.title) {
+                    setTitleDraft(null);
+                    return;
+                  }
+                  void saveField({ title: next });
+                }}
+                onChangeText={setTitleDraft}
+                selectionColor={theme.accent}
+                selectionHandleColor={theme.accent}
+                style={[styles.taskTitle, styles.titleInput, {
+                  backgroundColor: theme.backgroundElement,
+                  color: theme.text,
+                }]}
+                value={titleDraft}
+              />
+            )}
+            <View style={styles.primaryStatus}>
+              <TaskStatusPill
+                category={detail.state?.category}
+                label={detail.state?.name ?? 'Unknown'}
+                onPress={readOnly ? undefined : () => setField('status')}
+              />
+              <Pressable
+                accessibilityHint="Copies the full task id"
+                accessibilityLabel={`Task id ${detail.task.publicKey}`}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => {
+                  hapticLight();
+                  Clipboard.setString(detail.task.publicKey);
+                  setKeyCopied(true);
+                  setTimeout(() => setKeyCopied(false), 1500);
+                }}>
+                <ThemedText themeColor="textTertiary" type="mono">
+                  {keyCopied ? 'Copied' : shortTaskKey(detail.task.publicKey)}
+                </ThemedText>
+              </Pressable>
             </View>
-            {readOnly ? null : <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />}
-          </Pressable>
-        </View>
+            <View style={styles.projectContext}>
+              <PlatformIcon color={theme.textSecondary} name="project" size={15} />
+              <ThemedText numberOfLines={1} style={styles.contextName} themeColor="textSecondary" type="captionBold">
+                {projectNavigation?.available && projectNavigation.project ? projectNavigation.project.name : 'Project'}
+              </ThemedText>
+              {detail.board ? <>
+                <PlatformIcon color={theme.textTertiary} name="chevron-right" size={13} />
+                <ThemedText numberOfLines={1} style={styles.contextName} themeColor="textTertiary" type="caption">{detail.board.name}</ThemedText>
+              </> : null}
+            </View>
+            <Pressable
+              accessibilityHint={readOnly ? undefined : 'Changes who owns this task'}
+              accessibilityLabel={`Assignee: ${assigneeName}`}
+              accessibilityRole={readOnly ? 'text' : 'button'}
+              disabled={readOnly}
+              onPress={() => setField('assignee')}
+              style={({ pressed }) => [styles.assigneeRow, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+              {detail.assignee
+                ? <ColoredAvatar label={assigneeName} seed={assigneeName} size={34} />
+                : <View style={[styles.unassignedAvatar, { backgroundColor: theme.backgroundElement }]}><PlatformIcon color={theme.textSecondary} name="person" size={17} /></View>}
+              <View style={styles.assigneeCopy}>
+                <ThemedText themeColor="textSecondary" type="caption">Assigned to</ThemedText>
+                <ThemedText numberOfLines={1} type="smallBold">{assigneeName}</ThemedText>
+              </View>
+              {readOnly ? null : <PlatformIcon color={theme.textTertiary} name="chevron-right" size={16} />}
+            </Pressable>
+            <View style={styles.statusControls}>
+              <TaskPriorityBadge
+                compact
+                onPress={readOnly ? undefined : () => setField('priority')}
+                priority={detail.task.priority}
+              />
+              <TaskDueChip
+                category={detail.state?.category}
+                dueDate={detail.task.dueDate}
+                onPress={readOnly ? undefined : () => setField('dueDate')}
+                showNoDate
+              />
+            </View>
+          </ScreenEntrance>
 
           <TaskOverview
             busy={busy}
@@ -671,26 +684,53 @@ export default function TaskScreen() {
 
           <View style={styles.updatesSection}>
             <View style={styles.updatesHeading}>
-              <View accessibilityRole="header" style={[styles.updatesTab, { backgroundColor: theme.backgroundElevated }]}>
-                <ThemedText themeColor="textSecondary" type="captionBold">Updates</ThemedText>
-                {updates.length ? <ThemedText themeColor="textTertiary" type="caption">{updates.length}{hasMoreUpdates ? '+' : ''}</ThemedText> : null}
+              <View style={styles.updatesTitleGroup}>
+                <ThemedText accessibilityRole="header" type="subtitle">Updates</ThemedText>
+                <ThemedText themeColor="textSecondary" type="caption">Comments and task history</ThemedText>
               </View>
+              {filteredUpdates.length ? <View style={[styles.updatesCount, { backgroundColor: theme.backgroundElement }]}>
+                <ThemedText themeColor="textSecondary" type="captionBold">{filteredUpdates.length}{hasMoreFilteredUpdates ? '+' : ''}</ThemedText>
+              </View> : null}
+            </View>
+            <View accessibilityLabel="Filter task updates" accessibilityRole="tablist" style={styles.updateFilters}>
+              {([
+                ['all', 'All', updates.length],
+                ['comments', 'Comments', updates.filter(({ kind }) => kind === 'comment').length],
+                ['activity', 'Activity', updates.filter(({ kind }) => kind === 'activity').length],
+              ] as const).map(([key, label, count]) => {
+                const selected = updateFilter === key;
+                return <CompactPillButton
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  key={key}
+                  onPress={() => { setUpdateFilter(key); setUpdatesExpanded(false); }}
+                  pillStyle={{ backgroundColor: selected ? theme.accentSoft : theme.homeSurface, borderColor: selected ? 'transparent' : theme.homeBorder }}
+                  pressedPillStyle={{ backgroundColor: theme.backgroundSelected, borderColor: 'transparent' }}>
+                  <ThemedText style={{ color: selected ? theme.accentStrong : theme.textSecondary }} type="captionBold">{label}</ThemedText>
+                  <ThemedText style={{ color: selected ? theme.accentStrong : theme.textTertiary }} type="caption">{count}{hasMoreFilteredUpdates && selected && count > 0 ? '+' : ''}</ThemedText>
+                </CompactPillButton>;
+              })}
             </View>
             <TaskUpdatesFeed
               assignees={assignees}
-              compact={!updatesExpanded && (updates.length > 1 || hasMoreUpdates)}
+              compact={!updatesExpanded && (filteredUpdates.length > 1 || hasMoreFilteredUpdates)}
+              emptyMessage={updateFilter === 'comments' ? 'No comments yet' : updateFilter === 'activity' ? 'No task history yet' : 'No task updates yet'}
               loading={updatesLoading}
-              loadingEarlier={updatesExpanded && (commentPage.status === 'LoadingMore' || activityPage.status === 'LoadingMore')}
-              onLoadEarlier={updatesExpanded && hasMoreUpdates ? loadEarlierUpdates : undefined}
+              loadingEarlier={updatesExpanded && hasMoreFilteredUpdates && (updateFilter === 'comments'
+                ? commentPage.status === 'LoadingMore'
+                : updateFilter === 'activity'
+                  ? activityPage.status === 'LoadingMore'
+                  : commentPage.status === 'LoadingMore' || activityPage.status === 'LoadingMore')}
+              onLoadEarlier={updatesExpanded && hasMoreFilteredUpdates ? loadEarlierUpdates : undefined}
               updates={visibleUpdates}
               workflowStates={board?.states}
             />
-            {updates.length > 1 || hasMoreUpdates ? <Pressable
+            {filteredUpdates.length > 1 || hasMoreFilteredUpdates ? <Pressable
               accessibilityRole="button"
               accessibilityState={{ expanded: updatesExpanded }}
               onPress={() => {
                 setUpdatesExpanded((expanded) => !expanded);
-                if (!updatesExpanded && hasMoreUpdates) loadEarlierUpdates();
+                if (!updatesExpanded && hasMoreFilteredUpdates) loadEarlierUpdates();
               }}
               style={styles.updatesToggle}>
               <ThemedText themeColor="accentStrong" type="smallBold">{updatesExpanded ? 'Show latest only' : 'View all updates'}</ThemedText>
@@ -715,7 +755,7 @@ export default function TaskScreen() {
           : [...current, memberId as Id<'projectMembers'>])}
         onSend={() => void addComment()}
         value={comment}
-      /> : !keyboardVisible && (canAdvance || detail.capabilities.canComment) ? <View style={[styles.bottomDock, { backgroundColor: theme.background, borderTopColor: theme.hairline, marginBottom: bottomTabBarInset, paddingBottom: safeAreaInsets.bottom }]}>
+      /> : !keyboardVisible && (canAdvance || detail.capabilities.canComment) ? <View style={[styles.bottomDock, { backgroundColor: theme.background, borderTopColor: theme.hairline, marginBottom: bottomTabBarInset, paddingBottom: safeAreaInsets.bottom + Spacing.six }]}>
         {canAdvance ? <ActionButton
           icon={taskDecision.icon}
           label={taskDecision.label}
@@ -888,30 +928,30 @@ export default function TaskScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { gap: Spacing.four, padding: Spacing.three, paddingTop: Spacing.five },
+  content: { gap: Spacing.five, padding: Spacing.four, paddingTop: Spacing.five },
   decisionButton: { alignSelf: 'stretch', flex: 1 },
   assigneeCopy: { flex: 1, gap: 2, minWidth: 0 },
-  assigneeRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, flexDirection: 'row', gap: Spacing.two, marginHorizontal: -Spacing.two, minHeight: 54, paddingHorizontal: Spacing.two },
+  assigneeRow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   bottomDock: { alignItems: 'center', borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   contextName: { flexShrink: 1 },
-  editTitleButton: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingLeft: Spacing.two },
+  editTitleButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   expandedUpdateButton: { flex: 1 },
-  projectContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
+  projectContext: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
+  primaryStatus: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   statusControls: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   unassignedAvatar: { alignItems: 'center', borderRadius: Radius.pill, height: 34, justifyContent: 'center', width: 34 },
   updateButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   headerActions: { alignItems: 'center', flexDirection: 'row' },
-  hero: {
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.one,
-  },
-  heroKeyRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  hero: { gap: Spacing.two },
+  titleRow: { alignItems: 'flex-start', flexDirection: 'row', gap: Spacing.one },
   screen: { flex: 1 },
-  taskTitle: { ...Typography.display, fontSize: 28, letterSpacing: -0.5, lineHeight: 35 },
+  taskTitle: { ...Typography.display, flex: 1, fontSize: 28, letterSpacing: -0.5, lineHeight: 35, minWidth: 0 },
   updatesToggle: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.one },
-  updatesHeading: { alignItems: 'flex-start' },
+  updatesHeading: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', minHeight: TouchTarget },
+  updatesTitleGroup: { flex: 1, gap: Spacing.half, minWidth: 0 },
+  updateFilters: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one },
   updatesSection: { gap: Spacing.two, paddingTop: Spacing.two },
-  updatesTab: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', gap: Spacing.one, minHeight: 28, paddingHorizontal: Spacing.two },
+  updatesCount: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minHeight: 24, minWidth: 24, paddingHorizontal: Spacing.two },
   titleInput: {
     borderCurve: 'continuous',
     borderRadius: Radius.medium,

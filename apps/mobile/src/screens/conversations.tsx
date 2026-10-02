@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -14,9 +14,10 @@ import { PlatformIcon } from '@/components/platform-icon';
 import { ConversationProjectTabs } from '@/components/conversation-project-tabs';
 import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { OptionsSheet, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
-import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useCompany } from '@/contexts/company-context';
 import { usePrimaryNavigationVisibility } from '@/contexts/primary-navigation-visibility-context';
 import { useTrackUser } from '@/contexts/track-user-context';
@@ -181,7 +182,7 @@ export default function ConversationsScreen() {
           />
           <View style={[styles.search, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
             <PlatformIcon color={theme.textTertiary} name="search" size={19} weight="regular" />
-            <TextInput accessibilityLabel="Search conversations" autoCapitalize="none" autoCorrect={false} keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search Channels and threads" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
+            <ThemedTextInput accessibilityLabel="Search conversations" autoCapitalize="none" autoCorrect={false} keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} maxFontSizeMultiplier={MaxFontScale} onChangeText={setSearch} placeholder="Search Channels and threads" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
             {search ? <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.clearSearch}><PlatformIcon color={theme.textSecondary} name="close" size={18} weight="regular" /></Pressable> : null}
           </View>
           <ScrollView accessibilityLabel="Conversation filters" accessibilityRole="tablist" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
@@ -189,7 +190,7 @@ export default function ConversationsScreen() {
               ['all', 'All'], ['unread', 'Unread'], ['channels', 'Channels'], ['threads', 'Threads'],
             ] as const).map(([value, label]) => {
               const active = filter === value;
-              return <CompactPillButton key={value} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { hapticLight(); setFilter(value); }} pillStyle={{ backgroundColor: active ? theme.accentSoft : theme.homeSurface, borderColor: active ? 'transparent' : theme.homeBorder, minHeight: Platform.OS === 'android' ? 28 : undefined }} pressedPillStyle={{ backgroundColor: theme.backgroundElevated, borderColor: 'transparent' }}>
+              return <CompactPillButton key={value} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { hapticLight(); setFilter(value); }} pillStyle={{ backgroundColor: active ? theme.accentSoft : theme.homeSurface, borderColor: active ? 'transparent' : theme.homeBorder }} pressedPillStyle={{ backgroundColor: theme.backgroundElevated, borderColor: 'transparent' }}>
                 <ThemedText style={{ color: active ? theme.text : theme.textSecondary }} type="captionBold">{label}</ThemedText>
               </CompactPillButton>;
             })}
@@ -442,8 +443,8 @@ const styles = StyleSheet.create({
   filters: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one },
   footerSpace: { height: Spacing.four },
   headerStack: { gap: Spacing.three, paddingBottom: Spacing.two },
-  headingCopy: { flex: 1, gap: 1, minWidth: 0 },
   headingRow: { alignItems: 'center', flexDirection: 'row', minHeight: TouchTarget },
+  headingCopy: { flex: 1, gap: 1, minWidth: 0 },
   headingTitle: { flex: 1, flexShrink: 1, minWidth: 0 },
   loadMore: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing.three, marginVertical: Spacing.two, minHeight: TouchTarget, justifyContent: 'center' },
   moreButton: { alignItems: 'center', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, marginHorizontal: Spacing.three, marginVertical: Spacing.two, minHeight: TouchTarget, justifyContent: 'center' },

@@ -2317,3 +2317,112 @@
   .company-conversation-actions [data-slot="button"] span { display: none; }
   .company-conversation-actions [data-slot="button"] { min-width: 34px; padding-inline: 0; }
 }
+
+/* Company Project conversation uses the same reading and composer rhythm as
+   the standalone workspace. */
+.company-channel-sidebar,
+.company-project-admin,
+.company-project-context-rail {
+  background: var(--paper-2);
+}
+
+.company-channel-sidebar .track-nav-item,
+.company-channel-sidebar .track-nav-item.compact {
+  min-height: 40px;
+  border-radius: 7px;
+  padding: 6px 8px;
+}
+
+.company-channel-sidebar .track-nav-item.active,
+.dark .company-channel-sidebar .track-nav-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.company-conversation > header {
+  min-height: 64px;
+  padding: 12px clamp(16px, 2.5vw, 30px);
+}
+
+.company-conversation h2 {
+  font-size: 16px;
+}
+
+.company-message-scroll {
+  padding: 18px clamp(16px, 3vw, 36px) 12px;
+}
+
+.company-message-list {
+  width: min(100%, 840px);
+  margin-inline: auto;
+}
+
+.company-message-list article {
+  padding-block: 12px;
+}
+
+.company-message-list article p {
+  max-width: 74ch;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.company-message-list article > div:first-child strong {
+  font-size: 13px;
+}
+
+.company-message-list time {
+  font-size: 11px;
+}
+
+.company-project-composer-wrap {
+  border-top: 1px solid var(--hairline);
+  padding: 10px clamp(16px, 3vw, 36px) max(12px, env(safe-area-inset-bottom));
+}
+
+.company-project-composer-wrap .company-composer {
+  width: min(100%, 840px);
+  margin-inline: auto;
+}
+
+.company-project-composer-wrap .company-composer [data-slot="input"] {
+  min-height: 48px;
+  font-size: 14px;
+}
+
+.company-project-conversation-rail {
+  border-left-color: var(--hairline);
+  padding: 14px 16px;
+}
+
+.company-project-context-heading h2 {
+  font-size: 15px;
+}
+
+.company-project-context-heading p {
+  font-size: 12px;
+}
+
+.company-project-context-tabs button {
+  min-height: 44px;
+  font-size: 12px;
+}
+
+.company-conversation-actions [data-slot="button"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+@media (max-width: 860px) {
+  .company-message-scroll {
+    padding-inline: 14px;
+  }
+
+  .company-project-composer-wrap {
+    padding-inline: 12px;
+  }
+
+  .company-conversation-actions [data-slot="button"] {
+    min-width: 44px;
+    padding-inline: 10px;
+  }
+}

@@ -18,6 +18,22 @@ Keep the active Company, Project, and Channel understandable while a person move
 
 Track has no direct-message surface outside Projects and Channels. Do not borrow one-to-one chat patterns that imply a private conversation outside those access boundaries. Company collaboration can involve several Companies, but a Company label is supporting context and must stay quieter than the people and conversation.
 
+## Web product flow
+
+The web client uses the same Company → Project → Channel → thread → task hierarchy, with desktop navigation and work views. The persistent left rail holds the Company and Project scope, Channel list, project search, Tasks, and settings. A compact header names the current Channel or Project. A right context rail appears only when it helps with the current conversation, such as its open tasks, threads, or project controls. At narrower widths, each rail can collapse or move into a labeled drawer without losing the current scope.
+
+The workspace home groups accessible Projects by ownership and collaboration. A Project row shows its Company, role, recent activity, and Channel count, then opens the Project conversation. Company has separate Overview, Projects, and Threads destinations: Overview summarizes active work and recent activity; Projects is the searchable directory; Threads finds active and archived conversations across accessible Channels. Company administration and account settings stay in their own settings surfaces.
+
+A Project conversation opens on its selected Channel. Its header keeps the Company and Project identity available, while the message stream remains the main reading surface. The composer stays attached to the stream and keeps message, file, voice, mention, and memory actions close to the send action. Channel tabs lead to Tasks and Evidence without changing Company, Project, or represented membership scope.
+
+Tasks keep Board, List, Calendar, Inbox, and detail as views of the same Project work. The view switcher and filters stay near the task content; search and filter choices remain in the route state so a task can be opened and closed without losing the current view. Task detail keeps its source conversation and evidence near its title and status. Moving or scheduling a task gives immediate feedback and preserves the current Project and Channel context.
+
+Evidence is a provenance index for task-linked messages, threads, files, assistant responses, and memory excerpts. Selecting a reference opens its source with the same access scope. When a Project has no evidence, explain how evidence is created and offer a direct route to its Channel. A focused thread keeps its parent Channel, source message, replies, and thread actions together; its context rail explains the Project and participants without duplicating the conversation.
+
+Company and Project settings organize identity, people, Channels, notifications, access, and lifecycle actions into labeled sections. Destructive or audience-expanding actions state the affected Company, Project, and people before confirmation. Settings pages do not hide current scope or rely on hover to reveal important information.
+
+On wide screens, the conversation or current work view receives the largest share of the canvas. Navigation and context rails are secondary and use quiet surfaces with clear separators. On small screens, content stacks or moves into drawers; tables and boards may scroll inside their own region, while the page itself avoids accidental horizontal overflow. Focus, escape-to-close, return paths, and visible scope remain predictable across mouse, keyboard, and touch.
+
 ## Mobile product flow
 
 ### First screen: Messages

@@ -97,7 +97,7 @@ export function TaskStatusPill({
         hapticLight();
         onPress();
       }}
-      style={[styles.pill, { backgroundColor }]}>
+      style={({ pressed }) => [styles.pill, { backgroundColor }, pressed && styles.pressedControl]}>
       {body}
     </Pressable>
   );
@@ -141,7 +141,7 @@ export function TaskPriorityBadge({
         hapticLight();
         onPress();
       }}
-      style={[styles.priority, compact && styles.priorityBadge, compact && { backgroundColor }]}>
+      style={({ pressed }) => [styles.priority, compact && styles.priorityBadge, compact && { backgroundColor }, pressed && styles.pressedControl]}>
       {body}
     </Pressable>
   );
@@ -182,7 +182,7 @@ export function TaskDueChip({
         hapticLight();
         onPress();
       }}
-      style={styles.inlineMeta}>
+      style={({ pressed }) => [styles.inlineMeta, pressed && styles.pressedControl]}>
       {body}
     </Pressable>
   );
@@ -531,6 +531,7 @@ const styles = StyleSheet.create({
   assigneeName: { flexShrink: 1, maxWidth: 90 },
   focusedTask: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: Radius.pill, flexDirection: 'row', gap: 3, marginHorizontal: Spacing.three, marginTop: Spacing.two, paddingHorizontal: Spacing.two, paddingVertical: 3 },
   inlineMeta: { alignItems: 'center', flexDirection: 'row', flexShrink: 1, gap: Spacing.one },
+  pressedControl: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   listContext: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, minWidth: 0 },
   companyPill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, maxWidth: '100%', minHeight: 24, paddingHorizontal: Spacing.two, paddingVertical: 2 },
   companyPillText: { flexShrink: 1 },

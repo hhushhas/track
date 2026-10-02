@@ -706,7 +706,7 @@ export default function ThreadScreen() {
   </Pressable> : null;
 
   return (
-    <ThemedView style={styles.screen}>
+    <ThemedView style={[styles.screen, { backgroundColor: theme.homeSurface }]}>
       <Stack.Screen options={{
         headerTransparent: true,
         headerBlurEffect: 'none',

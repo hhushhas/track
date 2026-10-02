@@ -304,3 +304,130 @@
   .company-directory-view *,
   .company-directory-header-tools * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
+
+/* Company directories share the same flat summary, filter, and row language. */
+.company-directory-view {
+  gap: 18px;
+}
+
+.company-collaboration-summary {
+  gap: 0;
+  border-block: 1px solid var(--company-ref-border);
+}
+
+.company-collaboration-summary > div {
+  min-height: 74px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 16px;
+}
+
+.company-collaboration-summary > div + div {
+  border-left: 1px solid var(--company-ref-border);
+}
+
+.company-collaboration-summary > div > i {
+  width: 22px;
+  height: 22px;
+  grid-row: 1 / span 2;
+  border: 0;
+  background: transparent;
+}
+
+.company-collaboration-summary span {
+  grid-column: 2;
+  font-size: 12px;
+}
+
+.company-collaboration-summary strong {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+.company-collaboration-summary small {
+  grid-column: 2 / -1;
+  font-size: 11px;
+}
+
+.company-filter-bar {
+  min-height: 48px;
+  flex-wrap: wrap;
+  border: 0;
+  border-bottom: 1px solid var(--company-ref-border);
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 0;
+}
+
+.company-filter-bar button {
+  min-height: 40px;
+  font-size: 13px;
+}
+
+.company-directory-search {
+  height: 44px;
+  border-radius: 7px;
+  font-size: 14px;
+}
+
+.company-directory-table {
+  margin-top: 4px;
+  border-top-color: var(--company-ref-border);
+}
+
+.company-directory-table-head {
+  min-height: 42px;
+  font-size: 11px;
+}
+
+.company-directory-row {
+  min-height: 68px;
+  font-size: 13px;
+}
+
+.company-directory-identity strong {
+  font-size: 14px;
+}
+
+.company-directory-identity small,
+.company-access-cell,
+.company-role-cell {
+  font-size: 12px;
+}
+
+.company-state-pill {
+  min-height: 26px;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .company-collaboration-summary > div {
+    min-height: 68px;
+    padding-inline: 10px;
+  }
+
+  .company-collaboration-summary > div + div {
+    border-left: 0;
+  }
+
+  .company-collaboration-summary > div:nth-child(even) {
+    border-left: 1px solid var(--company-ref-border);
+  }
+
+  .company-collaboration-summary > div:nth-child(n + 3) {
+    border-top: 1px solid var(--company-ref-border);
+  }
+
+  .company-directory-table-head {
+    display: none;
+  }
+
+  .company-directory-row {
+    min-height: 72px;
+  }
+}

@@ -15,6 +15,7 @@ import {
 import { formatRailLabel } from '#/features/workspace/lib/formatting'
 import { notificationModes } from '#/features/workspace/constants'
 import { notificationPermissionLabels, type WebNotificationPermission } from '#/features/workspace/web-notifications'
+import { RAIL_KEYBOARD_STEP, RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, clampRailWidth } from '#/features/workspace/rail-sizing'
 import { CompanyThreadBrowser } from '#/features/threads/CompanyThreadBrowser'
 import type { GroupMessageItem } from '#/features/workspace/thread-items'
 import { useReleaseConfig } from '#/lib/release-config'
@@ -24,6 +25,7 @@ type WorkspaceRailProps = {
   activeGroup: Doc<'groups'> | undefined
   activeCompanyId?: Id<'companies'>
   activeCompanyName?: string
+  activeProjectName?: string
   activeProjectId: Id<'projects'> | null
   projectMemberId?: Id<'projectMembers'>
   busyAction: string | null
@@ -37,6 +39,8 @@ type WorkspaceRailProps = {
   onSendTestNotification: () => void
   onEnableBrowserNotifications: () => void
   onStartResize: () => void
+  onRailWidthChange: (width: number) => void
+  railWidth: number
   railCollapsed: boolean
   userId: Id<'users'>
   visibleMessages: Array<GroupMessageItem>
@@ -114,6 +118,7 @@ export function WorkspaceRail({
   activeGroup,
   activeCompanyId,
   activeCompanyName,
+  activeProjectName,
   activeProjectId,
   busyAction,
   globalNotificationMode,
@@ -126,7 +131,9 @@ export function WorkspaceRail({
   onSendTestNotification,
   onEnableBrowserNotifications,
   onStartResize,
+  onRailWidthChange,
   projectMemberId,
+  railWidth,
   railCollapsed,
   userId,
   visibleMessages,
@@ -170,19 +177,44 @@ export function WorkspaceRail({
 
   return (
     <aside aria-label="Channel context" className="track-rail">
-      <button
-        aria-label="Resize workspace details"
+      <div
+        aria-label="Resize Channel context panel"
+        aria-orientation="vertical"
+        aria-valuemax={RAIL_MAX_WIDTH}
+        aria-valuemin={RAIL_MIN_WIDTH}
+        aria-valuenow={railWidth}
+        aria-valuetext={`${railWidth} pixels`}
         className="track-rail-resize-handle"
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault()
+            onRailWidthChange(clampRailWidth(railWidth + RAIL_KEYBOARD_STEP))
+          }
+          if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            onRailWidthChange(clampRailWidth(railWidth - RAIL_KEYBOARD_STEP))
+          }
+          if (event.key === 'Home') {
+            event.preventDefault()
+            onRailWidthChange(RAIL_MIN_WIDTH)
+          }
+          if (event.key === 'End') {
+            event.preventDefault()
+            onRailWidthChange(RAIL_MAX_WIDTH)
+          }
+        }}
         onPointerDown={(event) => {
           event.preventDefault()
           onStartResize()
         }}
-        type="button"
+        role="separator"
+        tabIndex={0}
+        title="Drag to resize. Use the left and right arrow keys to adjust."
       >
-        <span className="track-rail-resize-grip">
+        <span aria-hidden="true" className="track-rail-resize-grip">
           <GripVertical size={14} />
         </span>
-      </button>
+      </div>
       <div className="track-rail-toolbar">
         <button
           aria-label="Collapse workspace details"
@@ -206,9 +238,9 @@ export function WorkspaceRail({
       </div>
       <header className="track-rail-context-header">
         <div>
-          <span className="track-rail-kicker">Project context</span>
-          <h2>{activeCompanyName ?? 'Keep the work close'}</h2>
-          <p>References and focused threads across the selected company workspace.</p>
+          <span className="track-rail-kicker">Channel context</span>
+          <h2>{activeGroup ? `#${activeGroup.name}` : 'Project context'}</h2>
+          <p>{[activeCompanyName, activeProjectName].filter(Boolean).join(' · ') || 'References and focused threads stay scoped to this Project.'}</p>
         </div>
       </header>
       <section className="track-rail-section track-rail-reference-section">

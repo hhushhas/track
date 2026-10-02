@@ -1,8 +1,8 @@
 import type { TaskActivityAction } from '@track/shared/tasks';
-import { useState, type ReactNode } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useKeyboardState, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOut, LinearTransition, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import type { Doc } from '../../../../convex/_generated/dataModel';
 import { ColoredAvatar } from '@/components/colored-avatar';
@@ -15,7 +15,8 @@ import type {
   TaskEditField,
 } from '@/components/task-detail-types';
 import { ThemedText } from '@/components/themed-text';
-import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { ThemedTextInput } from '@/components/themed-text-input';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { hapticMedium } from '@/lib/haptics';
 import { useBottomTabBarInset } from '@/hooks/use-bottom-tab-inset';
@@ -30,9 +31,10 @@ import { formatTaskUpdateDate, mergeTaskUpdates, taskUpdateDayLabel } from '@/li
 
 type TaskUpdate = ReturnType<typeof mergeTaskUpdates<Doc<'taskComments'>, Doc<'taskActivities'>>>[number];
 
-export function TaskUpdatesFeed({ assignees, compact = false, loading, loadingEarlier, onLoadEarlier, updates, workflowStates }: {
+export function TaskUpdatesFeed({ assignees, compact = false, emptyMessage = 'No task updates yet', loading, loadingEarlier, onLoadEarlier, updates, workflowStates }: {
   assignees?: MobileTaskAssignee[];
   compact?: boolean;
+  emptyMessage?: string;
   loading: boolean;
   loadingEarlier: boolean;
   onLoadEarlier?: () => void;
@@ -89,7 +91,7 @@ export function TaskUpdatesFeed({ assignees, compact = false, loading, loadingEa
       </View>;
     }) : loading ? <ThemedText themeColor="textSecondary" type="small">Loading updates…</ThemedText> : <View style={styles.noUpdates}>
       <PlatformIcon color={theme.textTertiary} name="message" size={16} />
-      <ThemedText themeColor="textSecondary" type="small">No task updates yet</ThemedText>
+      <ThemedText themeColor="textSecondary" type="small">{emptyMessage}</ThemedText>
     </View>}
   </View>;
 }
@@ -136,6 +138,7 @@ export function TaskOverview({
   subtasksLoadingMore: boolean;
 }) {
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
   const [expandedSubtaskId, setExpandedSubtaskId] = useState<string | null>(null);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [checklistExpanded, setChecklistExpanded] = useState(false);
@@ -148,6 +151,12 @@ export function TaskOverview({
   const completedSubtasks = visibleSubtasks.filter((item) =>
     item.state?.category === 'completed' || item.state?.category === 'canceled',
   ).length;
+  const checklistProgress = visibleSubtasks.length ? completedSubtasks / visibleSubtasks.length : 0;
+  const progress = useSharedValue(checklistProgress);
+  useEffect(() => {
+    progress.value = withTiming(checklistProgress, { duration: reduceMotion ? 0 : 220 });
+  }, [checklistProgress, progress, reduceMotion]);
+  const progressStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
   const labels = detail.labels.flatMap((label) => label ? [label] : []);
   return (
     <>
@@ -184,13 +193,16 @@ export function TaskOverview({
         <TaskSection title="Checklist" trailing={visibleSubtasks.length ? `${completedSubtasks}/${visibleSubtasks.length}` : undefined}>
           {visibleSubtasks.length ? (
             <>
-              <View style={[styles.progressTrack, { backgroundColor: theme.backgroundElement }]}>
-                <View style={[styles.progressValue, {
+              <View
+                accessibilityLabel="Checklist progress"
+                accessibilityRole="progressbar"
+                accessibilityValue={{ min: 0, max: visibleSubtasks.length, now: completedSubtasks }}
+                style={[styles.progressTrack, { backgroundColor: theme.backgroundElement }]}>
+                <Animated.View style={[styles.progressValue, progressStyle, {
                   backgroundColor: theme.accent,
-                  width: `${(completedSubtasks / visibleSubtasks.length) * 100}%`,
                 }]} />
               </View>
-              <View style={[styles.checklist, { backgroundColor: theme.backgroundElement }]}>
+              <Animated.View layout={reduceMotion ? undefined : LinearTransition.duration(180)} style={[styles.checklist, { backgroundColor: theme.backgroundElement }]}>
                 {displayedSubtasks.map((item, index) => {
                   const complete = item.state?.category === 'completed' || item.state?.category === 'canceled';
                   const description = item.task.description?.trim();
@@ -229,18 +241,22 @@ export function TaskOverview({
                         <PlatformIcon color={theme.textTertiary} name={description ? (expanded ? 'chevron-up' : 'chevron-down') : 'chevron-right'} size={18} />
                       </View>
                       {expanded && description ? (
-                        <View style={[styles.checkDescription, { borderTopColor: theme.hairline }]}>
+                        <Animated.View
+                          entering={reduceMotion ? undefined : FadeInDown.duration(160)}
+                          exiting={reduceMotion ? undefined : FadeOut.duration(120)}
+                          layout={reduceMotion ? undefined : LinearTransition.duration(180)}
+                          style={[styles.checkDescription, { borderTopColor: theme.hairline }]}>
                           <ThemedText type="small">{description}</ThemedText>
                           <Pressable accessibilityRole="button" onPress={() => onOpenSubtask(item)} style={styles.checkDetailsAction}>
                             <ThemedText themeColor="accentStrong" type="smallBold">Open details</ThemedText>
                             <PlatformIcon color={theme.accentStrong} name="chevron-right" size={16} />
                           </Pressable>
-                        </View>
+                        </Animated.View>
                       ) : null}
                     </View>
                   );
                 })}
-              </View>
+              </Animated.View>
               {visibleSubtasks.length > 5 ? <Pressable accessibilityRole="button" onPress={() => setChecklistExpanded((current) => !current)} style={styles.textAction}>
                 <ThemedText themeColor="accentStrong" type="smallBold">{checklistExpanded ? 'Show fewer' : `Show all ${visibleSubtasks.length}`}</ThemedText>
               </Pressable> : null}
@@ -249,9 +265,10 @@ export function TaskOverview({
           {onLoadMoreSubtasks || subtasksLoadingMore ? <LoadMoreButton label="checklist items" loading={subtasksLoadingMore} onPress={onLoadMoreSubtasks} /> : null}
           {!readOnly && !detail.task.parentTaskId ? (
             <View style={styles.addSubtask}>
-              <TextInput
+              <ThemedTextInput
                 accessibilityLabel="New checklist item"
                 allowFontScaling
+                maxFontSizeMultiplier={MaxFontScale}
                 keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
                 onChangeText={onSubtaskChange}
                 placeholder="Add a checklist item"
@@ -413,6 +430,7 @@ export function TaskCommentComposer({
   value: string;
 }) {
   const theme = useTheme();
+  const reduceMotion = useReducedMotion();
   const bottomTabBarInset = useBottomTabBarInset();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
   const keyboard = useReanimatedKeyboardAnimation();
@@ -424,7 +442,10 @@ export function TaskCommentComposer({
     .slice(0, 5);
 
   return (
-    <Animated.View style={[styles.composer, keyboardStyle, {
+    <Animated.View
+      entering={reduceMotion ? undefined : FadeInDown.duration(180)}
+      exiting={reduceMotion ? undefined : FadeOut.duration(130)}
+      style={[styles.composer, keyboardStyle, {
       backgroundColor: theme.background,
       borderTopColor: theme.hairline,
       marginBottom: keyboardVisible ? 0 : bottomTabBarInset,
@@ -462,9 +483,10 @@ export function TaskCommentComposer({
         <Pressable accessibilityLabel="Close update editor" accessibilityRole="button" onPress={onCancel} style={styles.composerClose}>
           <PlatformIcon color={theme.textSecondary} name="close" size={18} />
         </Pressable>
-        <TextInput
+        <ThemedTextInput
           accessibilityLabel="Write an update"
           allowFontScaling
+          maxFontSizeMultiplier={MaxFontScale}
           autoFocus
           keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
           multiline
@@ -521,7 +543,7 @@ function TaskSection({
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeading}>
-        <ThemedText type="subtitle">{title}</ThemedText>
+        <ThemedText accessibilityRole="header" type="subtitle">{title}</ThemedText>
         {typeof trailing === 'string'
           ? <ThemedText themeColor="textSecondary" type="captionBold">{trailing}</ThemedText>
           : trailing ? <View style={styles.sectionTrailing}>{trailing}</View> : null}

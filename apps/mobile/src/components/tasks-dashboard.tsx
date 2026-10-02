@@ -10,7 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 export type TaskViewMode = 'board' | 'list';
 
 export function TasksToolbar({ boardName, boardId, boardColorKey, boardIconKey, filterActive, mode, onAttentionPress, onBoardPress, onFilterPress, onModeChange, onSearchPress, projectName, scopeLabel, searchActive, taskCount }: {
-  boardName: string; boardId?: string; boardColorKey?: string | null; boardIconKey?: string | null; filterActive: boolean; mode: TaskViewMode; onAttentionPress: () => void; onBoardPress: () => void; onFilterPress: () => void; onModeChange: (mode: TaskViewMode) => void; onSearchPress: () => void; projectName: string; scopeLabel: 'Channels' | 'Project'; searchActive: boolean; taskCount: number;
+  boardName: string; boardId?: string; boardColorKey?: string | null; boardIconKey?: string | null; filterActive: boolean; mode: TaskViewMode; onAttentionPress: () => void; onBoardPress: () => void; onFilterPress: () => void; onModeChange: (mode: TaskViewMode) => void; onSearchPress: () => void; projectName: string; scopeLabel: 'Channel' | 'Project'; searchActive: boolean; taskCount: number;
 }) {
   const theme = useTheme();
   return <View style={styles.toolbar}>
@@ -19,8 +19,8 @@ export function TasksToolbar({ boardName, boardId, boardColorKey, boardIconKey, 
         {boardId ? <View style={styles.boardMarkWrap}>
           <EntityMark colorKey={boardColorKey} iconKey={boardIconKey} id={boardId} kind="board" name={boardName} size={24} />
         </View> : <PlatformIcon color={theme.accentStrong} name="view-board" size={17} />}
-        <View style={styles.boardCopy}><ThemedText numberOfLines={1} style={styles.boardEyebrow} themeColor="textSecondary" type="captionBold">{scopeLabel}</ThemedText><ThemedText numberOfLines={1} type="smallBold">{boardName}</ThemedText></View>
-        <PlatformIcon color={theme.textTertiary} name="chevron-down" size={15} />
+        <View style={styles.boardCopy}><ThemedText numberOfLines={1} style={styles.boardEyebrow} themeColor="textSecondary" type="captionBold">Current Board</ThemedText><ThemedText numberOfLines={1} type="smallBold">{boardName}</ThemedText><ThemedText numberOfLines={1} themeColor="textTertiary" type="caption">{scopeLabel} · {projectName}</ThemedText></View>
+        <View style={[styles.boardDropdownCircle, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}><PlatformIcon color={theme.textSecondary} name="chevron-down" size={13} /></View>
       </Pressable>
       <View style={styles.toolbarActions}>
         <ToolbarIcon active={false} icon="flag" label="Board attention" onPress={onAttentionPress} />
@@ -29,7 +29,7 @@ export function TasksToolbar({ boardName, boardId, boardColorKey, boardIconKey, 
       </View>
     </View>
     <ScrollView contentContainerStyle={styles.toolbarScrollRow} horizontal showsHorizontalScrollIndicator={false}>
-      <View accessibilityLabel="Task view" accessibilityRole="tablist" style={[styles.viewSwitch, { backgroundColor: theme.homeBackground }]}><ViewToggle count={taskCount} icon="view-board" label="Board" mode="board" onPress={onModeChange} selected={mode === 'board'} /><ViewToggle icon="list" label="List" mode="list" onPress={onModeChange} selected={mode === 'list'} /></View>
+      <View accessibilityLabel="Task view" accessibilityRole="tablist" style={[styles.viewSwitch, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}><ViewToggle count={taskCount} icon="view-board" label="Board" mode="board" onPress={onModeChange} selected={mode === 'board'} /><ViewToggle icon="list" label="List" mode="list" onPress={onModeChange} selected={mode === 'list'} /></View>
     </ScrollView>
   </View>;
 }
@@ -41,14 +41,14 @@ function ToolbarIcon({ active, icon, label, onPress }: { active: boolean; icon: 
 
 function ViewToggle({ count, icon, label, mode, onPress, selected }: { count?: number; icon: 'list' | 'view-board'; label: string; mode: TaskViewMode; onPress: (mode: TaskViewMode) => void; selected: boolean }) {
   const theme = useTheme();
-  return <CompactPillButton accessibilityLabel={count === undefined ? `${label} view` : `${label} view, ${count} ${count === 1 ? 'task' : 'tasks'}`} accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => onPress(mode)} pillStyle={{ alignSelf: 'center', backgroundColor: selected ? theme.backgroundElevated : 'transparent', borderColor: 'transparent', flexGrow: 0, flexShrink: 0, minHeight: 36, maxWidth: '100%' }} pressedPillStyle={{ backgroundColor: theme.homeBackground }} targetStyle={styles.viewToggleTarget}>
-    <PlatformIcon color={selected ? theme.text : theme.textSecondary} name={icon} size={15} />
-    <ThemedText numberOfLines={1} style={styles.viewToggleLabel} themeColor={selected ? 'text' : 'textSecondary'} type="captionBold">{label}</ThemedText>
+  return <CompactPillButton accessibilityLabel={count === undefined ? `${label} view` : `${label} view, ${count} ${count === 1 ? 'task' : 'tasks'}`} accessibilityRole="tab" accessibilityState={{ selected }} onPress={() => onPress(mode)} pillStyle={{ alignSelf: 'center', backgroundColor: selected ? theme.accentSoft : 'transparent', borderColor: selected ? theme.accentStrong : 'transparent', flexGrow: 0, flexShrink: 0, minHeight: 36, maxWidth: '100%' }} pressedPillStyle={{ backgroundColor: theme.backgroundSelected, borderColor: theme.accentStrong }} targetStyle={styles.viewToggleTarget}>
+    <PlatformIcon color={selected ? theme.accentStrong : theme.textSecondary} name={icon} size={15} />
+    <ThemedText numberOfLines={1} style={styles.viewToggleLabel} themeColor={selected ? 'accentStrong' : 'textSecondary'} type="captionBold">{label}</ThemedText>
     {count === undefined ? null : <>
       <View style={[styles.viewCountBadge, { backgroundColor: theme.accentSoft }]}>
         <ThemedText numberOfLines={1} themeColor="accentStrong" type="captionBold">{count > 99 ? '99+' : count}</ThemedText>
       </View>
-      <View style={[styles.viewArrowCircle, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+      <View style={[styles.viewArrowCircle, { backgroundColor: theme.backgroundElevated, borderColor: theme.homeBorder }]}>
         <PlatformIcon color={theme.textSecondary} name="chevron-right" size={12} />
       </View>
     </>}
@@ -101,9 +101,10 @@ export function TaskCreateContext({ boardName, projectName }: { boardName?: stri
 
 const styles = StyleSheet.create({
   boardCopy: { flex: 1, minWidth: 0 },
+  boardDropdownCircle: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: 28, justifyContent: 'center', width: 28 },
   boardEyebrow: Typography.captionBold,
   boardMarkWrap: { alignItems: 'center', height: 26, justifyContent: 'center', position: 'relative', width: 26 },
-  boardSelector: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, flex: 1, flexDirection: 'row', gap: Spacing.two, maxWidth: 250, minHeight: TouchTarget, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
+  boardSelector: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, flex: 1, flexDirection: 'row', gap: Spacing.two, maxWidth: 270, minHeight: 64, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   createContext: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, padding: Spacing.three },
   dismissButton: { alignItems: 'center', justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.two },
   flowCopy: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: Spacing.two, justifyContent: 'space-between', minHeight: 24 },
@@ -125,7 +126,7 @@ const styles = StyleSheet.create({
   toolbarIcon: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, height: TouchTarget, justifyContent: 'center', overflow: 'hidden', width: TouchTarget },
   toolbarLine: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between' },
   toolbarScrollRow: { alignItems: 'center', gap: Spacing.two, minWidth: '100%', paddingVertical: Spacing.half },
-  viewSwitch: { alignSelf: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.pill, flexDirection: 'row', maxWidth: '100%', padding: 2 },
+  viewSwitch: { alignSelf: 'flex-start', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', maxWidth: '100%', padding: 2 },
   viewToggleTarget: { alignSelf: 'center', flexGrow: 0, flexShrink: 0, minHeight: TouchTarget, minWidth: TouchTarget },
   viewToggleLabel: { flexShrink: 1 },
   viewCountBadge: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minWidth: 18, paddingHorizontal: 5, paddingVertical: 2 },

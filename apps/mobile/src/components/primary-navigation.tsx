@@ -248,7 +248,7 @@ function NavigationTab({ active, item, onPress }: {
     android_ripple={isAndroid ? { color: theme.homeBackground } : undefined}
     disabled={item.disabled}
     onPress={() => { hapticLight(); onPress(); }}
-    style={({ pressed }) => [styles.item, { backgroundColor: active ? theme.homeBackground : 'transparent', opacity: item.disabled ? 0.38 : pressed ? 0.9 : 1 }]}
+    style={({ pressed }) => [styles.item, { backgroundColor: 'transparent', opacity: item.disabled ? 0.38 : pressed ? 0.9 : 1 }]}
   >
     <View style={[styles.iconWell, { backgroundColor: active ? 'transparent' : theme.homeSurface, borderColor: active ? 'transparent' : theme.homeBorder }]}>
       <PlatformIcon color={active ? theme.accentStrong : theme.textSecondary} name={item.icon} size={isAndroid ? 24 : IconSize.large + 4} variant={active ? 'filled' : 'outline'} weight={active ? 'semibold' : 'regular'} />

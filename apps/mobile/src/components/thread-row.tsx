@@ -66,7 +66,7 @@ export function ThreadRow({
 }: Props) {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
-  const actionDirection: MessageActionsSwipeDirection = process.env.EXPO_OS === 'android' ? 'right' : 'left';
+  const actionDirection: MessageActionsSwipeDirection = isOwnMessage ? 'left' : 'right';
   const actionDirectionSign = actionDirection === 'right' ? 1 : -1;
   const [actionsExposed, setActionsExposed] = useState(false);
   const actionWidth = useSharedValue(0);
@@ -191,8 +191,8 @@ export function ThreadRow({
 export function DateSeparator({ label }: { label: string }) {
   const theme = useTheme();
   return (
-    <View style={[styles.dateSep, { backgroundColor: theme.background }]}>
-      <View style={[styles.dateSepPill, { backgroundColor: theme.backgroundElement }]}>
+    <View style={[styles.dateSep, { backgroundColor: theme.homeSurface }]}>
+      <View style={[styles.dateSepPill, { backgroundColor: theme.homeSurface }]}>
         <ThemedText themeColor="textSecondary" type="captionBold">
           {label}
         </ThemedText>

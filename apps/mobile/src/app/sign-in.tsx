@@ -8,7 +8,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +24,7 @@ import { hapticLight, hapticMedium } from '@/lib/haptics';
 import { IconButton } from '@/components/icon-button';
 import { SignInHero } from '@/components/sign-in-hero';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { MaxFontScale, Radius, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -225,7 +225,7 @@ export default function SignInScreen() {
                   {emailIntent === 'signUp' ? (
                     <View style={styles.field}>
                       <ThemedText themeColor="textSecondary" type="captionBold">Full name</ThemedText>
-                      <TextInput
+                      <ThemedTextInput
                         accessibilityLabel="Full name"
                         autoCapitalize="words"
                         autoComplete="name"
@@ -245,7 +245,7 @@ export default function SignInScreen() {
                   ) : null}
                   <View style={styles.field}>
                     <ThemedText themeColor="textSecondary" type="captionBold">Email address</ThemedText>
-                    <TextInput
+                    <ThemedTextInput
                       accessibilityLabel="Email address"
                       autoCapitalize="none"
                       autoComplete="email"
@@ -266,7 +266,7 @@ export default function SignInScreen() {
                   <View style={styles.field}>
                     <ThemedText themeColor="textSecondary" type="captionBold">Password</ThemedText>
                     <View style={[styles.passwordField, { backgroundColor: theme.backgroundElement, borderColor: theme.hairline }]}>
-                      <TextInput
+                      <ThemedTextInput
                         accessibilityLabel="Password"
                         autoCapitalize="none"
                         autoComplete={emailIntent === 'signUp' ? 'new-password' : 'current-password'}

@@ -502,3 +502,111 @@
     transition: none;
   }
 }
+
+/* A focused thread keeps the source, reply, and scoped context in one reading
+   hierarchy across Company and standalone Project routes. */
+.track-company-thread-workspace .track-thread-route-header {
+  min-height: 68px;
+  gap: 14px;
+  padding-inline: clamp(16px, 2.6vw, 32px);
+}
+
+.track-company-thread-workspace .track-thread-route-header h1 {
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+
+.track-company-thread-workspace .track-thread-route-header p {
+  font-size: 12px;
+}
+
+.track-thread-back,
+.track-thread-route-actions button {
+  min-height: 44px;
+}
+
+.track-thread-title .mono-label {
+  font-size: 11px;
+}
+
+.track-company-thread-workspace .track-thread-message-list {
+  padding: 12px clamp(16px, 3vw, 36px) 16px;
+}
+
+.track-company-thread-workspace .track-thread-message {
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding-block: 18px;
+}
+
+.track-thread-message-avatar {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  font-size: 11px;
+}
+
+.track-thread-message-content > header strong {
+  font-size: 13px;
+}
+
+.track-thread-message-content > header time {
+  font-size: 11px;
+}
+
+.track-thread-message-content > p,
+.track-thread-message-content .track-message-body,
+.track-thread-message-content .track-assistant-body {
+  max-width: 74ch;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.track-thread-message-content > footer button {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.track-thread-context-rail {
+  background: var(--paper-2);
+}
+
+.track-thread-context-rail > header,
+.track-thread-context-rail > section {
+  padding: 16px;
+}
+
+.track-thread-context-rail h2 {
+  font-size: 15px;
+}
+
+.track-thread-context-rail > header p,
+.track-thread-context-rail section > p {
+  font-size: 12px;
+}
+
+.track-thread-context-rail h3 {
+  font-size: 13px;
+}
+
+.track-thread-context-rail dt,
+.track-thread-context-rail dd,
+.track-thread-source-link {
+  font-size: 12px;
+}
+
+.track-thread-source-link {
+  border-radius: 7px;
+  line-height: 1.55;
+}
+
+@media (max-width: 860px) {
+  .track-company-thread-workspace .track-thread-route-header {
+    min-height: 64px;
+    padding-inline: 16px;
+  }
+
+  .track-thread-route-actions button {
+    min-height: 44px;
+  }
+}

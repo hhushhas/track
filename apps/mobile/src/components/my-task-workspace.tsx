@@ -1,19 +1,21 @@
 import { Stack } from 'expo-router';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { BoardEntry, MyTask, ProjectEntry } from '@/lib/my-task-types';
+import { CompactPillButton } from '@/components/compact-pill-button';
 import { ConversationProjectTabs } from '@/components/conversation-project-tabs';
 import { EmptyState } from '@/components/empty-state';
 import { EntityMark } from '@/components/entity-mark';
 import { OptionsSheet, SheetNote, SheetRow, SheetSection } from '@/components/options-sheet';
 import { PlatformIcon } from '@/components/platform-icon';
 import { SkeletonList } from '@/components/skeleton-row';
-import { TaskCard, TaskPriorityBadge, TaskStateBanner } from '@/components/task-ui';
+import { TaskCard, TaskStateBanner } from '@/components/task-ui';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
-import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 import { useTheme } from '@/hooks/use-theme';
 import { localTaskDate, parseTaskDate } from '@/lib/task-presentation';
@@ -27,11 +29,10 @@ import {
   type MyTaskViewKey,
   uniqueMyTasks,
 } from '@/lib/my-task-work-view';
-import { tasksForMyTaskWeek, weekDateKeys } from '@/lib/task-week';
+import { weekDateKeys } from '@/lib/task-week';
 
 const taskViews: Array<{ key: MyTaskViewKey; label: string }> = [
-  { key: 'today', label: 'Today' },
-  { key: 'upcoming', label: 'Upcoming' },
+  { key: 'this-week', label: 'Due this week' },
   { key: 'all', label: 'All' },
   { key: 'done', label: 'Done' },
 ];
@@ -60,13 +61,15 @@ const dueDateChoices: Array<{ value: MyTaskFilters['dueDate']; label: string }> 
   { value: 'no-date', label: 'No due date' },
 ];
 
+type FilterFieldKey = 'status' | 'priority' | 'dueDate';
+
 type Props = {
   assignedTasks: MyTask[];
   confirmationStateId: string | null;
   confirmationTask: MyTask | null;
   boards: BoardEntry[];
   companyName: string;
-  createProjectPickerSheet: ReactNode;
+  createTaskSheet: ReactNode;
   error?: string;
   hasMoreProjects: boolean;
   isLoading: boolean;
@@ -92,18 +95,18 @@ function countLabel(count: number, partial: boolean) {
   return `${count}${partial ? '+' : ''}`;
 }
 
-function taskGroupLabel(date: string | undefined, today: string) {
+function taskGroupLabel(date: string | undefined, today: string, weekDates: readonly string[]) {
   if (!date) return 'No due date';
   if (date < today) return 'Overdue';
-  if (date === today) return 'Due today';
+  if (weekDates.includes(date)) return 'Due this week';
   const parsed = parseTaskDate(date);
   return parsed?.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) ?? date;
 }
 
-function groupByDueDate(tasks: MyTask[], today: string) {
+function groupByDueDate(tasks: MyTask[], today: string, weekDates: readonly string[]) {
   const groups = new Map<string, MyTask[]>();
   for (const task of sortMyTasks(tasks)) {
-    const label = taskGroupLabel(task.task.dueDate, today);
+    const label = taskGroupLabel(task.task.dueDate, today, weekDates);
     groups.set(label, [...(groups.get(label) ?? []), task]);
   }
   return [...groups.entries()];
@@ -115,7 +118,7 @@ export function MyTaskWorkspace({
   confirmationTask,
   boards,
   companyName,
-  createProjectPickerSheet,
+  createTaskSheet,
   error,
   hasMoreProjects,
   isLoading,
@@ -141,13 +144,12 @@ export function MyTaskWorkspace({
   const bottomContentInset = useBottomTabContentInset();
   const today = localTaskDate();
   const dates = useMemo(() => weekDateKeys(today), [today]);
-  const [view, setView] = useState<MyTaskViewKey>('today');
+  const [view, setView] = useState<MyTaskViewKey>('this-week');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<MyTaskFilters>(emptyMyTaskFilters);
   const [draftFilters, setDraftFilters] = useState<MyTaskFilters>(emptyMyTaskFilters);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [editingFilter, setEditingFilter] = useState<FilterFieldKey | null>(null);
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [canceledExpanded, setCanceledExpanded] = useState(false);
   const [statusTask, setStatusTask] = useState<MyTask | null>(null);
@@ -162,17 +164,13 @@ export function MyTaskWorkspace({
     return projectMatches && scopeRowMatches && filterMatches;
   }), [allTasks, boardById, dates, filters, search, selectedProjectId, today]);
   const visibleTasks = useMemo(() => sortMyTasks(contextualTasks.filter((item) =>
-    matchesMyTaskTimeView(item, view, today, selectedDate),
-  )), [contextualTasks, selectedDate, today, view]);
+    matchesMyTaskTimeView(item, view, today, null, dates),
+  )), [contextualTasks, dates, today, view]);
 
   const partialTasks = allTasks.some((item) => item.hasMoreAssignedTasks);
   const partialCounts = partialTasks || hasMoreProjects;
-  const weekTasks = tasksForMyTaskWeek(contextualTasks, dates);
-  const weekTaskTabs = sortMyTasks(weekTasks).slice(0, 4);
-  const selectedDayTasks = selectedDate ? tasksForMyTaskWeek(contextualTasks, dates, selectedDate) : [];
-  const todayCount = contextualTasks.filter((item) => matchesMyTaskTimeView(item, 'today', today, selectedDate)).length;
-  const upcomingCount = contextualTasks.filter((item) => matchesMyTaskTimeView(item, 'upcoming', today, selectedDate)).length;
-  const doneCount = contextualTasks.filter((item) => matchesMyTaskTimeView(item, 'done', today, selectedDate)).length;
+  const thisWeekCount = contextualTasks.filter((item) => matchesMyTaskTimeView(item, 'this-week', today, null, dates)).length;
+  const doneCount = contextualTasks.filter((item) => matchesMyTaskTimeView(item, 'done', today, null)).length;
   const activeFilterCount = Object.values(filters).filter((value) => value !== 'any').length;
   const matchingBoards = boards.filter(({ board, project }) =>
     (!selectedProjectId || String(project._id) === selectedProjectId)
@@ -184,17 +182,31 @@ export function MyTaskWorkspace({
 
   function openFilters() {
     setDraftFilters(filters);
+    setEditingFilter(null);
     setFilterOpen(true);
   }
 
   function cancelFilters() {
     setDraftFilters(filters);
+    setEditingFilter(null);
     setFilterOpen(false);
   }
 
   function applyFilters() {
     setFilters(draftFilters);
+    setEditingFilter(null);
     setFilterOpen(false);
+  }
+
+  function filterFieldLabel(key: FilterFieldKey) {
+    if (key === 'status') return statusChoices.find(({ value }) => value === draftFilters.status)?.label ?? 'Any status';
+    if (key === 'priority') return priorityChoices.find(({ value }) => value === draftFilters.priority)?.label ?? 'Any priority';
+    return dueDateChoices.find(({ value }) => value === draftFilters.dueDate)?.label ?? 'Any due date';
+  }
+
+  function filterFieldTitle(key: FilterFieldKey) {
+    if (key === 'dueDate') return 'Due date';
+    return key === 'status' ? 'Status' : 'Priority';
   }
 
   function renderTask(task: MyTask) {
@@ -231,19 +243,13 @@ export function MyTaskWorkspace({
   }
 
   function renderRows() {
-    if (view === 'today') {
-      return <>
-        {renderGroup('Overdue', visibleTasks.filter((item) => Boolean(item.task.dueDate && item.task.dueDate < today)))}
-        {renderGroup('Due today', visibleTasks.filter((item) => item.task.dueDate === today))}
-      </>;
-    }
-    if (view === 'upcoming') return groupByDueDate(visibleTasks, today).map(([label, tasks]) => renderGroup(label, tasks));
+    if (view === 'this-week') return renderGroup('Due this week', visibleTasks);
     if (view === 'done') return renderGroup('Completed', visibleTasks);
     const openTasks = visibleTasks.filter((item) => item.state?.category !== 'completed' && item.state?.category !== 'canceled');
     const completedTasks = visibleTasks.filter((item) => item.state?.category === 'completed');
     const canceledTasks = visibleTasks.filter((item) => item.state?.category === 'canceled');
     return <>
-      {groupByDueDate(openTasks, today).map(([label, tasks]) => renderGroup(label, tasks))}
+      {groupByDueDate(openTasks, today, dates).map(([label, tasks]) => renderGroup(label, tasks))}
       {completedTasks.length ? <View style={styles.collapsibleGroup}>
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: completedExpanded }} onPress={() => setCompletedExpanded((value) => !value)} style={styles.collapseButton}>
           <PlatformIcon color={theme.textSecondary} name={completedExpanded ? 'chevron-down' : 'chevron-right'} size={17} />
@@ -266,23 +272,17 @@ export function MyTaskWorkspace({
   const noTasksTitle = search.trim()
     ? 'No matching tasks'
     : activeFilterCount
-      ? 'No tasks match these filters'
-      : view === 'today'
-        ? 'No urgent tasks due today'
-        : view === 'upcoming'
-          ? 'No upcoming tasks'
+    ? 'No tasks match these filters'
+      : view === 'this-week'
+        ? 'Nothing due this week'
           : view === 'done'
             ? 'No completed tasks'
             : 'No assigned tasks';
-  const noTasksBody = selectedDate
-    ? 'No tasks match ' + (parseTaskDate(selectedDate)?.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) ?? selectedDate) + '. Clear the day or choose another one.'
-    : activeFilterCount || search.trim()
-      ? 'Change the search or filters to see more of your assigned work.'
-      : view === 'today'
-        ? 'Urgent overdue and due-today work will appear here.'
-        : view === 'upcoming'
-          ? 'Open tasks with future due dates will appear here.'
-          : 'Tasks assigned to you will appear here.';
+  const noTasksBody = activeFilterCount || search.trim()
+    ? 'Change the search or filters to see more of your assigned work.'
+    : view === 'this-week'
+      ? 'Open tasks due between today and the end of this week will appear here.'
+      : 'Tasks assigned to you will appear here.';
 
   return <ThemedView style={styles.screen}>
     <Stack.Screen options={{ headerShown: false }} />
@@ -333,11 +333,12 @@ export function MyTaskWorkspace({
       <View style={styles.searchFilterRow}>
         <View style={[styles.searchField, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
           <PlatformIcon color={theme.textTertiary} name="search" size={19} />
-          <TextInput
+          <ThemedTextInput
             accessibilityLabel="Search tasks and Boards"
             autoCapitalize="none"
             autoCorrect={false}
             keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'}
+            maxFontSizeMultiplier={MaxFontScale}
             onChangeText={setSearch}
             placeholder="Search tasks and Boards"
             placeholderTextColor={theme.textTertiary}
@@ -350,8 +351,7 @@ export function MyTaskWorkspace({
           </Pressable> : null}
         </View>
         <Pressable accessibilityLabel={activeFilterCount ? `Filters, ${activeFilterCount} active` : 'Filters'} accessibilityRole="button" onPress={openFilters} style={[styles.filterButton, { backgroundColor: activeFilterCount ? theme.accentSoft : theme.backgroundElement, borderColor: activeFilterCount ? theme.accentStrong : theme.homeBorder }]}>
-          <PlatformIcon color={activeFilterCount ? theme.accentStrong : theme.textSecondary} name="filter" size={18} />
-          <ThemedText style={{ color: activeFilterCount ? theme.accentStrong : theme.text }} type="captionBold">Filter</ThemedText>
+          <PlatformIcon color={activeFilterCount ? theme.accentStrong : theme.textSecondary} name="tune" size={20} />
           {activeFilterCount ? <View style={[styles.filterCount, { backgroundColor: theme.accent }]}><ThemedText themeColor="accentInk" type="captionBold">{activeFilterCount}</ThemedText></View> : null}
         </Pressable>
       </View>
@@ -359,62 +359,14 @@ export function MyTaskWorkspace({
       <ScrollView accessibilityLabel="Task time views" contentContainerStyle={styles.viewTabs} horizontal showsHorizontalScrollIndicator={false}>
         {taskViews.map(({ key, label }) => {
           const selected = view === key;
-          const count = key === 'today' ? todayCount : key === 'upcoming' ? upcomingCount : key === 'done' ? doneCount : contextualTasks.length;
-          return <Pressable accessibilityRole="tab" accessibilityState={{ selected }} key={key} onPress={() => setView(key)} style={[styles.viewTab, { backgroundColor: selected ? theme.accentSoft : 'transparent', borderColor: selected ? theme.accentStrong : theme.homeBorder }]}>
+          const count = key === 'this-week' ? thisWeekCount : key === 'done' ? doneCount : contextualTasks.length;
+          return <CompactPillButton accessibilityRole="tab" accessibilityState={{ selected }} key={key} onPress={() => setView(key)} pillStyle={{ backgroundColor: selected ? theme.accentSoft : theme.homeSurface, borderColor: selected ? 'transparent' : theme.homeBorder }} pressedPillStyle={{ backgroundColor: theme.backgroundElevated, borderColor: 'transparent' }}>
             <ThemedText style={{ color: selected ? theme.accentStrong : theme.textSecondary }} type={selected ? 'captionBold' : 'caption'}>{label}</ThemedText>
             <ThemedText style={{ color: selected ? theme.accentStrong : theme.textTertiary }} type="caption">{countLabel(count, partialCounts)}</ThemedText>
-          </Pressable>;
+          </CompactPillButton>;
         })}
       </ScrollView>
 
-      <View style={styles.weekHeading}>
-        <View style={styles.weekHeadingCopy}>
-          <ThemedText accessibilityRole="header" type="subtitle">Due this week</ThemedText>
-          <ThemedText themeColor="textSecondary" type="caption">{countLabel(weekTasks.length, partialCounts)} urgent open {weekTasks.length === 1 ? 'task' : 'tasks'} due this week</ThemedText>
-        </View>
-        <Pressable accessibilityLabel={calendarOpen ? 'Close week calendar' : 'Choose a day this week'} accessibilityRole="button" accessibilityState={{ expanded: calendarOpen }} onPress={() => setCalendarOpen((value) => !value)} style={[styles.calendarToggle, { backgroundColor: calendarOpen ? theme.accentSoft : theme.backgroundElement, borderColor: theme.homeBorder }]}>
-          <PlatformIcon color={calendarOpen ? theme.accentStrong : theme.textSecondary} name={calendarOpen ? 'close' : 'calendar'} size={19} />
-        </Pressable>
-      </View>
-      {weekTaskTabs.length ? <ScrollView accessibilityLabel="Urgent tasks due this week" contentContainerStyle={styles.weekTaskTabs} horizontal showsHorizontalScrollIndicator={false}>
-        {weekTaskTabs.map((task) => <Pressable
-          accessibilityHint="Opens this task"
-          accessibilityLabel={`${task.task.title}, urgent task due this week`}
-          accessibilityRole="button"
-          key={String(task.task._id)}
-          onPress={() => onOpenTask(task)}
-          style={({ pressed }) => [styles.weekTaskTab, { backgroundColor: pressed ? theme.backgroundSelected : 'transparent', borderColor: theme.homeBorder }]}
-        >
-          <TaskPriorityBadge compact priority={task.task.priority} />
-          <ThemedText numberOfLines={1} style={styles.weekTaskTitle} type="captionBold">{task.task.title}</ThemedText>
-          <PlatformIcon color={theme.textSecondary} name="chevron-right" size={16} />
-        </Pressable>)}
-      </ScrollView> : null}
-      {selectedDate ? <View style={styles.selectedDayRow}>
-        <ThemedText themeColor="textSecondary" type="captionBold">{parseTaskDate(selectedDate)?.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) ?? selectedDate} selected</ThemedText>
-        <Pressable accessibilityLabel="Clear selected day" accessibilityRole="button" hitSlop={8} onPress={() => setSelectedDate(null)}>
-          <ThemedText themeColor="accentStrong" type="captionBold">Clear day</ThemedText>
-        </Pressable>
-      </View> : null}
-      {calendarOpen ? <ScrollView accessibilityLabel="Days this week" contentContainerStyle={styles.weekDays} horizontal showsHorizontalScrollIndicator={false}>
-        {dates.map((date) => {
-          const parsed = parseTaskDate(date);
-          if (!parsed) return null;
-          const selected = date === selectedDate;
-          const count = tasksForMyTaskWeek(contextualTasks, dates, date).length;
-          return <Pressable accessibilityLabel={`${parsed.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}, ${count} urgent tasks`} accessibilityRole="button" accessibilityState={{ selected }} key={date} onPress={() => {
-            setSelectedDate(date);
-            if (view === 'today' && date > today) setView('upcoming');
-            if (view === 'upcoming' && date <= today) setView('today');
-          }} style={[styles.weekDay, { backgroundColor: selected ? theme.accentSoft : theme.homeSurface, borderColor: selected ? theme.accentStrong : theme.homeBorder }]}>
-            <ThemedText style={{ color: selected ? theme.accentStrong : theme.textSecondary }} type="captionBold">{parsed.toLocaleDateString(undefined, { weekday: 'short' })}</ThemedText>
-            <ThemedText style={{ color: selected ? theme.accentStrong : theme.text }} type="smallBold">{parsed.getDate()}</ThemedText>
-            <ThemedText style={{ color: selected ? theme.accentStrong : theme.textTertiary }} type="caption">{countLabel(count, partialCounts)}</ThemedText>
-          </Pressable>;
-        })}
-      </ScrollView> : null}
-
-      {selectedDate ? <ThemedText themeColor="textSecondary" type="caption">{countLabel(selectedDayTasks.length, partialCounts)} urgent open {selectedDayTasks.length === 1 ? 'task' : 'tasks'} due on the selected day.</ThemedText> : null}
       {isLoading && !allTasks.length
         ? <SkeletonList count={3} label="Loading assigned tasks" />
         : visibleTasks.length
@@ -442,28 +394,36 @@ export function MyTaskWorkspace({
                 {unreadCount > 0 ? <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.boardUnreadBadge, { backgroundColor: theme.accent, borderColor: theme.homeSurface }]}><ThemedText style={styles.boardUnreadCount} themeColor="accentInk" type="captionBold">{unreadCount > 99 ? '99+' : unreadCount}</ThemedText></View> : null}
               </View>
               <View style={styles.boardCopy}><ThemedText numberOfLines={1} type="smallBold">{item.board.name}</ThemedText><ThemedText numberOfLines={1} themeColor="textSecondary" type="caption">{item.project.name}</ThemedText></View>
-              <PlatformIcon color={theme.textTertiary} name="chevron-right" size={18} />
+              <View style={[styles.boardArrow, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}><PlatformIcon color={theme.textSecondary} name="chevron-right" size={16} /></View>
             </Pressable>;
           })}
       </View>
     </ScrollView>
 
     <OptionsSheet onClose={cancelFilters} title="Filter tasks" visible={filterOpen}>
-      <SheetNote>Choose status, priority, and due date, then apply them to your task list.</SheetNote>
-      <SheetSection title="Status">
-        {statusChoices.map(({ value, label }) => <SheetRow accessibilityRole="radio" icon="check-circle" key={value} label={label} selected={draftFilters.status === value} onPress={() => setDraftFilters((current) => ({ ...current, status: value }))} />)}
-      </SheetSection>
-      <SheetSection title="Priority">
-        {priorityChoices.map(({ value, label }) => <SheetRow accessibilityRole="radio" icon="flag" key={value} label={label} selected={draftFilters.priority === value} onPress={() => setDraftFilters((current) => ({ ...current, priority: value }))} />)}
-      </SheetSection>
-      <SheetSection title="Due date">
-        {dueDateChoices.map(({ value, label }) => <SheetRow accessibilityRole="radio" icon="calendar" key={value} label={label} selected={draftFilters.dueDate === value} onPress={() => setDraftFilters((current) => ({ ...current, dueDate: value }))} />)}
-      </SheetSection>
-      <View style={styles.filterActions}>
+      <SheetNote>Choose values for the three filters, then apply them to your task list.</SheetNote>
+      {editingFilter ? <>
+        <Pressable accessibilityRole="button" onPress={() => setEditingFilter(null)} style={styles.filterBack}>
+          <PlatformIcon color={theme.textSecondary} name="chevron-left" size={18} />
+          <ThemedText themeColor="textSecondary" type="captionBold">All filters</ThemedText>
+        </Pressable>
+        <SheetSection title={filterFieldTitle(editingFilter)}>
+          {(editingFilter === 'status' ? statusChoices : editingFilter === 'priority' ? priorityChoices : dueDateChoices).map(({ value, label }) => <SheetRow accessibilityRole="radio" icon={editingFilter === 'status' ? 'check-circle' : editingFilter === 'priority' ? 'flag' : 'calendar'} key={value} label={label} selected={draftFilters[editingFilter] === value} onPress={() => {
+            setDraftFilters((current) => ({ ...current, [editingFilter]: value }));
+            setEditingFilter(null);
+          }} />)}
+        </SheetSection>
+      </> : <View style={styles.filterFields}>
+        {(['status', 'priority', 'dueDate'] as const).map((key) => <Pressable accessibilityLabel={`${filterFieldTitle(key)}: ${filterFieldLabel(key)}`} accessibilityRole="button" key={key} onPress={() => setEditingFilter(key)} style={[styles.filterField, { backgroundColor: theme.homeSurface, borderColor: theme.homeBorder }]}>
+          <View style={styles.filterFieldCopy}><ThemedText themeColor="textSecondary" type="caption">{filterFieldTitle(key)}</ThemedText><ThemedText numberOfLines={1} type="smallBold">{filterFieldLabel(key)}</ThemedText></View>
+          <PlatformIcon color={theme.textTertiary} name="chevron-down" size={17} />
+        </Pressable>)}
+      </View>}
+      {!editingFilter ? <View style={styles.filterActions}>
         <Pressable accessibilityRole="button" onPress={() => setDraftFilters(emptyMyTaskFilters)} style={[styles.filterSecondary, { borderColor: theme.homeBorder }]}><ThemedText themeColor="textSecondary" type="captionBold">Clear choices</ThemedText></Pressable>
         <Pressable accessibilityRole="button" onPress={cancelFilters} style={[styles.filterSecondary, { borderColor: theme.homeBorder }]}><ThemedText themeColor="textSecondary" type="captionBold">Cancel</ThemedText></Pressable>
         <Pressable accessibilityRole="button" onPress={applyFilters} style={[styles.filterApply, { backgroundColor: theme.accent }]}><ThemedText themeColor="accentInk" type="captionBold">Apply filters</ThemedText></Pressable>
-      </View>
+      </View> : null}
     </OptionsSheet>
 
     <OptionsSheet onClose={() => setStatusTask(null)} title={statusTask ? `Status: ${statusTask.task.title}` : 'Change task status'} visible={Boolean(statusTask)}>
@@ -486,7 +446,7 @@ export function MyTaskWorkspace({
         <Pressable accessibilityRole="button" onPress={onConfirmTaskStatus} style={[styles.filterApply, { backgroundColor: theme.accent }]}><ThemedText themeColor="accentInk" type="captionBold">{confirmationState?.category === 'completed' ? 'Complete anyway' : 'Move anyway'}</ThemedText></Pressable>
       </View>
     </OptionsSheet>
-    {createProjectPickerSheet}
+    {createTaskSheet}
   </ThemedView>;
 }
 
@@ -501,19 +461,9 @@ const styles = StyleSheet.create({
   searchField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   searchInput: { ...Typography.body, flex: 1, minWidth: 0, paddingVertical: Spacing.two },
   searchClear: { alignItems: 'center', borderRadius: Radius.pill, height: 32, justifyContent: 'center', width: 32 },
-  filterButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget, paddingHorizontal: Spacing.two },
-  filterCount: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minHeight: 20, minWidth: 20, paddingHorizontal: Spacing.one },
+  filterButton: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, height: TouchTarget, justifyContent: 'center', position: 'relative', width: TouchTarget },
+  filterCount: { alignItems: 'center', borderRadius: Radius.pill, justifyContent: 'center', minHeight: 20, minWidth: 20, paddingHorizontal: Spacing.one, position: 'absolute', right: -5, top: -5 },
   viewTabs: { alignItems: 'center', gap: Spacing.one, paddingRight: Spacing.four },
-  viewTab: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.one, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  weekHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
-  weekHeadingCopy: { flex: 1, gap: Spacing.half },
-  weekTaskTabs: { flexDirection: 'row', gap: Spacing.two, paddingRight: Spacing.two },
-  weekTaskTab: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, maxWidth: 280, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
-  weekTaskTitle: { flexShrink: 1, minWidth: 0 },
-  calendarToggle: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
-  selectedDayRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: TouchTarget },
-  weekDays: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
-  weekDay: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.large, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.half, justifyContent: 'center', minHeight: 80, minWidth: 70, paddingHorizontal: Spacing.two },
   taskFeed: { gap: Spacing.three },
   taskGroup: { gap: Spacing.one },
   taskGroupHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', minHeight: 32 },
@@ -527,9 +477,14 @@ const styles = StyleSheet.create({
   boardRow: { alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: 64, paddingHorizontal: Spacing.one, paddingVertical: Spacing.two },
   boardMarkWrap: { height: 38, position: 'relative', width: 38 },
   boardCopy: { flex: 1, gap: 2, minWidth: 0 },
+  boardArrow: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   boardUnreadBadge: { alignItems: 'center', borderRadius: Radius.pill, borderWidth: 1.5, justifyContent: 'center', minHeight: 24, minWidth: 24, paddingHorizontal: 3, paddingVertical: 2, position: 'absolute', right: -4, top: -4 },
   boardUnreadCount: Typography.captionBold,
   filterActions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  filterBack: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: Spacing.one, minHeight: TouchTarget },
+  filterFields: { gap: Spacing.two },
+  filterField: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.two, minHeight: TouchTarget, paddingHorizontal: Spacing.three },
+  filterFieldCopy: { flex: 1, gap: Spacing.half, minWidth: 0 },
   filterSecondary: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, borderWidth: StyleSheet.hairlineWidth, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
   filterApply: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.medium, flex: 1, justifyContent: 'center', minHeight: TouchTarget, paddingHorizontal: Spacing.three },
 });

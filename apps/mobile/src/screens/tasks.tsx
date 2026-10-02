@@ -138,8 +138,6 @@ export default function TasksScreen() {
     projectId: project,
     ...queryIdentity,
   } : 'skip') as AssigneeView[] | undefined;
-  const currentMemberId = identity?.membershipId
-    ?? assignees?.find((item) => item.user._id === currentUser?._id)?.member._id;
   const [tab, setTab] = useState<TaskTab>(tabParam === 'inbox' ? 'inbox' : 'board');
   const [boardId, setBoardId] = useState<string>(routeBoardId ?? '');
   const selectedBoard = boards?.find((item) => item.board._id === boardId)
@@ -208,7 +206,8 @@ export default function TasksScreen() {
   const linkSuggestion = useMutation(api.taskSuggestions.linkToExisting);
   const updateBoardMark = useMutation(api.taskBoards.update);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createProjectPickerOpen, setCreateProjectPickerOpen] = useState(false);
+  const [createProjectDropdownOpen, setCreateProjectDropdownOpen] = useState(false);
+  const [selectedCreateProjectId, setSelectedCreateProjectId] = useState<Id<'projects'> | null>(null);
   const [boardOpen, setBoardOpen] = useState(false);
   const [boardMarkTarget, setBoardMarkTarget] = useState<MobileBoardView | null>(null);
   const [boardMarkIconKey, setBoardMarkIconKey] = useState<EntityMarkIconKey | ''>('');
@@ -236,6 +235,10 @@ export default function TasksScreen() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [createPicker, setCreatePicker] = useState<CreatePicker>(null);
   const [viewMode, setViewMode] = useState<TaskViewMode>(viewParam === 'list' ? 'list' : 'board');
+
+  useEffect(() => {
+    setSelectedCreateProjectId(null);
+  }, [actingCompanyId]);
 
   useEffect(() => {
     if (!boardMarkTarget) return;
@@ -266,10 +269,11 @@ export default function TasksScreen() {
 
   useLayoutEffect(() => {
     if (createParam !== '1') {
-      setCreateProjectPickerOpen(false);
+      setCreateProjectDropdownOpen(false);
       return;
     }
-    setCreateProjectPickerOpen(!projectId);
+    setCreateOpen(true);
+    setCreateProjectDropdownOpen(false);
   }, [createParam, projectId]);
 
   useFocusEffect(useCallback(() => {
@@ -279,7 +283,8 @@ export default function TasksScreen() {
         setDueDate(createDueDate ?? null);
         setCreateOpen(true);
       } else {
-        setCreateProjectPickerOpen(true);
+        setCreateProjectDropdownOpen(false);
+        setCreateOpen(true);
       }
     });
     if (!projectId) {
@@ -315,18 +320,43 @@ export default function TasksScreen() {
   useEffect(() => {
     if (createParam !== '1' || projectId || projectDirectoryPages.status !== 'Exhausted' || projectDirectory.length !== 1) return;
     const onlyProject = projectDirectory[0];
-    if (onlyProject) openCreateForProject(onlyProject);
+    if (onlyProject) selectCreateProject(onlyProject);
   }, [createParam, projectDirectory, projectDirectoryPages.status, projectId]);
 
-  const selectedCreateBoard = boards?.find((item) => item.board._id === createBoardId)
-    ?? selectedBoard;
-  const createAssignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && projectId && !readOnly
-    && selectedCreateBoard ? {
-    projectId: project,
-    groupId: selectedCreateBoard.board.groupId,
-    ...queryIdentity,
+  const selectedCreateProject = projectId
+    ? undefined
+    : projectDirectory.find((item) => item.project._id === selectedCreateProjectId);
+  const createScopeProjectId = projectId ? project : selectedCreateProject?.project._id;
+  const createScopeIdentity: MobileTaskIdentity | null = projectId
+    ? identity
+    : selectedCreateProject?.membership.companyId
+      ? {
+        companyId: selectedCreateProject.membership.companyId,
+        membershipId: selectedCreateProject.membership._id,
+      }
+      : null;
+  const createScopeQueryIdentity = createScopeIdentity ? {
+    actingCompanyId: createScopeIdentity.companyId,
+    projectMemberId: createScopeIdentity.membershipId,
+  } : {};
+  const availableCreateBoards = projectId
+    ? boards
+    : globalBoards?.filter((item) => item.project._id === createScopeProjectId)
+      .map(({ board, states, canManageMark }) => ({ board, states, canManageMark }));
+  const selectedCreateBoard = availableCreateBoards?.find((item) => item.board._id === createBoardId)
+    ?? (projectId ? selectedBoard : undefined)
+    ?? availableCreateBoards?.find((item) => !item.board.groupId && item.board.isDefault)
+    ?? availableCreateBoards?.find((item) => item.board.isDefault)
+    ?? availableCreateBoards?.[0];
+  const createBoardsLoading = Boolean(createScopeProjectId && (projectId ? boards === undefined : globalBoards === undefined));
+  const createAssignees = useQuery(api.tasks.listEligibleAssignees, release.tasks && createScopeProjectId && !readOnly ? {
+    projectId: createScopeProjectId,
+    groupId: selectedCreateBoard?.board.groupId,
+    ...createScopeQueryIdentity,
   } : 'skip') as AssigneeView[] | undefined;
-  const currentMember = assignees?.find((item) => item.member._id === currentMemberId);
+  const currentMemberId = createScopeIdentity?.membershipId
+    ?? createAssignees?.find((item) => item.user._id === currentUser?._id)?.member._id;
+  const currentMember = createAssignees?.find((item) => item.member._id === currentMemberId);
   const canAssignOthers = currentMember
     ? ['owner', 'admin', 'staff', 'manager'].includes(currentMember.member.role)
     : false;
@@ -339,44 +369,20 @@ export default function TasksScreen() {
 
   function closeCreateSheet() {
     setCreatePicker(null);
+    setCreateProjectDropdownOpen(false);
     setCreateOpen(false);
+    setSelectedCreateProjectId(null);
     if (createParam) router.setParams({ create: undefined, dueDate: undefined });
   }
 
-  function closeCreateProjectPicker() {
-    setCreateProjectPickerOpen(false);
-    router.setParams({ create: undefined });
+  function selectCreateProject(item: NonNullable<typeof projectDirectory[number]>) {
+    setSelectedCreateProjectId(item.project._id);
+    setCreateProjectDropdownOpen(false);
+    setCreateBoardId('');
+    setCreateWorkflowStateId('');
+    setAssigneeId('');
+    setError('');
   }
-
-  function openCreateForProject(item: NonNullable<typeof projectDirectory[number]>) {
-    const projectIdentity: MobileTaskIdentity | null = item.membership.companyId ? {
-      archived: item.membership.status === 'archived',
-      companyId: item.membership.companyId,
-      membershipId: item.membership._id,
-    } : null;
-    setCreateProjectPickerOpen(false);
-    router.replace(taskListHref(item.project._id, projectIdentity, undefined, undefined, { create: true }) as never);
-  }
-
-  const createProjectPickerSheet = (
-    <OptionsSheet onClose={closeCreateProjectPicker} title="Choose a Project" visible={createProjectPickerOpen}>
-      <SheetNote>Tasks belong to a Project. Choose where this task should live.</SheetNote>
-      <SheetSection title={actingCompany?.company?.displayName ?? 'Accessible Projects'}>
-        {projectDirectory.map((item) => (
-          <SheetRow
-            detail={item.membership.role ?? undefined}
-            icon="project"
-            key={item.project._id}
-            label={item.project.name}
-            onPress={() => openCreateForProject(item)}
-          />
-        ))}
-        {projectDirectoryPages.status === 'LoadingFirstPage' ? <SkeletonList count={3} label="Loading Projects" /> : null}
-        {projectDirectoryPages.status === 'CanLoadMore' ? <SheetRow icon="chevron-down" label="Load more Projects" onPress={() => projectDirectoryPages.loadMore(30)} /> : null}
-        {projectDirectoryPages.status === 'Exhausted' && projectDirectory.length === 0 ? <EmptyState icon="project" title="No accessible Projects" body="Join a Project before creating a task." /> : null}
-      </SheetSection>
-    </OptionsSheet>
-  );
 
   useEffect(() => {
     if (!createOpen || !selectedCreateBoard) return;
@@ -514,14 +520,14 @@ export default function TasksScreen() {
   }
 
   async function create() {
-    if (!title.trim()) return;
+    if (!title.trim() || !createScopeProjectId || createBoardsLoading) return;
     setBusy(true);
     setError('');
     try {
       const taskInput = {
-        projectId: project,
+        projectId: createScopeProjectId,
         boardId: selectedCreateBoard?.board._id,
-        groupId: routeGroupId as Id<'groups'> | undefined,
+        groupId: selectedCreateBoard?.board.groupId,
         workflowStateId: createWorkflowStateId
           ? createWorkflowStateId as Id<'taskWorkflowStates'>
           : undefined,
@@ -533,7 +539,7 @@ export default function TasksScreen() {
           ? selectedCreateAssigneeId as Id<'projectMembers'>
           : undefined,
         idempotencyKey: `${Date.now()}-${Math.random()}`,
-        ...queryIdentity,
+        ...createScopeQueryIdentity,
       };
       if (offline && trackUserId) {
         await enqueueOfflineTask(trackUserId, taskInput);
@@ -559,7 +565,7 @@ export default function TasksScreen() {
       setPriority('none');
       setDueDate(null);
       setAssigneeId('');
-      router.push(taskDetailHref(project, result.publicKey, identity));
+      router.push(taskDetailHref(createScopeProjectId, result.publicKey, createScopeIdentity));
     } catch (failure) {
       setError(readableError(failure));
     } finally {
@@ -602,6 +608,88 @@ export default function TasksScreen() {
     }));
   }
 
+  const createTaskSheet = (
+    <OptionsSheet
+      onClose={closeCreateSheet}
+      title={createPicker ? `Choose ${createPicker}` : 'Create task'}
+      visible={createOpen}>
+      {createPicker ? (
+        <>
+          <SheetSection><SheetRow icon="chevron-left" label="Back to task" onPress={() => setCreatePicker(null)} /></SheetSection>
+          {createPicker === 'board' ? <SheetSection title="Board">
+            {availableCreateBoards?.map((item) => <SheetRow leading={<EntityMark colorKey={item.board.markColorKey} iconKey={item.board.markIconKey} id={String(item.board._id)} kind="board" name={item.board.name} size={36} />} key={item.board._id} label={item.board.name} selected={item.board._id === selectedCreateBoard?.board._id} onPress={() => {
+              setCreateBoardId(item.board._id);
+              setCreateWorkflowStateId(resolveWorkflowStateId(item.states));
+              setCreatePicker(null);
+            }} />)}
+          </SheetSection> : null}
+          {createPicker === 'status' ? <SheetSection title="Status">
+            {selectedCreateBoard?.states.map((state) => <SheetRow icon={state.category === 'completed' ? 'check-circle' : 'circle-outline'} key={state._id} label={state.name} selected={createWorkflowStateId === state._id} onPress={() => { setCreateWorkflowStateId(state._id); setCreatePicker(null); }} />)}
+            {availableCreateBoards && (!selectedCreateBoard || selectedCreateBoard.states.length === 0) ? <SheetNote>No active statuses are available for this board.</SheetNote> : null}
+          </SheetSection> : null}
+          {createPicker === 'priority' ? <SheetSection title="Priority">
+            {priorities.map((value) => <SheetRow icon="flag" key={value} label={taskPriorityLabel(value)} selected={priority === value} onPress={() => { setPriority(value); setCreatePicker(null); }} />)}
+          </SheetSection> : null}
+          {createPicker === 'assignee' ? <SheetSection title="Assignee">
+            <SheetRow icon="person" label="Unassigned" selected={!selectedCreateAssigneeId} onPress={() => { setAssigneeId(''); setCreatePicker(null); }} />
+            {assignableCreateAssignees?.map((item) => <SheetRow icon="person" key={item.member._id} label={[item.user.displayName, item.company?.displayName].filter(Boolean).join(' ')} selected={selectedCreateAssigneeId === item.member._id} onPress={() => { setAssigneeId(item.member._id); setCreatePicker(null); }} />)}
+          </SheetSection> : null}
+        </>
+      ) : (
+        <>
+          {projectId ? <TaskCreateContext
+            boardName={selectedCreateBoard?.board.name}
+            projectName={projectNavigation?.available && projectNavigation.project
+              ? projectNavigation.project.name
+              : 'Project'}
+          /> : <>
+            <SheetFieldButton
+              expanded={createProjectDropdownOpen}
+              icon="project"
+              label="Project"
+              onPress={() => setCreateProjectDropdownOpen((open) => !open)}
+              placeholder="Choose a Project"
+              value={selectedCreateProject?.project.name}
+            />
+            {createProjectDropdownOpen ? <SheetSection title={actingCompany?.company?.displayName ?? 'Accessible Projects'}>
+              {projectDirectory.map((item) => (
+                <SheetRow
+                  detail={item.membership.role ?? undefined}
+                  key={item.project._id}
+                  label={item.project.name}
+                  leading={<EntityMark colorKey={item.project.markColorKey} iconKey={item.project.markIconKey} id={String(item.project._id)} kind="project" name={item.project.name} size={36} />}
+                  onPress={() => selectCreateProject(item)}
+                />
+              ))}
+              {projectDirectoryPages.status === 'LoadingFirstPage' ? <SkeletonList count={3} label="Loading Projects" /> : null}
+              {projectDirectoryPages.status === 'LoadingMore' ? <SheetNote>Loading more Projects…</SheetNote> : null}
+              {projectDirectoryPages.status === 'CanLoadMore' ? <SheetRow icon="chevron-down" label="Load more Projects" onPress={() => projectDirectoryPages.loadMore(30)} /> : null}
+              {projectDirectoryPages.status === 'Exhausted' && projectDirectory.length === 0 ? <EmptyState icon="project" title="No accessible Projects" body="Join a Project before creating a task." /> : null}
+            </SheetSection> : null}
+          </>}
+          {!createScopeProjectId ? <SheetNote>Choose a Project to set task access and choose a Board.</SheetNote> : null}
+          {createScopeProjectId ? <SheetInput label="Task title" maxLength={180} onChangeText={setTitle} value={title} /> : null}
+          {createScopeProjectId ? <View style={[styles.fieldGrid, stackCreateFields && styles.fieldGridLarge]}>
+            <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}><DateField onChange={setDueDate} value={dueDate} /></View>
+            <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}>
+              <SheetFieldButton icon="person" label="Assignee" onClear={selectedCreateAssigneeId ? () => setAssigneeId('') : undefined} onPress={() => setCreatePicker('assignee')} placeholder="Unassigned" value={assignableCreateAssignees?.find((item) => item.member._id === selectedCreateAssigneeId)?.user.displayName} />
+            </View>
+            <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}>
+              <SheetFieldButton icon="circle-outline" label="Status" onPress={() => setCreatePicker('status')} value={selectedCreateBoard?.states.find((state) => state._id === createWorkflowStateId)?.name} />
+            </View>
+            <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}>
+              <SheetFieldButton icon="flag" label="Priority" onPress={() => setCreatePicker('priority')} value={taskPriorityLabel(priority)} />
+            </View>
+          </View> : null}
+          {createScopeProjectId ? <SheetInput label="Description (optional)" maxLength={4000} multiline onChangeText={setDescription} value={description} /> : null}
+          {createScopeProjectId && availableCreateBoards && availableCreateBoards.length > 1 ? <SheetFieldButton icon="view-board" label="Board" onPress={() => setCreatePicker('board')} value={selectedCreateBoard?.board.name} /> : null}
+          {error ? <ThemedText themeColor="danger" type="small">{error}</ThemedText> : null}
+          {createScopeProjectId ? <TaskAction disabled={createBoardsLoading || busy || !title.trim()} label={busy ? 'Creating...' : 'Create task'} onPress={() => void create()} primary /> : null}
+        </>
+      )}
+    </OptionsSheet>
+  );
+
   if (!release.tasks) {
     return (
       <ThemedView style={styles.screen}>
@@ -626,7 +714,7 @@ export default function TasksScreen() {
         boards={companyBoards}
         boardsLoading={globalBoards === undefined}
         companyName={actingCompany?.company?.displayName ?? 'All Companies'}
-        createProjectPickerSheet={createProjectPickerSheet}
+        createTaskSheet={createTaskSheet}
         error={error}
         hasMoreProjects={hasMoreProjects}
         isLoading={assignedTaskPages.status === 'LoadingFirstPage'}
@@ -684,7 +772,7 @@ export default function TasksScreen() {
             projectName={projectNavigation?.available && projectNavigation.project
               ? projectNavigation.project.name
               : 'Project tasks'}
-            scopeLabel={selectedBoard?.board.groupId ? 'Channels' : 'Project'}
+            scopeLabel={selectedBoard?.board.groupId ? 'Channel' : 'Project'}
             searchActive={Boolean(boardSearch)}
             taskCount={visibleTaskCount}
           />
@@ -851,62 +939,7 @@ export default function TasksScreen() {
         </SheetSection>}
       </OptionsSheet>
 
-      {createProjectPickerSheet}
-
-      <OptionsSheet
-        onClose={closeCreateSheet}
-        title={createPicker ? `Choose ${createPicker}` : 'New task'}
-        visible={createOpen}>
-        {createPicker ? (
-          <>
-            <SheetSection><SheetRow icon="chevron-left" label="Back to task" onPress={() => setCreatePicker(null)} /></SheetSection>
-            {createPicker === 'board' ? <SheetSection title="Board">
-              {boards?.map((item) => <SheetRow leading={<EntityMark colorKey={item.board.markColorKey} iconKey={item.board.markIconKey} id={String(item.board._id)} kind="board" name={item.board.name} size={36} />} key={item.board._id} label={item.board.name} selected={item.board._id === selectedCreateBoard?.board._id} onPress={() => {
-                setCreateBoardId(item.board._id);
-                setCreateWorkflowStateId(resolveWorkflowStateId(item.states));
-                setCreatePicker(null);
-              }} />)}
-            </SheetSection> : null}
-            {createPicker === 'status' ? <SheetSection title="Status">
-              {selectedCreateBoard?.states.map((state) => <SheetRow icon={state.category === 'completed' ? 'check-circle' : 'circle-outline'} key={state._id} label={state.name} selected={createWorkflowStateId === state._id} onPress={() => { setCreateWorkflowStateId(state._id); setCreatePicker(null); }} />)}
-              {boards && (!selectedCreateBoard || selectedCreateBoard.states.length === 0) ? <SheetNote>No active statuses are available for this board.</SheetNote> : null}
-            </SheetSection> : null}
-            {createPicker === 'priority' ? <SheetSection title="Priority">
-              {priorities.map((value) => <SheetRow icon="flag" key={value} label={taskPriorityLabel(value)} selected={priority === value} onPress={() => { setPriority(value); setCreatePicker(null); }} />)}
-            </SheetSection> : null}
-            {createPicker === 'assignee' ? <SheetSection title="Assignee">
-              <SheetRow icon="person" label="Unassigned" selected={!selectedCreateAssigneeId} onPress={() => { setAssigneeId(''); setCreatePicker(null); }} />
-              {assignableCreateAssignees?.map((item) => <SheetRow icon="person" key={item.member._id} label={[item.user.displayName, item.company?.displayName].filter(Boolean).join(' ')} selected={selectedCreateAssigneeId === item.member._id} onPress={() => { setAssigneeId(item.member._id); setCreatePicker(null); }} />)}
-            </SheetSection> : null}
-          </>
-        ) : (
-          <>
-            <TaskCreateContext
-              boardName={selectedCreateBoard?.board.name}
-              projectName={projectNavigation?.available && projectNavigation.project
-                ? projectNavigation.project.name
-                : 'Project'}
-            />
-            <SheetInput label="Task title" maxLength={180} onChangeText={setTitle} value={title} />
-            <View style={[styles.fieldGrid, stackCreateFields && styles.fieldGridLarge]}>
-              <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}><DateField onChange={setDueDate} value={dueDate} /></View>
-              <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}>
-                <SheetFieldButton icon="person" label="Assignee" onClear={selectedCreateAssigneeId ? () => setAssigneeId('') : undefined} onPress={() => setCreatePicker('assignee')} placeholder="Unassigned" value={assignableCreateAssignees?.find((item) => item.member._id === selectedCreateAssigneeId)?.user.displayName} />
-              </View>
-              <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}>
-                <SheetFieldButton icon="circle-outline" label="Status" onPress={() => setCreatePicker('status')} value={selectedCreateBoard?.states.find((state) => state._id === createWorkflowStateId)?.name} />
-              </View>
-              <View style={[styles.fieldCell, stackCreateFields && styles.fieldCellStacked]}>
-                <SheetFieldButton icon="flag" label="Priority" onPress={() => setCreatePicker('priority')} value={taskPriorityLabel(priority)} />
-              </View>
-            </View>
-            <SheetInput label="Description (optional)" maxLength={4000} multiline onChangeText={setDescription} value={description} />
-            {boards && boards.length > 1 ? <SheetFieldButton icon="view-board" label="Board" onPress={() => setCreatePicker('board')} value={selectedCreateBoard?.board.name} /> : null}
-            {error ? <ThemedText themeColor="danger" type="small">{error}</ThemedText> : null}
-            <TaskAction disabled={busy || !title.trim()} label={busy ? 'Creating...' : 'Create task'} onPress={() => void create()} primary />
-          </>
-        )}
-      </OptionsSheet>
+      {createTaskSheet}
 
       <OptionsSheet onClose={() => setSearchOpen(false)} title="Search tasks" visible={searchOpen}>
         <SheetInput label="Search" maxLength={200} onChangeText={setBoardSearch} placeholder="Search by title or description" value={boardSearch} />

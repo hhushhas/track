@@ -1,6 +1,6 @@
 import { useMutation, usePaginatedQuery } from 'convex/react';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,6 +16,7 @@ import { OptionsSheet, SheetRow, SheetSection } from '@/components/options-sheet
 import { PlatformIcon } from '@/components/platform-icon';
 import { ScreenLoading } from '@/components/screen-loading';
 import { ThemedText } from '@/components/themed-text';
+import { ThemedTextInput } from '@/components/themed-text-input';
 import { ThemedView } from '@/components/themed-view';
 import { useTrackUser } from '@/contexts/track-user-context';
 import { useTheme } from '@/hooks/use-theme';
@@ -25,7 +26,7 @@ import { uniqueAttentionIdentities } from '@/lib/mobile-attention';
 import { taskDetailHref, taskListHref, type MobileTaskIdentity } from '@/lib/task-navigation';
 import { threadConversationHref } from '@/lib/thread-navigation';
 import { sortInboxItems } from '@/lib/inbox-feed';
-import { Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { MaxFontScale, Radius, Spacing, TouchTarget, Typography } from '@/constants/theme';
 import { useBottomTabContentInset } from '@/hooks/use-bottom-tab-inset';
 
 type AttentionItem = {
@@ -253,12 +254,12 @@ export default function InboxScreen() {
           ListHeaderComponent={
             <View style={styles.header}>
               <View style={styles.intro}>
-                <View style={styles.titleLine}><ThemedText accessibilityRole="header" type="display">Inbox</ThemedText><IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} /></View>
+                <View style={styles.titleLine}><ThemedText accessibilityRole="header" numberOfLines={1} style={styles.title} type="display">Inbox</ThemedText><IconButton accessibilityLabel="Notification settings" icon="bell-outline" onPress={() => router.push('/notifications')} /></View>
                 <ThemedText themeColor="textSecondary" type="small">Updates across your work</ThemedText>
               </View>
               <View style={[styles.search, { backgroundColor: theme.backgroundElement, borderColor: theme.homeBorder }]}>
                 <PlatformIcon color={theme.textTertiary} name="search" size={19} />
-                <TextInput accessibilityLabel="Search inbox" autoCapitalize="none" autoCorrect={false} keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} onChangeText={setSearch} placeholder="Search updates" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
+                <ThemedTextInput accessibilityLabel="Search inbox" autoCapitalize="none" autoCorrect={false} keyboardAppearance={theme.background === '#1b1917' ? 'dark' : 'light'} maxLength={120} maxFontSizeMultiplier={MaxFontScale} onChangeText={setSearch} placeholder="Search updates" placeholderTextColor={theme.textTertiary} returnKeyType="search" style={[styles.searchInput, { color: theme.text }]} value={search} />
                 {search ? <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.clearSearch}><PlatformIcon color={theme.textSecondary} name="close" size={18} /></Pressable> : null}
               </View>
               <ScrollView accessibilityLabel="Inbox filters" accessibilityRole="tablist" contentContainerStyle={styles.filters} horizontal showsHorizontalScrollIndicator={false}>
@@ -460,5 +461,6 @@ const styles = StyleSheet.create({
   clearSearch: { alignItems: 'center', height: TouchTarget, justifyContent: 'center', width: TouchTarget },
   sourceMeta: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, minWidth: 0 },
   sourcePill: { alignItems: 'center', borderCurve: 'continuous', borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', flexShrink: 0, gap: 4, minHeight: 24, paddingHorizontal: Spacing.two, paddingVertical: 3 },
-  titleLine: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  title: { flex: 1, minWidth: 0 },
+  titleLine: { alignItems: 'center', flexDirection: 'row', flexWrap: 'nowrap', justifyContent: 'space-between', width: '100%' },
 });

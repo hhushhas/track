@@ -3,13 +3,7 @@ packages:
   - packages/*
 
 nodeLinker: hoisted
-
-onlyBuiltDependencies:
-  - esbuild
-  - lightningcss
-  - msw
-  - sharp
-  - workerd
+verifyDepsBeforeRun: false
 
 # Convex bundles the Node image action for linux-arm64 even when local
 # development runs on the M4 (darwin-arm64) or CI runs on linux-x64. Install
@@ -51,6 +45,7 @@ overrides:
 patchedDependencies:
   brace-expansion@5.0.12: patches/brace-expansion@5.0.12.patch
   expo-modules-core@57.0.19: patches/expo-modules-core@57.0.19.patch
+  react-native@0.86.3: patches/react-native@0.86.3.patch
 
 # dependency-cruiser 18 parses TypeScript through the compiler API and does not
 # support TypeScript 7 yet. Keep its parser-only TypeScript isolated from the
@@ -59,3 +54,12 @@ packageExtensions:
   dependency-cruiser:
     dependencies:
       typescript: 6.0.3
+
+allowBuilds:
+  '@firebase/util': false
+  esbuild: true
+  lightningcss: true
+  msw: true
+  protobufjs: false
+  sharp: true
+  workerd: true

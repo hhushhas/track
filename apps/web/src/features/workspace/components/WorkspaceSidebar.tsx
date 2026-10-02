@@ -14,6 +14,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
@@ -269,10 +271,10 @@ export function WorkspaceSidebar({
           <span className="track-nav-section-label">Project</span>
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label={`Switch project: ${activeProject?.project.name ?? 'Select a project'}`}
+              aria-label={`Switch Project. Current: ${activeProject?.project.name ?? 'No Project selected'}${activeProject ? `, ${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Independent Project'}` : ''}`}
               className="track-current-project-card"
               disabled={!projectItems.length}
-              title={navCollapsed ? activeProject?.project.name ?? 'Select a project' : undefined}
+              title={navCollapsed && activeProject ? `${activeProject.project.name} · ${activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Independent Project'}` : undefined}
             >
               {activeProject ? <EntityMark colorKey={activeProject.project.markColorKey} iconKey={activeProject.project.markIconKey} id={String(activeProject.project._id)} kind="project" name={activeProject.project.name} size={24} /> : <FolderKanban aria-hidden="true" className="track-nav-icon track-project-icon" size={14} />}
               <span className="track-nav-copy">
@@ -284,20 +286,30 @@ export function WorkspaceSidebar({
             <DropdownMenuContent align="start" className="track-project-switcher-menu" side="right" sideOffset={8}>
               <DropdownMenuGroup>
                 <DropdownMenuLabel>Switch project</DropdownMenuLabel>
-                {projectItems.map((item) => (
-                  <DropdownMenuItem
-                    className={item.project._id === activeProjectId ? 'track-project-switcher-item active' : 'track-project-switcher-item'}
-                    key={item.project._id}
-                    onFocus={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
-                    onClick={() => onSelectProject(item.project._id, item.company?._id, item.membership._id)}
-                    onPointerEnter={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
-                    onTouchStart={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
-                  >
-                    <EntityMark colorKey={item.project.markColorKey} iconKey={item.project.markIconKey} id={String(item.project._id)} kind="project" name={item.project.name} size={22} />
-                    <span className="track-menu-project-name">{item.project.name}</span>
-                    <span className="track-menu-project-role">{item.membership.role}</span>
-                  </DropdownMenuItem>
-                ))}
+                <DropdownMenuRadioGroup
+                  onValueChange={(value) => {
+                    const item = projectItems.find((projectItem) => String(projectItem.project._id) === value)
+                    if (item) onSelectProject(item.project._id, item.company?._id, item.membership._id)
+                  }}
+                  value={String(activeProjectId ?? '')}
+                >
+                  {projectItems.map((item) => (
+                    <DropdownMenuRadioItem
+                      className={item.project._id === activeProjectId ? 'track-project-switcher-item active' : 'track-project-switcher-item'}
+                      key={item.project._id}
+                      onFocus={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
+                      onPointerEnter={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
+                      onTouchStart={() => onPreloadProjectRoute(item.project._id, item.company?._id, item.membership._id)}
+                      value={String(item.project._id)}
+                    >
+                      <EntityMark colorKey={item.project.markColorKey} iconKey={item.project.markIconKey} id={String(item.project._id)} kind="project" name={item.project.name} size={22} />
+                      <span className="track-menu-project-copy">
+                        <span className="track-menu-project-name">{item.project.name}</span>
+                        <span className="track-menu-project-role">{item.membership.companyDisplayNameSnapshot ?? item.project.clientLabel ?? 'Independent Project'} · {item.membership.role}</span>
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="track-project-switcher-create" onClick={onCreateProject}>
@@ -332,6 +344,7 @@ export function WorkspaceSidebar({
                   return (
                     <Button
                       aria-label={`Open channel ${group.name}${threadUnreadByGroup.get(group._id) ? `, ${threadUnreadByGroup.get(group._id)} unread thread${threadUnreadByGroup.get(group._id) === 1 ? '' : 's'}` : ''}`}
+                      aria-current={group._id === activeGroupId ? 'page' : undefined}
                       className={group._id === activeGroupId ? 'track-nav-item compact active' : 'track-nav-item compact'}
                       key={group._id}
                       onFocus={() => onPreloadGroupRoute(group._id)}

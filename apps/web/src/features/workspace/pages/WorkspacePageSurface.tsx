@@ -135,6 +135,7 @@ type WorkspacePageSurfaceModel = {
     setProjectSearchQuery: Dispatch<SetStateAction<string>>
     setRailCollapsed: Dispatch<SetStateAction<boolean>>
     setRailResizing: Dispatch<SetStateAction<boolean>>
+    setRailWidth: Dispatch<SetStateAction<number>>
     setReplyToMessage: Dispatch<SetStateAction<GroupMessageItem | null>>
     setVoiceRecordingActive: Dispatch<SetStateAction<boolean>>
   }
@@ -399,6 +400,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           activeGroup={activeGroup}
           activeCompanyId={activeProject?.membership.companyId}
           activeCompanyName={activeProject?.membership.companyDisplayNameSnapshot ?? activeProject?.project.clientLabel ?? undefined}
+          activeProjectName={activeProject?.project.name}
           activeProjectId={state.activeProjectId}
           projectMemberId={activeProject?.membership._id}
           busyAction={notifications.notificationBusyAction ?? state.busyAction}
@@ -411,7 +413,9 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
           onExpand={() => update.setRailCollapsed(false)}
           onNotificationMode={(mode) => void notifications.handleNotificationMode(mode)}
           onSendTestNotification={() => void notifications.handleSendTestNotification()}
+          onRailWidthChange={update.setRailWidth}
           onStartResize={() => update.setRailResizing(true)}
+          railWidth={state.railWidth}
           railCollapsed={state.railCollapsed}
           userId={auth.trackUserId}
           visibleMessages={presentation.visibleMessages}
@@ -426,6 +430,7 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
                 activeGroup={activeGroup}
                 activeCompanyId={activeProject?.membership.companyId}
                 activeCompanyName={activeProject?.membership.companyDisplayNameSnapshot ?? activeProject?.project.clientLabel ?? undefined}
+                activeProjectName={activeProject?.project.name}
                 activeProjectId={state.activeProjectId}
                 projectMemberId={activeProject?.membership._id}
                 busyAction={notifications.notificationBusyAction ?? state.busyAction}
@@ -438,7 +443,9 @@ export function WorkspacePageSurface({ model }: { model: WorkspacePageSurfaceMod
                 onExpand={() => undefined}
                 onNotificationMode={(mode) => void notifications.handleNotificationMode(mode)}
                 onSendTestNotification={() => void notifications.handleSendTestNotification()}
+                onRailWidthChange={update.setRailWidth}
                 onStartResize={() => undefined}
+                railWidth={state.railWidth}
                 railCollapsed={false}
                 userId={auth.trackUserId}
                 visibleMessages={presentation.visibleMessages}

@@ -9,6 +9,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useReducedMotion } from 'react-native-reanimated';
 
 import { authClient } from '@/lib/auth-client';
 import { convexClient } from '@/lib/convex-client';
@@ -18,7 +19,7 @@ import { ThemeOverrideProvider, useThemeOverride } from '@/contexts/theme-overri
 import { Colors } from '@/constants/theme';
 import { PushNotificationBridge } from '@/lib/push-notifications';
 import { OfflineTaskSync } from '@/components/offline-task-sync';
-import { LAUNCH_ARTWORK_DURATION_MS, LaunchScreen } from '@/components/launch-screen';
+import { LAUNCH_DISPLAY_DURATION_MS, LaunchScreen } from '@/components/launch-screen';
 import { AppToastProvider } from '@/components/app-toast';
 import { TrackHeaderBackground } from '@/components/primary-stack';
 import { TouchFeedback } from '@/components/touch-feedback';
@@ -69,6 +70,7 @@ export default function RootLayout() {
 
 function AppLayout() {
   const { theme } = useThemeOverride();
+  const reducedMotion = useReducedMotion();
   const [continuationDidLayout, setContinuationDidLayout] = useState(false);
   const [showContinuation, setShowContinuation] = useState(true);
   const [launchExiting, setLaunchExiting] = useState(false);
@@ -95,7 +97,7 @@ function AppLayout() {
           setLaunchAnimationActive(true);
           exitTimer = setTimeout(() => {
             if (active) setLaunchExiting(true);
-          }, LAUNCH_ARTWORK_DURATION_MS);
+          }, reducedMotion ? 0 : LAUNCH_DISPLAY_DURATION_MS);
         });
       });
     });
@@ -103,7 +105,7 @@ function AppLayout() {
       active = false;
       if (exitTimer) clearTimeout(exitTimer);
     };
-  }, [continuationDidLayout]);
+  }, [continuationDidLayout, reducedMotion]);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
@@ -153,6 +155,7 @@ function AppLayout() {
                           exiting={launchExiting}
                           onExitComplete={finishLaunch}
                           onReady={markLaunchArtworkReady}
+                          theme={theme}
                         />
                       </View>
                     ) : null}

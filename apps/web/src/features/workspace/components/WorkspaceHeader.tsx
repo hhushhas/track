@@ -112,7 +112,7 @@ export function WorkspaceHeader({
         </h1>
         {view === 'group' && activeProject ? (
           <span className="track-header-topic">
-            {activeProject.project.name}{activeProject.project.clientLabel ? ` · ${activeProject.project.clientLabel}` : ''}
+            {activeProject.membership.companyDisplayNameSnapshot ?? activeProject.project.clientLabel ?? 'Project'} · {activeProject.project.name}
           </span>
         ) : null}
       </div>

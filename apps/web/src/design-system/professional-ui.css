@@ -4,18 +4,18 @@
  */
 
 .track-ui-v2 {
-  --palette-canvas: #f6f6f4;
-  --palette-surface: #ffffff;
-  --palette-subtle: #efefec;
-  --palette-hover: #e9e9e5;
-  --palette-ink: #1d1d1b;
-  --palette-ink-secondary: #51514d;
-  --palette-ink-muted: #777771;
-  --palette-rule: #dfdfda;
-  --palette-rule-strong: #cacac3;
-  --palette-signal: #e2a800;
-  --palette-signal-strong: #765700;
-  --palette-signal-soft: #fff7d8;
+  --palette-canvas: #faf9f7;
+  --palette-surface: #fffefd;
+  --palette-subtle: #f3f1ed;
+  --palette-hover: #ebe8e1;
+  --palette-ink: #1b1917;
+  --palette-ink-secondary: #514d48;
+  --palette-ink-muted: #716c66;
+  --palette-rule: #e5e1db;
+  --palette-rule-strong: #cbc5bc;
+  --palette-signal: #f0b100;
+  --palette-signal-strong: #765600;
+  --palette-signal-soft: #fff6d6;
 
   --surface-canvas: var(--palette-canvas);
   --surface-raised: var(--palette-surface);
@@ -44,16 +44,16 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  --control-sm: 32px;
-  --control-md: 36px;
-  --control-lg: 40px;
+  --control-sm: 36px;
+  --control-md: 40px;
+  --control-lg: 44px;
   --radius-control: 6px;
   --radius-card: 8px;
-  --radius-panel: 10px;
-  --app-nav-width: 236px;
-  --context-rail-width: 300px;
-  --page-max-width: 1180px;
-  --page-gutter: clamp(20px, 3vw, 40px);
+  --radius-panel: 12px;
+  --app-nav-width: 248px;
+  --context-rail-width: 288px;
+  --page-max-width: 1280px;
+  --page-gutter: clamp(24px, 3vw, 48px);
 
   --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Geist", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -66,7 +66,7 @@
   --ink: var(--text-primary);
   --ink-2: var(--text-secondary);
   --ink-3: var(--text-muted);
-  --ink-4: #92928b;
+  --ink-4: #716c66;
   --hairline: var(--border-subtle);
   --hairline-strong: var(--border-strong);
   --accent: var(--action-signal);
@@ -93,23 +93,23 @@
 .track-ui-v2.dark,
 .dark .track-ui-v2,
 .dark.track-ui-v2 {
-  --palette-canvas: #171716;
-  --palette-surface: #1d1d1c;
-  --palette-subtle: #252523;
-  --palette-hover: #2e2e2b;
-  --palette-ink: #f0f0eb;
-  --palette-ink-secondary: #ccccc4;
-  --palette-ink-muted: #a0a099;
-  --palette-rule: #343431;
-  --palette-rule-strong: #4a4a45;
-  --palette-signal: #e9b11b;
-  --palette-signal-strong: #f4ca53;
-  --palette-signal-soft: #302913;
+  --palette-canvas: #151412;
+  --palette-surface: #1b1917;
+  --palette-subtle: #24211d;
+  --palette-hover: #2d2924;
+  --palette-ink: #f4f1eb;
+  --palette-ink-secondary: #d3cec5;
+  --palette-ink-muted: #aaa39a;
+  --palette-rule: #34302a;
+  --palette-rule-strong: #4b453c;
+  --palette-signal: #f0b100;
+  --palette-signal-strong: #f5c53d;
+  --palette-signal-soft: #30270e;
   --focus-ring: var(--palette-signal-strong);
   --action-primary: #f0f0eb;
   --action-primary-hover: #ffffff;
-  --shadow-pop: 0 14px 36px rgb(0 0 0 / 42%);
-  --shadow-sheet: 0 24px 72px rgb(0 0 0 / 58%);
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 38%);
+  --shadow-sheet: 0 24px 64px rgb(0 0 0 / 50%);
 }
 
 .track-ui-v2 *,
@@ -129,6 +129,34 @@
 .track-ui-v2 :where(button, a, input, textarea, select, [role="button"]):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+.track-ui-v2 {
+  color-scheme: light;
+  accent-color: var(--action-signal-strong);
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.track-ui-v2.dark,
+.dark .track-ui-v2,
+.dark.track-ui-v2 {
+  color-scheme: dark;
+}
+
+.track-ui-v2 ::selection {
+  background: color-mix(in srgb, var(--action-signal) 28%, transparent);
+  color: var(--text-primary);
+}
+
+.track-ui-v2 :where(button, a, input, textarea, select, [role="button"]) {
+  text-underline-offset: 3px;
+}
+
+.track-ui-v2 :where(button, input, textarea, select, [data-slot="input"], [data-slot="textarea"], [data-slot="native-select"]) {
+  font: inherit;
 }
 
 .track-ui-v2 :where(button, [role="button"], a) {
@@ -329,16 +357,16 @@
 }
 
 .track-ui-v2 :where(.track-button, [data-slot="button"], .company-overview-new-project) {
-  min-height: var(--control-md);
+  min-height: var(--control-lg);
   border-radius: var(--radius-control);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 620;
   letter-spacing: -0.005em;
 }
 
 .track-ui-v2 :where(.icon-button, [data-slot="button"][aria-label]:not(:has(span))) {
-  min-width: var(--control-md);
-  min-height: var(--control-md);
+  min-width: var(--control-lg);
+  min-height: var(--control-lg);
 }
 
 .track-ui-v2 :where(input, textarea, select, [data-slot="input"], [data-slot="textarea"], [data-slot="native-select"]) {
@@ -347,7 +375,7 @@
   background: var(--surface-raised);
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .track-ui-v2 :where(input, textarea, select):focus-visible,
@@ -409,12 +437,16 @@
 }
 
 .track-ui-v2 :where(.track-nav-item, .company-project-nav-item, .company-sidebar-link, .task-view-tabs a, .task-view-tabs button) {
-  min-height: var(--control-sm);
+  min-height: var(--control-md);
   border: 0;
   border-radius: var(--radius-control);
   color: var(--text-secondary);
   background: transparent;
   box-shadow: none;
+}
+
+.track-ui-v2 :where(.track-nav-item, .company-project-nav-item, .company-sidebar-link, .task-view-tabs a, .task-view-tabs button) {
+  font-size: 13px;
 }
 
 .track-ui-v2 :where(.track-nav-item, .company-project-nav-item, .company-sidebar-link, .task-view-tabs a, .task-view-tabs button):hover {

@@ -92,6 +92,11 @@ export function ProjectEvidencePage({
   const searchSections = useMemo(() => buildProjectSearchSections(searchResults), [searchResults])
   const selectedEvidence = evidence.find((item) => String(item.reference._id) === selectedEvidenceId) ?? null
   const normalizedEvidenceQuery = evidenceQuery.trim().toLowerCase()
+  const firstGroupHref = firstGroup
+    ? actingCompanyId && projectMemberId
+      ? `/workspace/company-projects/${encodeURIComponent(projectId)}?${new URLSearchParams({ companyId: actingCompanyId, groupId: firstGroup._id, membershipId: projectMemberId, view: 'channels' })}`
+      : `/workspace/projects/${encodeURIComponent(projectId)}/groups/${encodeURIComponent(firstGroup._id)}`
+    : null
   const filteredEvidence = useMemo(() => evidence.filter((item) => {
     if (evidenceFilter !== 'all' && item.reference.type !== evidenceFilter) return false
     if (!normalizedEvidenceQuery) return true
@@ -161,10 +166,10 @@ export function ProjectEvidencePage({
     {view === 'evidence' ? <section aria-labelledby="project-evidence-tab" className="track-knowledge-workspace" id="project-evidence-panel" role="tabpanel">
       <div className="track-knowledge-primary">
         <header className="track-knowledge-section-header"><div><p className="mono-label">Verified provenance</p><h2 id="evidence-hub-title">Evidence hub</h2></div><span>{filteredEvidence.length} shown</span></header>
-        <div className="track-knowledge-filterbar">
+        {evidence.length || evidenceQuery || evidenceFilter !== 'all' ? <div className="track-knowledge-filterbar">
           <label className="track-knowledge-search"><Search aria-hidden="true" size={15} /><span className="sr-only">Filter evidence</span><Input autoComplete="off" name="evidence-filter" onChange={(event) => setEvidenceQuery(event.currentTarget.value)} placeholder="Filter by source, task, author, or text…" value={evidenceQuery} /></label>
           <div aria-label="Evidence type" className="track-knowledge-chips">{evidenceFilters.map((filter) => <button aria-pressed={evidenceFilter === filter.value} className={evidenceFilter === filter.value ? 'active' : ''} key={filter.value} onClick={() => setEvidenceFilter(filter.value)} type="button">{filter.label}</button>)}</div>
-        </div>
+        </div> : null}
         {!releaseConfig.tasks ? <KnowledgeEmpty icon={<FileSearch aria-hidden="true" size={21} />} title="Evidence is unavailable">Tasks and linked evidence are disabled in this environment.</KnowledgeEmpty>
           : status === 'LoadingFirstPage' ? <div aria-live="polite" className="track-knowledge-loading">Loading Project evidence…</div>
           : filteredEvidence.length ? <><ol className="track-evidence-feed">{filteredEvidence.map((item) => <li key={item.reference._id}>
@@ -175,7 +180,7 @@ export function ProjectEvidencePage({
             </button>
           </li>)}</ol>{status === 'CanLoadMore' ? <Button onClick={() => loadMore(50)} type="button" variant="outline">Load more evidence</Button> : null}</>
           : evidence.length ? <KnowledgeEmpty icon={<Search aria-hidden="true" size={21} />} title="No matching evidence">Try another phrase or source type. Your Project scope remains unchanged.</KnowledgeEmpty>
-          : <KnowledgeEmpty icon={<FileSearch aria-hidden="true" size={21} />} title="No Project evidence yet">Create a task from a message, thread, file, assistant response, or memory excerpt to preserve its source here.</KnowledgeEmpty>}
+          : <KnowledgeEmpty action={firstGroupHref ? <a className="track-knowledge-empty-action" href={firstGroupHref}>Open #{firstGroup?.name} Channel <ArrowUpRight aria-hidden="true" size={14} /></a> : null} icon={<FileSearch aria-hidden="true" size={21} />} title="No Project evidence yet">Create a task from a message, thread, file, assistant response, or memory excerpt to preserve its source here.</KnowledgeEmpty>}
       </div>
       <KnowledgeContextPanel evidenceCount={evidence.length} isArchive={isArchive} projectName={projectName} />
     </section> : <section aria-labelledby="project-memory-tab" className="track-knowledge-workspace" id="project-memory-panel" role="tabpanel">
@@ -214,8 +219,8 @@ export function ProjectEvidencePage({
   </div>
 }
 
-function KnowledgeEmpty({ children, icon, title }: { children: ReactNode; icon: ReactNode; title: string }) {
-  return <section className="track-knowledge-empty" role="status"><span>{icon}</span><h3>{title}</h3><p>{children}</p></section>
+function KnowledgeEmpty({ action, children, icon, title }: { action?: ReactNode; children: ReactNode; icon: ReactNode; title: string }) {
+  return <section className="track-knowledge-empty" role="status"><span>{icon}</span><h3>{title}</h3><p>{children}</p>{action}</section>
 }
 
 function KnowledgeContextPanel({ evidenceCount, isArchive, projectName }: { evidenceCount: number; isArchive: boolean; projectName: string }) {

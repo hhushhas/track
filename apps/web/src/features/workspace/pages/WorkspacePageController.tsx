@@ -44,6 +44,7 @@ import {
 import { WorkspacePageSurface } from './WorkspacePageSurface'
 import { getStoredActingCompanyId } from '#/features/company/use-acting-company'
 import { getStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH } from '#/features/workspace/sidebar-sizing'
+import { RAIL_DEFAULT_WIDTH } from '#/features/workspace/rail-sizing'
 
 type WorkspacePageProps = {
   directoryOnly?: boolean
@@ -90,7 +91,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
   })
   const [navResizing, setNavResizing] = useState(false)
   const [railCollapsed, setRailCollapsed] = useState(false)
-  const [railWidth, setRailWidth] = useState(312)
+  const [railWidth, setRailWidth] = useState(RAIL_DEFAULT_WIDTH)
   const [railResizing, setRailResizing] = useState(false)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -804,6 +805,7 @@ export function WorkspacePage({ directoryOnly = false, groupId, projectId, view 
           setProjectSearchQuery,
           setRailCollapsed,
           setRailResizing,
+          setRailWidth,
           setReplyToMessage,
           setVoiceRecordingActive,
         },

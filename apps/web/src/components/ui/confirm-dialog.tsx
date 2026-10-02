@@ -34,32 +34,46 @@ export function ConfirmDialog({
   title,
 }: ConfirmDialogProps) {
   const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const titleId = useId()
   const descriptionId = useId()
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (pending && !nextOpen) return
+    if (!nextOpen) setError(null)
+    onOpenChange(nextOpen)
+  }
 
   async function confirm() {
     if (pending) return
     setPending(true)
+    setError(null)
     try {
       const result = await onConfirm()
-      if (result !== false) onOpenChange(false)
+      if (result !== false) {
+        setError(null)
+        onOpenChange(false)
+      }
+    } catch {
+      setError('This action could not be completed. Try again.')
     } finally {
       setPending(false)
     }
   }
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent aria-describedby={descriptionId} aria-labelledby={titleId}>
+    <Dialog onOpenChange={handleOpenChange} open={open}>
+      <DialogContent aria-busy={pending} aria-describedby={descriptionId} aria-labelledby={titleId} showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle id={titleId}>{title}</DialogTitle>
           <DialogDescription id={descriptionId}>{description}</DialogDescription>
         </DialogHeader>
+        {error ? <p className="text-xs text-destructive" role="alert">{error}</p> : null}
         <DialogFooter>
-          <Button disabled={pending} onClick={() => onOpenChange(false)} type="button" variant="outline">
+          <Button disabled={pending} onClick={() => handleOpenChange(false)} type="button" variant="outline">
             Cancel
           </Button>
-          <Button disabled={pending} onClick={() => void confirm()} type="button" variant={destructive ? 'destructive' : 'default'}>
+          <Button aria-busy={pending} disabled={pending} onClick={() => void confirm()} type="button" variant={destructive ? 'destructive' : 'default'}>
             {pending ? 'Working…' : confirmLabel}
           </Button>
         </DialogFooter>

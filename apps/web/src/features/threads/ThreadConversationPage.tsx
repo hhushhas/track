@@ -193,6 +193,7 @@ export function ThreadConversationPage({
   const [renameValue, setRenameValue] = useState('')
   const [channelName, setChannelName] = useState('')
   const [channelCreationPending, setChannelCreationPending] = useState(false)
+  const [channelCreationOpen, setChannelCreationOpen] = useState(false)
   const [replyTo, setReplyTo] = useState<ConversationComposerReply | null>(null)
   const [busy, setBusy] = useState(false)
   const [pendingDeleteMessage, setPendingDeleteMessage] = useState<{
@@ -562,6 +563,7 @@ export function ThreadConversationPage({
         userId: currentUser._id,
       })
       setChannelName('')
+      setChannelCreationOpen(false)
       appToast.success('Channel created')
       if (context) {
         window.location.assign(
@@ -1046,25 +1048,53 @@ export function ThreadConversationPage({
             </div>
             {navigation.membership?.role === 'manager' &&
             navigation.membership.status === 'active' ? (
-              <form
-                className="company-project-nav-channel-create"
-                onSubmit={(event) => void submitChannelCreation(event)}
-              >
-                <Input
-                  aria-label="New Channel name"
-                  autoComplete="off"
-                  disabled={channelCreationPending}
-                  name="channelName"
-                  onChange={(event) => setChannelName(event.target.value)}
-                  placeholder="For example, Product launch…"
-                  required
-                  value={channelName}
-                />
-                <Button disabled={channelCreationPending} type="submit">
-                  <Plus aria-hidden="true" size={13} />
-                  {channelCreationPending ? 'Creating…' : 'Create Channel'}
-                </Button>
-              </form>
+              <div className="company-project-nav-channel-create-area">
+                {channelCreationOpen ? (
+                  <form
+                    className="company-project-nav-channel-create"
+                    onSubmit={(event) => void submitChannelCreation(event)}
+                  >
+                    <Input
+                      aria-label="New Channel name"
+                      autoComplete="off"
+                      autoFocus
+                      disabled={channelCreationPending}
+                      name="channelName"
+                      onChange={(event) => setChannelName(event.target.value)}
+                      placeholder="For example, Product launch…"
+                      required
+                      value={channelName}
+                    />
+                    <div className="company-project-nav-channel-create-actions">
+                      <Button disabled={channelCreationPending} type="submit">
+                        <Plus aria-hidden="true" size={14} />
+                        {channelCreationPending ? 'Creating…' : 'Create Channel'}
+                      </Button>
+                      <Button
+                        disabled={channelCreationPending}
+                        onClick={() => {
+                          setChannelCreationOpen(false)
+                          setChannelName('')
+                        }}
+                        type="button"
+                        variant="ghost"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <Button
+                    className="company-project-nav-channel-create-trigger"
+                    onClick={() => setChannelCreationOpen(true)}
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Plus aria-hidden="true" size={15} />
+                    Create Channel
+                  </Button>
+                )}
+              </div>
             ) : null}
           </nav>
         }

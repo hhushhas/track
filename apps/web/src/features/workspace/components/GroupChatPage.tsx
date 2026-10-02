@@ -191,9 +191,12 @@ export function GroupChatPage({
         ) : null}
       </div>
       <div
+        aria-label={`${activeGroup?.name ?? 'Channel'} conversation`}
         className="track-thread-scroll"
         onScroll={onThreadScroll}
         ref={threadScrollRef}
+        role="region"
+        tabIndex={0}
       >
         <div className="track-thread">
           {hasMoreMessages ? (

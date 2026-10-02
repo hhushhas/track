@@ -157,3 +157,134 @@
 @media (max-width: 860px) { .company-project-overview { overflow: visible; }.company-project-overview-inner { padding: 16px; }.company-project-overview-threads { height: auto; min-height: 420px; border-top: 1px solid var(--hairline); border-left: 0; }.project-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.project-attention-table { overflow-x: auto; }.project-attention-columns, .project-attention-table > a { min-width: 700px; } }
 @media (max-width: 560px) { .company-project-hero { grid-template-columns: 1fr; }.company-project-hero-mark { width: 44px; height: 44px; }.project-title-row { align-items: flex-start; flex-direction: column; gap: 7px; }.company-project-hero p { white-space: normal; }.project-hero-meta { flex-wrap: wrap; }.company-project-hero-actions { justify-content: flex-start; }.project-stats-grid { grid-template-columns: 1fr; }.project-workload-list { padding: 6px 8px 10px; }.project-workload-row { grid-template-columns: 30px minmax(0, 1fr) 38px 58px; gap: 7px; }.project-workload-track { grid-column: 2 / 4; grid-row: 2; margin-top: -4px; }.project-workload-copy { grid-column: 2; grid-row: 1; }.project-workload-total { grid-column: 3; grid-row: 1; }.project-workload-overdue { grid-column: 4; grid-row: 1; }.project-workload-arrow { grid-column: 4; grid-row: 1; }.project-panel-header { align-items: stretch; flex-direction: column; }.project-chart-controls { flex-wrap: wrap; }.project-attention-header { grid-template-columns: 32px 1fr; }.project-attention-header > a { grid-column: 2; }.project-activity-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .project-stat-card { transition: none; }.project-stat-card:hover { transform: none; }.project-chart-skeleton, .project-activity-skeleton, .project-attention-skeleton { animation: none; } }
+
+/* Keep project health readable without wrapping every section in a card. */
+.company-project-hero {
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
+}
+
+.project-stats-grid {
+  gap: 0;
+  border-block: 1px solid var(--hairline);
+}
+
+.project-stat-card,
+.dark .project-stat-card {
+  min-height: 86px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 12px 14px;
+  transition: background-color 140ms ease;
+}
+
+.project-stat-card + .project-stat-card {
+  border-left: 1px solid var(--hairline);
+}
+
+.project-stat-card:hover,
+.dark .project-stat-card:hover {
+  border-color: var(--hairline);
+  background: var(--paper-2);
+  box-shadow: none;
+  transform: none;
+}
+
+.project-stat-label {
+  font-size: 12px;
+}
+
+.project-stat-card small {
+  font-size: 11px;
+}
+
+.project-overview-panel,
+.dark .project-overview-panel {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-panel-header h2,
+.project-attention-header h2 {
+  font-size: 14px;
+}
+
+.project-panel-header p,
+.project-attention-header p,
+.project-managed-actions p {
+  font-size: 11px;
+}
+
+.project-activity-copy strong {
+  font-size: 12px;
+}
+
+.project-activity-copy small {
+  font-size: 10px;
+}
+
+.project-attention-panel {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.project-attention-header {
+  background: var(--paper-2);
+}
+
+.project-attention-header > span {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.project-attention-table {
+  font-size: 12px;
+}
+
+.project-attention-columns {
+  font-size: 10px;
+}
+
+.project-workload-copy strong {
+  font-size: 12px;
+}
+
+.project-workload-copy small {
+  font-size: 10px;
+}
+
+.company-project-overview-threads .track-rail-company-thread-section > header small,
+.company-project-overview-threads .track-rail-thread-section > ul span {
+  font-size: 11px;
+}
+
+.company-project-overview-threads .track-rail-thread-section > ul strong {
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .project-stat-card,
+  .dark .project-stat-card {
+    padding-inline: 10px;
+  }
+
+  .project-stat-card + .project-stat-card {
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-stat-card {
+    transition: none;
+  }
+}

@@ -1,19 +1,18 @@
 import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
 import type { FunctionReturnType } from 'convex/server'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, CheckSquare2, CircleAlert, Clipboard, FolderKanban, Handshake, Mail, MoreHorizontal, Plus, UsersRound } from 'lucide-react'
-import { Line, LineChart, ResponsiveContainer, Tooltip } from 'recharts'
 
 import { api } from '../../../../../convex/_generated/api'
 import type { Id } from '../../../../../convex/_generated/dataModel'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '#/components/ui/dropdown-menu'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
 import { InternalProjectForm, InviteMemberForm, RelationshipForm } from './CompanyForms'
 import { getCompanyProjectOverviewSearch } from './company-project-links'
 import { CompanyOverviewProjectDialogs } from './CompanyOverviewProjectDialogs'
 import { CompanyActivityChart } from './CompanyActivityChart'
-import { companyGreetingForHour } from './company-greeting'
 import type { OverviewProjectDialogTarget } from './CompanyOverviewProjectDialogs'
 
 type Overview = FunctionReturnType<typeof api.companyOverview.get>
@@ -25,7 +24,6 @@ type Props = {
   companyName: string
   createProjectRequest: number
   currentUserId: Id<'users'>
-  userName: string
   isAdmin: boolean
   overview: Overview | undefined
   projects: ProjectDirectory | undefined
@@ -34,7 +32,6 @@ type Props = {
 }
 
 type QuickAction = 'project' | 'invite' | 'partner' | 'task'
-type StatTrend = NonNullable<Overview>['stats']['trends'][number]
 
 function relativeTime(timestamp: number) {
   const elapsed = Math.max(0, Date.now() - timestamp)
@@ -44,52 +41,14 @@ function relativeTime(timestamp: number) {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-function chartDateLabel(value: string) {
-  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(`${value}T00:00:00Z`))
-}
-
-function StatSparkline({ color, data, dataKey, label }: {
-  color: string
-  data: StatTrend[]
-  dataKey: 'openTasks' | 'overdueTasks' | 'completedThisWeek' | 'activePeople'
-  label: string
-}) {
-  const first = data[0]?.[dataKey] ?? 0
-  const last = data.at(-1)?.[dataKey] ?? 0
-  const direction = last === first ? 'unchanged' : last > first ? 'increased' : 'decreased'
-  return <div aria-label={`${label} trend: ${direction} from ${first} to ${last}`} className="company-dashboard-stat-chart" role="img">
-    <ResponsiveContainer height="100%" width="100%">
-      <LineChart accessibilityLayer data={data} margin={{ bottom: 2, left: 2, right: 2, top: 4 }}>
-        <Tooltip contentStyle={{ borderRadius: 8, fontSize: 11, padding: '6px 8px' }} cursor={false} formatter={(value) => [value, label]} labelFormatter={(value) => chartDateLabel(String(value))} />
-        <Line activeDot={{ r: 3 }} dataKey={dataKey} dot={false} isAnimationActive={false} stroke={color} strokeWidth={2} type="monotone" />
-      </LineChart>
-    </ResponsiveContainer>
-  </div>
-}
-
-export function CompanyOverviewDashboard({ activeCompanyId, companyName, createProjectRequest, currentUserId, userName, isAdmin, onCreateProjectRequestHandled, onCreateTaskRequest, overview, projects, run }: Props & { onCreateTaskRequest?: () => void }) {
-  const [greeting, setGreeting] = useState('Hello')
-  const [menu, setMenu] = useState<string | null>(null)
+export function CompanyOverviewDashboard({ activeCompanyId, companyName, createProjectRequest, currentUserId, isAdmin, onCreateProjectRequestHandled, onCreateTaskRequest, overview, projects, run }: Props & { onCreateTaskRequest?: () => void }) {
   const [quickAction, setQuickAction] = useState<QuickAction | null>(null)
   const [rangeDays, setRangeDays] = useState<7 | 30 | 90>(7)
   const [chartProjectId, setChartProjectId] = useState<Id<'projects'> | ''>('')
   const [activityProject, setActivityProject] = useState<OverviewProjectDialogTarget | null>(null)
   const [settingsProject, setSettingsProject] = useState<OverviewProjectDialogTarget | null>(null)
-  const dashboardRef = useRef<HTMLDivElement>(null)
   const uniqueProjects = useMemo(() => Array.from(new Map((projects ?? []).map((row) => [row.project._id, row])).values()), [projects])
   const overviewProjects = useMemo(() => Array.from(new Map((overview?.projects ?? []).map((project) => [project.id, project])).values()), [overview?.projects])
-  useEffect(() => {
-    setGreeting(companyGreetingForHour(new Date().getHours()))
-  }, [])
-  useEffect(() => {
-    if (!menu) return
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenu(null) }
-    const closeOnOutsidePointer = (event: PointerEvent) => { if (event.target instanceof Node && !dashboardRef.current?.contains(event.target)) setMenu(null) }
-    window.addEventListener('keydown', close)
-    window.addEventListener('pointerdown', closeOnOutsidePointer)
-    return () => { window.removeEventListener('keydown', close); window.removeEventListener('pointerdown', closeOnOutsidePointer) }
-  }, [menu])
-
   useEffect(() => {
     if (createProjectRequest <= 0) return
     setQuickAction('project')
@@ -104,7 +63,7 @@ export function CompanyOverviewDashboard({ activeCompanyId, companyName, createP
   const workload = overview?.workload ?? []
   const maxWorkload = Math.max(1, ...workload.map((owner) => owner.open))
 
-  function openQuickAction(action: QuickAction) { setMenu(null); if (action === 'task') { onCreateTaskRequest?.(); return } setQuickAction(action) }
+  function openQuickAction(action: QuickAction) { if (action === 'task') { onCreateTaskRequest?.(); return } setQuickAction(action) }
   function closeQuickAction() { setQuickAction(null) }
 
   function activityHref(activity: NonNullable<Overview>['recentActivity'][number]) {
@@ -122,37 +81,56 @@ export function CompanyOverviewDashboard({ activeCompanyId, companyName, createP
   function copyActivityLink(activity: NonNullable<Overview>['recentActivity'][number]) {
     const href = activityHref(activity)
     if (href) void navigator.clipboard?.writeText(`${window.location.origin}${href}`)
-    setMenu(null)
   }
 
-  return <div aria-busy={!overview} className="company-overview-live" ref={dashboardRef}>
-    <section className="company-dashboard-welcome">
-      <div><span className="company-dashboard-date">{new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).format(new Date())}</span><h2>{greeting}, {userName.split(/\s+/)[0] || 'there'}</h2><p>Here&apos;s what&apos;s happening across {companyName}.</p></div>
-      <blockquote>{overview?.quote ? `“${overview.quote}”` : ''}<span /></blockquote>
+  return <div aria-busy={!overview} className="company-overview-live">
+    <section aria-label={`${companyName} overview`} className="company-dashboard-welcome">
+      <div><h2>{companyName}</h2><p>Projects and recent activity.</p></div>
     </section>
 
     <section aria-label="Company task summary" className="company-dashboard-stat-grid">
       {[
-        { label: 'Open tasks', value: overview?.stats?.openTasks, tone: 'amber', context: 'Company total', color: '#f6b51a', dataKey: 'openTasks' as const, icon: <Mail aria-hidden="true" /> },
-        { label: 'Overdue tasks', value: overview?.stats?.overdueTasks, tone: 'red', context: 'Needs attention', color: '#f05b63', dataKey: 'overdueTasks' as const, icon: <CircleAlert aria-hidden="true" /> },
-        { label: 'Completed this week', value: overview?.stats?.completedThisWeek, tone: 'green', context: 'Current week', color: '#2dbf8b', dataKey: 'completedThisWeek' as const, icon: <CheckCircle2 aria-hidden="true" /> },
-        { label: 'Active people', value: overview?.stats?.activePeople, tone: 'blue', context: 'Active assignments', color: '#5b8def', dataKey: 'activePeople' as const, icon: <UsersRound aria-hidden="true" /> },
-      ].map((stat) => <article className={`company-dashboard-stat ${stat.tone}`} key={stat.label}><span className="company-dashboard-stat-icon">{stat.icon}</span><div><strong>{stat.value ?? '—'}</strong><span>{stat.label}</span></div><small>{stat.context}</small><StatSparkline color={stat.color} data={overview?.stats?.trends ?? []} dataKey={stat.dataKey} label={stat.label} /></article>)}
+        { label: 'Open tasks', value: overview?.stats?.openTasks, tone: 'amber', context: 'Company total', icon: <Mail aria-hidden="true" /> },
+        { label: 'Overdue tasks', value: overview?.stats?.overdueTasks, tone: 'red', context: 'Needs attention', icon: <CircleAlert aria-hidden="true" /> },
+        { label: 'Completed this week', value: overview?.stats?.completedThisWeek, tone: 'green', context: 'Current week', icon: <CheckCircle2 aria-hidden="true" /> },
+        { label: 'Active people', value: overview?.stats?.activePeople, tone: 'blue', context: 'Active assignments', icon: <UsersRound aria-hidden="true" /> },
+      ].map((stat) => <article className={`company-dashboard-stat ${stat.tone}`} key={stat.label}><span className="company-dashboard-stat-icon">{stat.icon}</span><div><strong>{stat.value ?? '—'}</strong><span>{stat.label}</span></div><small>{stat.context}</small></article>)}
     </section>
 
     <div className="company-dashboard-grid">
       <section className="company-dashboard-panel company-dashboard-progress"><div className="company-dashboard-panel-heading"><div><h2>Project progress</h2><p>Completion across all company projects</p></div></div><div className="company-dashboard-project-list">{!overview ? <div aria-label="Loading projects" className="company-dashboard-skeleton" role="status" /> : overviewProjects.length === 0 ? <div className="company-quiet-empty"><FolderKanban aria-hidden="true" size={18} /><strong>No projects yet</strong></div> : overviewProjects.slice(0, 4).map((project, index) => {
         const source = projectSources.get(project.id)
-        const projectMenu = `project-${project.id}`
         const content = <><span className={`company-dashboard-project-icon tone-${(index % 3) + 1}`}><FolderKanban aria-hidden="true" size={20} /></span><div className="company-dashboard-project-copy"><strong>{project.name}</strong><span>{project.completedTasks}/{project.totalTasks} tasks done · {project.description ?? 'No project description'}</span><div className="company-dashboard-progress-track"><i style={{ width: `${project.progress}%` }} /></div></div><span className={`company-dashboard-health ${project.health.toLowerCase().replace(' ', '-')}`}>{project.health}</span><strong className="company-dashboard-percent">{project.progress}%</strong></>
-        return <div className="company-dashboard-project-row-shell" key={project.id}>{source ? <Link aria-label={`Open ${project.name} project overview`} className="company-dashboard-project-row company-dashboard-project-link" params={{ projectId: project.id }} search={getCompanyProjectOverviewSearch({ actingCompanyId: activeCompanyId, projectId: project.id, projectMemberId: source.membership._id })} to="/workspace/company-projects/$projectId">{content}</Link> : <div className="company-dashboard-project-row">{content}</div>}<button aria-expanded={menu === projectMenu} aria-haspopup="menu" aria-label={`Open actions for ${project.name}`} className="company-dashboard-more" onClick={() => setMenu(menu === projectMenu ? null : projectMenu)} type="button"><MoreHorizontal aria-hidden="true" size={18} /></button>{menu === projectMenu ? <div aria-label="Project actions" className="company-dashboard-menu" role="menu">{source ? <Link params={{ projectId: project.id }} search={getCompanyProjectOverviewSearch({ actingCompanyId: activeCompanyId, projectId: project.id, projectMemberId: source.membership._id })} to="/workspace/company-projects/$projectId">Open project overview</Link> : null}{source ? <button onClick={() => { setMenu(null); setActivityProject({ membershipId: source.membership._id, project }) }} type="button">View activity</button> : null}{source && (isAdmin || source.membership.role === 'manager') ? <button onClick={() => { setMenu(null); setSettingsProject({ membershipId: source.membership._id, project }) }} type="button">Project settings</button> : null}</div> : null}</div>
+        return <div className="company-dashboard-project-row-shell" key={project.id}>
+          {source ? <Link aria-label={`Open ${project.name} project overview`} className="company-dashboard-project-row company-dashboard-project-link" params={{ projectId: project.id }} search={getCompanyProjectOverviewSearch({ actingCompanyId: activeCompanyId, projectId: project.id, projectMemberId: source.membership._id })} to="/workspace/company-projects/$projectId">{content}</Link> : <div className="company-dashboard-project-row">{content}</div>}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<button aria-label={`Open actions for ${project.name}`} className="company-dashboard-more" type="button" />}>
+              <MoreHorizontal aria-hidden="true" size={18} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="company-dashboard-menu" sideOffset={4}>
+              {source ? <DropdownMenuItem render={<Link params={{ projectId: project.id }} search={getCompanyProjectOverviewSearch({ actingCompanyId: activeCompanyId, projectId: project.id, projectMemberId: source.membership._id })} to="/workspace/company-projects/$projectId" />}>Open project overview</DropdownMenuItem> : null}
+              {source ? <DropdownMenuItem onClick={() => setActivityProject({ membershipId: source.membership._id, project })}>View activity</DropdownMenuItem> : null}
+              {source && (isAdmin || source.membership.role === 'manager') ? <DropdownMenuItem onClick={() => setSettingsProject({ membershipId: source.membership._id, project })}>Project settings</DropdownMenuItem> : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       })}</div></section>
 
       <section className="company-dashboard-panel company-dashboard-activity"><div className="company-dashboard-panel-heading"><div><h2>Recent activity</h2><p>Latest updates across your projects, tasks, and threads.</p></div></div><div className="company-dashboard-activity-list">{!overview ? <div aria-label="Loading activity" className="company-dashboard-skeleton" role="status" /> : overview.recentActivity.length === 0 ? <div className="company-quiet-empty"><strong>No recent activity yet</strong></div> : overview.recentActivity.map((activity, index) => {
-        const activityMenu = `activity-${activity.id}`
         const href = activityHref(activity)
         const content = <><span className={`company-dashboard-avatar tone-${(index % 4) + 1}`}>{activity.actorInitials}</span><div><strong>{activity.preview}</strong><span>{activity.projectName} · {activity.action}</span></div><time>{relativeTime(activity.createdAt)}</time><small className={activity.kind}>{activity.kind === 'message' ? 'Comment' : activity.kind === 'task' ? 'Task' : 'Project'}</small></>
-        return <div className="company-dashboard-activity-row-shell" key={activity.id}>{href ? <a aria-label={`Open activity: ${activity.preview}`} className="company-dashboard-activity-row company-dashboard-activity-link" href={href}>{content}</a> : <div className="company-dashboard-activity-row">{content}</div>}<button aria-expanded={menu === activityMenu} aria-haspopup="menu" aria-label={`Open actions for ${activity.preview}`} className="company-dashboard-more" onClick={() => setMenu(menu === activityMenu ? null : activityMenu)} type="button"><MoreHorizontal aria-hidden="true" size={18} /></button>{menu === activityMenu ? <div aria-label="Activity actions" className="company-dashboard-menu company-dashboard-menu-right" role="menu">{href ? <a href={href}>Open activity</a> : null}<button onClick={() => copyActivityLink(activity)} type="button"><Clipboard aria-hidden="true" size={14} /> Copy link</button></div> : null}</div>
+        return <div className="company-dashboard-activity-row-shell" key={activity.id}>
+          {href ? <a aria-label={`Open activity: ${activity.preview}`} className="company-dashboard-activity-row company-dashboard-activity-link" href={href}>{content}</a> : <div className="company-dashboard-activity-row">{content}</div>}
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<button aria-label={`Open actions for ${activity.preview}`} className="company-dashboard-more" type="button" />}>
+              <MoreHorizontal aria-hidden="true" size={18} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="company-dashboard-menu" sideOffset={4}>
+              {href ? <DropdownMenuItem render={<a href={href} />}>Open activity</DropdownMenuItem> : null}
+              <DropdownMenuItem onClick={() => copyActivityLink(activity)}><Clipboard aria-hidden="true" size={14} />Copy link</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       })}</div></section>
     </div>
 
