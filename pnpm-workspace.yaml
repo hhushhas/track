@@ -4,12 +4,14 @@ packages:
 
 nodeLinker: hoisted
 
-onlyBuiltDependencies:
-  - esbuild
-  - lightningcss
-  - msw
-  - sharp
-  - workerd
+allowBuilds:
+  "@firebase/util": false
+  esbuild: true
+  lightningcss: true
+  msw: true
+  protobufjs: false
+  sharp: true
+  workerd: true
 
 # Convex bundles the Node image action for linux-arm64 even when local
 # development runs on the M4 (darwin-arm64) or CI runs on linux-x64. Install
