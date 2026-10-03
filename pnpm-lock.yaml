@@ -1,3 +1,161 @@
+---
+lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    configDependencies: {}
+    packageManagerDependencies:
+      pnpm:
+        specifier: 12.8.1
+        version: 12.8.1
+
+packages:
+
+  '@pnpm/exe.android-arm64@12.8.1':
+    resolution: {integrity: sha512-siDxcidfz5eM6L2tJfik+i2bbUEw8UC7MZ3Yl2HYdRmqbdhHGAOQACtOOu6QVW4Jul4/w5wVKm+wM8ACtgh1Pg==}
+    cpu: [arm64]
+    os: [android]
+
+  '@pnpm/exe.android-x64@12.8.1':
+    resolution: {integrity: sha512-0F/uqPRc3aN4vLHsa0f+6fTtmsigFQ9/yxEU43fionF//pNHEd5e97b3w/nKIgqYMCUQCJphmBRMA9Q8/wlo9Q==}
+    cpu: [x64]
+    os: [android]
+
+  '@pnpm/exe.darwin-arm64@12.8.1':
+    resolution: {integrity: sha512-/rwavvMQJsl2RIxOHBnDF+4Gk+fhQFAY4M3PQZoKskJOEnaJcygG9p1xby6wcQcbS4d9dIubv09CQhufTgfmpw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@pnpm/exe.darwin-x64@12.8.1':
+    resolution: {integrity: sha512-htYt2gN7zqJKLhC99Ft6EUiO7myjZAZXfmGCTJUL1v+o7vE9hZdE1+fAkk4Oj1ZHNRti6b2woOxEkRkAusi8OQ==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@pnpm/exe.freebsd-x64@12.8.1':
+    resolution: {integrity: sha512-PB5BULNgytxvExoOXUUeseS/DcpPENs+cg3iA6xHHeaLT4ctEGKSGXEbuj7USeqvo8JBpAx039hivnbzGqDwnA==}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@pnpm/exe.linux-arm64-musl@12.8.1':
+    resolution: {integrity: sha512-kKeyC/ArjrgdciQRBrOL0j9HtOI4gDRgoyP+eJ1CQKyadpKlf/DhDDyspXe07R3B9KagTVLUF2nlt6Dr5quFIg==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/exe.linux-arm64@12.8.1':
+    resolution: {integrity: sha512-q4s9a9X2O3N9aeUFooW24orNrxvu20+jyVUFR5RanPCqOKKPBrgs2iywMkBBx1aXkkzdWT54/mfz8Be8sJlWEw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-ppc64@12.8.1':
+    resolution: {integrity: sha512-F7XSjKJthwCh/L6abZiMpAfo2Cm61SZIT3e4dfgiIjESndlWaXCnfLKngSgZ/SEMsdmHT6dud3+kWIB3tw0/xQ==}
+    cpu: [ppc64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-riscv64@12.8.1':
+    resolution: {integrity: sha512-z1ecpIK/ZY08Unk69KWWE9867oaKUytGUjrHnBoGFAAhsK+q+0cfvBH+f5fWobJ7FX97leMlLO+gkJolddM45Q==}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-s390x@12.8.1':
+    resolution: {integrity: sha512-KU6tnrBfu4uKXTq6N5qJwSm8FSrs9Wc8b5AUEsHK9bRXwNdsZ1/lRxG1++X29SKRW9OSNuDSjxASv5mAvGo1gA==}
+    cpu: [s390x]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.linux-x64-musl@12.8.1':
+    resolution: {integrity: sha512-eUE8BWJkDr2tJb/yrk0yVnszlmNqFarVxUlqiZ9BAkct28Nq/5g2H0tvMDmPA7fAQW3STNj+omJPPRVT+4s5sQ==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/exe.linux-x64@12.8.1':
+    resolution: {integrity: sha512-8bDZ0lZlCdi2rvnFul7EYgcC7zKeWSe76y8JV2oXobaS8p9i9d6PSf6LgLtTM0fI7R9Oh4eLCbveXyNDMmvZ+g==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/exe.win32-arm64@12.8.1':
+    resolution: {integrity: sha512-MsT0dlrRxnCRCHCaosNbhWpEiAFnFuMEu3KuDJDU41BXgTwiINxU8goloUSUDejWZUqKaUqNC/qUTihl9nFtqg==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@pnpm/exe.win32-x64@12.8.1':
+    resolution: {integrity: sha512-SWtPe0PsbTTk//gJND10tMdOfCYjrkq5+qV49hzVhY7xz2iJ339Rc+xwASlcvbwTfrvH39YNqpKYibD+CRGLwA==}
+    cpu: [x64]
+    os: [win32]
+
+  pnpm@12.8.1:
+    resolution: {integrity: sha512-9kupB1B/XOr+BsjTjmBS0BeURFgOwSed3Vv8EctIqoomRLZlmOB+dh2oSHKp/FfV+QK4f6SdAkGY1VhhKqu+RQ==}
+    engines: {node: '>=18.*'}
+    hasBin: true
+
+snapshots:
+
+  '@pnpm/exe.android-arm64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.android-x64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.darwin-arm64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.darwin-x64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.freebsd-x64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-arm64-musl@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-arm64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-ppc64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-riscv64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-s390x@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-x64-musl@12.8.1':
+    optional: true
+
+  '@pnpm/exe.linux-x64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.win32-arm64@12.8.1':
+    optional: true
+
+  '@pnpm/exe.win32-x64@12.8.1':
+    optional: true
+
+  pnpm@12.8.1:
+    optionalDependencies:
+      '@pnpm/exe.android-arm64': 12.8.1
+      '@pnpm/exe.android-x64': 12.8.1
+      '@pnpm/exe.darwin-arm64': 12.8.1
+      '@pnpm/exe.darwin-x64': 12.8.1
+      '@pnpm/exe.freebsd-x64': 12.8.1
+      '@pnpm/exe.linux-arm64': 12.8.1
+      '@pnpm/exe.linux-arm64-musl': 12.8.1
+      '@pnpm/exe.linux-ppc64': 12.8.1
+      '@pnpm/exe.linux-riscv64': 12.8.1
+      '@pnpm/exe.linux-s390x': 12.8.1
+      '@pnpm/exe.linux-x64': 12.8.1
+      '@pnpm/exe.linux-x64-musl': 12.8.1
+      '@pnpm/exe.win32-arm64': 12.8.1
+      '@pnpm/exe.win32-x64': 12.8.1
+
+---
 lockfileVersion: '9.0'
 
 settings:
@@ -32,15 +190,9 @@ overrides:
 packageExtensionsChecksum: sha256-3MGTjzmjlgnhjcqVqzjDdnL5Y1xWwi2kaTEc0nFiVqM=
 
 patchedDependencies:
-  brace-expansion@5.0.9:
-    hash: 959d694cb5d91cbd14cfa113148fcd2e70feebe6336ec55317b98eb5406ad97f
-    path: patches/brace-expansion@5.0.9.patch
-  expo-modules-core@55.0.25:
-    hash: 53ad8740e460676fa39da16be9fc3b4235ccda20fc48dc51809bc0a0ec7934c7
-    path: patches/expo-modules-core@55.0.25.patch
-  react-native-reanimated@4.2.1:
-    hash: f43e48678fb77d0f40369fa5e64b86fd21531e5d027df98b583bbf116efb169d
-    path: patches/react-native-reanimated@4.2.1.patch
+  brace-expansion@5.0.9: 959d694cb5d91cbd14cfa113148fcd2e70feebe6336ec55317b98eb5406ad97f
+  expo-modules-core@55.0.25: 53ad8740e460676fa39da16be9fc3b4235ccda20fc48dc51809bc0a0ec7934c7
+  react-native-reanimated@4.2.1: f43e48678fb77d0f40369fa5e64b86fd21531e5d027df98b583bbf116efb169d
 
 importers:
 
@@ -2507,40 +2659,40 @@ packages:
     resolution: {integrity: sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug==}
 
   '@q9labsai/cli@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz}
+    resolution: {integrity: sha512-GWQNqxvw9y0Q3EjzNNSJdieqAJ5gjKllbaOYwRDPnxUtWYrxGM5Y5S+HuHtWrRQhwpu6XRJYcUcUdcdUUuKAJQ==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-cli-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
     hasBin: true
 
   '@q9labsai/config-depcruise@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz}
+    resolution: {integrity: sha512-ka7JIpkHwXqD+aCdohV+hNSflKBE3bmeHLsWr/eR0CuTC35kwmZ6/5xQGgLShkP+RlPRp5nLFfhooXaIdUqwNQ==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-depcruise-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
     peerDependencies:
       dependency-cruiser: ^18.2.0
 
   '@q9labsai/config-oxlint@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz}
+    resolution: {integrity: sha512-WWB3NzcsVuztDssLUfqrqQNJqw/sr8s4QuIvi6i5HoE81mgqyEDgRIpxMzbJm3Tl/iHETD0OSTTAEvl/2eC+FQ==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-oxlint-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
 
   '@q9labsai/config-semgrep@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz}
+    resolution: {integrity: sha512-rYWnVWRMxyrqh4efO37YoRJwBWIIXVkto9gn4WmxLIgXG88BVEU2KW3Qr0J+w2phCVHWsxkLYrdR0NGGeCYp0A==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-semgrep-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
 
   '@q9labsai/config-tsconfig@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz}
+    resolution: {integrity: sha512-EVfI4Uf/XYaPt2mpf5y9aF5wx4kEHjYBAWhHR9Gf+Ly/eE0y0ROrNDrXjSJq+F1IIsgCQW+Dr18P4vFQwMXkEw==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-config-tsconfig-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
 
   '@q9labsai/diagnostics@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz}
+    resolution: {integrity: sha512-IreEAehhVgjqAKBvKcbe62VPRNsSMfUWoTTuDEenbLW1V4qE7LPSNH15D4Pm6cWF2oZf7KXZUtCzxkG4P5t/Rg==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-diagnostics-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
 
   '@q9labsai/gates@https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz':
-    resolution: {tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz}
+    resolution: {integrity: sha512-rPDbhzhuBHIEr2XT/lq+1CxtUBwXKcbNsoH2DtnW2Y4h0v0FEkGXIA67AIxsfomPDrHk6MiojAl5v7b8oQEb4g==, tarball: https://github.com/Q9Labs/q9stack/releases/download/v0.3.0/q9labsai-gates-0.3.0.tgz}
     version: 0.3.0
     engines: {node: '>=24'}
     hasBin: true

@@ -60,3 +60,6 @@ packageExtensions:
   dependency-cruiser:
     dependencies:
       typescript: 6.0.3
+
+# Allow q9stack GitHub release tarballs until they are published to npm.
+blockExoticSubdeps: false
