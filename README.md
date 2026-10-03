@@ -32,7 +32,7 @@ Clients keep gated surfaces hidden until that server projection is available.
 ## Requirements
 
 - Node.js 24 or newer.
-- pnpm 10.19.0 through Corepack.
+- pnpm 12.8.1 through Corepack.
 - A Convex project.
 - OAuth credentials for enabled providers.
 - An OpenRouter API key for AI features.
